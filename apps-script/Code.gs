@@ -1,21 +1,17 @@
 // Tauction API — Google Apps Script web app fronting the spreadsheet.
 //
-// Setup (one time):
-//   1. Open the sheet -> Extensions -> Apps Script, paste this file over Code.gs
-//   2. Run the `authorize` function once from the editor and click through
-//      the permissions prompt (it's your own script touching your own sheet)
-//   3. Deploy -> New deployment -> type: Web app
-//        Execute as: Me
-//        Who has access: Anyone
-//   4. Copy the /exec URL into the API constant at the top of app.js
+// Vocabulary: "aname" = an auction's name, which is also its URL slug;
+// "uname" = a bidder's username, shown with an @ in the UI.
 //
-// After editing this file later: Deploy -> Manage deployments -> pencil icon
-// -> Version: New version. (The /exec URL stays the same.)
+// Deploying: `npm run deploy` from the repo (clasp). Manual fallback:
+// paste into the sheet's Apps Script editor, then Deploy -> Manage
+// deployments -> pencil -> Version: New version. The /exec URL never
+// changes either way.
 
 const SHEET_ID = '1hclphAZ3zQIq14Nip1ZxTDSoE9ygXqAv27RwP1hiMA8';
 
-// Particle names for fresh auction slugs. (tauction/tau, get it?)
-const SLUGS = [
+// Particle names for fresh auction anames. (tauction/tau, get it?)
+const ANAMES = [
   'tau', 'muon', 'quark', 'gluon', 'photon', 'boson', 'higgs', 'lepton',
   'hadron', 'baryon', 'meson', 'pion', 'kaon', 'axion', 'fermion',
   'neutrino', 'positron', 'electron', 'proton', 'neutron', 'graviton',
@@ -26,8 +22,8 @@ const SLUGS = [
   'plasmon', 'magnon', 'polaron', 'spinon', 'holon',
 ];
 
-const AUCTIONS_HEAD = ['auction', 'mode', 'n', 'roster', 'created', 'updated'];
-const BIDS_HEAD     = ['auction', 'name', 'bid', 'created', 'updated'];
+const AUCTIONS_HEAD = ['aname', 'mode', 'n', 'roster', 'created', 'updated'];
+const BIDS_HEAD     = ['aname', 'uname', 'bid', 'created', 'updated'];
 
 function doGet(e) {
   return respond(handle((e && e.parameter) || {}));
@@ -48,12 +44,12 @@ function respond(obj) {
 function handle(req) {
   try {
     switch (req.action) {
-      case 'fresh':    return { slug: freshSlug() };
-      case 'state':    return getState(cleanSlug(req.auction));
+      case 'fresh':    return { aname: freshAname() };
+      case 'state':    return getState(cleanAname(req.aname));
       case 'bid':      return withLock(() => placeBid(req));
       case 'settings': return withLock(() => saveSettings(req));
       case undefined:  return { ok: 'tauction API is live',
-                                try: '?action=state&auction=tau' };
+                                try: '?action=state&aname=tau' };
       default:         return { error: 'unknown action: ' + req.action };
     }
   } catch (err) {
@@ -69,13 +65,13 @@ function withLock(fn) {
 
 /* ---------------------------- validation ------------------------------ */
 
-function cleanSlug(s) {
+function cleanAname(s) {
   s = String(s || '').toLowerCase();
-  if (!/^[a-z0-9]{1,40}$/.test(s)) throw 'auction slug must be alphanumeric';
+  if (!/^[a-z0-9]{1,40}$/.test(s)) throw 'auction name must be alphanumeric';
   return s;
 }
 
-function cleanName(s) {
+function cleanUname(s) {
   s = String(s || '').toLowerCase();
   if (!/^[a-z][a-z0-9]{0,29}$/.test(s)) {
     throw 'username must be alphanumeric and start with a letter';
@@ -95,8 +91,21 @@ function tab(name, headers) {
     sh.getRange(1, 1, 1, headers.length).setValues([headers])
       .setFontWeight('bold');
     sh.setFrozenRows(1);
+    sh.getRange(1, 8).setValue("IT'S CHEATING TO LOOK HERE DURING AN AUCTION")
+      .setFontSize(24).setFontWeight('bold').setFontColor('#b3261e');
   }
   return sh;
+}
+
+// Sealed bids are painted white-on-white in the sheet; revealed bids get
+// their color back. Purely cosmetic — the honor system's honor system.
+function repaintBids(aname, revealed) {
+  const sh = bidsTab();
+  rows(sh).forEach((r, i) => {
+    if (r[0] === aname) {
+      sh.getRange(i + 2, 3).setFontColor(revealed ? null : '#ffffff');
+    }
+  });
 }
 
 function auctionsTab() { return tab('auctions', AUCTIONS_HEAD); }
@@ -109,100 +118,99 @@ function rows(sh) {
 
 /* ------------------------------ actions ------------------------------- */
 
-function getState(slug) {
-  const arow = rows(auctionsTab()).find(r => r[0] === slug);
+function getState(aname) {
+  const arow = rows(auctionsTab()).find(r => r[0] === aname);
   const mode = arow && arow[1] === 'roster' ? 'roster' : 'count';
   const n = arow ? Math.max(1, parseInt(arow[2], 10) || 1) : 2;
   const roster = arow && arow[3] ? arow[3].split(',').filter(Boolean) : [];
 
-  const brows = rows(bidsTab()).filter(r => r[0] === slug);
-  const bidders = brows.map(r => r[1]);
+  const brows = rows(bidsTab()).filter(r => r[0] === aname);
+  // updated stamps let clients notice re-bids (and animate accordingly)
+  const bidders = brows.map(r => ({ uname: r[1], updated: r[4] }));
+  const unames = bidders.map(b => b.uname);
 
   const revealed = mode === 'roster'
-    ? roster.length > 0 && roster.every(u => bidders.indexOf(u) !== -1)
-    : bidders.length >= n;
+    ? roster.length > 0 && roster.every(u => unames.indexOf(u) !== -1)
+    : unames.length >= n;
 
   return {
-    slug: slug, mode: mode, n: n, roster: roster, bidders: bidders,
+    aname: aname, mode: mode, n: n, roster: roster, bidders: bidders,
     revealed: revealed,
-    bids: revealed ? brows.map(r => ({ name: r[1], bid: r[2] })) : null,
+    bids: revealed ? brows.map(r => ({ uname: r[1], bid: r[2] })) : null,
   };
 }
 
 function placeBid(req) {
-  const slug = cleanSlug(req.auction);
-  const name = cleanName(req.name);
+  const aname = cleanAname(req.aname);
+  const uname = cleanUname(req.uname);
   const bid = String(req.bid == null ? '' : req.bid).trim();
   if (!bid) throw 'bid is empty';
   if (bid.length > 80) throw 'bid too long (80 characters max)';
 
-  if (getState(slug).revealed) {
-    throw 'this auction is already revealed — bids are locked';
-  }
-
-  ensureAuctionRow(slug);
+  ensureAuctionRow(aname);
 
   const sh = bidsTab();
   const brows = rows(sh);
   const now = new Date().toISOString();
-  const i = brows.findIndex(r => r[0] === slug && r[1] === name);
+  const i = brows.findIndex(r => r[0] === aname && r[1] === uname);
   if (i !== -1) {  // re-bid: overwrite, keep created, bump updated
     sh.getRange(i + 2, 3, 1, 3).setValues([[bid, brows[i][3], now]]);
   } else {
-    sh.appendRow([slug, name, bid, now, now]);
+    sh.appendRow([aname, uname, bid, now, now]);
   }
-  return getState(slug);
+  const st = getState(aname);
+  repaintBids(aname, st.revealed);
+  return st;
 }
 
 function saveSettings(req) {
-  const slug = cleanSlug(req.auction);
+  const aname = cleanAname(req.aname);
   const mode = req.mode === 'roster' ? 'roster' : 'count';
   const n = Math.max(1, parseInt(req.n, 10) || 2);
-  const roster = (req.roster || []).map(cleanName)
+  const roster = (req.roster || []).map(cleanUname)
     .filter((u, i, a) => a.indexOf(u) === i);  // dedupe
-
-  if (getState(slug).revealed) {
-    throw 'this auction is already revealed — settings are locked';
-  }
 
   const sh = auctionsTab();
   const arows = rows(sh);
   const now = new Date().toISOString();
-  const i = arows.findIndex(r => r[0] === slug);
+  const i = arows.findIndex(r => r[0] === aname);
   if (i !== -1) {
     sh.getRange(i + 2, 2, 1, 5)
       .setValues([[mode, String(n), roster.join(','), arows[i][4], now]]);
   } else {
-    sh.appendRow([slug, mode, String(n), roster.join(','), now, now]);
+    sh.appendRow([aname, mode, String(n), roster.join(','), now, now]);
   }
-  return getState(slug);
+  const st = getState(aname);  // settings can flip revealed either direction
+  repaintBids(aname, st.revealed);
+  return st;
 }
 
 // First bid on a never-configured auction materializes a default settings row
-function ensureAuctionRow(slug) {
+function ensureAuctionRow(aname) {
   const sh = auctionsTab();
-  if (!rows(sh).some(r => r[0] === slug)) {
+  if (!rows(sh).some(r => r[0] === aname)) {
     const now = new Date().toISOString();
-    sh.appendRow([slug, 'count', '2', '', now, now]);
+    sh.appendRow([aname, 'count', '2', '', now, now]);
   }
 }
 
-function freshSlug() {
+function freshAname() {
   const used = {};
   rows(auctionsTab()).forEach(r => used[r[0]] = true);
   rows(bidsTab()).forEach(r => used[r[0]] = true);
-  const free = SLUGS.filter(s => !used[s]);
+  const free = ANAMES.filter(s => !used[s]);
   if (free.length) return free[Math.floor(Math.random() * free.length)];
   for (let i = 0; i < 100; i++) {  // all particles taken: suffix a number
-    const s = SLUGS[Math.floor(Math.random() * SLUGS.length)]
+    const s = ANAMES[Math.floor(Math.random() * ANAMES.length)]
             + Math.floor(Math.random() * 1000);
     if (!used[s]) return s;
   }
-  throw 'could not find a fresh slug!?';
+  throw 'could not find a fresh aname!?';
 }
 
 // Run this once from the Apps Script editor to trigger the permissions
-// prompt before deploying.
+// prompt if you ever set this project up manually (clasp handles it
+// otherwise).
 function authorize() {
-  Logger.log(JSON.stringify(handle({ action: 'state', auction: 'tau' })));
+  Logger.log(JSON.stringify(handle({ action: 'state', aname: 'tau' })));
 }

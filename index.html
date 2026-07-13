@@ -3,16 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>tauction</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext x='50' y='50' dy='.36em' text-anchor='middle' font-size='90' font-family='Georgia,serif' fill='%235b5bd6'%3E%CF%84%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
-<script>
-// Restore the path that 404.html stashed (GitHub Pages SPA trick)
-(function () {
-  var p = sessionStorage.getItem('tauction-path');
-  if (p) { sessionStorage.removeItem('tauction-path'); history.replaceState(null, '', p); }
-})();
-</script>
+<!-- ==================== GITHUB PAGES 404 HACK ====================
+     index.html and 404.html are EXACT COPIES of each other, enforced
+     by a qual. GitHub Pages serves 404.html for every path that isn't
+     a real file, so shipping the whole app as the "404 page" means
+     any /slug URL loads the app directly: no redirects, no dead ends;
+     the URL bar itself names the auction.
+     EDIT index.html, NEVER 404.html, then run:  npm run sync-404
+     ================================================================ -->
 </head>
 <body>
 <main>
@@ -23,46 +25,49 @@
 
   <section class="card">
     <div class="field">
-      <label for="auction">auction</label>
-      <input id="auction" autocomplete="off" autocapitalize="off"
+      <div class="label-row"><label for="aname">auction</label><span
+        class="tip" tabindex="0"
+        data-tip="Name of this auction, or just edit the URL">?</span></div>
+      <input id="aname" autocomplete="off" autocapitalize="off"
              spellcheck="false" maxlength="40" placeholder="tau">
     </div>
 
     <form id="bid-form">
       <div class="field">
-        <label for="name">name</label>
-        <div class="at-wrap"><span class="at">@</span><input id="name"
+        <label for="uname">you</label>
+        <div class="at-wrap"><span class="at">@</span><input id="uname"
              autocomplete="off" autocapitalize="off" spellcheck="false"
-             maxlength="30" placeholder="yourname"></div>
+             maxlength="30" placeholder=""></div>
       </div>
 
       <div class="field">
-        <label for="bid">bid</label>
+        <div class="label-row"><label for="bid">bid</label><span
+          class="tip" tabindex="0"
+          data-tip="You're free to change and resubmit your bid until the last bidder submits theirs">?</span></div>
         <input id="bid" maxlength="80" autocomplete="off"
-               placeholder="anything — up to 80 characters">
+               placeholder="">
       </div>
 
-      <button id="place" type="submit">place bid</button>
+      <button id="place" type="submit">submit</button>
     </form>
   </section>
 
   <section class="card" id="settings">
-    <p class="card-title">Show results after&hellip;</p>
     <div class="radio-row">
       <input type="radio" id="mode-count" name="mode" checked>
       <label for="mode-count" class="radio-label">
-        <input type="number" id="n" min="1" value="2"> bidders place bids
+        Reveal after <input type="number" id="n" min="1" value="2"> people bid
       </label>
     </div>
     <div class="radio-row">
       <input type="radio" id="mode-roster" name="mode">
-      <label for="mode-roster" class="radio-label">these bidders bid:</label>
+      <label for="mode-roster" class="radio-label">Reveal after these people bid:</label>
     </div>
     <div class="roster-box">
       <div id="chips" class="chips"></div>
       <div class="at-wrap"><span class="at">@</span><input id="roster-input"
            autocomplete="off" autocapitalize="off" spellcheck="false"
-           maxlength="30" placeholder="add username, press enter"></div>
+           maxlength="30" placeholder=""></div>
     </div>
   </section>
 

@@ -2,9 +2,13 @@
   "name": "tauction",
   "private": true,
   "scripts": {
-    "quals": "node quals/gas-quals.js && node quals/frontend-quals.js && node quals/serve-quals.js"
+    "quals": "node quals/gas-quals.js && node quals/frontend-quals.js && node quals/serve-quals.js && node quals/story-quals.js",
+    "deploy": "node deploy.js",
+    "sync-404": "cp index.html 404.html"
   },
   "devDependencies": {
-    "jsdom": "^29.1.1"
+    "@google/clasp": "^3.3.0",
+    "jsdom": "^29.1.1",
+    "puppeteer-core": "^25.3.0"
   }
 }

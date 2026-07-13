@@ -1,5 +1,3 @@
-# τauction
-
 Table Auction.
 
 Initially: sealed-bid auctions.
@@ -45,10 +43,23 @@ python3 serve.py
 # http://localhost:8000/?api=<exec-url>
 ```
 
-[serve.py](serve.py) mimics GitHub Pages: misses get [404.html](404.html),
-which stashes the URL and bounces through `/`, so `/tau`-style paths survive
-reloads. Stock `python3 -m http.server` 404s on reload, since app.js rewrites
-`/` to `/<slug>`.
+[serve.py](serve.py) mimics GitHub Pages: misses get [404.html](404.html) —
+which is an exact copy of index.html (quals enforce it; after editing
+index.html run `cp index.html 404.html`). So every `/slug` serves the app
+directly: 404 status, but never a 404 page.
+
+## Deploying Code.gs
+
+```sh
+npm run deploy   # clasp push + redeploy same /exec URL + live smoke test
+```
+
+One-time setup: toggle on the [Apps Script API](https://script.google.com/home/usersettings),
+run `npx clasp login`, and put the script ID (Apps Script editor → Project
+Settings → IDs) into [.clasp.json](.clasp.json). After that, no browser —
+the repo is the source of truth and the manifest
+([appsscript.json](apps-script/appsscript.json)) pins the web app's
+execute-as-me/anyone settings.
 
 ## Quals
 
@@ -57,19 +68,24 @@ npm install   # once, for jsdom
 npm run quals
 ```
 
-Three suites in [quals/](quals/): the Code.gs logic on an in-memory fake
-spreadsheet; the real index.html + app.js in jsdom bridged to that same
-logic, including the reload stash-and-restore journey (one "Not implemented:
-navigation" line is expected); and serve.py's 404 behavior.
+Four suites in [quals/](quals/), all backed by the real Code.gs running on
+an in-memory fake spreadsheet ([fake-gas.js](quals/fake-gas.js)): unit-level
+API quals; the real index.html + app.js in jsdom; serve.py's 404 behavior;
+and story quals that drive full user journeys in headless Chrome (needs
+Chrome installed) with layout assertions, dropping screenshots in
+`quals/screenshots/` for eyeballing.
 
 ## Data model
 
+Vocabulary: an **aname** is an auction's name (also its URL slug); a
+**uname** is a bidder's username.
+
 | tab | columns |
 |---|---|
-| `auctions` | auction, mode (`count`\|`roster`), n, roster (comma-sep), created, updated |
-| `bids` | auction, name, bid, created, updated |
+| `auctions` | aname, mode (`count`\|`roster`), n, roster (comma-sep), created, updated |
+| `bids` | aname, uname, bid, created, updated |
 
-One row per (auction, bidder); re-bids overwrite.
+One row per (aname, uname); re-bids overwrite.
 
 ## Behavior
 
@@ -196,6 +212,11 @@ Saving edits does **not** change what `/exec` serves — that URL pins a
 version. After every edit: **Deploy → Manage deployments → ✏️ → Version: New
 version → Deploy**. Same URL, new code. ("New deployment" instead mints a
 *different* URL — avoid.)
+
+Or skip the browser entirely with [clasp](https://github.com/google/clasp):
+`clasp push --force && clasp deploy -i <deploymentId>` — the deploymentId is
+the `AKfycb...` chunk of the `/exec` URL. See "Deploying Code.gs" above for
+the one-time setup.
 
 ### Limits & alternatives
 
