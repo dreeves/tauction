@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tauction</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext x='50' y='50' dy='.36em' text-anchor='middle' font-size='90' font-family='Georgia,serif' fill='%235b5bd6'%3E%CF%84%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<script>
+// Restore the path that 404.html stashed (GitHub Pages SPA trick)
+(function () {
+  var p = sessionStorage.getItem('tauction-path');
+  if (p) { sessionStorage.removeItem('tauction-path'); history.replaceState(null, '', p); }
+})();
+</script>
+</head>
+<body>
+<main>
+  <header>
+  </header>
+
+  <div id="banner" hidden></div>
+
+  <section class="card">
+    <div class="field">
+      <label for="auction">auction</label>
+      <input id="auction" autocomplete="off" autocapitalize="off"
+             spellcheck="false" maxlength="40" placeholder="tau">
+    </div>
+
+    <form id="bid-form">
+      <div class="field">
+        <label for="name">name</label>
+        <div class="at-wrap"><span class="at">@</span><input id="name"
+             autocomplete="off" autocapitalize="off" spellcheck="false"
+             maxlength="30" placeholder="yourname"></div>
+      </div>
+
+      <div class="field">
+        <label for="bid">bid</label>
+        <input id="bid" maxlength="80" autocomplete="off"
+               placeholder="anything — up to 80 characters">
+      </div>
+
+      <button id="place" type="submit">place bid</button>
+    </form>
+  </section>
+
+  <section class="card" id="settings">
+    <p class="card-title">Show results after&hellip;</p>
+    <div class="radio-row">
+      <input type="radio" id="mode-count" name="mode" checked>
+      <label for="mode-count" class="radio-label">
+        <input type="number" id="n" min="1" value="2"> bidders place bids
+      </label>
+    </div>
+    <div class="radio-row">
+      <input type="radio" id="mode-roster" name="mode">
+      <label for="mode-roster" class="radio-label">these bidders bid:</label>
+    </div>
+    <div class="roster-box">
+      <div id="chips" class="chips"></div>
+      <div class="at-wrap"><span class="at">@</span><input id="roster-input"
+           autocomplete="off" autocapitalize="off" spellcheck="false"
+           maxlength="30" placeholder="add username, press enter"></div>
+    </div>
+  </section>
+
+  <section id="status" class="card" hidden></section>
+
+  <footer>
+    <a href="https://github.com/dreeves/tauction">github.com/dreeves/tauction</a>
+  </footer>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

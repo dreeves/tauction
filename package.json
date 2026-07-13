@@ -1,0 +1,10 @@
+{
+  "name": "tauction",
+  "private": true,
+  "scripts": {
+    "quals": "node quals/gas-quals.js && node quals/frontend-quals.js && node quals/serve-quals.js"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
+  }
+}
