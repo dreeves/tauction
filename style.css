@@ -87,7 +87,7 @@ main {
 
 .label-row label { margin-bottom: 0; }
 
-input[type="text"], input:not([type]), input[type="number"] {
+input[type="text"], input:not([type]) {
   font: inherit;
   color: inherit;
   background: transparent;
@@ -138,6 +138,22 @@ button { font: inherit; cursor: pointer; }
 #place:hover:not(:disabled) { filter: brightness(1.08); }
 #place:disabled { opacity: 0.5; cursor: default; }
 
+/* in-flight feedback: a small spinner inside the button */
+#place.busy::after {
+  content: '';
+  display: inline-block;
+  width: 0.75em;
+  height: 0.75em;
+  margin-left: 0.5em;
+  vertical-align: -0.1em;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* ------------------------------ tooltips ------------------------------ */
 /* tabindex on .tip makes tap-to-focus show these on touchscreens */
 
@@ -157,16 +173,20 @@ button { font: inherit; cursor: pointer; }
   user-select: none;
 }
 
-.tip::after {
+/* tooltips ride on ::before so ::after stays free for glyphs (the padlock) */
+[data-tip] { position: relative; }
+
+[data-tip]::before {
   content: attr(data-tip);
   position: absolute;
-  top: calc(100% + 0.45rem);  /* below the tip: the top of the page can't clip it */
+  top: calc(100% + 0.45rem);  /* below: the top of the page can't clip it */
   left: 0;
   background: var(--fg);
   color: var(--bg);
   padding: 0.4rem 0.6rem;
   border-radius: 3px;
   font-size: 0.78rem;
+  font-weight: 400;
   line-height: 1.4;
   width: max-content;
   max-width: min(15rem, 80vw);
@@ -174,36 +194,22 @@ button { font: inherit; cursor: pointer; }
   visibility: hidden;
   transition: opacity 0.15s;
   pointer-events: none;
-  z-index: 2;
+  z-index: 3;
   text-transform: none;
   letter-spacing: normal;
 }
 
-.tip:hover::after, .tip:focus::after { opacity: 1; visibility: visible; }
+[data-tip]:hover::before, [data-tip]:focus::before {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* right-anchored elements get right-anchored tooltips (else they overflow) */
+.seal::before, .corner button::before { left: auto; right: 0; }
 
 .tip:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-/* --------------------------- reveal settings --------------------------- */
-
-.radio-row {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-
-.radio-row input[type="radio"] { accent-color: var(--accent); }
-
-.radio-label { display: inline; }
-
-#n {
-  width: 3.6em;
-  padding: 0.2rem 0.35rem;
-  text-align: center;
-  font-size: 16px; /* <16px makes iOS zoom on focus */
-}
-
-.roster-box { margin-left: 1.6rem; }
+/* ------------------------------ roster -------------------------------- */
 
 .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.45rem; }
 .chips:empty { display: none; }
@@ -233,7 +239,7 @@ button { font: inherit; cursor: pointer; }
 
 .chip .x:hover { opacity: 1; }
 
-/* ------------------------------- status -------------------------------- */
+/* ----------------------------- BIDS box -------------------------------- */
 
 #banner {
   border-radius: 3px;
@@ -245,11 +251,63 @@ button { font: inherit; cursor: pointer; }
 #banner.err { background: var(--err-bg); color: var(--err-fg); }
 #banner.ok { background: var(--ok-bg); color: var(--ok-fg); }
 
-.msg { margin: 0 0 0.2rem; }
+/* grayed while a different auction is loading; never hidden */
+#status .tiles { transition: opacity 0.25s; }
+#status.stale .tiles { opacity: 0.35; }
 
-/* One row per expected bidder: hollow dot + dashed empty slot until they
-   bid, filled dot + solid green once they have (bid text if you may see
-   it, a redaction bar if not), a one-shot shimmer when their bid changes */
+/* the 🎉 waits in grayscale and lights up at the reveal */
+.tada { filter: grayscale(1); opacity: 0.3; transition: filter 0.4s, opacity 0.4s; }
+#status.revealed .tada { filter: none; opacity: 1; }
+
+/* The padlock is both the state and the reveal button: dim 🔒 while the
+   roster is incomplete, pulsing 🔒 when pressable, 🔓 once revealed */
+#status .card-title { display: flex; align-items: center; gap: 0.5rem; }
+
+.seal {
+  margin-left: auto;
+  font-size: 0.95rem;
+  line-height: 1;
+  background: none;
+  border: none;
+  padding: 0;
+  opacity: 0.35;
+  filter: grayscale(1);
+  transition: opacity 0.3s, filter 0.3s;
+}
+
+.seal:disabled { cursor: default; }
+
+.seal.ready, #status.revealed .seal { opacity: 1; filter: none; }
+
+.seal.ready { animation: lockpulse 1.6s ease-in-out infinite; }
+
+@keyframes lockpulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.3); }
+}
+
+.seal::after { content: '🔒'; }
+
+#status.revealed .seal::after { content: '🔓'; }
+
+#status.revealed { border-color: var(--ok-fg); }
+
+/* the roster no longer gates anything once revealed: grayed, still editable */
+#settings { transition: opacity 0.4s; }
+#settings.revealed { opacity: 0.45; }
+
+#status.just-revealed { animation: tada-glow 1.4s ease-out; }
+
+@keyframes tada-glow {
+  0%   { box-shadow: 0 0 0 0 var(--glow); }
+  40%  { box-shadow: 0 0 26px 7px var(--glow); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+/* One row per expected bidder: hollow dot + breathing empty slot until
+   they bid, ✅ + card once they have (bid text if you may see it, a
+   blurred decoy if not), a one-shot shimmer when their bid changes, a
+   struck-through name if their bid doesn't count toward the reveal */
 
 .tiles { display: flex; flex-direction: column; gap: 0.4rem; }
 
@@ -271,12 +329,42 @@ button { font: inherit; cursor: pointer; }
 
 .tile-name { font-weight: 700; font-size: 0.85rem; color: var(--muted); flex: none; }
 
+/* removed from the roster after bidding: one thick stroke through the
+   whole entry, like a pen through a ledger line */
+.tile.cut {
+  opacity: 0.7;
+  position: relative;
+}
+
+.tile.cut::after {
+  content: '';
+  position: absolute;
+  left: 0.45rem;
+  right: 0.45rem;
+  top: 50%;
+  height: 2.5px;
+  background: var(--fg);
+  opacity: 0.55;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
 .tile-bid {
   flex: 1;
   text-align: right;
   font-size: 0.85rem;
   color: var(--muted);
   word-break: break-word;
+}
+
+/* (re)submission counter: present but nearly invisible */
+.tile-subs {
+  flex: none;
+  min-width: 1ch;
+  text-align: right;
+  font-size: 0.6rem;
+  color: var(--muted);
+  opacity: 0.3;
 }
 
 .tile.has-bid {
@@ -290,9 +378,35 @@ button { font: inherit; cursor: pointer; }
 
 .tile.has-bid .tile-bid { color: inherit; }
 
+/* Each received bid is a card; re-submissions stack sheets behind it */
+.bid-card {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--ok-fg);
+  border-radius: 2px;
+  background-color: var(--card);
+}
+
+.bid-card.stack1 {
+  box-shadow: 2px 2px 0 -1px var(--card), 2px 2px 0 0 var(--ok-fg);
+}
+
+.bid-card.stack2 {
+  box-shadow: 2px 2px 0 -1px var(--card), 2px 2px 0 0 var(--ok-fg),
+              4px 4px 0 -1px var(--card), 4px 4px 0 0 var(--ok-fg);
+}
+
+.bid-card.stack3 {
+  box-shadow: 2px 2px 0 -1px var(--card), 2px 2px 0 0 var(--ok-fg),
+              4px 4px 0 -1px var(--card), 4px 4px 0 0 var(--ok-fg),
+              6px 6px 0 -1px var(--card), 6px 6px 0 0 var(--ok-fg);
+}
+
 /* Sealed bids: a constant decoy, blurred beyond reading. The real bid is
-   never in the DOM, so there's nothing to un-blur. */
-.tile-bid.masked {
+   never in the DOM, so there's nothing to un-blur. (Blur sits on the text
+   inside the card so the stack edges stay crisp.) */
+.bid-text.masked {
+  display: inline-block;
   filter: blur(2.5px);
   opacity: 0.75;
   user-select: none;
@@ -316,14 +430,147 @@ button { font: inherit; cursor: pointer; }
 .tile:not(.has-bid) { animation: breathe 3s ease-in-out infinite; }
 
 @keyframes breathe {
-  0%, 100% { border-color: var(--border); }
-  50%      { border-color: var(--muted); }
+  0%, 100% { border-color: var(--border); background-color: var(--bg); }
+  50%      { border-color: var(--accent); background-color: var(--accent-soft); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tile, .tile.updated { animation: none; }
+  .tile, .tile.updated, #status.just-revealed, .seal.ready { animation: none; }
 }
 
-footer { text-align: center; margin-top: 1.4rem; font-size: 0.8rem; }
+footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 1.6rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
 
-footer a { color: var(--muted); }
+footer a {
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border);
+}
+
+footer a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+footer .sep { opacity: 0.5; }
+
+footer .version { letter-spacing: 0.04em; opacity: 0.75; }
+
+/* --------------------------- corner buttons ---------------------------- */
+
+.corner {
+  position: fixed;
+  top: 0.7rem;
+  right: 0.7rem;
+  display: flex;
+  gap: 0.4rem;
+  z-index: 2;
+}
+
+.corner .icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  font-size: 0.85rem;
+  line-height: 1;
+  color: var(--muted);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.corner .icon:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ------------------------------ dialogs -------------------------------- */
+
+.dlg {
+  position: relative;
+  max-width: min(30rem, 92vw);
+  max-height: 85vh;
+  padding: 1.5rem;
+  color: var(--fg);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: auto;
+}
+
+.dlg::backdrop { background: rgba(0, 0, 0, 0.55); }
+
+.dlg-x {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.7rem;
+  padding: 0;
+  font-size: 1.2rem;
+  line-height: 1;
+  color: var(--muted);
+  background: none;
+  border: none;
+}
+
+.dlg-x:hover { color: var(--fg); }
+
+#share-dlg {
+  display: none;  /* dialogs only lay out when open */
+  text-align: center;
+}
+
+#share-dlg[open] { display: flex; flex-direction: column; align-items: center; }
+
+.qr {
+  width: 100%;
+  max-width: 17.5rem;
+  height: auto;
+  image-rendering: pixelated;  /* keep module edges crisp when scaled */
+  border: 8px solid #fff;      /* the quiet zone must stay light in dark mode */
+  border-radius: 2px;
+  background: #fff;
+}
+
+.share-url {
+  margin: 0.9rem 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.copy {
+  padding: 0.5rem 1.1rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 3px;
+}
+
+.copy:hover { filter: brightness(1.08); }
+
+.copy.copied { background: var(--ok-fg); }
+
+.copy.copied .copy-label { display: none; }  /* the label is replaced... */
+
+.copy.copied::after { content: attr(data-copied); }  /* ...by this */
+
+/* the help text is dreev's prose: give it prose typography, not mono */
+.help-body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+.help-body h1 { font-size: 1.25rem; margin: 0 0 0.8rem; }
+
+.help-body h2 { font-size: 1rem; margin: 1.4rem 0 0.5rem; }
+
+.help-body a { color: var(--accent); }

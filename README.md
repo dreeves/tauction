@@ -54,7 +54,7 @@ directly: 404 status, but never a 404 page.
 ## Deploying Code.gs
 
 ```sh
-npm run deploy   # clasp push + redeploy same /exec URL + live smoke test
+npm run deploy   # quals, then clasp push + redeploy same URL + live smoke
 ```
 
 One-time setup: toggle on the [Apps Script API](https://script.google.com/home/usersettings),
@@ -85,18 +85,25 @@ Vocabulary: an **aname** is an auction's name (also its URL slug); a
 
 | tab | columns |
 |---|---|
-| `auctions` | aname, mode (`count`\|`roster`), n, roster (comma-sep), created, updated |
-| `bids` | aname, uname, bid, created, updated |
+| `auctions` | aname, roster (comma-sep), created, updated, revealed |
+| `bids` | aname, uname, bid, created, updated, subs |
 
-One row per (aname, uname); re-bids overwrite.
+One row per (aname, uname); re-bids overwrite and bump `subs`.
 
 ## Behavior
 
-- Bids are sealed until the reveal condition — N distinct bidders (default 2)
-  or a named roster has all bid — then everything locks.
-- Who-has-bid is public. Re-bids and settings edits are last-write-wins until
-  reveal.
-- Non-roster people can bid; the reveal just doesn't wait on them.
+- Nothing ever reveals automatically. The padlock on the BIDS box is the
+  reveal button: it unlocks (and pulses) once everyone on the roster — at
+  least two people — has bid, and anyone may press it. Ending early =
+  ex the straggler, then press.
+- Bidding claims a roster seat. The only road to a struck-through row is
+  being removed from the roster after bidding (the bid stays visible but
+  no longer gates the reveal); re-bidding takes the seat back.
+- Reveal is a one-way latch: nothing can ever reseal revealed bids.
+- Everything stays editable, even after reveal: re-bids and roster edits
+  are last-write-wins. Late bidders join publicly. Honor system throughout.
+- Who-has-bid is public, with a per-bidder (re)submission counter; only bid
+  contents are sealed (you always see the bids your own browser placed).
 - Sealing is honor-system: the sheet itself is link-visible.
 
 ## Appendix: making any Google Sheet writable from a static site

@@ -10,6 +10,10 @@
   "devDependencies": {
     "@google/clasp": "^3.3.0",
     "jsdom": "^29.1.1",
+    "jsqr": "^1.4.0",
     "puppeteer-core": "^25.3.0"
+  },
+  "dependencies": {
+    "qrcode-generator": "^2.0.4"
   }
 }

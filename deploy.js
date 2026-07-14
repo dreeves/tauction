@@ -13,6 +13,7 @@ const APP_JS = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
 const DEPLOYMENT_ID = APP_JS.match(/\/macros\/s\/([A-Za-z0-9_-]+)\/exec/)[1];
 
 const run = (cmd, args) => execFileSync(cmd, args, { stdio: 'inherit' });
+run('npm', ['run', 'quals']);  // never deploy on red
 run('npx', ['clasp', 'push', '--force']);
 run('npx', ['clasp', 'deploy', '-i', DEPLOYMENT_ID, '-d', 'redeploy']);
 run('node', [path.join(__dirname, 'quals', 'live-quals.js')]);

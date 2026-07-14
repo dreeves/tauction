@@ -22,8 +22,8 @@ const ANAMES = [
   'plasmon', 'magnon', 'polaron', 'spinon', 'holon',
 ];
 
-const AUCTIONS_HEAD = ['aname', 'mode', 'n', 'roster', 'created', 'updated'];
-const BIDS_HEAD     = ['aname', 'uname', 'bid', 'created', 'updated'];
+const AUCTIONS_HEAD = ['aname', 'roster', 'created', 'updated', 'revealed'];
+const BIDS_HEAD     = ['aname', 'uname', 'bid', 'created', 'updated', 'subs'];
 
 function doGet(e) {
   return respond(handle((e && e.parameter) || {}));
@@ -48,6 +48,7 @@ function handle(req) {
       case 'state':    return getState(cleanAname(req.aname));
       case 'bid':      return withLock(() => placeBid(req));
       case 'settings': return withLock(() => saveSettings(req));
+      case 'reveal':   return withLock(() => reveal(req));
       case undefined:  return { ok: 'tauction API is live',
                                 try: '?action=state&aname=tau' };
       default:         return { error: 'unknown action: ' + req.action };
@@ -97,6 +98,24 @@ function tab(name, headers) {
   return sh;
 }
 
+// The reveal button. Anyone may press it once the roster is complete —
+// at least two people, all with bids in. Idempotent, and permanent.
+function reveal(req) {
+  const aname = cleanAname(req.aname);
+  const st = getState(aname);
+  if (st.revealed) return st;  // racing presses: both succeed
+  const unames = st.bidders.map(b => b.uname);
+  if (!(st.roster.length >= 2
+        && st.roster.every(u => unames.indexOf(u) !== -1))) {
+    throw 'not ready to reveal: everyone on the roster (at least two people) must bid first';
+  }
+  const sh = auctionsTab();
+  const i = rows(sh).findIndex(r => r[0] === aname);
+  sh.getRange(i + 2, 5).setValue('1');
+  repaintBids(aname, true);
+  return getState(aname);
+}
+
 // Sealed bids are painted white-on-white in the sheet; revealed bids get
 // their color back. Purely cosmetic — the honor system's honor system.
 function repaintBids(aname, revealed) {
@@ -120,22 +139,23 @@ function rows(sh) {
 
 function getState(aname) {
   const arow = rows(auctionsTab()).find(r => r[0] === aname);
-  const mode = arow && arow[1] === 'roster' ? 'roster' : 'count';
-  const n = arow ? Math.max(1, parseInt(arow[2], 10) || 1) : 2;
-  const roster = arow && arow[3] ? arow[3].split(',').filter(Boolean) : [];
+  const roster = arow && arow[1] ? arow[1].split(',').filter(Boolean) : [];
 
   const brows = rows(bidsTab()).filter(r => r[0] === aname);
-  // updated stamps let clients notice re-bids (and animate accordingly)
-  const bidders = brows.map(r => ({ uname: r[1], updated: r[4] }));
+  // updated stamps let clients notice re-bids (and animate accordingly);
+  // subs counts (re)submissions — an existing row implies at least one
+  // submission, so rows predating the subs column floor at 1, never 0
+  const bidders = brows.map(r =>
+    ({ uname: r[1], updated: r[4], subs: parseInt(r[5], 10) || 1 }));
   const unames = bidders.map(b => b.uname);
 
-  const revealed = mode === 'roster'
-    ? roster.length > 0 && roster.every(u => unames.indexOf(u) !== -1)
-    : unames.length >= n;
+  // Reveal is a human act (the 'reveal' action) and a one-way latch: it
+  // never happens automatically, and once bids have been seen, nothing can
+  // reseal them. A complete roster merely makes the reveal button pressable.
+  const revealed = arow ? arow[4] === '1' : false;
 
   return {
-    aname: aname, mode: mode, n: n, roster: roster, bidders: bidders,
-    revealed: revealed,
+    aname: aname, roster: roster, bidders: bidders, revealed: revealed,
     bids: revealed ? brows.map(r => ({ uname: r[1], bid: r[2] })) : null,
   };
 }
@@ -147,16 +167,18 @@ function placeBid(req) {
   if (!bid) throw 'bid is empty';
   if (bid.length > 80) throw 'bid too long (80 characters max)';
 
-  ensureAuctionRow(aname);
+  joinRoster(aname, uname);
 
   const sh = bidsTab();
   const brows = rows(sh);
   const now = new Date().toISOString();
   const i = brows.findIndex(r => r[0] === aname && r[1] === uname);
-  if (i !== -1) {  // re-bid: overwrite, keep created, bump updated
-    sh.getRange(i + 2, 3, 1, 3).setValues([[bid, brows[i][3], now]]);
+  if (i !== -1) {  // re-bid: overwrite, keep created, bump updated + subs
+    const subs = (parseInt(brows[i][5], 10) || 1) + 1;  // legacy rows: >= 1
+    sh.getRange(i + 2, 3, 1, 4)
+      .setValues([[bid, brows[i][3], now, String(subs)]]);
   } else {
-    sh.appendRow([aname, uname, bid, now, now]);
+    sh.appendRow([aname, uname, bid, now, now, '1']);
   }
   const st = getState(aname);
   repaintBids(aname, st.revealed);
@@ -165,8 +187,6 @@ function placeBid(req) {
 
 function saveSettings(req) {
   const aname = cleanAname(req.aname);
-  const mode = req.mode === 'roster' ? 'roster' : 'count';
-  const n = Math.max(1, parseInt(req.n, 10) || 2);
   const roster = (req.roster || []).map(cleanUname)
     .filter((u, i, a) => a.indexOf(u) === i);  // dedupe
 
@@ -175,22 +195,33 @@ function saveSettings(req) {
   const now = new Date().toISOString();
   const i = arows.findIndex(r => r[0] === aname);
   if (i !== -1) {
-    sh.getRange(i + 2, 2, 1, 5)
-      .setValues([[mode, String(n), roster.join(','), arows[i][4], now]]);
+    sh.getRange(i + 2, 2, 1, 3)
+      .setValues([[roster.join(','), arows[i][2], now]]);
   } else {
-    sh.appendRow([aname, mode, String(n), roster.join(','), now, now]);
+    sh.appendRow([aname, roster.join(','), now, now, '']);
   }
-  const st = getState(aname);  // settings can flip revealed either direction
+  const st = getState(aname);
   repaintBids(aname, st.revealed);
   return st;
 }
 
-// First bid on a never-configured auction materializes a default settings row
-function ensureAuctionRow(aname) {
+// Bidding claims a roster seat: your own bid must never read as
+// not-counting. (Removal-after-bid is the only road to a crossed-out row,
+// and re-bidding takes the seat back.)
+function joinRoster(aname, uname) {
   const sh = auctionsTab();
-  if (!rows(sh).some(r => r[0] === aname)) {
-    const now = new Date().toISOString();
-    sh.appendRow([aname, 'count', '2', '', now, now]);
+  const arows = rows(sh);
+  const now = new Date().toISOString();
+  const i = arows.findIndex(r => r[0] === aname);
+  if (i === -1) {
+    sh.appendRow([aname, uname, now, now, '']);
+    return;
+  }
+  const roster = arows[i][1] ? arows[i][1].split(',').filter(Boolean) : [];
+  if (roster.indexOf(uname) === -1) {
+    roster.push(uname);
+    sh.getRange(i + 2, 2, 1, 3)
+      .setValues([[roster.join(','), arows[i][2], now]]);
   }
 }
 

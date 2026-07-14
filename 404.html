@@ -17,6 +17,14 @@
      ================================================================ -->
 </head>
 <body>
+<div class="corner">
+  <!-- TO-DO English aria-labels: "Share this auction" / "Help" -->
+  <button id="share" class="icon" type="button" data-tip="Communica"
+          aria-label="Communica hanc auctionem">🔗</button>
+  <button id="help" class="icon" type="button" data-tip="Auxilium"
+          aria-label="Auxilium">?</button>
+</div>
+
 <main>
   <header>
   </header>
@@ -53,16 +61,7 @@
   </section>
 
   <section class="card" id="settings">
-    <div class="radio-row">
-      <input type="radio" id="mode-count" name="mode" checked>
-      <label for="mode-count" class="radio-label">
-        Reveal after <input type="number" id="n" min="1" value="2"> people bid
-      </label>
-    </div>
-    <div class="radio-row">
-      <input type="radio" id="mode-roster" name="mode">
-      <label for="mode-roster" class="radio-label">Reveal after these people bid:</label>
-    </div>
+    <p class="card-title">Reveal after these people bid:</p>
     <div class="roster-box">
       <div id="chips" class="chips"></div>
       <div class="at-wrap"><span class="at">@</span><input id="roster-input"
@@ -71,12 +70,73 @@
     </div>
   </section>
 
-  <section id="status" class="card" hidden></section>
+  <section id="status" class="card">
+    <p class="card-title">BIDS <span class="tada">🎉</span><button
+      id="seal" class="seal" type="button" disabled
+      data-tip="Reveal bids!"></button></p>
+    <div id="tiles" class="tiles"></div>
+  </section>
 
   <footer>
     <a href="https://github.com/dreeves/tauction">github.com/dreeves/tauction</a>
+    <span class="sep">·</span>
+    <span class="version">v2026.07.14-a</span>
   </footer>
 </main>
+
+<dialog id="share-dlg" class="dlg">
+  <button class="dlg-x" type="button" aria-label="Claudere">×</button>
+  <canvas id="qr" class="qr"></canvas>
+  <p id="share-url" class="share-url"></p>
+  <!-- TO-DO English: "Copy link" (and "Copied!" once clicked) -->
+  <button id="copy" class="copy" type="button" data-copied="Copiatum!"><span
+    class="copy-label">Copia nexum</span></button>
+</dialog>
+
+<dialog id="help-dlg" class="dlg">
+  <button class="dlg-x" type="button" aria-label="Claudere">×</button>
+  <!-- Verbatim from doc.dreev.es/sealedbids (dreev's own text — do not
+       reword; he edits this by hand) -->
+  <div class="help-body">
+    <h1>Sealed Bidding Bot</h1>
+
+    <p>We like to use this for auctions but the idea is fairly general:
+    Someone in the channel announces something they want input on and names the participants.
+    Everyone then responds without their responses showing up in the channel.
+    When the last person has responded, all the responses are revealed.</p>
+
+    <p>You could use it to get independent estimates of how long something will take to implement.
+    Or just use it to play Schelling’s coordination game. <a href="#fn1" id="fnref1">[1]</a></p>
+
+    <p>Here’s a slightly more technical description:</p>
+
+    <p>One person initiates an auction by @-mentioning the participants in a slash command.
+    Then the bot privately gets everyone’s bids (which can be arbitrary strings).</p>
+
+    <p>Anyone can repeat the slash command with no args for the status, which is announced publicly, eg, “got bids from {@alice}, still waiting on {@bob, @carol}”.
+    That can serve to remind stragglers to add their bids.</p>
+
+    <p>Since Slack bots can whisper replies to slash commands, DMs aren’t needed.
+    Everyone can just do the slash command in the channel to place their bids.</p>
+
+    <p>Finally, when the last @-mentioned user submits a bid, the auction is done and the bot posts everyone’s latest bid to the channel.
+    (And for good measure — namely, dreeves’s and bee’s
+    <a href="http://messymatters.com/autonomy">craziness</a> —
+    it flips a biased coin and reports whether 10X payments should happen.)</p>
+
+    <h2>Footnotes</h2>
+
+    <p><a href="#fnref1" id="fn1">[1]</a>
+    Apparently this isn’t a very googlable thing.
+    It’s where someone names a category like “books” or “colors” or “famous historical figures” or “places” or “integers” or any crazy set you can imagine, and then everyone writes down the most
+    <a href="https://en.wikipedia.org/wiki/Focal_point_(game_theory)">focal</a>
+    element of the category.
+    You get a point for each other person who wrote down the same thing as you.
+    It’s fun.</p>
+  </div>
+</dialog>
+
+<script src="vendor/qrcode.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

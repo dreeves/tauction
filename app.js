@@ -22,7 +22,6 @@ const configured = /^https:\/\//.test(api);
 
 const POLL_MS = 5000;
 
-const SLOT = 'bidder ';
 // Sealed bids render as this fixed decoy, blurred by CSS. Constant for
 // everyone, so it leaks nothing — not even length. Latin as a treat for
 // anyone who unblurs it in devtools: "don't peek".
@@ -73,7 +72,8 @@ let aname = '';
 let state = null;         // latest server snapshot of the current auction
 let roster = [];          // local working copy of the roster chips
 let seen = {};            // uname -> updated stamp at last render (shimmer)
-let settingsDirty = 0;    // when the user last touched settings locally
+let wasRevealed = null;   // reveal state at last render (null = unknown)
+let settingsDirty = 0;    // when the user last touched the roster locally
 let settingsTimer = null;
 let anameTimer = null;
 let refreshing = false;
@@ -87,7 +87,8 @@ function setPath(a) {
 // Validate + adopt a state snapshot from the server
 function ingest(res) {
   assert(Array.isArray(res.bidders) && res.bidders.every(
-    (b) => typeof b.uname === 'string' && typeof b.updated === 'string'),
+    (b) => typeof b.uname === 'string' && typeof b.updated === 'string'
+        && typeof b.subs === 'number'),
     'bad state shape — is the deployed Code.gs current?');
   state = res;
 }
@@ -110,9 +111,10 @@ async function refresh() {
 
 function render() {
   if (!state) return;
-  renderStatus();
-  renderSettings();
+  renderSettings();  // sync the local roster from the server unless mid-edit
+  renderStatus();    // rows render from the local roster
   renderMine();
+  $('status').classList.remove('stale');  // server truth is on screen
 }
 
 // You are whoever the name field says you are
@@ -125,7 +127,7 @@ function myBids() {
 }
 
 // Bids whose text this client knows: the ones it placed, plus everyone's
-// once revealed. Tiles render whatever is known and mask the rest — the
+// once revealed. Rows render whatever is known and mask the rest — the
 // same rule makes your bids visible to you and sealed for everyone else.
 function knownBids() {
   const known = myBids();
@@ -133,54 +135,69 @@ function knownBids() {
   return known;
 }
 
-// One tile per expected bidder. Roster mode: the roster plus any walk-on
-// bidders. Count mode: actual bidders, then you (if named and not among
-// them), then anonymous numbered slots up to n.
+// One row per expected bidder: the roster, plus any walk-on bidders.
+// Uses the LOCAL roster so your chip edits show up instantly (the box
+// stays grayed via .stale until the server confirms them).
 function slotUnames() {
   const unames = state.bidders.map((b) => b.uname);
-  if (state.mode === 'roster') {
-    return state.roster.concat(unames.filter((u) => !state.roster.includes(u)));
-  }
-  if (me() && !unames.includes(me()) && unames.length < state.n) unames.push(me());
-  while (unames.length < state.n) unames.push(null);
-  return unames;
+  return roster.concat(unames.filter((u) => !roster.includes(u)));
 }
 
-function tilesEl() {
-  const grid = el('div', 'tiles');
-  const known = knownBids();
-  const stamps = {};
-  state.bidders.forEach((b) => { stamps[b.uname] = b.updated; });
-  const nextSeen = {};
-  slotUnames().forEach((uname, i) => {
-    const t = el('div', 'tile');
-    t.append(el('div', 'tile-name', uname === null ? SLOT + (i + 1) : '@' + uname));
-    const stamp = stamps[uname];
-    t.classList.toggle('has-bid', stamp !== undefined);
-    t.classList.toggle('updated',
-      seen[uname] !== undefined && seen[uname] !== stamp);
-    const sealed = stamp !== undefined && known[uname] === undefined;
-    const bidEl = el('div', 'tile-bid',
-      stamp === undefined ? '' : sealed ? MASK : known[uname]);
-    bidEl.classList.toggle('masked', sealed);
-    t.append(bidEl);
-    grid.append(t);
-    nextSeen[uname] = stamp;
-  });
-  seen = nextSeen;
-  return grid;
-}
-
-// The rows say it all: hollow ○ + empty slot = no bid yet; filled ● +
-// redaction bar = bid in, sealed; text = bid you're allowed to see.
+// The BIDS box. Rows say it all: hollow ○ + breathing empty slot = no bid
+// yet; ✅ + card = bid in (text if you may read it, a blurred decoy if
+// not); struck-through name = bid doesn't count toward the reveal (not on
+// the roster). Reveal lights the 🎉 and glows the card, once.
 function renderStatus() {
   const box = $('status');
-  box.hidden = false;
-  box.replaceChildren(tilesEl());
-  if (state.revealed) box.prepend(el('p', 'card-title', 'Results ⚡'));
-  if (state.mode === 'roster' && state.roster.length === 0) {
-    box.append(el('p', 'msg', 'No required bidders listed yet — add some above.'));
-  }
+  box.classList.toggle('revealed', state.revealed);
+  box.classList.toggle('just-revealed',
+    wasRevealed === false && state.revealed);
+  $('settings').classList.toggle('revealed', state.revealed);
+  wasRevealed = state.revealed;
+
+  // the padlock is the reveal button: pressable (and pulsing) only once
+  // everyone on the roster — at least two people — has bid
+  const ready = !state.revealed && state.roster.length >= 2
+    && state.roster.every((u) => state.bidders.some((b) => b.uname === u));
+  $('seal').disabled = !ready;
+  $('seal').classList.toggle('ready', ready);
+
+  const known = knownBids();
+  const byName = {};
+  state.bidders.forEach((b) => { byName[b.uname] = b; });
+  const nextSeen = {};
+  const rows = slotUnames().map((uname) => {
+    const t = el('div', 'tile');
+    t.append(el('div', 'tile-name', '@' + uname));
+    const b = byName[uname];
+    const stamp = b === undefined ? undefined : b.updated;
+    t.classList.toggle('has-bid', stamp !== undefined);
+    t.classList.toggle('cut',
+      stamp !== undefined && !roster.includes(uname));
+    t.classList.toggle('updated',
+      seen[uname] !== undefined && seen[uname] !== stamp);
+    // phase-lock breathe to the wall clock (period must match the CSS 3s)
+    // so the 5s poll rebuilds don't visibly restart the fade mid-cycle
+    t.style.animationDelay =
+      stamp === undefined ? -(Date.now() % 3000) + 'ms' : '';
+    const sealed = stamp !== undefined && known[uname] === undefined;
+    const bidEl = el('div', 'tile-bid');
+    if (stamp !== undefined) {
+      // a received bid is a card; each re-submission stacks a sheet
+      // behind it (visual depth caps at 3; the counter stays exact)
+      const card = el('span', 'bid-card stack' + Math.min(b.subs - 1, 3));
+      card.append(el('span', sealed ? 'bid-text masked' : 'bid-text',
+                     sealed ? MASK : known[uname]));
+      bidEl.append(card);
+    }
+    t.append(bidEl);
+    // (re)submission counter — server-counted, so it's per-bidder truth
+    t.append(el('div', 'tile-subs', String(b === undefined ? 0 : b.subs)));
+    nextSeen[uname] = stamp;
+    return t;
+  });
+  seen = nextSeen;
+  $('tiles').replaceChildren(...rows);
 }
 
 // Your current bid doubles as the placeholder, ready to edit and resubmit
@@ -189,18 +206,14 @@ function renderMine() {
   $('bid').placeholder = mine !== undefined ? mine : BID_HINT;
 }
 
-// Don't clobber the settings controls while the user is mid-edit
+// Don't clobber the roster chips while the user is mid-edit
 function settingsBusy() {
-  const focused = document.activeElement;
   return Date.now() - settingsDirty < 4000
-    || focused === $('n') || focused === $('roster-input');
+    || document.activeElement === $('roster-input');
 }
 
 function renderSettings() {
   if (settingsBusy()) return;
-  $('mode-count').checked = state.mode === 'count';
-  $('mode-roster').checked = state.mode === 'roster';
-  $('n').value = state.n;
   roster = state.roster.slice();
   renderChips();
 }
@@ -226,6 +239,8 @@ function renderChips() {
 /* ------------------------------ actions ------------------------------- */
 
 async function placeBid() {
+  const a = aname;  // pin the auction this bid belongs to; the user might
+                    // switch auctions while the POST is in flight
   const uname = sanUname($('uname').value);
   const bid = $('bid').value.trim();
   if (!uname) return banner('name must be alphanumeric, starting with a letter');
@@ -233,12 +248,18 @@ async function placeBid() {
   localStorage.setItem('tauction-uname', uname);
   $('uname').value = uname;
   $('place').disabled = true;
+  $('place').classList.add('busy');
   try {
-    const res = await apiPost({ action: 'bid', aname: aname, uname: uname, bid: bid });
+    if (settingsDirty) {  // flush unconfirmed roster edits before bidding,
+                          // lest they overwrite the seat this bid claims
+      clearTimeout(settingsTimer);
+      await pushSettings();
+    }
+    const res = await apiPost({ action: 'bid', aname: a, uname: uname, bid: bid });
     if (res.error) return banner(res.error);
-    const mine = myBids();
+    const mine = JSON.parse(localStorage.getItem('tauction-mybids:' + a) || '{}');
     mine[uname] = bid;
-    localStorage.setItem('tauction-mybids:' + aname, JSON.stringify(mine));
+    localStorage.setItem('tauction-mybids:' + a, JSON.stringify(mine));
     $('bid').value = '';
     if (res.aname === aname) { ingest(res); render(); }
     banner('Bid placed ✓', 'ok');
@@ -246,28 +267,90 @@ async function placeBid() {
     banner('network hiccup: ' + e.message);
   } finally {
     $('place').disabled = false;
+    $('place').classList.remove('busy');
+  }
+}
+
+/* ------------------------------- share -------------------------------- */
+
+// The canonical URL of this auction: origin + aname, sans any ?api= override
+function shareUrl() { return location.origin + '/' + aname; }
+
+// QR straight onto a canvas, with the 4-module quiet zone scanners need
+// (the library's own renderer omits it, which breaks scanning)
+function drawQr(url, canvas) {
+  const qr = qrcode(0, 'M');  // auto version, medium error correction
+  qr.addData(url);
+  qr.make();
+  const n = qr.getModuleCount();
+  const margin = 4;
+  const cell = Math.max(2, Math.floor(280 / (n + 2 * margin)));
+  const size = (n + 2 * margin) * cell;
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';  // always light: scanners want dark-on-light
+  ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = '#000';
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      if (qr.isDark(r, c)) {
+        ctx.fillRect((c + margin) * cell, (r + margin) * cell, cell, cell);
+      }
+    }
+  }
+}
+
+function openShare() {
+  const url = shareUrl();
+  $('share-url').textContent = url;
+  drawQr(url, $('qr'));
+  $('copy').classList.remove('copied');
+  $('share-dlg').showModal();
+}
+
+async function copyUrl() {
+  try {
+    await navigator.clipboard.writeText(shareUrl());
+    $('copy').classList.add('copied');
+  } catch (e) {
+    banner('could not copy: ' + e.message);
+  }
+}
+
+async function pressReveal() {
+  $('seal').disabled = true;  // no double-fire; render recomputes it
+  try {
+    const res = await apiPost({ action: 'reveal', aname: aname });
+    if (res.error) return banner(res.error);
+    if (res.aname === aname) { ingest(res); render(); }
+  } catch (e) {
+    banner('network hiccup: ' + e.message);
   }
 }
 
 function settingsChanged() {
   settingsDirty = Date.now();
+  $('status').classList.add('stale');  // grayed until the server confirms
+  if (state) renderStatus();           // rows track your edit immediately
   clearTimeout(settingsTimer);
   settingsTimer = setTimeout(pushSettings, 700);
 }
 
 async function pushSettings() {
   if (!configured) return;
-  const body = {
-    action: 'settings',
-    aname: aname,
-    mode: $('mode-roster').checked ? 'roster' : 'count',
-    n: Math.max(1, parseInt($('n').value, 10) || 1),
-    roster: roster,
-  };
+  const sentAt = Date.now();
+  const body = { action: 'settings', aname: aname, roster: roster };
   try {
     const res = await apiPost(body);
     if (res.error) return banner(res.error);
-    if (res.aname === aname) { ingest(res); renderStatus(); }
+    if (res.aname === aname) {
+      // your edits are server truth now: stop shielding the chips from
+      // sync — unless you made newer edits while this push was in flight
+      if (settingsDirty <= sentAt) settingsDirty = 0;
+      ingest(res);
+      render();
+    }
   } catch (e) {
     banner('network hiccup: ' + e.message);
   }
@@ -278,7 +361,6 @@ function addRosterChip() {
   $('roster-input').value = '';
   if (!uname || roster.includes(uname)) return;
   roster.push(uname);
-  $('mode-roster').checked = true;  // adding people implies roster mode
   renderChips();
   settingsChanged();
 }
@@ -290,8 +372,9 @@ function switchAuction(a) {
   state = null;
   roster = [];
   seen = {};
+  wasRevealed = null;
   settingsDirty = 0;
-  $('status').hidden = true;
+  $('status').classList.add('stale');
   renderMine();
   refresh();
 }
@@ -304,6 +387,18 @@ function wireUp() {
     placeBid();
   });
 
+  $('seal').addEventListener('click', pressReveal);
+
+  $('share').addEventListener('click', openShare);
+  $('copy').addEventListener('click', copyUrl);
+  $('help').addEventListener('click', () => $('help-dlg').showModal());
+  document.querySelectorAll('.dlg-x').forEach((x) =>
+    x.addEventListener('click', () => x.closest('dialog').close()));
+  document.querySelectorAll('dialog').forEach((d) =>
+    d.addEventListener('click', (e) => {  // click the backdrop to dismiss
+      if (e.target === d) d.close();
+    }));
+
   $('aname').addEventListener('input', () => {
     const v = sanAname($('aname').value);
     if (v !== $('aname').value) $('aname').value = v;
@@ -314,15 +409,7 @@ function wireUp() {
   $('uname').addEventListener('input', () => {
     const v = sanUname($('uname').value);
     if (v !== $('uname').value) $('uname').value = v;
-    if (state) renderStatus();  // your gray tile tracks the name field
-    renderMine();               // and so does your-bid-as-placeholder
-  });
-
-  $('mode-count').addEventListener('change', settingsChanged);
-  $('mode-roster').addEventListener('change', settingsChanged);
-  $('n').addEventListener('input', () => {
-    $('mode-count').checked = true;  // editing n implies count mode
-    settingsChanged();
+    renderMine();  // your-bid-as-placeholder follows the name field
   });
 
   $('roster-input').addEventListener('keydown', (e) => {
