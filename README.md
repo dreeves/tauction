@@ -43,6 +43,9 @@ python3 serve.py
 # http://localhost:8000/?api=<exec-url>
 ```
 
+Using VS Code's Live Server instead: [.vscode/settings.json](.vscode/settings.json)
+sets `liveServer.settings.file` so unknown paths serve the app there too.
+
 [serve.py](serve.py) mimics GitHub Pages: misses get [404.html](404.html) —
 which is an exact copy of index.html (quals enforce it; after editing
 index.html run `cp index.html 404.html`). So every `/slug` serves the app

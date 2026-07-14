@@ -102,6 +102,12 @@ async function tipBox(page, i) {
     const slug = await alice.evaluate(() => location.pathname.slice(1));
     ok(/^[a-z0-9]+$/.test(slug), 'fresh visit lands on a slug: /' + slug);
     ok((await alice.$$('#status .tile')).length === 2, 'two waiting tiles');
+    ok(await alice.evaluate(() =>
+      getComputedStyle(document.querySelector('#status .tile:not(.has-bid)'))
+        .animationName === 'breathe'), 'empty slots breathe');
+    ok(await alice.evaluate(() =>
+      getComputedStyle(document.querySelector('#status .tile:not(.has-bid)'),
+        '::before').content.includes('○')), 'empty slot marked with a hollow dot');
 
     await alice.reload({ waitUntil: 'networkidle0' });
     await alice.waitForSelector('#status .tile');
@@ -114,6 +120,9 @@ async function tipBox(page, i) {
     await alice.waitForSelector('#status .tile.has-bid');
     ok((await text(alice, '#status')).includes('three tacos'),
        'alice sees her own bid');
+    ok(await alice.evaluate(() =>
+      getComputedStyle(document.querySelector('#status .tile.has-bid'),
+        '::before').content.includes('✅')), 'received bid marked with ✅');
     ok(await alice.$eval('#bid', (e) => e.value) === '', 'bid input cleared');
     ok(await alice.$eval('#bid', (e) => e.placeholder) === 'three tacos',
        'her bid became the placeholder');
@@ -146,8 +155,12 @@ async function tipBox(page, i) {
     await bob.goto(BASE + '/' + slug, { waitUntil: 'networkidle0' });
     await bob.waitForSelector('#status .tile.has-bid');
     const bobSees = await text(bob, '#status');
-    ok(!bobSees.includes('three tacos') && bobSees.includes('•'),
-       "bob can't see alice's bid, only that it exists");
+    ok(!bobSees.includes('three tacos') && await bob.$('#status .tile-bid.masked'),
+       "bob can't see alice's bid, only a masked decoy");
+    ok(await bob.evaluate(() => getComputedStyle(
+         document.querySelector('#status .tile-bid.masked')).filter)
+       .then((f) => f.includes('blur')), 'the decoy is actually blurred');
+    await shoot(bob, 'story2-bob-sealed');
 
     await bob.type('#uname', 'bob');
     await bob.type('#bid', 'my entire kingdom');
@@ -193,8 +206,11 @@ async function tipBox(page, i) {
     await alice.reload({ waitUntil: 'networkidle0' });
     await alice.waitForFunction(() =>
       document.querySelectorAll('#status .tile.has-bid').length === 1);
-    ok((await text(alice, '#status')).includes('waiting on'),
-       'alice sees the auction waiting on @evy');
+    ok(await alice.evaluate(() => {
+      const evy = [...document.querySelectorAll('#status .tile')]
+        .find((t) => t.textContent.includes('@evy'));
+      return evy && !evy.classList.contains('has-bid');
+    }), "alice sees @evy's row still hollow");
 
     // end early: drop the straggler from the roster
     for (const chip of await alice.$$('#chips .chip')) {

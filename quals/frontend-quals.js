@@ -79,20 +79,22 @@ function ok(cond, label) {
   ok(doc.getElementById('aname').value === slug1, 'auction field shows slug');
   ok(apiCalls.some((c) => c.action === 'fresh'), 'asked server for fresh slug');
   ok(dom.window.location.search.includes('api='), '?api= survives redirect');
-  ok(doc.querySelectorAll('.tip[data-tip][tabindex="0"]').length >= 2,
-     'focusable (mobile-friendly) tooltips present');
+  ok(doc.querySelectorAll('.tip[data-tip][tabindex="-1"]').length >= 2,
+     'tooltips tap-focusable but not tab stops');
 
   /* --- 2. alice bids on /tau; own bid stays visible to her ------------- */
   dom = await makePage('/tau?api=' + API_URL);
   doc = dom.window.document;
-  ok(doc.getElementById('status').textContent.includes(
-     'Got bids from 0 people, waiting on 2.'), 'virgin status message');
+  ok(!doc.getElementById('status').textContent.includes('Got bids'),
+     'no redundant status message');
   ok(tiles(doc).length === 2, 'n=2 -> two tiles');
   ok(tiles(doc, '.has-bid').length === 0, 'both tiles gray');
   ok(tiles(doc)[0].textContent.includes('bidder 1')
      && tiles(doc)[1].textContent.includes('bidder 2'),
      'anonymous slots are numbered');
-  ok(tiles(doc)[0].textContent.includes('waiting'), 'gray tile shows no-bid label');
+  ok(tiles(doc)[0].querySelector('.tile-bid').textContent === ''
+     && tiles(doc)[1].querySelector('.tile-bid').textContent === '',
+     'empty bid slots before any bids');
 
   type(dom, 'uname', 'Alice!');
   ok(doc.getElementById('uname').value === 'alice', 'name sanitized while typing');
@@ -103,8 +105,8 @@ function ok(cond, label) {
   submitBid(dom);
   await sleep(50);
   let statusText = doc.getElementById('status').textContent;
-  ok(statusText.includes('Got bids from 1 person, waiting on 1.'),
-     'splur singular after first bid: ' + statusText);
+  ok(!statusText.includes('Got bids') && !statusText.includes('waiting'),
+     'no message clutter after first bid');
   ok(statusText.includes('@alice'), 'tile shows @alice');
   ok(statusText.includes('three tacos'), 'own bid visible in own tile');
   ok(tiles(doc, '.has-bid').length === 1 && tiles(doc).length === 2,
@@ -112,7 +114,7 @@ function ok(cond, label) {
   ok(doc.getElementById('bid').value === '', 'bid input cleared after placing');
   ok(doc.getElementById('bid').placeholder === 'three tacos',
      'own bid becomes the placeholder');
-  ok(JSON.parse(dom.window.localStorage.getItem('tauction-mybid:tau')).bid
+  ok(JSON.parse(dom.window.localStorage.getItem('tauction-mybids:tau')).alice
      === 'three tacos', 'own bid persisted');
   ok(dom.window.localStorage.getItem('tauction-uname') === 'alice',
      'name persisted');
@@ -122,9 +124,12 @@ function ok(cond, label) {
   const doc2 = dom2.window.document;
   await sleep(20);
   const sealed = doc2.getElementById('status').textContent;
-  ok(sealed.includes('waiting on 1'), 'second window sees alice bid');
+  ok(tiles(doc2, '.has-bid').length === 1, 'second window sees alice bid');
   ok(!sealed.includes('three tacos'), "others' bids sealed in other windows");
-  ok(sealed.includes('•'), 'sealed bid rendered as a mask');
+  ok(doc2.querySelector('#status .tile-bid.masked')
+     && !doc2.querySelector('#status .tile-bid.masked').textContent
+          .includes('three tacos'),
+     'sealed bid rendered as a masked decoy, not the real text');
   type(dom2, 'uname', 'bob');
   type(dom2, 'bid', '$40 and my dignity');
   submitBid(dom2);
@@ -169,6 +174,40 @@ function ok(cond, label) {
   await sleep(5100);  // next poll: no further change
   ok(!tiles(domB.window.document, '.updated').length, 'shimmer is one-shot');
 
+  /* --- 3c. identity switch: alice re-bids as bob in the same browser ----
+     The browser remembers every bid IT placed, keyed by uname, so both
+     rows stay readable here while other windows see two sealed bids. */
+  gas.handle({ action: 'settings', aname: 'switcheroo', mode: 'count', n: 3 });
+  const domS = await makePage('/switcheroo?api=' + API_URL);
+  type(domS, 'uname', 'alice');
+  type(domS, 'bid', 'first secret');
+  submitBid(domS);
+  await sleep(50);
+  type(domS, 'uname', 'bob');
+  const docS = domS.window.document;
+  ok(docS.getElementById('status').textContent.includes('first secret'),
+     "alice's bid stays readable after renaming yourself to bob");
+  ok(docS.getElementById('bid').placeholder === '',
+     'placeholder follows the current name (bob has no bid yet)');
+  type(domS, 'bid', 'second secret');
+  submitBid(domS);
+  await sleep(50);
+  ok(docS.getElementById('status').textContent.includes('first secret')
+     && docS.getElementById('status').textContent.includes('second secret'),
+     'both of your identities\' bids readable in your window');
+  ok(!docS.querySelector('#status .tile-bid.masked'),
+     'nothing masked in the window that placed both bids');
+  const mybids = JSON.parse(
+    domS.window.localStorage.getItem('tauction-mybids:switcheroo'));
+  ok(mybids.alice === 'first secret' && mybids.bob === 'second secret',
+     'both bids remembered per uname');
+  const domT = await makePage('/switcheroo?api=' + API_URL);
+  await sleep(20);
+  const otherSees = domT.window.document.getElementById('status').textContent;
+  ok(domT.window.document.querySelectorAll('#status .tile-bid.masked').length === 2
+     && !otherSees.includes('secret'),
+     'other windows see two sealed bids, no text');
+
   /* --- 4. roster mode on a new auction via the auction field ----------- */
   apiCalls = [];
   type(dom2, 'aname', 'Pie-Split');
@@ -191,8 +230,6 @@ function ok(cond, label) {
   await sleep(800); // settings debounce
   ok(apiCalls.some((c) => c.action === 'settings' && c.mode === 'roster'
      && c.roster.join(',') === 'dee,evy'), 'settings pushed to server');
-  ok(doc2.getElementById('status').textContent.includes('waiting on'),
-     'roster status message renders');
   ok(tiles(doc2).length === 2
      && doc2.getElementById('status').textContent.includes('@evy'),
      'roster mode: named gray tiles, no self tile for spectators');
@@ -202,9 +239,10 @@ function ok(cond, label) {
   submitBid(dom2);
   await sleep(50);
   const rosterStatus = doc2.getElementById('status').textContent;
-  ok(rosterStatus.includes('Got bids from') && rosterStatus.includes('@dee')
-     && rosterStatus.includes('waiting on') && rosterStatus.includes('@evy'),
-     'roster waiting message: ' + rosterStatus.trim());
+  const evyRow = [...tiles(doc2)].find((t) => t.textContent.includes('@evy'));
+  ok(evyRow && !evyRow.classList.contains('has-bid')
+     && evyRow.querySelector('.tile-bid').textContent === '',
+     "evy's row is an empty slot");
   ok(rosterStatus.includes('i bid 2 dishes'), 'own roster bid visible');
   ok([...tiles(doc2, '.has-bid')].some((t) => t.textContent.includes('@dee'))
      && [...tiles(doc2, ':not(.has-bid)')].some((t) => t.textContent.includes('@evy')),

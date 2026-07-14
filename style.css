@@ -151,6 +151,7 @@ button { font: inherit; cursor: pointer; }
   border-radius: 50%;
   color: var(--muted);
   font-size: 0.7rem;
+  line-height: 1;  /* inherited 1.5 pushed the ? below optical center */
   cursor: help;
   position: relative;
   user-select: none;
@@ -246,14 +247,17 @@ button { font: inherit; cursor: pointer; }
 
 .msg { margin: 0 0 0.2rem; }
 
-/* One tile per expected bidder: gray until they bid, green once they have,
-   a one-shot shimmer sweep when their bid changes */
+/* One row per expected bidder: hollow dot + dashed empty slot until they
+   bid, filled dot + solid green once they have (bid text if you may see
+   it, a redaction bar if not), a one-shot shimmer when their bid changes */
 
-.tiles { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.7rem; }
+.tiles { display: flex; flex-direction: column; gap: 0.4rem; }
 
 .tile {
-  flex: 1 1 8.5rem;
-  border: 1px solid var(--border);
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  border: 1px dashed var(--border);
   border-radius: 3px;
   padding: 0.45rem 0.65rem;
   background-color: var(--bg);
@@ -261,16 +265,22 @@ button { font: inherit; cursor: pointer; }
   transition: border-color 0.5s, box-shadow 0.5s, background-color 0.5s;
 }
 
-.tile-name { font-weight: 700; font-size: 0.85rem; color: var(--muted); }
+.tile::before { content: '○'; color: var(--muted); flex: none; }
+
+.tile.has-bid::before { content: '✅'; font-size: 0.75rem; }
+
+.tile-name { font-weight: 700; font-size: 0.85rem; color: var(--muted); flex: none; }
 
 .tile-bid {
+  flex: 1;
+  text-align: right;
   font-size: 0.85rem;
   color: var(--muted);
-  font-style: italic;
   word-break: break-word;
 }
 
 .tile.has-bid {
+  border-style: solid;
   border-color: var(--ok-fg);
   background-color: var(--ok-bg);
   box-shadow: 0 0 10px var(--glow);
@@ -278,7 +288,15 @@ button { font: inherit; cursor: pointer; }
 
 .tile.has-bid .tile-name { color: var(--ok-fg); }
 
-.tile.has-bid .tile-bid { color: inherit; font-style: normal; }
+.tile.has-bid .tile-bid { color: inherit; }
+
+/* Sealed bids: a constant decoy, blurred beyond reading. The real bid is
+   never in the DOM, so there's nothing to un-blur. */
+.tile-bid.masked {
+  filter: blur(2.5px);
+  opacity: 0.75;
+  user-select: none;
+}
 
 .tile.updated {
   background-image: linear-gradient(105deg,
@@ -290,6 +308,20 @@ button { font: inherit; cursor: pointer; }
 @keyframes shimmer {
   from { background-position: 130% 0; }
   to   { background-position: -130% 0; }
+}
+
+/* Empty slots breathe slowly: unmistakably awaiting a bid, unmistakably
+   not a loading spinner */
+
+.tile:not(.has-bid) { animation: breathe 3s ease-in-out infinite; }
+
+@keyframes breathe {
+  0%, 100% { border-color: var(--border); }
+  50%      { border-color: var(--muted); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile, .tile.updated { animation: none; }
 }
 
 footer { text-align: center; margin-top: 1.4rem; font-size: 0.8rem; }

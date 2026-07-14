@@ -22,9 +22,11 @@ const configured = /^https:\/\//.test(api);
 
 const POLL_MS = 5000;
 
-const NO_BID = 'waiting';
 const SLOT = 'bidder ';
-const MASK = '•••••';
+// Sealed bids render as this fixed decoy, blurred by CSS. Constant for
+// everyone, so it leaks nothing — not even length. Latin as a treat for
+// anyone who unblurs it in devtools: "don't peek".
+const MASK = 'noli spectare';
 
 /* ------------------------------ helpers ------------------------------- */
 
@@ -38,8 +40,6 @@ function el(tag, cls, text) {
   if (text != null) e.textContent = text;
   return e;
 }
-
-function splur(x, sing, plur) { return x + ' ' + (x === 1 ? sing : plur); }
 
 const sanAname = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 40);
 const sanUname = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
@@ -118,18 +118,17 @@ function render() {
 // You are whoever the name field says you are
 function me() { return sanUname($('uname').value); }
 
-// The bid you placed on this auction, if this browser placed one
-function myBid() {
-  return JSON.parse(localStorage.getItem('tauction-mybid:' + aname) || 'null');
+// Every bid this browser has placed on this auction, keyed by uname —
+// so bids stay readable to you even if you rename yourself and bid again
+function myBids() {
+  return JSON.parse(localStorage.getItem('tauction-mybids:' + aname) || '{}');
 }
 
-// Bids whose text this client knows: your own, plus everyone's once
-// revealed. Tiles render whatever is known and mask the rest — the same
-// rule makes your bid visible to you and sealed for everyone else.
+// Bids whose text this client knows: the ones it placed, plus everyone's
+// once revealed. Tiles render whatever is known and mask the rest — the
+// same rule makes your bids visible to you and sealed for everyone else.
 function knownBids() {
-  const known = {};
-  const mine = myBid();
-  if (mine) known[mine.uname] = mine.bid;
+  const known = myBids();
   (state.bids || []).forEach((b) => { known[b.uname] = b.bid; });
   return known;
 }
@@ -160,9 +159,11 @@ function tilesEl() {
     t.classList.toggle('has-bid', stamp !== undefined);
     t.classList.toggle('updated',
       seen[uname] !== undefined && seen[uname] !== stamp);
-    t.append(el('div', 'tile-bid',
-      stamp === undefined ? NO_BID
-        : known[uname] !== undefined ? known[uname] : MASK));
+    const sealed = stamp !== undefined && known[uname] === undefined;
+    const bidEl = el('div', 'tile-bid',
+      stamp === undefined ? '' : sealed ? MASK : known[uname]);
+    bidEl.classList.toggle('masked', sealed);
+    t.append(bidEl);
     grid.append(t);
     nextSeen[uname] = stamp;
   });
@@ -170,44 +171,22 @@ function tilesEl() {
   return grid;
 }
 
-function chipList(unames) {
-  const frag = document.createDocumentFragment();
-  unames.forEach((u) => frag.append(el('span', 'chip', '@' + u), ' '));
-  return frag;
-}
-
-function statusMsg() {
-  if (state.revealed) return el('p', 'card-title', 'Results ⚡');
-  const got = state.bidders.map((b) => b.uname);
-  const msg = el('p', 'msg');
-  if (state.mode === 'count') {
-    msg.append('Got bids from ' + splur(got.length, 'person', 'people')
-      + ', waiting on ' + (state.n - got.length) + '.');
-  } else if (state.roster.length === 0) {
-    msg.append('No required bidders listed yet — add some above.');
-  } else {
-    const waiting = state.roster.filter((u) => !got.includes(u));
-    if (got.length === 0) {
-      msg.append('No bids yet; waiting on ', chipList(waiting));
-    } else {
-      msg.append('Got bids from ', chipList(got),
-                 ', waiting on ', chipList(waiting));
-    }
-    msg.append('.');
-  }
-  return msg;
-}
-
+// The rows say it all: hollow ○ + empty slot = no bid yet; filled ● +
+// redaction bar = bid in, sealed; text = bid you're allowed to see.
 function renderStatus() {
   const box = $('status');
   box.hidden = false;
-  box.replaceChildren(statusMsg(), tilesEl());
+  box.replaceChildren(tilesEl());
+  if (state.revealed) box.prepend(el('p', 'card-title', 'Results ⚡'));
+  if (state.mode === 'roster' && state.roster.length === 0) {
+    box.append(el('p', 'msg', 'No required bidders listed yet — add some above.'));
+  }
 }
 
 // Your current bid doubles as the placeholder, ready to edit and resubmit
 function renderMine() {
-  const mine = myBid();
-  $('bid').placeholder = mine && mine.uname === me() ? mine.bid : BID_HINT;
+  const mine = myBids()[me()];
+  $('bid').placeholder = mine !== undefined ? mine : BID_HINT;
 }
 
 // Don't clobber the settings controls while the user is mid-edit
@@ -257,8 +236,9 @@ async function placeBid() {
   try {
     const res = await apiPost({ action: 'bid', aname: aname, uname: uname, bid: bid });
     if (res.error) return banner(res.error);
-    localStorage.setItem('tauction-mybid:' + aname,
-                         JSON.stringify({ uname: uname, bid: bid }));
+    const mine = myBids();
+    mine[uname] = bid;
+    localStorage.setItem('tauction-mybids:' + aname, JSON.stringify(mine));
     $('bid').value = '';
     if (res.aname === aname) { ingest(res); render(); }
     banner('Bid placed ✓', 'ok');
@@ -335,6 +315,7 @@ function wireUp() {
     const v = sanUname($('uname').value);
     if (v !== $('uname').value) $('uname').value = v;
     if (state) renderStatus();  // your gray tile tracks the name field
+    renderMine();               // and so does your-bid-as-placeholder
   });
 
   $('mode-count').addEventListener('change', settingsChanged);
