@@ -70,40 +70,63 @@ function banner(msg, kind) {
 
 let aname = '';
 let state = null;         // latest server snapshot of the current auction
-let roster = [];          // local working copy of the roster chips
+let roster = [];          // local working copy of the roster
 let seen = {};            // uname -> updated stamp at last render (shimmer)
 let wasRevealed = null;   // reveal state at last render (null = unknown)
-let settingsDirty = 0;    // when the user last touched the roster locally
-let settingsTimer = null;
+let lastWriteAt = 0;      // when this client last STARTED a write (bid,
+                          // add/remove, claim, reveal): state snapshots
+                          // requested before that are obsolete on arrival
 let anameTimer = null;
 let refreshing = false;
 
-const BID_HINT = $('bid').placeholder;  // stock hint, restored when no own bid
+const BID_HINT = 'your bid';  // row-editor placeholder when you have no bid
+
+// The padlock's tip, cached from the HTML so the copy lives in one place;
+// once revealed the icon is a 🎉 and offers nothing, so the tip changes
+const SEAL_TIP = $('seal').getAttribute('data-tip');
+
+// This browser's anonymous device id. Claims are keyed by it on the
+// server, so every page agrees who's taken — two machines can no longer
+// both be @alice. It's a consistency marker, not auth (honor system).
+if (!localStorage.getItem('tauction-device')) {
+  localStorage.setItem('tauction-device', crypto.randomUUID());
+}
+const DEVICE = localStorage.getItem('tauction-device');
 
 function setPath(a) {
   history.replaceState(null, '', '/' + a + location.search);
 }
 
-// Validate + adopt a state snapshot from the server
+// Validate + adopt a state snapshot from the server; remember it so the
+// next page load can paint instantly instead of flashing a blank roster
 function ingest(res) {
   assert(Array.isArray(res.bidders) && res.bidders.every(
     (b) => typeof b.uname === 'string' && typeof b.updated === 'string'
-        && typeof b.subs === 'number'),
+        && typeof b.subs === 'number')
+    && res.claims !== null && typeof res.claims === 'object',
     'bad state shape — is the deployed Code.gs current?');
   state = res;
+  localStorage.setItem('tauction-state:' + res.aname, JSON.stringify(res));
 }
 
 async function refresh() {
   if (!configured || refreshing) return;
   refreshing = true;
+  const a = aname;  // the auction this request is for
+  const started = Date.now();
   try {
-    const res = await apiGet({ action: 'state', aname: aname });
+    const res = await apiGet({ action: 'state', aname: a });
     if (res.error) banner(res.error);
-    else if (res.aname === aname) { ingest(res); render(); }  // ignore stale
+    // adopt only if nothing was written since this snapshot was requested
+    // (else it can lack a name you just added or a bid you just placed)
+    else if (res.aname === aname && lastWriteAt < started) { ingest(res); render(); }
   } catch (e) {
     banner('network hiccup: ' + e.message);
   } finally {
     refreshing = false;
+    // the auction switched mid-flight, and the refreshing guard swallowed
+    // that switch's own refresh: fetch the current auction now
+    if (a !== aname) refresh();
   }
 }
 
@@ -111,17 +134,28 @@ async function refresh() {
 
 function render() {
   if (!state) return;
-  renderSettings();  // sync the local roster from the server unless mid-edit
-  renderStatus();    // rows render from the local roster
-  renderMine();
+  // adopt the server's roster: every adopted snapshot is gated on being
+  // newer than this client's newest write, so it contains every local
+  // edit — no shielding needed
+  roster = state.roster.slice();
+  renderStatus();
   $('status').classList.remove('stale');  // server truth is on screen
 }
 
-// You are whoever the name field says you are
-function me() { return sanUname($('uname').value); }
+// You are whoever this browser last bid (or claimed a row) as — but only
+// while that name has a row in this auction AND the server's claim for
+// it (if any) is this device's. Unclaimed-on-the-server plus remembered
+// locally counts as yours (the optimistic moment before your claim
+// lands); a rival device's registered claim unseats you.
+function me() {
+  const u = localStorage.getItem('tauction-uname') || '';
+  if (!slotUnames().includes(u)) return '';
+  const holder = state.claims[u];
+  return holder === undefined || holder === DEVICE ? u : '';
+}
 
 // Every bid this browser has placed on this auction, keyed by uname —
-// so bids stay readable to you even if you rename yourself and bid again
+// so bids stay readable to you even if you switch rows and bid again
 function myBids() {
   return JSON.parse(localStorage.getItem('tauction-mybids:' + aname) || '{}');
 }
@@ -143,16 +177,32 @@ function slotUnames() {
   return roster.concat(unames.filter((u) => !roster.includes(u)));
 }
 
-// The BIDS box. Rows say it all: hollow ○ + breathing empty slot = no bid
-// yet; ✅ + card = bid in (text if you may read it, a blurred decoy if
-// not); struck-through name = bid doesn't count toward the reveal (not on
-// the roster). Reveal lights the 🎉 and glows the card, once.
+// The BIDS box IS the app: one ledger line per roster member. Hollow ○ +
+// breathing empty slot = no bid yet; ✅ + card = bid in (text if you may
+// read it, a blurred decoy if not); struck-through name = bid doesn't
+// count toward the reveal (not on the roster — reachable only via roster
+// races, never via the UI). Your own row's bid slot is an input: your bid
+// lives there, editable in place; enter (re)submits. × removes a row from
+// the roster, offered only while it has no bid to protect. Reveal lights
+// the 🎉 and glows the card, once.
+let lastPrint = '';  // fingerprint of the last-rendered rows
+
 function renderStatus() {
+  // Skip no-op rebuilds: replacing the nodes destroys any button mid-
+  // click (mousedown and mouseup must hit the same node), so a rebuild
+  // that changes nothing can silently eat a click. wasRevealed and seen
+  // are in the fingerprint because the render right after a reveal or a
+  // shimmer must still run: it retires those one-shot effects.
+  const print = JSON.stringify([aname, wasRevealed, seen, slotUnames(),
+    state.bidders, state.roster, state.revealed, state.claims, me(),
+    knownBids()]);
+  if (print === lastPrint) return;
+  lastPrint = print;
+
   const box = $('status');
   box.classList.toggle('revealed', state.revealed);
   box.classList.toggle('just-revealed',
     wasRevealed === false && state.revealed);
-  $('settings').classList.toggle('revealed', state.revealed);
   wasRevealed = state.revealed;
 
   // the padlock is the reveal button: pressable (and pulsing) only once
@@ -161,17 +211,55 @@ function renderStatus() {
     && state.roster.every((u) => state.bidders.some((b) => b.uname === u));
   $('seal').disabled = !ready;
   $('seal').classList.toggle('ready', ready);
+  // TODO English for the revealed tip: "Revealed!"
+  $('seal').setAttribute('data-tip',
+    state.revealed ? 'Patefactum!' : SEAL_TIP);
 
+  // Preserve a mid-composition draft in the row editor: this rebuild runs
+  // on every 5s poll and would otherwise eat your typing
+  const live = $('tiles').querySelector('.rebid input');
+  const draft = live && (live === document.activeElement
+                         || live.value !== live.defaultValue)
+    ? { uname: live.closest('.tile').dataset.uname, value: live.value,
+        focused: live === document.activeElement,
+        start: live.selectionStart, end: live.selectionEnd }
+    : null;
+
+  const mine = me();
   const known = knownBids();
+  const placed = myBids();  // bids THIS browser placed (the dibs exception)
   const byName = {};
   state.bidders.forEach((b) => { byName[b.uname] = b; });
   const nextSeen = {};
   const rows = slotUnames().map((uname) => {
-    const t = el('div', 'tile');
-    t.append(el('div', 'tile-name', '@' + uname));
     const b = byName[uname];
     const stamp = b === undefined ? undefined : b.updated;
+    const t = el('div', 'tile');
+    t.dataset.uname = uname;
+    // Every row leads with its star, a radio for who-you-are: ☆ =
+    // claimable, dimmed ☆ = dibsed, glowing ★ = you. A row is dibsed by
+    // a rival device's registered claim, or (for claim-less legacy rows)
+    // by a bid this browser didn't place. Clicking your own lit star
+    // releases you to nobody. A bid placed by THIS browser never dibses
+    // you out of the row (else releasing after bidding would strand you).
+    const holder = state.claims[uname];
+    const dibsed = uname !== mine
+      && ((holder !== undefined && holder !== DEVICE)
+          || (stamp !== undefined && placed[uname] === undefined));
+    const star = el('button', 'tu', uname === mine ? '★' : '☆');
+    star.type = 'button';
+    star.disabled = dibsed;
+    star.classList.toggle('selected', uname === mine);
+    star.setAttribute('data-tip',
+      uname === mine ? "Renounce, i.e., not you"
+      : dibsed       ? "Too late to claim this is you"
+      :                "Claim as you");
+    star.addEventListener('click', () => toggleTu(uname));
+    const nameEl = el('div', 'tile-name');
+    nameEl.append(star, '@' + uname);
+    t.append(nameEl);
     t.classList.toggle('has-bid', stamp !== undefined);
+    t.classList.toggle('mine', uname === mine);
     t.classList.toggle('cut',
       stamp !== undefined && !roster.includes(uname));
     t.classList.toggle('updated',
@@ -182,92 +270,113 @@ function renderStatus() {
       stamp === undefined ? -(Date.now() % 3000) + 'ms' : '';
     const sealed = stamp !== undefined && known[uname] === undefined;
     const bidEl = el('div', 'tile-bid');
-    if (stamp !== undefined) {
+    if (uname === mine) {
+      const form = el('form', 'rebid');
+      const input = document.createElement('input');
+      input.maxLength = 80;
+      input.autocomplete = 'off';
+      input.placeholder = BID_HINT;
+      const baseline = known[uname] === undefined ? '' : known[uname];
+      input.value = baseline;
+      input.defaultValue = baseline;  // a draft = live value differs
+      input.className = stamp === undefined
+        ? 'bid-slot' : 'bid-card stack' + Math.min(b.subs - 1, 3);
+      form.append(input);
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        placeBid(uname, form);
+      });
+      bidEl.append(form);
+    } else if (stamp !== undefined) {
       // a received bid is a card; each re-submission stacks a sheet
       // behind it (visual depth caps at 3; the counter stays exact)
       const card = el('span', 'bid-card stack' + Math.min(b.subs - 1, 3));
       card.append(el('span', sealed ? 'bid-text masked' : 'bid-text',
                      sealed ? MASK : known[uname]));
       bidEl.append(card);
+    } else {
+      // an empty card holds the space where their bid will land (the
+      // nbsp gives it a text line's height)
+      bidEl.append(el('span', 'bid-card slot', ' '));
     }
+    // the (re)submission counter — server-counted, per-bidder truth —
+    // rides the ✅ as a superscript; the ✅ grays while the count is 0
+    const check = el('span', 'check', '✅');
+    check.append(el('sup', 'tile-subs', String(b === undefined ? 0 : b.subs)));
+    bidEl.append(check);
     t.append(bidEl);
-    // (re)submission counter — server-counted, so it's per-bidder truth
-    t.append(el('div', 'tile-subs', String(b === undefined ? 0 : b.subs)));
+    // × removes the whole row from the roster — grayed out once a bid is
+    // in, because a sealed bid is never deletable
+    const x = el('button', 'x', '×');
+    x.type = 'button';
+    x.disabled = stamp !== undefined;
+    x.setAttribute('data-tip', 'remove @' + uname);
+    x.addEventListener('click', () => {
+      roster = roster.filter((u) => u !== uname);
+      queueOp({ action: 'remove', aname: aname, uname: uname });
+    });
+    t.append(x);
     nextSeen[uname] = stamp;
     return t;
   });
   seen = nextSeen;
   $('tiles').replaceChildren(...rows);
+  if (draft) restoreDraft(draft);
 }
 
-// Your current bid doubles as the placeholder, ready to edit and resubmit
-function renderMine() {
-  const mine = myBids()[me()];
-  $('bid').placeholder = mine !== undefined ? mine : BID_HINT;
-}
-
-// Don't clobber the roster chips while the user is mid-edit
-function settingsBusy() {
-  return Date.now() - settingsDirty < 4000
-    || document.activeElement === $('roster-input');
-}
-
-function renderSettings() {
-  if (settingsBusy()) return;
-  roster = state.roster.slice();
-  renderChips();
-}
-
-function renderChips() {
-  const box = $('chips');
-  box.replaceChildren();
-  for (const uname of roster) {
-    const chip = el('span', 'chip', '@' + uname);
-    const x = el('button', 'x', '×');
-    x.type = 'button';
-    x.title = 'remove @' + uname;
-    x.addEventListener('click', () => {
-      roster = roster.filter((u) => u !== uname);
-      renderChips();
-      settingsChanged();
-    });
-    chip.append(x);
-    box.append(chip);
+// Claim a row as yourself, or release it if it's already yours
+function toggleTu(uname) {
+  if (me() === uname) {
+    localStorage.removeItem('tauction-uname');
+    queueOp({ action: 'claim', aname: aname, uname: uname,
+              device: '' });     // release the seat for everyone
+  } else {
+    localStorage.setItem('tauction-uname', uname);
+    queueOp({ action: 'claim', aname: aname, uname: uname,
+              device: DEVICE }); // stake it: rival pages show dibs
   }
+  renderStatus();
+  const input = $('tiles').querySelector('.rebid input');
+  if (input) input.focus();
 }
+
+function restoreDraft(d) {
+  const input = $('tiles').querySelector(
+    '.tile[data-uname="' + d.uname + '"] .rebid input');
+  if (!input) return;  // the row was removed mid-composition
+  input.value = d.value;
+  if (d.focused) { input.focus(); input.setSelectionRange(d.start, d.end); }
+}
+
 
 /* ------------------------------ actions ------------------------------- */
 
-async function placeBid() {
+async function placeBid(uname, form) {
   const a = aname;  // pin the auction this bid belongs to; the user might
                     // switch auctions while the POST is in flight
-  const uname = sanUname($('uname').value);
-  const bid = $('bid').value.trim();
-  if (!uname) return banner('name must be alphanumeric, starting with a letter');
+  const input = form.querySelector('input');
+  const bid = input.value.trim();
+  assert(uname, 'placeBid without an identity');
   if (!bid) return banner('bid is empty');
   localStorage.setItem('tauction-uname', uname);
-  $('uname').value = uname;
-  $('place').disabled = true;
-  $('place').classList.add('busy');
+  input.disabled = true;
+  form.classList.add('busy');
+  lastWriteAt = Date.now();
+  const at = lastWriteAt;
   try {
-    if (settingsDirty) {  // flush unconfirmed roster edits before bidding,
-                          // lest they overwrite the seat this bid claims
-      clearTimeout(settingsTimer);
-      await pushSettings();
-    }
-    const res = await apiPost({ action: 'bid', aname: a, uname: uname, bid: bid });
+    const res = await apiPost({ action: 'bid', aname: a, uname: uname,
+                                bid: bid, device: DEVICE });
     if (res.error) return banner(res.error);
     const mine = JSON.parse(localStorage.getItem('tauction-mybids:' + a) || '{}');
     mine[uname] = bid;
     localStorage.setItem('tauction-mybids:' + a, JSON.stringify(mine));
-    $('bid').value = '';
-    if (res.aname === aname) { ingest(res); render(); }
+    if (res.aname === aname && at === lastWriteAt) { ingest(res); render(); }
     banner('Bid placed ✓', 'ok');
   } catch (e) {
     banner('network hiccup: ' + e.message);
   } finally {
-    $('place').disabled = false;
-    $('place').classList.remove('busy');
+    input.disabled = false;
+    form.classList.remove('busy');
   }
 }
 
@@ -318,51 +427,64 @@ async function copyUrl() {
   }
 }
 
+
+// Roster and claim writes are row-level ops, serialized client-side so
+// a burst of adds can't pile onto the server's script lock. The UI is
+// optimistic (the local roster already changed); the box grays until
+// the server confirms. Only the NEWEST op's snapshot is adopted —
+// earlier ones predate later local edits.
+let opChain = Promise.resolve();
+function queueOp(body) {
+  lastWriteAt = Date.now();
+  const at = lastWriteAt;
+  $('status').classList.add('stale');
+  if (state) renderStatus();
+  if (!configured) return;
+  opChain = opChain.then(async () => {
+    try {
+      const res = await apiPost(body);
+      if (res.error) return banner(res.error);
+      if (res.aname === aname && at === lastWriteAt) { ingest(res); render(); }
+    } catch (e) {
+      banner('network hiccup: ' + e.message);
+    }
+  });
+}
+
 async function pressReveal() {
   $('seal').disabled = true;  // no double-fire; render recomputes it
+  lastWriteAt = Date.now();
+  const at = lastWriteAt;
   try {
     const res = await apiPost({ action: 'reveal', aname: aname });
     if (res.error) return banner(res.error);
-    if (res.aname === aname) { ingest(res); render(); }
+    if (res.aname === aname && at === lastWriteAt) { ingest(res); render(); }
   } catch (e) {
     banner('network hiccup: ' + e.message);
   }
 }
 
-function settingsChanged() {
-  settingsDirty = Date.now();
-  $('status').classList.add('stale');  // grayed until the server confirms
-  if (state) renderStatus();           // rows track your edit immediately
-  clearTimeout(settingsTimer);
-  settingsTimer = setTimeout(pushSettings, 700);
-}
 
-async function pushSettings() {
-  if (!configured) return;
-  const sentAt = Date.now();
-  const body = { action: 'settings', aname: aname, roster: roster };
-  try {
-    const res = await apiPost(body);
-    if (res.error) return banner(res.error);
-    if (res.aname === aname) {
-      // your edits are server truth now: stop shielding the chips from
-      // sync — unless you made newer edits while this push was in flight
-      if (settingsDirty <= sentAt) settingsDirty = 0;
-      ingest(res);
-      render();
-    }
-  } catch (e) {
-    banner('network hiccup: ' + e.message);
-  }
-}
-
-function addRosterChip() {
+function addName() {
   const uname = sanUname($('roster-input').value);
   $('roster-input').value = '';
   if (!uname || roster.includes(uname)) return;
   roster.push(uname);
-  renderChips();
-  settingsChanged();
+  queueOp({ action: 'add', aname: aname, uname: uname });
+}
+
+// Instant paint from the last-known state of this auction, grayed until
+// the live fetch confirms — a page must never flash what looks like a
+// confirmed-empty roster while loading
+function paintCached() {
+  const key = 'tauction-state:' + aname;
+  try {
+    const cached = JSON.parse(localStorage.getItem(key) || 'null');
+    if (cached) { ingest(cached); render(); }
+  } catch (e) {
+    localStorage.removeItem(key);  // cache from an old schema: purge
+  }
+  $('status').classList.add('stale');
 }
 
 function switchAuction(a) {
@@ -373,20 +495,13 @@ function switchAuction(a) {
   roster = [];
   seen = {};
   wasRevealed = null;
-  settingsDirty = 0;
-  $('status').classList.add('stale');
-  renderMine();
+  paintCached();
   refresh();
 }
 
 /* ------------------------------- wiring ------------------------------- */
 
 function wireUp() {
-  $('bid-form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    placeBid();
-  });
-
   $('seal').addEventListener('click', pressReveal);
 
   $('share').addEventListener('click', openShare);
@@ -406,19 +521,16 @@ function wireUp() {
     anameTimer = setTimeout(() => switchAuction(v), 500);
   });
 
-  $('uname').addEventListener('input', () => {
-    const v = sanUname($('uname').value);
-    if (v !== $('uname').value) $('uname').value = v;
-    renderMine();  // your-bid-as-placeholder follows the name field
-  });
-
+  // Enter/comma/space commit; deliberately NO commit-on-blur — the blur
+  // fires mid-click when you tap a row control, and the rebuild it
+  // triggered used to destroy the very button being clicked. An
+  // uncommitted name just stays visible in the + row.
   $('roster-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ',' || e.key === ' ') {
       e.preventDefault();
-      addRosterChip();
+      addName();
     }
   });
-  $('roster-input').addEventListener('blur', addRosterChip);
   $('roster-input').addEventListener('input', () => {
     const v = $('roster-input').value;
     const s = sanUname(v);
@@ -438,14 +550,13 @@ async function init() {
   if (!aname) aname = ANAMES[Math.floor(Math.random() * ANAMES.length)];
   setPath(aname);
   $('aname').value = aname;
-  $('uname').value = localStorage.getItem('tauction-uname') || '';
-  renderMine();
 
   if (!configured) {
     banner('No API configured — set the API constant in app.js (see README).');
     return;
   }
 
+  paintCached();
   await refresh();
   setInterval(() => {
     if (document.visibilityState === 'visible') refresh();

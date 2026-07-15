@@ -85,10 +85,17 @@ Vocabulary: an **aname** is an auction's name (also its URL slug); a
 
 | tab | columns |
 |---|---|
-| `auctions` | aname, roster (comma-sep), created, updated, revealed |
+| `auctions` | aname, created, updated, revealed |
+| `participants` | aname, uname, device, created, updated |
 | `bids` | aname, uname, bid, created, updated, subs |
 
-One row per (aname, uname); re-bids overwrite and bump `subs`.
+A participants row IS a roster seat (insertion order = display order);
+`device` is the claiming browser's anonymous uuid, '' when unclaimed.
+Roster edits are row-level `add`/`remove` actions — commutative, so
+concurrent edits from different people can't clobber each other. Future
+per-person attributes (weights/shares, pids) append as columns on the
+right, which positional reads tolerate. Bids: one row per (aname,
+uname); re-bids overwrite and bump `subs`.
 
 ## Behavior
 
@@ -235,3 +242,94 @@ Latency ~0.5–2s/call;
 are generous but real. For anonymous append-only writes, a linked Google
 Form's `formResponse` endpoint needs no script at all. Outgrowing this means
 a real backend with a service account.
+
+## Spec (proposal, partially implemented): renameable people via person ids
+
+**Update 2026-07-15:** the participants table shipped (subsuming the
+earlier claims tab): a row per seat with the claiming device's uuid as a
+column, row-level add/remove/claim actions, roster order from row order.
+Claiming or bidding registers the device, one device holds at most one
+name per auction, and every other page shows the row dibsed as soon as
+a claim lands. Renames and pid-keyed bids below remain unimplemented;
+weights/shares would be one more column here.
+
+### Problem
+
+A uname currently *is* the identity: it keys the bids rows, the roster
+column, and the browser's memory of who you are (`tauction-uname`) and what
+you bid (`tauction-mybids`). So names can't be edited — "renaming" would
+orphan the old bid and mint a new person. Typo'd a name into the roster?
+Only fix: remove it and add a corrected one, and only until they've bid.
+
+### Proposal
+
+Introduce a **pid** (person id, a UUID minted client-side at add-time).
+Names become display labels hanging off pids; everything else keys by pid.
+
+New tab, one person per row (this also answers "should each name live in
+its own cell" — yes, and the auctions tab's comma-separated `roster` column
+dies; roster membership = having a `people` row):
+
+| tab | columns |
+|---|---|
+| `people` | aname, pid, uname, created, updated |
+| `bids` | aname, **pid**, bid, created, updated, subs |
+| `auctions` | aname, created, updated, revealed |
+
+API becomes: `add(aname, uname) → pid`, `remove(aname, pid)`,
+`rename(aname, pid, uname)`, `bid(aname, pid, bid)`, `reveal(aname)`;
+`state` returns the people list (pid + uname) alongside bidders.
+
+Client identity: `tauction-pids` = `{aname: pid}` map, written when you
+claim a row (the (you) button) or add yourself. `tauction-mybids` re-keys
+by pid. The global `tauction-uname` survives only as a display-name hint.
+
+Renaming: an editable person cell (same in-place pattern as the bid cell —
+your row's name becomes an input, enter commits `rename`). Bids, seals,
+counters, reveal-gating all ride the pid and don't notice.
+
+### What UUIDs do and don't buy
+
+They buy **continuity** (renames don't orphan bids; two @sams can't collide
+in the data), not **auth**: pids are readable in the public sheet, so any
+device can claim any pid. Real device-binding would need a secret claim
+token whose hash lives in the sheet, verified by Code.gs on bid/rename —
+doable later, but it breaks the honor-system simplicity (lost device =
+locked-out row = needs an escape hatch = no longer auth). Recommendation:
+pids without tokens; sealing stays honor-system, exactly as today.
+
+### Tricky cases
+
+- **Duplicate names**: allowed in the data model (pids differ), but
+  confusing on the ledger. Server rejects `add`/`rename` colliding with a
+  live name in the same auction (fail loudly).
+- **Rename to empty / invalid**: reject server-side (same `cleanUname`).
+- **Who may rename whom**: consistent with roster edits — anyone, honor
+  system, last-write-wins. (Tokens would change this; see above.)
+- **Auto-relatch across auctions** (today: your remembered name re-latches
+  you when it appears): names no longer prove identity, so auto-claiming a
+  pid because its label matches your remembered name would hijack rows.
+  Options: (a) drop auto-relatch, claiming is always explicit; (b) auto-
+  claim only rows *you* just added from this device. (b) preserves the
+  common flow; lean (b).
+- **× semantics**: unchanged — removing a person deletes their people row;
+  grayed out once they've bid (bids stay immortal, still keyed by their
+  pid, name frozen at last value... which argues for keeping the people
+  row and adding a `removed` flag instead. Open question.)
+- **Claim races**: two devices claim one pid — both believe it; same as
+  two devices typing the same uname today. Honor system.
+- **Migration**: none. Delete the tabs (already planned for the schema
+  cleanup); Code.gs recreates the new shape. Old auction URLs come up
+  empty, acceptable pre-launch.
+- **Ordering**: ledger order = people.created, so rows stop reshuffling
+  when the roster is edited (a small win over the CSV roster).
+
+### Open questions
+
+1. Tokens (device-bound rows) — worth the honor-system break? Default no.
+2. Removed-after-bidding: delete the people row or flag it?
+3. Should `fresh`/first-visit mint a pid for you eagerly, or only on claim?
+
+Estimated shape: Code.gs gains ~4 small actions and loses joinRoster's
+CSV surgery; app.js's renderStatus keys rows by pid; quals for rename,
+collision, re-claim, and the localStorage migration of nothing.

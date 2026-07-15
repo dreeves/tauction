@@ -43,14 +43,15 @@ ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(st.bidders[0].updated),
    'bidder carries ISO updated stamp');
 ok(st.bidders[0].subs === 1, 'first submission counts 1');
 ok(st.roster.join(',') === 'alice', 'bidding claims a roster seat');
-ok(ss.sheets['auctions'].data[1][1] === 'alice', 'seat written to the sheet');
+ok(ss.sheets['participants'].data[1][1] === 'alice', 'seat written to the sheet');
 ok(st.revealed === false && st.bids === null,
    'solo roster never reveals: an auction takes two');
 ok(ss.sheets['bids'].data[1][2] === '3 tacos', 'bid trimmed');
 ok(ss.sheets['auctions'].data[1][0] === 'tau', 'default settings row created');
-ok(ss.sheets['bids'].data[0][7] === "IT'S CHEATING TO LOOK HERE DURING AN AUCTION"
-   && ss.sheets['auctions'].data[0][7] === "IT'S CHEATING TO LOOK HERE DURING AN AUCTION",
-   'cheater banner on both tabs');
+ok(ss.sheets['bids'].data[0][6] === "IT'S CHEATING TO LOOK HERE DURING AN AUCTION"
+   && ss.sheets['bids'].data[0][7] === undefined
+   && ss.sheets['auctions'].data[0].length === 4,
+   'cheater banner right after the bids headers; none on auctions');
 ok(ss.sheets['bids'].colors['2,3'] === '#ffffff',
    'sealed bid painted white-on-white');
 
@@ -67,9 +68,11 @@ ok(ss.sheets['bids'].data[1][2] === 'sushi', 're-bid overwrites');
 // 5. reveal is a human act: a complete roster only UNLOCKS it.
 //    (The motivating bug: two drive-by bidders who never stated a roster
 //    must not see each other's bids just because they're "all in".)
-st = call({ action: 'settings', aname: 'tau', roster: ['Alice', 'bob', 'alice'] });
+call({ action: 'add', aname: 'tau', uname: 'Alice' });
+st = call({ action: 'add', aname: 'tau', uname: 'bob' });
+st = call({ action: 'add', aname: 'tau', uname: 'alice' });
 ok(!st.error && st.roster.join(',') === 'alice,bob',
-   'roster deduped + normalized');
+   'adds are idempotent + normalized: one seat per person');
 ok(call({ action: 'reveal', aname: 'tau' }).error,
    'reveal refused while bob is outstanding');
 st = call({ action: 'bid', aname: 'tau', uname: 'bob', bid: '$40' });
@@ -92,35 +95,39 @@ ok(!st.error && st.revealed && st.bids.length === 3,
 ok(st.bidders.find((b) => b.uname === 'carl').subs === 1,
    'counters are per-bidder');
 ok(st.roster.includes('carl'), 'late bidder joins the roster');
-st = call({ action: 'settings', aname: 'tau', roster: ['alice', 'bob', 'zed'] });
+st = call({ action: 'add', aname: 'tau', uname: 'zed' });
 ok(!st.error && st.revealed === true && st.bids.length === 3,
    'growing the roster cannot reseal: reveal latches');
 ok(ss.sheets['bids'].colors['2,3'] === null,
    'bids stay visible in the sheet after the latch');
-st = call({ action: 'settings', aname: 'tau', roster: [] });
-ok(st.revealed === true, 'no settings change whatsoever can reseal');
-st = call({ action: 'settings', aname: 'tau', roster: ['alice', 'bob'] });
-ok(st.revealed === true, 'restore tau roster; still revealed');
+st = call({ action: 'remove', aname: 'tau', uname: 'zed' });
+ok(st.revealed === true, 'no roster change whatsoever can reseal');
+ok(!st.roster.includes('zed'), 'removed seat is gone');
 
 // 6b. end-early = ex the straggler, THEN press reveal; roster edits
 //     alone never reveal anything
-st = call({ action: 'settings', aname: 'photon', roster: ['pat', 'quinn', 'rey'] });
+call({ action: 'add', aname: 'photon', uname: 'pat' });
+call({ action: 'add', aname: 'photon', uname: 'quinn' });
+st = call({ action: 'add', aname: 'photon', uname: 'rey' });
 call({ action: 'bid', aname: 'photon', uname: 'pat', bid: 'one photon' });
 st = call({ action: 'bid', aname: 'photon', uname: 'rey', bid: 'two photons' });
 ok(st.revealed === false, 'photon sealed while quinn is outstanding');
 ok(call({ action: 'reveal', aname: 'photon' }).error,
    'reveal refused with a straggler on the roster');
-st = call({ action: 'settings', aname: 'photon', roster: ['pat', 'rey'] });
+st = call({ action: 'remove', aname: 'photon', uname: 'quinn' });
 ok(st.revealed === false, 'shrinking the roster alone reveals nothing');
 st = call({ action: 'reveal', aname: 'photon' });
 ok(st.revealed === true, 'ex the straggler, then reveal: end-early');
-st = call({ action: 'settings', aname: 'photon', roster: ['pat', 'quinn', 'rey'] });
+call({ action: 'add', aname: 'photon', uname: 'pat' });
+call({ action: 'add', aname: 'photon', uname: 'quinn' });
+st = call({ action: 'add', aname: 'photon', uname: 'rey' });
 ok(st.revealed === true, 'growing it back cannot reseal: latch holds');
 
 // 6d. removal-after-bid is undone by re-bidding: a bid claims the seat back
-st = call({ action: 'settings', aname: 'boson', roster: ['ada', 'ben'] });
+call({ action: 'add', aname: 'boson', uname: 'ada' });
+call({ action: 'add', aname: 'boson', uname: 'ben' });
 call({ action: 'bid', aname: 'boson', uname: 'ada', bid: 'x' });
-st = call({ action: 'settings', aname: 'boson', roster: ['ben'] });
+st = call({ action: 'remove', aname: 'boson', uname: 'ada' });
 ok(st.roster.join(',') === 'ben' && st.bidders.length === 1,
    'ada cut from the roster, bid retained');
 st = call({ action: 'bid', aname: 'boson', uname: 'ada', bid: 'x again' });
@@ -138,7 +145,8 @@ st = call({ action: 'bid', aname: 'relic', uname: 'oldtimer', bid: 'newer' });
 ok(st.bidders[0].subs === 2, 'legacy re-bid counts as 2');
 
 // 7. walk-on bidders don't gate the reveal
-st = call({ action: 'settings', aname: 'gluon', roster: ['dee', 'evy'] });
+call({ action: 'add', aname: 'gluon', uname: 'dee' });
+st = call({ action: 'add', aname: 'gluon', uname: 'evy' });
 st = call({ action: 'bid', aname: 'gluon', uname: 'dee', bid: 'I bid 2 dishes' });
 ok(st.revealed === false, 'waiting on evy');
 st = call({ action: 'bid', aname: 'gluon', uname: 'rando', bid: 'me too!' });
@@ -149,12 +157,50 @@ ok(st.revealed === false, 'complete (including the walk-on) but still sealed');
 st = call({ action: 'reveal', aname: 'gluon' });
 ok(st.revealed === true && st.bids.length === 3, 'reveal exposes all three');
 
-// 8. settings update on existing auction (upsert, not append)
-st = call({ action: 'settings', aname: 'muon', roster: ['a'] });
-st = call({ action: 'settings', aname: 'muon', roster: ['a', 'b'] });
-ok(st.roster.join(',') === 'a,b', 'settings updated');
+// 8. seats are rows in the participants tab; adds upsert, removes delete
+st = call({ action: 'add', aname: 'muon', uname: 'a' });
+st = call({ action: 'add', aname: 'muon', uname: 'a' });
+st = call({ action: 'add', aname: 'muon', uname: 'b' });
+ok(st.roster.join(',') === 'a,b', 'roster grows in insertion order');
+ok(ss.sheets['participants'].data.filter(r => r[0] === 'muon').length === 2,
+   'duplicate add: still one seat row');
 ok(ss.sheets['auctions'].data.filter(r => r[0] === 'muon').length === 1,
-   'settings upsert, not append');
+   'one auctions row per auction');
+st = call({ action: 'remove', aname: 'muon', uname: 'a' });
+ok(st.roster.join(',') === 'b'
+   && ss.sheets['participants'].data.filter(r => r[0] === 'muon').length === 1,
+   'remove deletes the seat row');
+ok(!call({ action: 'remove', aname: 'muon', uname: 'ghost' }).error,
+   'removing an absent seat is a harmless no-op');
+
+// 8b. claims: who-is-who is server truth, so two machines can't both be
+//     alice. Claiming registers your device id; one device holds at most
+//     one name per auction (claiming anew releases the old, radio-style);
+//     an empty device releases; bidding upserts the bidder's claim.
+call({ action: 'add', aname: 'higgs', uname: 'ann' });
+st = call({ action: 'add', aname: 'higgs', uname: 'ben' });
+ok(st.claims && Object.keys(st.claims).length === 0,
+   'no claims yet: empty map');
+st = call({ action: 'claim', aname: 'higgs', uname: 'ann', device: 'dev-1' });
+ok(!st.error && st.claims.ann === 'dev-1', 'claim registers the device');
+st = call({ action: 'claim', aname: 'higgs', uname: 'ben', device: 'dev-1' });
+ok(st.claims.ben === 'dev-1' && st.claims.ann === undefined,
+   'one name per device: claiming ben releases ann');
+st = call({ action: 'claim', aname: 'higgs', uname: 'ann', device: 'dev-2' });
+ok(st.claims.ann === 'dev-2' && st.claims.ben === 'dev-1',
+   'two devices hold two names');
+st = call({ action: 'claim', aname: 'higgs', uname: 'ann', device: '' });
+ok(st.claims.ann === undefined, 'an empty device releases the claim');
+ok(ss.sheets['participants'].data.filter(r => r[0] === 'higgs' && r[1] === 'ann')
+     .length === 1, 'claims live on the seat row: upsert, not append');
+st = call({ action: 'bid', aname: 'higgs', uname: 'ann', bid: 'a boson',
+            device: 'dev-3' });
+ok(st.claims.ann === 'dev-3', 'bidding upserts the claim');
+st = call({ action: 'bid', aname: 'higgs', uname: 'ben', bid: 'nope' });
+ok(st.claims.ben === 'dev-1',
+   'a device-less bid (old client) leaves claims alone');
+ok(call({ action: 'claim', aname: 'higgs', uname: 'ann',
+          device: 'BAD DEVICE!' }).error, 'garbage device id rejected');
 
 // 9. validation
 ok(call({ action: 'bid', aname: 'ta_u', uname: 'a', bid: 'x' }).error,
@@ -169,8 +215,10 @@ ok(call({ action: 'bid', aname: 'tau2', uname: 'abc', bid: 'y'.repeat(81) })
    .error, '81-char bid rejected');
 ok(!call({ action: 'bid', aname: 'tau2', uname: 'abc', bid: 'y'.repeat(80) })
    .error, '80-char bid accepted');
-ok(call({ action: 'settings', aname: 'tau2', roster: ['1bad'] }).error,
+ok(call({ action: 'add', aname: 'tau2', uname: '1bad' }).error,
    'bad roster name rejected');
+ok(call({ action: 'settings', aname: 'tau2', roster: ['a'] }).error,
+   'the old whole-roster settings action is gone');
 ok(call({ action: 'reveal', aname: 'tau2' }).error,
    'reveal refused for a solo bidder (an auction takes two)');
 ok(call({ action: 'nonsense' }).error, 'unknown action rejected');

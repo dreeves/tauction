@@ -13,6 +13,7 @@
   --glow: rgba(29, 107, 67, 0.28);
   --shimmer: rgba(29, 107, 67, 0.22);
   --grid: rgba(36, 36, 44, 0.07);
+  --star: #d4a017;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -31,6 +32,7 @@
     --glow: rgba(127, 214, 164, 0.28);
     --shimmer: rgba(127, 214, 164, 0.25);
     --grid: rgba(230, 232, 240, 0.05);
+    --star: #f2c744;
   }
 }
 
@@ -51,6 +53,7 @@ body {
 }
 
 main {
+  position: relative;  /* anchors .corner to the column, not the viewport */
   width: 100%;
   max-width: 27rem;
   padding: 1.25rem 0.9rem 3rem;
@@ -64,9 +67,6 @@ main {
   margin-bottom: 0.9rem;
 }
 
-.card-title { margin: 0 0 0.6rem; font-weight: 700; }
-
-.field { margin-bottom: 0.9rem; }
 
 .field label, .label-row label {
   display: block;
@@ -124,34 +124,6 @@ input::placeholder { color: var(--muted); opacity: 0.8; }
 
 button { font: inherit; cursor: pointer; }
 
-#place {
-  width: 100%;
-  padding: 0.65rem;
-  border: none;
-  border-radius: 3px;
-  background: var(--accent);
-  color: #fff;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-
-#place:hover:not(:disabled) { filter: brightness(1.08); }
-#place:disabled { opacity: 0.5; cursor: default; }
-
-/* in-flight feedback: a small spinner inside the button */
-#place.busy::after {
-  content: '';
-  display: inline-block;
-  width: 0.75em;
-  height: 0.75em;
-  margin-left: 0.5em;
-  vertical-align: -0.1em;
-  border: 2px solid rgba(255, 255, 255, 0.35);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-}
-
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ------------------------------ tooltips ------------------------------ */
@@ -205,39 +177,16 @@ button { font: inherit; cursor: pointer; }
 }
 
 /* right-anchored elements get right-anchored tooltips (else they overflow) */
-.seal::before, .corner button::before { left: auto; right: 0; }
+.seal::before, .corner button::before, .tile .x::before { left: auto; right: 0; }
+
+/* the PARTICIPANTS tip sits mid-screen on phones: neither edge anchor
+   fits a full-width tooltip there, so this one wraps narrower */
+.th .tip::before { max-width: min(11rem, 55vw); }
+
+/* buttons get the same accent focus ring as inputs and tips */
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .tip:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-
-/* ------------------------------ roster -------------------------------- */
-
-.chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.45rem; }
-.chips:empty { display: none; }
-
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  background: var(--accent-soft);
-  color: var(--accent);
-  border-radius: 3px;
-  padding: 0.1rem 0.5rem;
-  font-size: 0.85rem;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.chip .x {
-  border: none;
-  background: none;
-  color: inherit;
-  padding: 0 0 0 0.1rem;
-  font-size: 1rem;
-  line-height: 1;
-  opacity: 0.7;
-}
-
-.chip .x:hover { opacity: 1; }
 
 /* ----------------------------- BIDS box -------------------------------- */
 
@@ -255,16 +204,9 @@ button { font: inherit; cursor: pointer; }
 #status .tiles { transition: opacity 0.25s; }
 #status.stale .tiles { opacity: 0.35; }
 
-/* the 🎉 waits in grayscale and lights up at the reveal */
-.tada { filter: grayscale(1); opacity: 0.3; transition: filter 0.4s, opacity 0.4s; }
-#status.revealed .tada { filter: none; opacity: 1; }
-
-/* The padlock is both the state and the reveal button: dim 🔒 while the
-   roster is incomplete, pulsing 🔒 when pressable, 🔓 once revealed */
-#status .card-title { display: flex; align-items: center; gap: 0.5rem; }
-
+/* One icon, three states: dim 🔒 while the roster is incomplete, a
+   pulsing please-click-me 🔒 when pressable, 🎉 once revealed */
 .seal {
-  margin-left: auto;
   font-size: 0.95rem;
   line-height: 1;
   background: none;
@@ -288,13 +230,9 @@ button { font: inherit; cursor: pointer; }
 
 .seal::after { content: '🔒'; }
 
-#status.revealed .seal::after { content: '🔓'; }
+#status.revealed .seal::after { content: '🎉'; }
 
 #status.revealed { border-color: var(--ok-fg); }
-
-/* the roster no longer gates anything once revealed: grayed, still editable */
-#settings { transition: opacity 0.4s; }
-#settings.revealed { opacity: 0.45; }
 
 #status.just-revealed { animation: tada-glow 1.4s ease-out; }
 
@@ -307,27 +245,81 @@ button { font: inherit; cursor: pointer; }
 /* One row per expected bidder: hollow dot + breathing empty slot until
    they bid, ✅ + card once they have (bid text if you may see it, a
    blurred decoy if not), a one-shot shimmer when their bid changes, a
-   struck-through name if their bid doesn't count toward the reveal */
+   struck-through name if their bid doesn't count toward the reveal.
+   Your own row's slot is an input; × removes bidless rows; the + row
+   at the bottom adds people to the roster. */
+
+/* Each ledger line splits into two visible pieces: a bordered person
+   cell and a bordered bid cell. State colors both pieces: dashed +
+   breathing = awaiting a bid, solid green = bid in. */
+
+/* Column headings over the two pieces. Same font-size as .tile-name so
+   the ch-based min-width resolves to the identical column width. */
+.thead { display: flex; gap: 0.4rem; margin-bottom: 0.4rem; }
+
+.th {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 calc(0.65rem + 1px);  /* the cells' padding + border */
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.th-person { flex: none; min-width: calc(15ch + 3rem); }  /* = .tile-name */
+
+.th-bid { flex: 1; min-width: 0; padding-left: 0; }  /* bids sit unboxed */
 
 .tiles { display: flex; flex-direction: column; gap: 0.4rem; }
 
-.tile {
-  display: flex;
-  align-items: baseline;
-  gap: 0.55rem;
-  border: 1px dashed var(--border);
-  border-radius: 3px;
+/* shows before the first state arrives; the first render sweeps it */
+.loading {
   padding: 0.45rem 0.65rem;
-  background-color: var(--bg);
-  background-repeat: no-repeat;
-  transition: border-color 0.5s, box-shadow 0.5s, background-color 0.5s;
+  color: var(--muted);
+  animation: loading-pulse 1.2s ease-in-out infinite;
 }
 
-.tile::before { content: '○'; color: var(--muted); flex: none; }
+@keyframes loading-pulse {
+  0%, 100% { opacity: 0.25; }
+  50%      { opacity: 0.7; }
+}
 
-.tile.has-bid::before { content: '✅'; font-size: 0.75rem; }
+.tile {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+}
 
-.tile-name { font-weight: 700; font-size: 0.85rem; color: var(--muted); flex: none; }
+.tile-name, .addrow .at-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px dashed var(--border);
+  border-radius: 3px;
+  padding: 0.3rem 0.65rem;
+  background-color: var(--bg);
+  background-repeat: no-repeat;
+  transition: border-color 0.5s, background-color 0.5s;
+}
+
+/* the + row leads with its + where the rows lead with their star */
+.addrow .at-wrap::before {
+  content: '+';
+  color: var(--muted);
+  flex: none;
+  width: 1.6rem;
+}
+
+/* the person cell is name-sized (longer names widen their own line) */
+.tile-name {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--muted);
+  flex: none;
+  min-width: calc(15ch + 3rem);  /* 15ch of name + marker, gap, padding */
+}
 
 /* removed from the roster after bidding: one thick stroke through the
    whole entry, like a pen through a ledger line */
@@ -349,57 +341,87 @@ button { font: inherit; cursor: pointer; }
   pointer-events: none;
 }
 
+/* the bid rides unboxed: its card (or your input) is box enough.
+   animation-delay passes the tile's inline phase-lock through to the
+   breathing slot card below. */
 .tile-bid {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   flex: 1;
-  text-align: right;
+  min-width: 0;
   font-size: 0.85rem;
   color: var(--muted);
   word-break: break-word;
+  animation-delay: inherit;
 }
 
-/* (re)submission counter: present but nearly invisible */
-.tile-subs {
+/* ✅ + superscript submission count at the cell's right edge: gray
+   while the count is 0, full green once a bid lands */
+.check {
   flex: none;
-  min-width: 1ch;
-  text-align: right;
+  margin-left: auto;
+  font-size: 0.75rem;
+  line-height: 1;
+  filter: grayscale(1);
+  opacity: 0.35;
+  transition: filter 0.3s, opacity 0.3s;
+}
+
+.tile.has-bid .check { filter: none; opacity: 1; }
+
+.check .tile-subs {
   font-size: 0.6rem;
   color: var(--muted);
-  opacity: 0.3;
+  margin-left: 0.15rem;  /* air between the ✅ and its count */
 }
 
-.tile.has-bid {
+.tile.has-bid .tile-name {
   border-style: solid;
   border-color: var(--ok-fg);
   background-color: var(--ok-bg);
-  box-shadow: 0 0 10px var(--glow);
 }
 
 .tile.has-bid .tile-name { color: var(--ok-fg); }
 
 .tile.has-bid .tile-bid { color: inherit; }
 
-/* Each received bid is a card; re-submissions stack sheets behind it */
+/* Each received bid is a card wearing the same box recipe as the person
+   cells (padding, radius, green fill); re-submissions stack sheets
+   behind it. flex: 1 gives every bid box the same length. */
 .bid-card {
   display: inline-block;
-  padding: 0.1rem 0.45rem;
+  flex: 1;
+  min-width: 0;
+  padding: 0.3rem 0.65rem;
   border: 1px solid var(--ok-fg);
-  border-radius: 2px;
-  background-color: var(--card);
+  border-radius: 3px;
+  background-color: var(--ok-bg);
 }
 
 .bid-card.stack1 {
-  box-shadow: 2px 2px 0 -1px var(--card), 2px 2px 0 0 var(--ok-fg);
+  box-shadow: 2px 2px 0 -1px var(--ok-bg), 2px 2px 0 0 var(--ok-fg);
 }
 
 .bid-card.stack2 {
-  box-shadow: 2px 2px 0 -1px var(--card), 2px 2px 0 0 var(--ok-fg),
-              4px 4px 0 -1px var(--card), 4px 4px 0 0 var(--ok-fg);
+  box-shadow: 2px 2px 0 -1px var(--ok-bg), 2px 2px 0 0 var(--ok-fg),
+              4px 4px 0 -1px var(--ok-bg), 4px 4px 0 0 var(--ok-fg);
 }
 
 .bid-card.stack3 {
-  box-shadow: 2px 2px 0 -1px var(--card), 2px 2px 0 0 var(--ok-fg),
-              4px 4px 0 -1px var(--card), 4px 4px 0 0 var(--ok-fg),
-              6px 6px 0 -1px var(--card), 6px 6px 0 0 var(--ok-fg);
+  box-shadow: 2px 2px 0 -1px var(--ok-bg), 2px 2px 0 0 var(--ok-fg),
+              4px 4px 0 -1px var(--ok-bg), 4px 4px 0 0 var(--ok-fg),
+              6px 6px 0 -1px var(--ok-bg), 6px 6px 0 0 var(--ok-fg);
+}
+
+/* the empty card: the same shape a bid arrives in, nothing in it yet —
+   dressed like an empty person cell, breathing in step with it */
+.bid-card.slot {
+  border-style: dashed;
+  border-color: var(--border);
+  background-color: var(--bg);
+  animation: breathe 3s ease-in-out infinite;
+  animation-delay: inherit;
 }
 
 /* Sealed bids: a constant decoy, blurred beyond reading. The real bid is
@@ -410,9 +432,92 @@ button { font: inherit; cursor: pointer; }
   filter: blur(2.5px);
   opacity: 0.75;
   user-select: none;
+  white-space: nowrap;  /* decoys stay one line, so cards stay uniform */
 }
 
-.tile.updated {
+/* the star radio for who-you-are: ☆ = claimable, dimmed ☆ = dibsed by
+   someone else's bid, glowing ★ = you (click it again to release) */
+.tu {
+  flex: none;
+  width: 1.2rem;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1;
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.tu:hover:not(:disabled) { opacity: 1; color: var(--accent); }
+
+.tu.selected, .tu.selected:hover {
+  color: var(--star);
+  opacity: 1;
+  text-shadow: 0 0 3px var(--star), 0 0 9px var(--star);
+}
+
+.tu:disabled { opacity: 0.25; cursor: default; }
+
+/* × removes the whole row from the roster; grayed once a bid is in */
+.tile .x {
+  flex: none;
+  align-self: center;
+  border: none;
+  background: none;
+  color: var(--muted);
+  padding: 0 0 0 0.1rem;
+  font-size: 1rem;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.tile .x:hover:not(:disabled) { opacity: 1; }
+
+.tile .x:disabled { opacity: 0.25; cursor: default; }
+
+/* Your row's bid slot is an input: dashed while empty, the card look
+   (stack shadows and all) once your bid is in */
+.rebid { display: flex; flex: 1; }
+
+.rebid input {
+  font-size: 0.85rem;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  padding: 0.3rem 0.65rem;  /* the same box recipe as every other cell */
+}
+
+.rebid input.bid-slot {
+  border: 1px dashed var(--border);
+  border-radius: 3px;
+  background-color: var(--bg);
+}
+
+.rebid input.bid-card {
+  border: 1px solid var(--ok-fg);
+  background-color: var(--ok-bg);
+  border-radius: 3px;
+}
+
+.rebid input:disabled { opacity: 0.6; }
+
+/* in-flight feedback: a small spinner beside the input */
+.rebid.busy::after {
+  content: '';
+  flex: none;
+  align-self: center;
+  width: 0.75em;
+  height: 0.75em;
+  margin-left: 0.5em;
+  border: 2px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+.tile.updated .tile-name {
   background-image: linear-gradient(105deg,
     transparent 40%, var(--shimmer) 50%, transparent 60%);
   background-size: 250% 100%;
@@ -425,17 +530,42 @@ button { font: inherit; cursor: pointer; }
 }
 
 /* Empty slots breathe slowly: unmistakably awaiting a bid, unmistakably
-   not a loading spinner */
+   not a loading spinner. (Both pieces breathe; the tile carries the
+   phase-lock delay inline and the pieces inherit it.) */
 
-.tile:not(.has-bid) { animation: breathe 3s ease-in-out infinite; }
+.tile:not(.has-bid) .tile-name {
+  animation: breathe 3s ease-in-out infinite;
+  animation-delay: inherit;
+}
 
 @keyframes breathe {
   0%, 100% { border-color: var(--border); background-color: var(--bg); }
   50%      { border-color: var(--accent); background-color: var(--accent-soft); }
 }
 
+/* the + row: the ledger's last line, a standing invitation to add a
+   person. Its one piece is name-sized — the field takes a name, not a
+   bid — and doesn't breathe (that means "awaiting a bid"). It sits
+   outside #tiles (renders never touch it), so the row gap must be its
+   own margin. */
+.tile.addrow { margin-top: 0.4rem; }
+
+/* gap 0 keeps the input hugging the @; the marker slot (1.6rem, set
+   above) absorbs the missing gap so the @ stays on the name column */
+.addrow .at-wrap { flex: none; font-size: 0.85rem; gap: 0; }
+
+.addrow .at-wrap input {
+  padding: 0 0.3rem 0 0.1rem;  /* hug the @ like the row names do */
+  font-size: 0.85rem;
+  flex: none;
+  width: 14ch;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .tile, .tile.updated, #status.just-revealed, .seal.ready { animation: none; }
+  .tile-name, .tile-bid, .bid-card.slot, .loading, #status.just-revealed,
+  .seal.ready {
+    animation: none;
+  }
 }
 
 footer {
@@ -465,9 +595,9 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
 /* --------------------------- corner buttons ---------------------------- */
 
 .corner {
-  position: fixed;
+  position: absolute;
   top: 0.7rem;
-  right: 0.7rem;
+  right: 0.9rem;  /* matches main's side padding: flush with the cards */
   display: flex;
   gap: 0.4rem;
   z-index: 2;

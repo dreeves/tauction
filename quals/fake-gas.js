@@ -56,6 +56,7 @@ class FakeSheet {
       Math.max(1, ...this.data.map((r) => r.length)));
   }
   appendRow(arr) { this.data.push(arr.slice()); }
+  deleteRow(n) { this.data.splice(n - 1, 1); }
   getMaxRows() { return 1000; }
   setFrozenRows() {}
 }

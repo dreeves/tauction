@@ -22,8 +22,12 @@ const ANAMES = [
   'plasmon', 'magnon', 'polaron', 'spinon', 'holon',
 ];
 
-const AUCTIONS_HEAD = ['aname', 'roster', 'created', 'updated', 'revealed'];
-const BIDS_HEAD     = ['aname', 'uname', 'bid', 'created', 'updated', 'subs'];
+const AUCTIONS_HEAD     = ['aname', 'created', 'updated', 'revealed'];
+const BIDS_HEAD         = ['aname', 'uname', 'bid', 'created', 'updated', 'subs'];
+// A participants row IS a roster seat; future per-person attributes
+// (weights/shares, pids for renames) append as columns to the right,
+// which positional reads tolerate.
+const PARTICIPANTS_HEAD = ['aname', 'uname', 'device', 'created', 'updated'];
 
 function doGet(e) {
   return respond(handle((e && e.parameter) || {}));
@@ -47,7 +51,9 @@ function handle(req) {
       case 'fresh':    return { aname: freshAname() };
       case 'state':    return getState(cleanAname(req.aname));
       case 'bid':      return withLock(() => placeBid(req));
-      case 'settings': return withLock(() => saveSettings(req));
+      case 'claim':    return withLock(() => saveClaim(req));
+      case 'add':      return withLock(() => addParticipant(req));
+      case 'remove':   return withLock(() => removeParticipant(req));
       case 'reveal':   return withLock(() => reveal(req));
       case undefined:  return { ok: 'tauction API is live',
                                 try: '?action=state&aname=tau' };
@@ -80,9 +86,16 @@ function cleanUname(s) {
   return s;
 }
 
+// A device id is a client-minted uuid; empty means "release the claim"
+function cleanDevice(s) {
+  s = String(s == null ? '' : s);
+  if (!/^[a-z0-9-]{0,64}$/.test(s)) throw 'bad device id';
+  return s;
+}
+
 /* ---------------------------- sheet access ---------------------------- */
 
-function tab(name, headers) {
+function tab(name, headers, warning) {
   const ss = SpreadsheetApp.openById(SHEET_ID);
   let sh = ss.getSheetByName(name);
   if (!sh) {
@@ -92,8 +105,10 @@ function tab(name, headers) {
     sh.getRange(1, 1, 1, headers.length).setValues([headers])
       .setFontWeight('bold');
     sh.setFrozenRows(1);
-    sh.getRange(1, 8).setValue("IT'S CHEATING TO LOOK HERE DURING AN AUCTION")
-      .setFontSize(24).setFontWeight('bold').setFontColor('#b3261e');
+    if (warning) {
+      sh.getRange(1, headers.length + 1).setValue(warning)
+        .setFontSize(24).setFontWeight('bold').setFontColor('#b3261e');
+    }
   }
   return sh;
 }
@@ -111,7 +126,7 @@ function reveal(req) {
   }
   const sh = auctionsTab();
   const i = rows(sh).findIndex(r => r[0] === aname);
-  sh.getRange(i + 2, 5).setValue('1');
+  sh.getRange(i + 2, 4).setValue('1');
   repaintBids(aname, true);
   return getState(aname);
 }
@@ -128,7 +143,12 @@ function repaintBids(aname, revealed) {
 }
 
 function auctionsTab() { return tab('auctions', AUCTIONS_HEAD); }
-function bidsTab()     { return tab('bids', BIDS_HEAD); }
+function bidsTab() {
+  // the bids tab is where peeking would spoil the sealing; warn there only
+  return tab('bids', BIDS_HEAD,
+    "IT'S CHEATING TO LOOK HERE DURING AN AUCTION");
+}
+function participantsTab() { return tab('participants', PARTICIPANTS_HEAD); }
 
 // Data rows (sans header) as arrays of strings
 function rows(sh) {
@@ -139,7 +159,16 @@ function rows(sh) {
 
 function getState(aname) {
   const arow = rows(auctionsTab()).find(r => r[0] === aname);
-  const roster = arow && arow[1] ? arow[1].split(',').filter(Boolean) : [];
+
+  // The roster IS the participants rows (in insertion order), and the
+  // claims map rides along: uname -> device id for seats someone holds
+  const roster = [];
+  const claims = {};
+  rows(participantsTab()).forEach(r => {
+    if (r[0] !== aname) return;
+    roster.push(r[1]);
+    if (r[2]) claims[r[1]] = r[2];
+  });
 
   const brows = rows(bidsTab()).filter(r => r[0] === aname);
   // updated stamps let clients notice re-bids (and animate accordingly);
@@ -147,17 +176,82 @@ function getState(aname) {
   // submission, so rows predating the subs column floor at 1, never 0
   const bidders = brows.map(r =>
     ({ uname: r[1], updated: r[4], subs: parseInt(r[5], 10) || 1 }));
-  const unames = bidders.map(b => b.uname);
 
   // Reveal is a human act (the 'reveal' action) and a one-way latch: it
   // never happens automatically, and once bids have been seen, nothing can
   // reseal them. A complete roster merely makes the reveal button pressable.
-  const revealed = arow ? arow[4] === '1' : false;
+  const revealed = arow ? arow[3] === '1' : false;
 
   return {
     aname: aname, roster: roster, bidders: bidders, revealed: revealed,
+    claims: claims,
     bids: revealed ? brows.map(r => ({ uname: r[1], bid: r[2] })) : null,
   };
+}
+
+// Make sure the auction has its settings row (created/updated/revealed)
+function touchAuction(aname) {
+  const sh = auctionsTab();
+  const arows = rows(sh);
+  const now = new Date().toISOString();
+  const i = arows.findIndex(r => r[0] === aname);
+  if (i === -1) sh.appendRow([aname, now, now, '']);
+  else sh.getRange(i + 2, 3).setValue(now);
+}
+
+// Make sure a seat row exists; adding is idempotent
+function ensureSeat(aname, uname) {
+  const sh = participantsTab();
+  const now = new Date().toISOString();
+  const i = rows(sh).findIndex(r => r[0] === aname && r[1] === uname);
+  if (i === -1) sh.appendRow([aname, uname, '', now, now]);
+}
+
+function addParticipant(req) {
+  const aname = cleanAname(req.aname);
+  const uname = cleanUname(req.uname);
+  touchAuction(aname);
+  ensureSeat(aname, uname);
+  return getState(aname);
+}
+
+// Removing deletes the seat row; any bid row stays (a sealed bid is
+// never deletable), which is what renders as a crossed-out line
+function removeParticipant(req) {
+  const aname = cleanAname(req.aname);
+  const uname = cleanUname(req.uname);
+  touchAuction(aname);
+  const sh = participantsTab();
+  const i = rows(sh).findIndex(r => r[0] === aname && r[1] === uname);
+  if (i !== -1) sh.deleteRow(i + 2);
+  return getState(aname);
+}
+
+// Register (or, with an empty device, release) a claim on a seat. One
+// name per device: claiming a new seat releases any other seat this
+// device held, radio-style. No auth: the device id is an anonymous
+// marker whose only job is making every page agree who's taken.
+function saveClaim(req) {
+  const aname = cleanAname(req.aname);
+  const uname = cleanUname(req.uname);
+  const device = cleanDevice(req.device);
+  touchAuction(aname);
+  ensureSeat(aname, uname);
+  setDevice(aname, uname, device);
+  return getState(aname);
+}
+
+function setDevice(aname, uname, device) {
+  const sh = participantsTab();
+  const now = new Date().toISOString();
+  rows(sh).forEach((r, i) => {
+    if (r[0] !== aname) return;
+    if (r[1] === uname) {
+      sh.getRange(i + 2, 3, 1, 3).setValues([[device, r[3], now]]);
+    } else if (device && r[2] === device) {
+      sh.getRange(i + 2, 3, 1, 3).setValues([['', r[3], now]]);
+    }
+  });
 }
 
 function placeBid(req) {
@@ -167,7 +261,15 @@ function placeBid(req) {
   if (!bid) throw 'bid is empty';
   if (bid.length > 80) throw 'bid too long (80 characters max)';
 
-  joinRoster(aname, uname);
+  // bidding claims a roster seat: your own bid must never read as
+  // not-counting (re-bidding takes a removed seat back, too)
+  touchAuction(aname);
+  ensureSeat(aname, uname);
+  // bidding as someone is claiming to be them; old clients that predate
+  // device ids just skip this
+  if (req.device !== undefined) {
+    setDevice(aname, uname, cleanDevice(req.device));
+  }
 
   const sh = bidsTab();
   const brows = rows(sh);
@@ -185,45 +287,7 @@ function placeBid(req) {
   return st;
 }
 
-function saveSettings(req) {
-  const aname = cleanAname(req.aname);
-  const roster = (req.roster || []).map(cleanUname)
-    .filter((u, i, a) => a.indexOf(u) === i);  // dedupe
 
-  const sh = auctionsTab();
-  const arows = rows(sh);
-  const now = new Date().toISOString();
-  const i = arows.findIndex(r => r[0] === aname);
-  if (i !== -1) {
-    sh.getRange(i + 2, 2, 1, 3)
-      .setValues([[roster.join(','), arows[i][2], now]]);
-  } else {
-    sh.appendRow([aname, roster.join(','), now, now, '']);
-  }
-  const st = getState(aname);
-  repaintBids(aname, st.revealed);
-  return st;
-}
-
-// Bidding claims a roster seat: your own bid must never read as
-// not-counting. (Removal-after-bid is the only road to a crossed-out row,
-// and re-bidding takes the seat back.)
-function joinRoster(aname, uname) {
-  const sh = auctionsTab();
-  const arows = rows(sh);
-  const now = new Date().toISOString();
-  const i = arows.findIndex(r => r[0] === aname);
-  if (i === -1) {
-    sh.appendRow([aname, uname, now, now, '']);
-    return;
-  }
-  const roster = arows[i][1] ? arows[i][1].split(',').filter(Boolean) : [];
-  if (roster.indexOf(uname) === -1) {
-    roster.push(uname);
-    sh.getRange(i + 2, 2, 1, 3)
-      .setValues([[roster.join(','), arows[i][2], now]]);
-  }
-}
 
 function freshAname() {
   const used = {};
