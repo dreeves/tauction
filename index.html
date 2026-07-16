@@ -19,50 +19,67 @@
 <body>
 <main>
   <div class="corner">
+    <!-- the Android-style share glyph (three nodes, two links), inline
+         SVG in currentColor so it grays and accents like its neighbor -->
     <button id="share" class="icon" type="button" data-tip="Share"
-            aria-label="Share link">🔗</button>
+            aria-label="Share link"><svg viewBox="0 0 24 24"
+      aria-hidden="true"><circle cx="18" cy="5" r="2.6"/><circle cx="6"
+      cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path
+      d="M8.2 10.7l7.6-4.4M8.2 13.3l7.6 4.4"/></svg></button>
     <button id="help" class="icon" type="button" data-tip="Help"
             aria-label="Help">?</button>
   </div>
 
-  <header>
-  </header>
 
   <div id="banner" hidden></div>
 
   <section class="card">
     <div class="field">
-      <div class="label-row"><label for="aname">auction</label><span
-        class="tip" tabindex="-1"
-        data-tip="Name of this auction, or just edit the URL">?</span></div>
+      <!-- the label itself is the tooltip host (no ? icon);
+           tabindex="-1" keeps it tap-focusable but not a tab stop -->
+      <label for="aname" tabindex="-1"
+        data-tip="Name of this auction, or just edit the URL">auction</label>
       <input id="aname" autocomplete="off" autocapitalize="off"
-             spellcheck="false" maxlength="40" placeholder="tau">
+             spellcheck="false" maxlength="40" placeholder="tau"
+             enterkeyhint="done">
     </div>
   </section>
 
   <section id="status" class="card">
     <div class="thead">
-      <div class="th th-person">PARTICIPANTS<span
-        class="tip" tabindex="-1"
-        data-tip="Bids are sealed till everyone has bid; you can replace your bid until then">?</span></div>
+      <div class="th th-person">PARTICIPANTS</div>
       <div class="th th-bid">BIDS<button
         id="seal" class="seal" type="button" disabled
         data-tip="Reveal bids!"></button></div>
     </div>
-    <!-- the loading pulse is swept away by the first render -->
-    <div id="tiles" class="tiles"><div class="loading">⋯</div></div>
+    <!-- the busy gavel: hammers its block over the grayed ledger while
+         the app talks to the server; shown/hidden purely by
+         #status.stale -->
+    <div class="gavel" aria-hidden="true"><span class="mallet"><span
+      class="head"></span><span class="grip"></span></span><span
+      class="bang"><span></span></span><span class="block"></span></div>
+    <div id="tiles" class="tiles"></div>
     <!-- the ledger's last line adds a person to the roster -->
     <div class="tile addrow">
-      <div class="at-wrap"><span class="at">@</span><input id="roster-input"
+      <!-- enterkeyhint: the mobile return key says what it does -->
+      <div class="at-wrap"><span class="you-hint"
+           aria-hidden="true">★</span><span
+           class="at">@</span><input id="roster-input"
            autocomplete="off" autocapitalize="off" spellcheck="false"
-           maxlength="30" placeholder=""></div>
+           maxlength="30" placeholder="" enterkeyhint="next"></div>
     </div>
+    <!-- once revealed, the + row retires and this stamp takes its
+         place (text filled in by render; format is dreev's spec) -->
+    <div id="closed" class="closed"></div>
+    <!-- the star, footnoted (dreev's copy was "* = you"; the actual
+         glyph stands in for his asterisk) -->
+    <div class="legend">★ = you</div>
   </section>
 
   <footer>
     <a href="https://github.com/dreeves/tauction">github.com/dreeves/tauction</a>
     <span class="sep">·</span>
-    <span class="version">v2026.07.15-b</span>
+    <span class="version">v2026.07.16-a</span>
   </footer>
 </main>
 
@@ -86,15 +103,16 @@
 <p>
 We often use this for auctions but the idea is fairly general: 
 getting responses from a group of people without them influencing each other.
-Name the participants and point everyone at the URL and Bob's your uncle.
-Specifically, after everyone has responded aka bid, this page reveals everyone else's bids.
+Name the participants and point everyone at the URL and Bob’s your uncle.
+Specifically, after everyone has responded aka bid, this page reveals everyone bids.
 </p>
 <p>
-You could use it to get independent estimates of how long something will take to implement.
+You could use it to get independent estimates of how long a project will take to implement.
 Or just use it to play Schelling’s coordination game. <a href="#fn1" id="fnref1">[1]</a>
 </p>
 <p>
-You're free to replace your bid by just submitting again, until the last person bids and everything is revealed.
+You’re free to replace your bid by just submitting again, which is allowed until the bids are revealed.
+When all the bids are in, the padlock starts glowing and the final revelation happens when someone clicks it.
 </p>
 <h2>Footnotes</h2>
 

@@ -7,6 +7,11 @@ Web version of the
 Hosted at 
 [tauction.dreev.es](https://tauction.dreev.es)
 via GitHub Pages.
+Backend is
+[a Google Sheet](https://docs.google.com/spreadsheets/d/1hclphAZ3zQIq14Nip1ZxTDSoE9ygXqAv27RwP1hiMA8/edit).
+
+Note that Google sheets are editable by anyone, logged in to Google or not, but that only works with a proper browser.
+Programmatic writes require oAuth
 
 ---
 
@@ -16,8 +21,6 @@ AI-Generated text follows
 
 ## Architecture
 
-Static frontend (this repo) on GitHub Pages. The database is
-[a Google Sheet](https://docs.google.com/spreadsheets/d/1hclphAZ3zQIq14Nip1ZxTDSoE9ygXqAv27RwP1hiMA8/edit)
 fronted by an Apps Script web app ([apps-script/Code.gs](apps-script/Code.gs))
 that creates its own tabs on first use. The script exists because browsers
 can read a public sheet but all programmatic writes require OAuth (see

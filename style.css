@@ -14,6 +14,8 @@
   --shimmer: rgba(29, 107, 67, 0.22);
   --grid: rgba(36, 36, 44, 0.07);
   --star: #d4a017;
+  --pop: 0 1px 3px rgba(36, 36, 44, 0.18), 0 1px 2px rgba(36, 36, 44, 0.1);
+  --wood: #8a5a2b;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -33,6 +35,8 @@
     --shimmer: rgba(127, 214, 164, 0.25);
     --grid: rgba(230, 232, 240, 0.05);
     --star: #f2c744;
+    --pop: 0 1px 3px rgba(0, 0, 0, 0.6), 0 1px 2px rgba(0, 0, 0, 0.4);
+    --wood: #b98a5a;
   }
 }
 
@@ -68,7 +72,7 @@ main {
 }
 
 
-.field label, .label-row label {
+.field label {
   display: block;
   font-size: 0.75rem;
   font-weight: 700;
@@ -77,15 +81,6 @@ main {
   color: var(--muted);
   margin-bottom: 0.25rem;
 }
-
-.label-row {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin-bottom: 0.25rem;
-}
-
-.label-row label { margin-bottom: 0; }
 
 input[type="text"], input:not([type]) {
   font: inherit;
@@ -124,26 +119,12 @@ input::placeholder { color: var(--muted); opacity: 0.8; }
 
 button { font: inherit; cursor: pointer; }
 
-@keyframes spin { to { transform: rotate(360deg); } }
-
 /* ------------------------------ tooltips ------------------------------ */
-/* tabindex on .tip makes tap-to-focus show these on touchscreens */
+/* The AUCTION tip rides the label itself (the ? icons are retired;
+   PARTICIPANTS explains itself in the help popup); tabindex="-1"
+   makes tap-to-focus show it on touchscreens without a tab stop */
 
-.tip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.05rem;
-  height: 1.05rem;
-  border: 1px solid var(--muted);
-  border-radius: 50%;
-  color: var(--muted);
-  font-size: 0.7rem;
-  line-height: 1;  /* inherited 1.5 pushed the ? below optical center */
-  cursor: help;
-  position: relative;
-  user-select: none;
-}
+.field label[data-tip] { cursor: help; }
 
 /* tooltips ride on ::before so ::after stays free for glyphs (the padlock) */
 [data-tip] { position: relative; }
@@ -167,8 +148,12 @@ button { font: inherit; cursor: pointer; }
   transition: opacity 0.15s;
   pointer-events: none;
   z-index: 3;
+  /* the host's text styling must not leak into the tip (the gold
+     star's glow and stroke famously did) */
   text-transform: none;
   letter-spacing: normal;
+  text-shadow: none;
+  -webkit-text-stroke: 0;
 }
 
 [data-tip]:hover::before, [data-tip]:focus::before {
@@ -176,25 +161,36 @@ button { font: inherit; cursor: pointer; }
   visibility: visible;
 }
 
+/* only one tip at a time: while any tip is hovered, focus-parked tips
+   stand down (tap-to-focus keeps tooltips on touch, but a stuck focus
+   must not shadow the one being hovered) */
+body:has([data-tip]:hover) [data-tip]:focus:not(:hover)::before {
+  opacity: 0;
+  visibility: hidden;
+}
+
 /* right-anchored elements get right-anchored tooltips (else they overflow) */
-.seal::before, .corner button::before, .tile .x::before { left: auto; right: 0; }
+.seal::before, .corner button::before, .tile .x::before,
+.tile-bid::before { left: auto; right: 0; }
 
-/* the PARTICIPANTS tip sits mid-screen on phones: neither edge anchor
-   fits a full-width tooltip there, so this one wraps narrower */
-.th .tip::before { max-width: min(11rem, 55vw); }
 
-/* buttons get the same accent focus ring as inputs and tips */
+/* buttons get the same accent focus ring as inputs (the tooltip words
+   need none: tap-focus exists only to show the tip, which IS the
+   feedback) */
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-
-.tip:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* ----------------------------- BIDS box -------------------------------- */
 
 #banner {
+  position: absolute;  /* overlays the column: never shifts the layout */
+  top: 0.7rem;
+  left: 0.9rem;
+  right: 0.9rem;
+  z-index: 4;
   border-radius: 3px;
   padding: 0.55rem 0.8rem;
-  margin-bottom: 0.9rem;
   font-size: 0.9rem;
+  box-shadow: var(--pop);
 }
 
 #banner.err { background: var(--err-bg); color: var(--err-fg); }
@@ -204,31 +200,36 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 #status .tiles { transition: opacity 0.25s; }
 #status.stale .tiles { opacity: 0.35; }
 
-/* One icon, three states: dim 🔒 while the roster is incomplete, a
-   pulsing please-click-me 🔒 when pressable, 🎉 once revealed */
+/* One icon, three states: a 🔒 while bids are sealed (full-strength:
+   it states a fact, it isn't a disabled control), the same 🔒 pulsing
+   please-click-me when pressable, 🎉 once revealed */
+/* The pulse lives on the ::after GLYPH, never on the button:
+   opacity/filter/transform on the button would dim its ::before
+   tooltip and open a stacking context that paints the tip behind the
+   rows below (dreev's grayed-tooltip bug) */
 .seal {
   font-size: 0.95rem;
   line-height: 1;
   background: none;
   border: none;
   padding: 0;
-  opacity: 0.35;
-  filter: grayscale(1);
-  transition: opacity 0.3s, filter 0.3s;
 }
 
-.seal:disabled { cursor: default; }
+/* opacity 1: iOS Safari's UA sheet dims disabled controls to ~40%,
+   which grayed the 🎉 — a state indicator, never a dimmed control */
+.seal:disabled { cursor: default; opacity: 1; }
 
-.seal.ready, #status.revealed .seal { opacity: 1; filter: none; }
+.seal::after {
+  content: '🔒';
+  display: inline-block;  /* pseudo needs a box to transform (lockpulse) */
+}
 
-.seal.ready { animation: lockpulse 1.6s ease-in-out infinite; }
+.seal.ready::after { animation: lockpulse 1.6s ease-in-out infinite; }
 
 @keyframes lockpulse {
   0%, 100% { transform: scale(1); }
   50%      { transform: scale(1.3); }
 }
-
-.seal::after { content: '🔒'; }
 
 #status.revealed .seal::after { content: '🎉'; }
 
@@ -242,12 +243,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   100% { box-shadow: 0 0 0 0 transparent; }
 }
 
-/* One row per expected bidder: hollow dot + breathing empty slot until
-   they bid, ✅ + card once they have (bid text if you may see it, a
-   blurred decoy if not), a one-shot shimmer when their bid changes, a
-   struck-through name if their bid doesn't count toward the reveal.
-   Your own row's slot is an input; × removes bidless rows; the + row
-   at the bottom adds people to the roster. */
+/* One row per expected bidder: a star (the who-you-are radio), dashed
+   breathing cells until they bid, solid green once they have (bid text
+   if you may see it, a blurred decoy if not), a one-shot shimmer when
+   their bid changes, a struck-through name if their bid doesn't count
+   toward the reveal. Your own row's slot is an input; × removes
+   bidless rows; the + row at the bottom adds people to the roster. */
 
 /* Each ledger line splits into two visible pieces: a bordered person
    cell and a bordered bid cell. State colors both pieces: dashed +
@@ -272,19 +273,295 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .th-bid { flex: 1; min-width: 0; padding-left: 0; }  /* bids sit unboxed */
 
+/* The busy indicator: a gavel hammering its sound block, overlaid
+   spinner-style on the grayed ledger while the app talks to the server
+   — the gray-out alone didn't read as "busy". All CSS: a barrel head
+   with raised end caps crossing a handle at 45°, rocking around the
+   grip; a two-piece block; a gold spark and a block squash on every
+   strike, all phase-locked to one cycle. (No knob at the pivot: a
+   circle at the rotation origin read as a fixed hub.) */
+#status { position: relative; }
+
+.gavel {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 3.6rem;
+  height: 3.1rem;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 2;
+  filter: drop-shadow(0 1px 5px rgba(0, 0, 0, 0.3));
+}
+
+#status.stale .gavel { opacity: 1; }
+
+.gavel .mallet {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 2.6rem;
+  height: 2.4rem;
+  transform-origin: 12% 92%;  /* the grip end: the hand holding it */
+}
+
+.gavel .grip {  /* the handle, grip at lower left */
+  position: absolute;
+  left: 0.15rem;
+  top: 1.05rem;
+  width: 2.2rem;
+  height: 0.26rem;
+  border-radius: 0.13rem;
+  background: var(--wood);
+  transform: rotate(-45deg);
+}
+
+.gavel .head {  /* the barrel, crossing the handle at 45° */
+  position: absolute;
+  left: 1.28rem;
+  top: 0.14rem;
+  width: 1.3rem;
+  height: 0.62rem;
+  border-radius: 0.22rem;
+  background: var(--wood);
+  transform: rotate(45deg);
+}
+
+.gavel .head::before, .gavel .head::after {  /* raised face bands */
+  content: '';
+  position: absolute;
+  top: -0.07rem;
+  width: 0.3rem;
+  height: 0.76rem;
+  border-radius: 0.12rem;
+  background: var(--wood);
+  filter: brightness(0.78);
+}
+
+.gavel .head::before { left: -0.06rem; }
+
+.gavel .head::after { right: -0.06rem; }
+
+.gavel .block {  /* the sound block: base bar + smaller top disc */
+  position: absolute;
+  right: 0.05rem;
+  bottom: 0;
+  width: 1.5rem;
+  height: 0.28rem;
+  border-radius: 0.14rem;
+  background: var(--wood);
+  filter: brightness(0.72);
+}
+
+.gavel .block::before {
+  content: '';
+  position: absolute;
+  left: 0.3rem;
+  top: -0.18rem;
+  width: 0.9rem;
+  height: 0.2rem;
+  border-radius: 0.1rem 0.1rem 0 0;
+  background: var(--wood);
+}
+
+/* The impact spark: three gold rays fanning up-and-right, strike-timed.
+   The box's bottom-left corner sits at the head/block contact point (the
+   head lands vertical, so its right shoulder meets the disc there); each
+   ray pivots around that corner with a small radial gap, comic-style,
+   and the burst scales outward from the same point. */
+.gavel .bang {
+  position: absolute;
+  left: 3.05rem;
+  bottom: 0.5rem;
+  width: 0.8rem;
+  height: 0.8rem;
+  opacity: 0;
+  transform-origin: 0 100%;
+}
+
+.gavel .bang::before, .gavel .bang::after, .gavel .bang > span {
+  content: '';
+  position: absolute;
+  left: 0.16rem;             /* the gap between contact and ray... */
+  bottom: -0.065rem;         /* ...centered on the corner's height... */
+  transform-origin: -0.16rem 50%;  /* ...pivoting back at the corner */
+  width: 0.5rem;
+  height: 0.13rem;
+  border-radius: 0.07rem;
+  background: var(--star);
+}
+
+.gavel .bang::before { transform: rotate(-72deg); }
+
+.gavel .bang > span { transform: rotate(-40deg); width: 0.62rem; }
+
+.gavel .bang::after { transform: rotate(-8deg); }
+
+#status.stale .gavel .mallet, .rebid.busy .gavel.mini .mallet {
+  animation: gavel 1.15s infinite;
+}
+#status.stale .gavel .bang, .rebid.busy .gavel.mini .bang {
+  animation: gavel-bang 1.15s infinite;
+}
+#status.stale .gavel .block, .rebid.busy .gavel.mini .block {
+  animation: gavel-thud 1.15s infinite;
+}
+
+/* wind up, STRIKE the block, bounce — then follow through all the way
+   around, which is what makes it read as a spinner too */
+@keyframes gavel {
+  0%   { transform: rotate(-24deg); animation-timing-function: ease-in-out; }
+  20%  { transform: rotate(-33deg);  /* wind up a touch higher... */
+         animation-timing-function: cubic-bezier(0.7, 0, 1, 1); }
+  32%, 38% { transform: rotate(45deg);  /* ...THE STRIKE, full swing */
+         animation-timing-function: ease-out; }
+  46%  { transform: rotate(37deg); animation-timing-function: ease-in-out; }
+  54%  { transform: rotate(43deg);
+         animation-timing-function: cubic-bezier(0.5, 0, 0.4, 1); }
+  100% { transform: rotate(336deg); }  /* -24° + 360°: the follow-through */
+}
+
+@keyframes gavel-bang {
+  0%, 30%  { opacity: 0; transform: scale(0.4); }
+  34%      { opacity: 1; transform: scale(1); }
+  42%      { opacity: 1; transform: scale(1.25); }
+  52%, 100% { opacity: 0; transform: scale(1.35); }
+}
+
+@keyframes gavel-thud {
+  0%, 31%, 56%, 100% { transform: none; }
+  36%      { transform: translateY(0.09rem) scaleY(0.72); }
+  44%      { transform: translateY(0.02rem) scaleY(0.95); }
+}
+
+/* ------------------------- the reveal ceremony -------------------------
+   One mighty ceremonial stroke (windup, dramatic pause, STRIKE at 63%
+   = 950ms of 1.5s — app.js's STRIKE_MS), a card-quake on impact, a
+   VENDITUM stamp, and 80 confetti with randomized trajectories in
+   custom props. The .ceremony class and .fete container are added and
+   removed by celebrate(); reduced-motion never gets them at all. */
+#status.ceremony > .gavel { opacity: 1; }
+
+#status.ceremony > .gavel .mallet {
+  animation: gavel-verdict 1.5s cubic-bezier(0.6, 0, 0.8, 1) forwards;
+}
+
+#status.ceremony > .gavel .bang {
+  animation: verdict-bang 1.5s linear forwards;
+}
+
+#status.ceremony > .gavel .block {
+  animation: verdict-thud 1.5s linear forwards;
+}
+
+@keyframes gavel-verdict {
+  0%   { transform: rotate(-15deg); animation-timing-function: ease-out; }
+  40%  { transform: rotate(-115deg); }  /* hoisted clear overhead... */
+  58%  { transform: rotate(-120deg);    /* ...the dramatic pause... */
+         animation-timing-function: cubic-bezier(0.85, 0, 1, 1); }
+  63%  { transform: rotate(45deg);      /* ...THE VERDICT */
+         animation-timing-function: ease-out; }
+  70%  { transform: rotate(36deg); }
+  80%, 100% { transform: rotate(43deg); }
+}
+
+@keyframes verdict-bang {
+  0%, 62% { opacity: 0; transform: scale(0.4); }
+  66%     { opacity: 1; transform: scale(1.1); }
+  78%     { opacity: 1; transform: scale(1.5); }
+  92%, 100% { opacity: 0; transform: scale(1.6); }
+}
+
+@keyframes verdict-thud {
+  0%, 62%, 84%, 100% { transform: none; }
+  67% { transform: translateY(0.11rem) scaleY(0.6); }
+  76% { transform: translateY(0.03rem) scaleY(0.93); }
+}
+
+/* the card takes the blow (the glow rides along on the same rule so
+   .ceremony and .just-revealed never fight over the animation prop) */
+#status.ceremony {
+  animation: tada-glow 1.4s ease-out, quake 0.5s 0.95s;
+}
+
+@keyframes quake {
+  0%, 100% { transform: none; }
+  20% { transform: translate(3px, -2px) rotate(0.4deg); }
+  40% { transform: translate(-3px, 2px) rotate(-0.4deg); }
+  60% { transform: translate(2px, 1px); }
+  80% { transform: translate(-2px, -1px); }
+}
+
+.fete {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* the old auction-house verdict, slammed down askew in stamp-pad red */
+.fete .stamp {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  rotate: -14deg;
+  padding: 0.2rem 0.8rem;
+  border: 0.25rem solid var(--err-fg);
+  border-radius: 6px;
+  color: var(--err-fg);
+  font-size: 2.1rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  opacity: 0;
+  animation: stamp-slam 2.6s 0.95s forwards;
+}
+
+@keyframes stamp-slam {
+  0%   { opacity: 0; transform: scale(3.2); }
+  10%  { opacity: 1; transform: scale(0.9); }
+  16%  { transform: scale(1.04); }
+  22%, 75% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+
+/* each confetto flies its own way: direction, spin, and tint arrive
+   as custom props from celebrate() */
+.fete .confetto {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0.45rem;
+  height: 0.28rem;
+  background: var(--tint);
+  opacity: 0;
+  animation: confetti-fly 2.4s cubic-bezier(0.2, 0.6, 0.6, 1) forwards;
+}
+
+.fete .confetto:nth-child(3n) { border-radius: 50%; width: 0.3rem; }
+
+.fete .confetto:nth-child(4n) { height: 0.5rem; width: 0.2rem; }
+
+@keyframes confetti-fly {
+  0% { opacity: 1; transform: none; }
+  60% {
+    opacity: 1;
+    transform: translate(calc(var(--dx) * 9rem), calc(var(--dy) * -7rem))
+               rotate(var(--spin));
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(var(--dx) * 11rem),
+                         calc(var(--dy) * -7rem + 9rem))
+               rotate(calc(var(--spin) * 1.5));
+  }
+}
+
 .tiles { display: flex; flex-direction: column; gap: 0.4rem; }
 
-/* shows before the first state arrives; the first render sweeps it */
-.loading {
-  padding: 0.45rem 0.65rem;
-  color: var(--muted);
-  animation: loading-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes loading-pulse {
-  0%, 100% { opacity: 0.25; }
-  50%      { opacity: 0.7; }
-}
 
 .tile {
   display: flex;
@@ -304,13 +581,66 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   transition: border-color 0.5s, background-color 0.5s;
 }
 
-/* the + row leads with its + where the rows lead with their star */
+/* the auction's tombstone: the + row retires at the reveal and this
+   quiet stamp of the closing moment takes its place */
+.closed { display: none; }
+
+#status.revealed .closed {
+  display: block;
+  margin-top: 0.5rem;
+  padding-left: 0.65rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+#status.revealed .addrow { display: none; }
+
+/* the star's footnote: whisper-quiet, tucked under the ledger — but
+   its ★ wears the same gold as a lit one */
+.legend {
+  margin-top: 0.5rem;
+  padding-left: 0.65rem;
+  font-size: 0.7rem;
+  color: color-mix(in srgb, var(--muted) 75%, transparent);
+}
+
+.legend::first-letter {
+  color: var(--star);
+  text-shadow: 0 0 3px var(--star);
+}
+
+/* a disabled + row (unnamed page, or the roster closed at reveal)
+   sits dimmed — grayed, never hidden */
+.addrow .at-wrap:has(input:disabled) { opacity: 0.4; }
+
+/* the + row leads with its + where the rows lead with their star
+   (width = star 1.5rem + gap 0.4rem, so the @s align down the column) */
 .addrow .at-wrap::before {
   content: '+';
   color: var(--muted);
   flex: none;
-  width: 1.6rem;
+  width: 1.9rem;
 }
+
+/* Until some row is you, the you-star perches on the +'s shoulder —
+   the legend's ★ always has a referent: your row, or the place you
+   would appear. Absolutely positioned so the + and the @ alignment
+   stay untouched. */
+.addrow .at-wrap { position: relative; }
+
+.addrow .you-hint {
+  position: absolute;
+  left: 1.05rem;
+  top: 0.1rem;
+  font-size: 0.7rem;
+  line-height: 1;
+  color: var(--star);
+  text-shadow: 0 0 3px var(--star);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+#status.unclaimed .addrow .you-hint { visibility: visible; }
 
 /* the person cell is name-sized (longer names widen their own line) */
 .tile-name {
@@ -356,8 +686,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   animation-delay: inherit;
 }
 
-/* ✅ + superscript submission count at the cell's right edge: gray
-   while the count is 0, full green once a bid lands */
+/* (green ✅ scrapped 2026-07-16 — sat confusingly next to the ×, and
+   the green card already signals "bid in"; its superscript was shelved
+   2026-07-15. Restore with the matching lines in app.js:
 .check {
   flex: none;
   margin-left: auto;
@@ -373,8 +704,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .check .tile-subs {
   font-size: 0.6rem;
   color: var(--muted);
-  margin-left: 0.15rem;  /* air between the ✅ and its count */
+  margin-left: 0.15rem;   air between the ✅ and its count
 }
+*/
 
 .tile.has-bid .tile-name {
   border-style: solid;
@@ -397,21 +729,25 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   border: 1px solid var(--ok-fg);
   border-radius: 3px;
   background-color: var(--ok-bg);
+  box-shadow: var(--lift);
 }
 
 .bid-card.stack1 {
-  box-shadow: 2px 2px 0 -1px var(--ok-bg), 2px 2px 0 0 var(--ok-fg);
+  box-shadow: 2px 2px 0 -1px var(--ok-bg), 2px 2px 0 0 var(--ok-fg),
+              var(--lift);
 }
 
 .bid-card.stack2 {
   box-shadow: 2px 2px 0 -1px var(--ok-bg), 2px 2px 0 0 var(--ok-fg),
-              4px 4px 0 -1px var(--ok-bg), 4px 4px 0 0 var(--ok-fg);
+              4px 4px 0 -1px var(--ok-bg), 4px 4px 0 0 var(--ok-fg),
+              var(--lift);
 }
 
 .bid-card.stack3 {
   box-shadow: 2px 2px 0 -1px var(--ok-bg), 2px 2px 0 0 var(--ok-fg),
               4px 4px 0 -1px var(--ok-bg), 4px 4px 0 0 var(--ok-fg),
-              6px 6px 0 -1px var(--ok-bg), 6px 6px 0 0 var(--ok-fg);
+              6px 6px 0 -1px var(--ok-bg), 6px 6px 0 0 var(--ok-fg),
+              var(--lift);
 }
 
 /* the empty card: the same shape a bid arrives in, nothing in it yet —
@@ -437,28 +773,69 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* the star radio for who-you-are: ☆ = claimable, dimmed ☆ = dibsed by
    someone else's bid, glowing ★ = you (click it again to release) */
+/* The stars are radio buttons: one solid glyph everywhere, drawn as
+   a hollow OUTLINE (transparent fill + text-stroke) until .selected
+   fills it glowing gold. Dimming rides the outline's alpha, never
+   element opacity: opacity would dim the ::before tooltip with the
+   glyph and stacking-trap it behind the rows below. */
 .tu {
   flex: none;
-  width: 1.2rem;
+  width: 1.5rem;
   border: none;
   background: none;
   padding: 0;
   font: inherit;
-  font-size: 0.9rem;
+  font-size: 1.15rem;
   line-height: 1;
-  color: var(--muted);
-  opacity: 0.8;
+  color: transparent;
+  -webkit-text-stroke: 1.3px color-mix(in srgb, var(--muted) 85%, transparent);
 }
 
-.tu:hover:not(:disabled) { opacity: 1; color: var(--accent); }
+.tu:hover:not(:disabled) { -webkit-text-stroke-color: var(--accent); }
 
-.tu.selected, .tu.selected:hover {
+/* your lit star stays gold even once the radio locks (:disabled): it
+   still marks which row is you */
+/* filled = the exact hollow shape with its interior poured gold: the
+   stroke stays, in gold, so the silhouette is identical */
+.tu.selected, .tu.selected:hover, .tu.selected:disabled {
   color: var(--star);
-  opacity: 1;
+  -webkit-text-stroke: 1.3px var(--star);
   text-shadow: 0 0 3px var(--star), 0 0 9px var(--star);
 }
 
-.tu:disabled { opacity: 0.25; cursor: default; }
+.tu:disabled {
+  -webkit-text-stroke-color: color-mix(in srgb, var(--muted) 30%, transparent);
+  cursor: default;
+}
+
+/* a seat someone else claimed: the same star, FILLED with neutral ink
+   — the middle state between hollow (open) and gold (you) */
+.tu.taken {
+  color: color-mix(in srgb, var(--muted) 75%, transparent);
+  -webkit-text-stroke-color: color-mix(in srgb, var(--muted) 75%, transparent);
+}
+
+/* every name is a live text field, like the + row's: click in, type,
+   enter commits the rename; escape or clicking away restores it */
+.rename { display: flex; align-items: center; }
+
+.rename input {
+  width: 12ch;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+}
+
+/* The app-standard focus ring would draw a box inside the cell's box
+   (and lasso the star), so names trade it for an underline — in the
+   same accent every other focus signal speaks */
+.rename input:focus {
+  outline: none;
+  box-shadow: 0 1px 0 0 var(--accent);
+}
 
 /* × removes the whole row from the roster; grayed once a bid is in */
 .tile .x {
@@ -466,16 +843,22 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   align-self: center;
   border: none;
   background: none;
-  color: var(--muted);
+  /* dimmed via color alpha, not opacity — see the .tu comment above */
+  color: color-mix(in srgb, var(--muted) 70%, transparent);
   padding: 0 0 0 0.1rem;
-  font-size: 1rem;
+  /* optical parity with the ✅ beside it: the emoji inks ~1.03em of its
+     0.75rem font, the × glyph only ~0.46em of its own, so equal ink
+     height = 0.75rem × 1.03/0.46 ≈ 1.7rem */
+  font-size: 1.7rem;
   line-height: 1;
-  opacity: 0.7;
 }
 
-.tile .x:hover:not(:disabled) { opacity: 1; }
+.tile .x:hover:not(:disabled) { color: var(--err-fg); }
 
-.tile .x:disabled { opacity: 0.25; cursor: default; }
+.tile .x:disabled {
+  color: color-mix(in srgb, var(--muted) 25%, transparent);
+  cursor: default;
+}
 
 /* Your row's bid slot is an input: dashed while empty, the card look
    (stack shadows and all) once your bid is in */
@@ -489,10 +872,15 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   padding: 0.3rem 0.65rem;  /* the same box recipe as every other cell */
 }
 
+/* Your empty editor is a normal, solid field with the caret already
+   in it (app.js places focus on arrival): the blinking cursor is the
+   whole "type your bid here" signal. It never pulses — pulsing means
+   "waiting on THEM", and the auction waits on you via the caret. */
 .rebid input.bid-slot {
-  border: 1px dashed var(--border);
+  border: 1px solid var(--border);
   border-radius: 3px;
   background-color: var(--bg);
+  box-shadow: var(--lift);
 }
 
 .rebid input.bid-card {
@@ -501,21 +889,32 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   border-radius: 3px;
 }
 
+/* stackN on the editor input re-applies the composed shadows above */
+
 .rebid input:disabled { opacity: 0.6; }
 
-/* in-flight feedback: a small spinner beside the input */
-.rebid.busy::after {
-  content: '';
-  flex: none;
-  align-self: center;
-  width: 0.75em;
-  height: 0.75em;
-  margin-left: 0.5em;
-  border: 2px solid var(--accent-soft);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
+/* the empty-bid objection: the field itself reddens (outline beats
+   the accent focus ring while it stands) */
+.rebid input.error { outline: 2px solid var(--err-fg); outline-offset: -1px; }
+
+/* In-flight feedback: the same gavel, zoomed down and perched at the
+   busy row's right end — a bid is row-local, so its busy sign is too
+   (the big gavel means a whole-table snapshot is in flight) */
+.rebid { position: relative; }
+
+.rebid .gavel.mini {
+  display: none;
+  position: absolute;
+  left: auto;
+  right: 0.15rem;
+  top: 50%;
+  zoom: 0.45;
+  transform: translateY(-50%);
+  opacity: 1;
+  z-index: 1;
 }
+
+.rebid.busy .gavel.mini { display: block; }
 
 .tile.updated .tile-name {
   background-image: linear-gradient(105deg,
@@ -533,10 +932,22 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    not a loading spinner. (Both pieces breathe; the tile carries the
    phase-lock delay inline and the pieces inherit it.) */
 
-.tile:not(.has-bid) .tile-name {
+/* the pulse means "waiting on them" — and you're not waiting on
+   yourself, so your own row sits still... */
+.tile:not(.has-bid):not(.mine) .tile-name {
   animation: breathe 3s ease-in-out infinite;
   animation-delay: inherit;
 }
+
+/* ...and subtly up-popped instead (doc.beeminder.com/pop): elevation,
+   not motion, marks which row is you. --lift is a no-op shadow that
+   .mine flips to the pop; every shadowed piece composes with it, so the
+   re-bid stack sheets and the pop coexist. */
+.tile { --lift: 0 0 0 0 transparent; }
+
+.tile.mine { --lift: var(--pop); }
+
+.tile-name { box-shadow: var(--lift); }
 
 @keyframes breathe {
   0%, 100% { border-color: var(--border); background-color: var(--bg); }
@@ -562,12 +973,15 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tile-name, .tile-bid, .bid-card.slot, .loading, #status.just-revealed,
-  .seal.ready {
+  .tile-name, .tile-bid, .bid-card.slot, .gavel .mallet,
+  .gavel .bang, .gavel .block, #status.just-revealed, .seal.ready::after {
     animation: none;
   }
 }
 
+/* The footer whispers: no rule line (the whitespace separates), no
+   resting underline (a 28-char underlined URL is a stripe), dimmed via
+   color alpha; hovering the link wakes it up */
 footer {
   display: flex;
   align-items: center;
@@ -575,18 +989,16 @@ footer {
   gap: 0.5rem;
   margin-top: 1.6rem;
   padding-top: 1rem;
-  border-top: 1px solid var(--border);
-  font-size: 0.75rem;
-  color: var(--muted);
+  font-size: 0.7rem;
+  color: color-mix(in srgb, var(--muted) 75%, transparent);
 }
 
 footer a {
-  color: var(--muted);
+  color: inherit;
   text-decoration: none;
-  border-bottom: 1px solid var(--border);
 }
 
-footer a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+footer a:hover { color: var(--accent); text-decoration: underline; }
 
 footer .sep { opacity: 0.5; }
 
@@ -621,10 +1033,18 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
 
 .corner .icon:hover { color: var(--accent); border-color: var(--accent); }
 
+/* the share glyph: dots filled, links stroked, all in currentColor */
+.corner .icon svg { width: 0.95rem; height: 0.95rem; fill: currentColor; }
+
+.corner .icon svg path { stroke: currentColor; stroke-width: 2; fill: none; }
+
 /* ------------------------------ dialogs -------------------------------- */
 
 .dlg {
   position: relative;
+  /* hang near the top rather than dead center: reads better on big
+     screens, and it's one dumb rule that behaves everywhere */
+  margin-top: min(10vh, 8rem);
   max-width: min(30rem, 92vw);
   max-height: 85vh;
   padding: 1.5rem;

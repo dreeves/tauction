@@ -42,7 +42,9 @@ function ok(cond, label) {
 
 const gas = makeGas();
 
-// Answer any request to the deployed API URL with the local Code.gs logic
+// Answer any request to the deployed API URL with the local Code.gs
+// logic; write ops can be artificially delayed for in-flight-race quals
+let opDelay = 0;
 async function bridge(page) {
   await page.setRequestInterception(true);
   page.on('request', (req) => {
@@ -50,12 +52,15 @@ async function bridge(page) {
     const q = req.method() === 'POST'
       ? JSON.parse(req.postData())
       : Object.fromEntries(new URL(req.url()).searchParams);
-    req.respond({
+    const wait = ['add', 'remove', 'claim', 'release', 'bid']
+      .includes(q.action) ? opDelay : 0;
+    const body = JSON.stringify(gas.handle(q));
+    setTimeout(() => req.respond({
       status: 200,
       contentType: 'application/json',
       headers: { 'access-control-allow-origin': '*' },
-      body: JSON.stringify(gas.handle(q)),
-    });
+      body: body,
+    }), wait);
   });
 }
 
@@ -88,18 +93,12 @@ async function addName(page, uname) {
   await page.keyboard.press('Enter');
 }
 
-// Pending roster/claim ops rebuild the rows when they land, which can
-// eat a click mid-gesture (mousedown and mouseup need the same node) —
-// humans interact after the sub-second confirm, so the helpers wait for
-// the box to unstale first
-function settled(page) {
-  return page.waitForFunction(() =>
-    !document.getElementById('status').classList.contains('stale'));
-}
+// No waiting for pending ops here, deliberately: keyed node reuse means
+// a render can never destroy the element mid-gesture, so clicking and
+// typing straight through in-flight op acks must just work.
 
 // Claim a row as yourself via its star, then wait for the editor
 async function claimRow(page, uname) {
-  await settled(page);
   await page.click('.tile[data-uname="' + uname + '"] .tu');
   await page.waitForSelector('.tile.mine .rebid input');
 }
@@ -108,7 +107,6 @@ async function claimRow(page, uname) {
 // (Implicit form submission — a single-input form with no button — is
 // exactly what this exercises; jsdom can't.)
 async function bid(page, bidText) {
-  await settled(page);
   await page.type('.tile.mine .rebid input', bidText);
   await page.keyboard.press('Enter');
 }
@@ -150,8 +148,20 @@ async function tipBox(page, i) {
     const alice = await makePage(browser, PHONE);
     await alice.goto(BASE + '/', { waitUntil: 'networkidle0' });
     await alice.waitForSelector('#tiles');
-    const slug = await alice.evaluate(() => location.pathname.slice(1));
-    ok(/^[a-z0-9]+$/.test(slug), 'fresh visit lands on a slug: /' + slug);
+    ok(await alice.evaluate(() => location.pathname === '/'
+       && document.getElementById('aname').value === ''
+       && document.activeElement === document.getElementById('aname')),
+       'a bare visit invents nothing: the empty auction field holds'
+       + ' the caret');
+    ok(await alice.evaluate(() =>
+      getComputedStyle(document.querySelector('#status > .gavel'))
+        .opacity === '0'),
+       'the unnamed ledger IDLES — no eternal gavel (the busy sign'
+       + ' means busy, and nothing is happening)');
+    await alice.type('#aname', 'brunch');
+    await alice.waitForFunction(() => location.pathname === '/brunch');
+    ok(true, 'naming the auction navigates: /brunch');
+    const slug = 'brunch';
     ok((await alice.$$('#status .tile:not(.addrow)')).length === 0,
        'no roster yet: the ledger is just the + row');
 
@@ -167,7 +177,7 @@ async function tipBox(page, i) {
     ok(true, 'named rows appear as the roster is typed');
     ok(await alice.evaluate(() =>
       getComputedStyle(document.querySelector(
-        '#tiles .tile:not(.has-bid) .tile-name'))
+        '#tiles .tile:not(.has-bid):not(.mine) .tile-name'))
         .animationName === 'breathe'), 'awaiting person cells breathe');
     ok(await alice.evaluate(() => {
       const slot = document.querySelector(
@@ -183,10 +193,12 @@ async function tipBox(page, i) {
         && getComputedStyle(slot).borderRadius
            === getComputedStyle(name).borderRadius;
     }), 'bid boxes wear the same box recipe as the participant boxes');
-    ok(await alice.evaluate(() =>
-      parseFloat(getComputedStyle(document.querySelector(
-        '.check .tile-subs')).marginLeft) > 0),
-       'the superscript count keeps a little air from the checkmark');
+    // (subs superscript shelved 2026-07-15 for clutter; restore with the
+    // commented code in app.js/style.css)
+    // ok(await alice.evaluate(() =>
+    //   parseFloat(getComputedStyle(document.querySelector(
+    //     '.check .tile-subs')).marginLeft) > 0),
+    //    'the superscript count keeps a little air from the checkmark');
     ok(await alice.evaluate(() =>
       getComputedStyle(document.querySelector('#status .addrow .at-wrap'))
         .animationName === 'none'), 'the + row does not breathe (a fixture)');
@@ -206,19 +218,46 @@ async function tipBox(page, i) {
       const add = document.querySelector('.addrow').getBoundingClientRect();
       return add.top - last.bottom >= 4;
     }), 'the + row keeps the same breathing room as the rows above it');
-    ok(await alice.evaluate(() =>
-      parseFloat(getComputedStyle(document.querySelector('#status .seal'))
-        .opacity) < 1), 'the padlock waits grayed while the roster fills');
+    ok(await alice.evaluate(() => {
+      const cs = getComputedStyle(
+        document.querySelector('#status .seal'), '::after');
+      return cs.opacity === '1' && cs.filter === 'none';
+    }), 'the padlock shows full-strength while sealed: it means'
+       + ' "sealed", not "disabled"');
     ok(await alice.evaluate(() =>
       document.querySelectorAll('#tiles .tu').length === 2
-      && !document.querySelector('#tiles .tu.selected')),
-       'nobody claimed: two stars, none lit');
+      && document.querySelector('.tile[data-uname="alice"] .tu.selected')
+      && !document.querySelector('.tile[data-uname="bob"] .tu.selected')),
+       'her first add lit her own star (2j); bob waits hollow');
+    ok(await alice.evaluate(() => {
+      const alpha = (c) => {
+        const m = c.match(/(?:rgba\([^)]+,\s*|\/\s*)([\d.]+)\)\s*$/);
+        return m ? parseFloat(m[1]) : 1;
+      };
+      const cs = getComputedStyle(
+        document.querySelector('.tile:not(.mine) .tu'));
+      return alpha(cs.color) === 0
+        && parseFloat(cs.webkitTextStrokeWidth) >= 1
+        && alpha(cs.webkitTextStrokeColor) > 0.5
+        && parseFloat(cs.fontSize) > 16;
+    }), 'a claimable star is a true radio hollow: same glyph, outline'
+       + ' only, big enough to want to press');
+    await alice.hover('.tile[data-uname="bob"] .x');
+    ok(await alice.evaluate(() => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--err-fg)';
+      document.body.append(probe);
+      const danger = getComputedStyle(probe).color;
+      probe.remove();
+      return getComputedStyle(
+        document.querySelector('.tile[data-uname="bob"] .x')).color === danger;
+    }), 'the trailing × reddens on hover: reads as "remove this row"');
 
     ok(await alice.evaluate(() =>
       document.querySelector('#status .th-person').textContent
         .includes('PARTICIPANTS')
       && !!document.querySelector('#status .th-bid #seal')
-      && !!document.querySelector('#status .th-person .tip')),
+      && !document.querySelector('#status .th-person [data-tip]')),
        'column headings lead the section; padlock with BIDS, tip with'
        + ' PARTICIPANTS');
 
@@ -239,31 +278,75 @@ async function tipBox(page, i) {
        synchronously rebuilt every row, destroying the button between
        mousedown and mouseup — the click silently died. */
     await alice.type('#roster-input', 'carol');
-    await alice.click('.tile[data-uname="alice"] .tu');
-    await alice.waitForSelector('.tile.mine .rebid input', { timeout: 2000 });
-    ok(true, 'clicking (you?) works even with an uncommitted name pending');
+    await alice.click('.tile[data-uname="bob"] .tu');  // a radio switch
+    await alice.waitForSelector('.tile[data-uname="bob"].mine',
+                                { timeout: 2000 });
+    ok(true, 'clicking a star works even with an uncommitted name pending');
     ok(await alice.$eval('#roster-input', (e) => e.value) === 'carol',
        'the pending name stays visible in the + row, not lost, not added');
+    await alice.click('.tile[data-uname="alice"] .tu');  // and back
+    await alice.waitForSelector('.tile[data-uname="alice"].mine');
     await alice.$eval('#roster-input', (e) => { e.value = ''; });
 
     ok(await alice.evaluate(() =>
       document.activeElement === document.querySelector('.tile.mine .rebid input')),
        'claiming your row drops you straight into the bid editor');
+    ok(await alice.evaluate(() => {
+      const mine = document.querySelector('.tile.mine .tile-name');
+      const other = document.querySelector(
+        '.tile:not(.mine):not(.has-bid) .tile-name');
+      return getComputedStyle(mine).animationName === 'none'
+        && getComputedStyle(mine).boxShadow !== 'none'
+        && getComputedStyle(other).animationName === 'breathe';
+    }), 'others pulse (awaited); your row sits still, subtly up-popped');
+    ok(await alice.evaluate(() =>
+      getComputedStyle(document.querySelector('.tile.mine .rebid input'))
+        .boxShadow !== 'none'),
+       'the pop lifts the whole you-row, bid piece included');
+    // the empty editor invites with the caret, not words: no
+    // placeholder, a normal solid field, focus already in it — and
+    // never a pulse (pulsing means "waiting on THEM")
+    ok(await alice.$eval('.tile.mine .rebid input',
+        (e) => e.placeholder === ''), 'the editor holds no placeholder');
+    ok(await alice.evaluate(() => {
+      const e = document.querySelector('.tile.mine .rebid input');
+      return getComputedStyle(e).animationName === 'none'
+        && getComputedStyle(e).borderTopStyle === 'solid'
+        && document.activeElement === e;
+    }), 'your empty editor: a normal solid field, focused, not pulsing');
     await bid(alice, 'three tacos');
     await alice.waitForSelector('#tiles .tile.has-bid');
     ok(await alice.$eval('.tile.mine .rebid input', (e) => e.value)
        === 'three tacos', 'her bid lives in her row, editable in place');
-    ok(await alice.evaluate(() => {
-      const lit = document.querySelector('#tiles .tile.has-bid .check');
-      const off = document.querySelector(
-        '#tiles .tile:not(.has-bid) .check');
-      return getComputedStyle(lit).filter === 'none'
-        && getComputedStyle(off).filter.includes('grayscale');
-    }), 'checkmark green once a bid is in, gray while the count is 0');
     ok(await alice.evaluate(() =>
-      document.querySelector('#tiles .tile.has-bid .check sup.tile-subs')
-        .textContent === '1'),
-       'the submission count rides the checkmark as a superscript');
+      getComputedStyle(document.querySelector('.tile.mine .rebid input'))
+        .animationName === 'none'),
+       'no pulse with the bid in either: only not-you rows ever pulse');
+    ok(await alice.evaluate(() => {
+      const f = getComputedStyle(document.querySelector('footer'));
+      const a = getComputedStyle(document.querySelector('footer a'));
+      return f.borderTopWidth === '0px'
+        && a.borderBottomStyle === 'none'
+        && parseFloat(f.fontSize) < 12;
+    }), 'the footer whispers: no rule above, no resting underline, tiny');
+    // (green ✅ scrapped 2026-07-16; the green card is the signal)
+    // await alice.waitForFunction(() =>  // 0.3s fade: wait, don't sample
+    //   getComputedStyle(document.querySelector(
+    //     '#tiles .tile.has-bid .check')).filter === 'none');
+    // ok(await alice.evaluate(() =>
+    //   getComputedStyle(document.querySelector(
+    //     '#tiles .tile:not(.has-bid) .check')).filter.includes('grayscale')),
+    //    'checkmark green once a bid is in, gray while the count is 0');
+    // (subs superscript shelved 2026-07-15)
+    // ok(await alice.evaluate(() =>
+    //   document.querySelector('#tiles .tile.has-bid .check sup.tile-subs')
+    //     .textContent === '1'),
+    //    'the submission count rides the checkmark as a superscript');
+    ok(await alice.evaluate(() => {
+      const cell = document.querySelector('#tiles .tile.has-bid .tile-bid');
+      cell.dispatchEvent(new Event('mouseenter'));
+      return /^your bid submitted \d+s ago$/.test(cell.dataset.tip);
+    }), 'hovering her bid cell tells her when she submitted');
     ok(await alice.evaluate(() => {
       const probe = document.createElement('span');
       probe.style.color = 'var(--star)';
@@ -271,20 +354,52 @@ async function tipBox(page, i) {
       const gold = getComputedStyle(probe).color;
       probe.remove();
       const star = document.querySelector('.tile.mine .tu');
+      const other = document.querySelector('.tile:not(.mine) .tu');
       return star.classList.contains('selected')
         && getComputedStyle(star).color === gold
+        && getComputedStyle(star).webkitTextStrokeColor === gold
+        && getComputedStyle(star).webkitTextStrokeWidth
+           === getComputedStyle(other).webkitTextStrokeWidth
         && getComputedStyle(star).textShadow !== 'none';
-    }), 'her star glows gold: that is how you know which row is you');
+    }), 'her star glows gold — the exact hollow shape, filled: same'
+       + ' stroke width, gold stroke plus gold fill');
+    ok(await alice.evaluate(() => {
+      const cs = getComputedStyle(
+        document.querySelector('.tile.mine .tu'), '::before');
+      return cs.textShadow === 'none'
+        && parseFloat(cs.webkitTextStrokeWidth) === 0;
+    }), "the star's glow stays OUT of its tooltip: inherited"
+       + ' text-shadow and stroke are reset like the other text styles');
+    ok(await alice.evaluate(() => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--star)';
+      document.body.append(probe);
+      const gold = getComputedStyle(probe).color;
+      probe.remove();
+      return getComputedStyle(document.querySelector('#status .legend'),
+        '::first-letter').color === gold;
+    }), "the legend's star is the same gold as a lit one");
+    ok(await alice.evaluate(() =>
+      ['#tiles .tile.has-bid .x', '#seal'].every((sel) => {
+        // dreev's bug: opacity on a grayed control dimmed its tooltip
+        // AND opened a stacking context that painted it behind the
+        // rows below; graying must never touch the tooltip's host
+        const el = document.querySelector(sel);
+        const cs = getComputedStyle(el);
+        return el.disabled && cs.opacity === '1' && cs.filter === 'none'
+          && cs.transform === 'none';
+      })), 'grayed controls stay full-strength tooltip hosts');
+    await alice.hover('#tiles .tile.has-bid .x');
+    await alice.waitForFunction(() =>  // 0.15s fade: wait, don't sample
+      getComputedStyle(document.querySelector('#tiles .tile.has-bid .x'),
+        '::before').opacity === '1');
+    ok(true, "the disabled ×'s tooltip shows at full strength");
     ok(await alice.evaluate(() => {
       const edges = [...document.querySelectorAll('#tiles .tile')].map((t) =>
         t.querySelector('.bid-card, .rebid input')
           .getBoundingClientRect().right);
       return edges.every((e) => Math.abs(e - edges[0]) < 1);
     }), 'every bid box matches length: one right edge down the column');
-    ok(await alice.evaluate(() =>
-      getComputedStyle(document.querySelector(
-        '#tiles .tile.has-bid .tile-name')).boxShadow === 'none'),
-       'green person cells sit flat: no glow haze');
 
     await alice.reload({ waitUntil: 'networkidle0' });
     await alice.waitForSelector('.tile.mine .rebid input');
@@ -300,6 +415,17 @@ async function tipBox(page, i) {
       ok(b.top >= 0 && b.left >= 0 && b.left + b.w <= b.vw && b.top + b.h <= b.vh,
          'tooltip ' + i + ' fits the phone viewport: ' + JSON.stringify(b));
     }
+    // the tooltip invariant: only one visible at a time — a focus-parked
+    // tip must stand down when another is hovered
+    await alice.evaluate(() => document.getElementById('help').focus());
+    await alice.hover('.field label[data-tip]');
+    await alice.waitForFunction(() =>  // fades: wait, don't sample
+      [...document.querySelectorAll('[data-tip]')].filter((e) => {
+        const cs = getComputedStyle(e, '::before');
+        return cs.visibility === 'visible' && cs.opacity === '1';
+      }).length === 1);
+    ok(true, 'only one tooltip visible at a time: hover trumps parked focus');
+    await alice.mouse.move(5, 400);  // park the pointer away from any tip
     await alice.keyboard.press('Tab');  // blur the last tooltip
     const overflow = await alice.evaluate(() =>
       document.scrollingElement.scrollWidth - window.innerWidth);
@@ -350,12 +476,31 @@ async function tipBox(page, i) {
     await alice.waitForFunction(() => document.getElementById('help-dlg').open);
     const helpText = await text(alice, '#help-dlg');
     ok(helpText.includes(
-         'You could use it to get independent estimates of how long '
-         + 'something will take to implement.'),
+         'Or just use it to play Schelling\u2019s coordination game.'),
        'help dialog shows the sealedbids text');
     await shoot(alice, 'help-dialog');
+    ok(await alice.evaluate(() => {
+      const r = document.getElementById('help-dlg').getBoundingClientRect();
+      return r.top > 0 && r.top <= Math.min(window.innerHeight * 0.1,
+                                            8 * 16) + 1;
+    }), 'the dialog hangs near the top, not dead center (reads better'
+       + ' on big screens, same rule everywhere)');
     await alice.click('#help-dlg .dlg-x');
     await alice.waitForFunction(() => !document.getElementById('help-dlg').open);
+    /* Replicata (dreev): open help, click OUTSIDE the box to dismiss.
+       Expectata: popup gone and no tooltip. Resultata pre-fix: closing
+       restored focus to the ? button, whose focus-tip stuck until the
+       next click. */
+    await alice.click('#help');
+    await alice.waitForFunction(() => document.getElementById('help-dlg').open);
+    await alice.mouse.click(10, 500);  // the backdrop, far from the box
+    await alice.waitForFunction(() => !document.getElementById('help-dlg').open);
+    await alice.waitForFunction(() =>  // 0.15s fade: wait, don't sample
+      getComputedStyle(document.getElementById('help'), '::before')
+        .opacity === '0');
+    ok(await alice.evaluate(() =>
+      document.activeElement !== document.getElementById('help')),
+       'dismissing the dialog leaves no stuck tooltip on the ? button');
     ok(true, 'the × closes the help dialog');
 
     /* ================= Story 2: Bob joins via the shared link ==========
@@ -372,13 +517,30 @@ async function tipBox(page, i) {
          document.querySelector('#status .tile-bid .masked')).filter)
        .then((f) => f.includes('blur')), 'the decoy is actually blurred');
     ok(await bob.evaluate(() => {
-      const dibsed = document.querySelector('.tile[data-uname="alice"] .tu');
+      const sh = getComputedStyle(document.querySelector(
+        '.tile.has-bid:not(.mine) .tile-name')).boxShadow;
+      // the no-op --lift computes as a transparent zero shadow
+      return sh === 'none' || sh === 'rgba(0, 0, 0, 0) 0px 0px 0px 0px';
+    }), "someone else's green cell sits flat: no glow, no pop");
+    ok(await bob.evaluate(() => {
+      // the three-state taxonomy: hollow = open, FILLED (neutral ink)
+      // = claimed by someone else, gold glow = you — and dimming rides
+      // color alpha, never element opacity (the tooltip-host rule)
+      const alpha = (c) => {
+        const m = c.match(/(?:rgba\([^)]+,\s*|\/\s*)([\d.]+)\)\s*$/);
+        return m ? parseFloat(m[1]) : 1;
+      };
+      const taken = document.querySelector('.tile[data-uname="alice"] .tu');
       const plain = document.querySelector('.tile[data-uname="bob"] .tu');
-      return dibsed.disabled && !plain.disabled
-        && parseFloat(getComputedStyle(dibsed).opacity)
-           < parseFloat(getComputedStyle(plain).opacity);
-    }), "alice's bid dibses her star: disabled, visibly dimmer than a"
-       + ' claimable one');
+      return taken.disabled && !plain.disabled
+        && getComputedStyle(taken).opacity === '1'
+        && alpha(getComputedStyle(taken).color) > 0.5
+        && alpha(getComputedStyle(plain).color) === 0
+        && taken.getAttribute('data-tip')
+             === 'Claimed by someone on a Mac (Chrome)';
+    }), "alice's star fills in on bob's screen — claimed by someone"
+       + ' else, says the tip, naming the rig — while open seats stay'
+       + ' hollow');
     ok(await bob.evaluate(() => getComputedStyle(
          document.querySelector('#status .seal'), '::after').content)
        .then((c) => c.includes('\u{1F512}')), 'closed padlock while sealed');
@@ -392,8 +554,12 @@ async function tipBox(page, i) {
        'complete but sealed: nothing reveals without a press');
     await bob.waitForFunction(() => !document.getElementById('seal').disabled);
     ok(await bob.evaluate(() =>
-      getComputedStyle(document.getElementById('seal')).animationName
-        === 'lockpulse'), 'the pressable padlock pulses for attention');
+      getComputedStyle(document.getElementById('seal'), '::after')
+        .animationName === 'lockpulse'
+      && getComputedStyle(document.getElementById('seal')).transform
+        === 'none'),
+       'the pressable padlock pulses for attention — on the glyph, so'
+       + " the button never opens a stacking context under its tooltip");
     await bob.click('#seal');
     await bob.waitForFunction(() =>
       document.getElementById('status').textContent.includes('three tacos'));
@@ -410,6 +576,32 @@ async function tipBox(page, i) {
          document.querySelector('#status .seal'), '::after').content)
        .then((c) => c.includes('\u{1F389}')),
        'the padlock becomes the tada at the reveal: one icon, three states');
+    await bob.waitForFunction(() => {  // 0.15s fade: wait, don't sample
+      const g = document.querySelector('#status > .gavel');
+      return getComputedStyle(g.querySelector('.mallet')).animationName
+        === 'gavel-verdict'
+        && getComputedStyle(g).opacity === '1';
+    });
+    ok(true, 'the gavel returns for one ceremonial verdict stroke');
+    ok(await bob.evaluate(() => {
+      const st = document.querySelector('#status .fete .stamp');
+      const c = document.querySelector('#status .fete .confetto');
+      return st && getComputedStyle(st).animationName === 'stamp-slam'
+        && c && getComputedStyle(c).animationName === 'confetti-fly'
+        && document.querySelectorAll('#status .fete .confetto').length >= 60;
+    }), 'SOLD slams down and the confetti actually flies');
+    ok(await bob.evaluate(() =>
+      getComputedStyle(document.querySelector('.addrow')).display
+        === 'none'
+      && getComputedStyle(document.querySelector('#status .closed'))
+           .display !== 'none'
+      && /^Closed /.test(document.querySelector('#status .closed')
+           .textContent)),
+       'the + row retires at the reveal; the Closed stamp takes its'
+       + ' place');
+    await bob.waitForFunction(() =>  // the ceremony self-cleans
+      !document.querySelector('#status .fete'), { timeout: 6000 });
+    ok(true, 'the ceremony packs up after itself');
     ok(await bob.$eval('#seal', (e) => e.getAttribute('data-tip'))
        !== 'Reveal bids!',
        'the tip stops offering to reveal once revealed');
@@ -434,7 +626,7 @@ async function tipBox(page, i) {
     await addName(alice, 'evy');
     await alice.waitForFunction(() =>
       document.querySelectorAll('#tiles .tile').length === 2
-      && document.getElementById('status').textContent.includes('@evy'));
+      && !!document.querySelector('.tile[data-uname="evy"]'));
     ok(true, 'empty rows appear for @dee and @evy');
     ok(await alice.evaluate(() =>
       !document.querySelector('.tile.mine')
@@ -489,6 +681,267 @@ async function tipBox(page, i) {
       document.getElementById('status').textContent.includes('i bid 2 dishes'));
     ok(true, '× the straggler, press the padlock: end-early');
     await shoot(alice, 'story3-roster-reveal');
+
+    /* ================= Story 4: clicks survive op-ack renders ==========
+       Replicata: add a name; while the add's ack is in flight, press
+       the mouse on a star; let the ack land (which re-renders the
+       rows); release the mouse. Expectata: the click lands anyway —
+       the row's NODE survived the render (keyed reuse), and a click
+       needs mousedown and mouseup on the same node. */
+    const carol = await makePage(browser, DESKTOP);
+    await carol.goto(BASE + '/gesture', { waitUntil: 'networkidle0' });
+    await carol.waitForSelector('#tiles');
+    await addName(carol, 'cat');  // self-claims (2j): carol is cat
+    await carol.waitForSelector('.tile[data-uname="cat"]');
+    opDelay = 400;
+    await addName(carol, 'dog');  // its ack lands mid-gesture below
+    const starBox = await (await carol.$('.tile[data-uname="dog"] .tu'))
+      .boundingBox();
+    await carol.mouse.move(starBox.x + starBox.width / 2,
+                           starBox.y + starBox.height / 2);
+    await carol.mouse.down();
+    await new Promise((r) => setTimeout(r, 700));  // ack + render land
+    opDelay = 0;
+    await carol.mouse.up();
+    await carol.waitForSelector('.tile[data-uname="dog"].mine .rebid input',
+                                { timeout: 2000 });
+    ok(true, 'a click straddling an op-ack render still lands (the very'
+       + ' row whose ack was in flight)');
+
+    /* ---- re-bid stacks and the you-row pop share box-shadow: both
+       must survive composition (carol switched to dog in the gesture
+       test above) ----------------------------------------------------- */
+    await carol.waitForSelector('.tile.mine .rebid input');
+    await bid(carol, 'one fish');
+    await carol.waitForSelector('.tile.mine .rebid input.stack0');
+    await carol.$eval('.tile.mine .rebid input', (e) => { e.value = ''; });
+    await bid(carol, 'two fish');
+    await carol.waitForSelector('.tile.mine .rebid input.stack1');
+    ok(await carol.evaluate(() =>
+      (getComputedStyle(document.querySelector('.tile.mine .rebid input'))
+        .boxShadow.match(/rgba?\(/g) || []).length >= 3),
+       'the re-bid stack sheets and the you-pop compose, losing neither');
+
+    /* ---- the busy gavel: graying alone doesn't say "working", so a
+       CSS-drawn gavel hammers its block, overlaid on the grayed ledger,
+       while the app talks to the server ------------------------------ */
+    // a generous window: the gavel is a TRANSIENT (visible only while
+    // the op is in flight), and a ~900ms window once lost a race to a
+    // runner stall — the wait can't start until the add round-trips
+    opDelay = 2500;
+    await addName(carol, 'fox');  // an op is now in flight for ~2.5s
+    await carol.waitForFunction(() => {  // 0.15s fade: wait, don't sample
+      const g = document.querySelector('#status .gavel');
+      return getComputedStyle(g).opacity === '1'
+        && getComputedStyle(g.querySelector('.mallet')).animationName
+           === 'gavel';
+    });
+    ok(await carol.evaluate(() => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--wood)';
+      document.body.append(probe);
+      const wood = getComputedStyle(probe).color;
+      probe.remove();
+      const head = getComputedStyle(
+        document.querySelector('.gavel .head')).backgroundColor;
+      const spin = document.styleSheets;  // (the 360 lives in keyframes)
+      return head === wood;
+    }), 'the gavel is wood, as gavels are');
+    ok(await carol.evaluate(() =>
+      getComputedStyle(document.querySelector('.gavel .grip'), '::after')
+        .content === 'none'),
+       'no pommel knob: it sat at the rotation origin and read as a'
+       + ' fixed hub the gavel spun around');
+    ok(await carol.evaluate(() => {
+      for (const sheet of document.styleSheets) {
+        for (const rule of sheet.cssRules) {
+          if (rule.name === 'gavel') {
+            const last = [...rule.cssRules].find((k) => k.keyText === '100%');
+            return last && /33[0-9]deg/.test(last.style.transform);
+          }
+        }
+      }
+      return false;
+    }), 'after the strike it follows through all the way around: spinner');
+    ok(await carol.evaluate(() => {
+      // matrix(cos, sin, ...): a negative sin means the ray tilts upward
+      const bang = document.querySelector('.gavel .bang');
+      const sin = (cs) => parseFloat(cs.transform.split(',')[1]);
+      return [getComputedStyle(bang, '::before'),
+              getComputedStyle(bang.firstElementChild),
+              getComputedStyle(bang, '::after')]
+        .every((cs) => sin(cs) < 0);
+    }), 'all three spark rays kick up and away from the impact');
+    ok(await carol.evaluate(() => {
+      const g = document.querySelector('#status .gavel').getBoundingClientRect();
+      const t = document.getElementById('tiles').getBoundingClientRect();
+      return g.top < t.bottom && g.bottom > t.top
+        && g.left > t.left && g.right < t.right;
+    }), 'the gavel hammers overlaid on the grayed ledger, spinner-style');
+    opDelay = 0;
+    await carol.waitForFunction(() =>  // fades out: wait, don't sample
+      getComputedStyle(document.querySelector('#status .gavel'))
+        .opacity === '0');
+    ok(true, 'the gavel rests once the server has confirmed everything');
+    /* ---- a bid gets a row-local mini gavel, not the table-wide one ---- */
+    opDelay = 1200;
+    await carol.$eval('.tile.mine .rebid input', (e) => { e.value = ''; });
+    await bid(carol, 'three fish');
+    await carol.waitForFunction(() => {
+      const m = document.querySelector('.rebid.busy .gavel.mini');
+      return m && getComputedStyle(m).display !== 'none'
+        && getComputedStyle(m.querySelector('.mallet')).animationName
+             === 'gavel'
+        && getComputedStyle(document.querySelector('#status > .gavel'))
+             .opacity === '0';
+    });
+    ok(true, 'a bid in flight: the mini gavel hammers at YOUR row while'
+       + ' the big one (whole-table ops only) sits out');
+    opDelay = 0;
+    await carol.waitForFunction(() =>
+      !document.querySelector('.rebid.busy'));
+    ok(true, 'the mini gavel rests when the bid lands');
+    /* ---- names are live text fields: click in, type, enter ------------ */
+    await carol.click('.tile[data-uname="fox"] .rename input');
+    ok(await carol.evaluate(() => {
+      // one focus language: the ring is suppressed here (box-in-a-box),
+      // so the stand-in underline must speak the same accent color
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--accent)';
+      document.body.append(probe);
+      const accent = getComputedStyle(probe).color;
+      probe.remove();
+      const cs = getComputedStyle(
+        document.querySelector('.tile[data-uname="fox"] .rename input'));
+      return cs.outlineStyle === 'none' && cs.boxShadow.includes(accent);
+    }), 'the focused name field underlines itself in the focus accent');
+    await carol.$eval('.tile[data-uname="fox"] .rename input',
+                      (e) => e.select());
+    await carol.keyboard.type('foxy');
+    await carol.keyboard.press('Enter');
+    await carol.waitForSelector('.tile[data-uname="foxy"]');
+    ok(true, 'the name is just an editable field: type and enter renames');
+
+    /* ---- error banners overlay; they never shift the page ------------- */
+    const statusTop = await carol.evaluate(() =>
+      document.getElementById('status').getBoundingClientRect().top);
+    await carol.click('.tile[data-uname="dog"] .rename input');
+    await carol.$eval('.tile[data-uname="dog"] .rename input',
+                      (e) => e.select());
+    await carol.keyboard.type('foxy');  // taken!
+    await carol.keyboard.press('Enter');
+    await carol.waitForFunction(() =>
+      !document.getElementById('banner').hidden);
+    ok(await carol.evaluate((t) =>
+      document.getElementById('status').getBoundingClientRect().top === t,
+      statusTop), 'the error banner overlays without shifting the page');
+
+    /* ================= Story 5: everything works by thumb ==============
+       A phone drives the whole flow with touch taps (not mouse clicks —
+       Chromium synthesizes the clicks our listeners hear) and the
+       keyboard's return key: adding, claiming, bidding, renaming,
+       removing, revealing. The return key rides implicit form
+       submission (the bid and name fields are single-input forms) or
+       the Enter keydown (the + row) — no physical Enter key, no mouse,
+       no buttons required. (The real iOS/Android keyboard itself can't
+       be driven from Chromium; enterkeyhint attributes are pinned by
+       the frontend quals.) */
+    const mobileViewport = { width: 390, height: 844,
+      deviceScaleFactor: 3, isMobile: true, hasTouch: true };
+    const thumb = await makePage(browser, mobileViewport);
+    await thumb.goto(BASE + '/thumbs', { waitUntil: 'networkidle0' });
+    await thumb.tap('#roster-input');
+    await thumb.type('#roster-input', 'ana');
+    await thumb.keyboard.press('Enter');
+    await thumb.type('#roster-input', 'bo');
+    await thumb.keyboard.press('Enter');
+    await thumb.waitForSelector('.tile[data-uname="bo"]');
+    ok(true, 'the + row takes names from the return key');
+    await thumb.waitForSelector('.tile.mine .rebid input');
+    ok(true, 'her first thumbed-in name is hers (2j): editor ready');
+    await thumb.type('.tile.mine .rebid input', 'thumb-typed bid');
+    await thumb.keyboard.press('Enter');
+    await thumb.waitForSelector('.tile.mine.has-bid');
+    ok(true, 'return submits the bid: implicit form submission, no'
+       + ' button, no mouse');
+    await thumb.tap('.tile[data-uname="bo"] .rename input');
+    await thumb.$eval('.tile[data-uname="bo"] .rename input',
+                      (e) => e.select());
+    await thumb.keyboard.type('bob');
+    await thumb.keyboard.press('Enter');
+    await thumb.waitForSelector('.tile[data-uname="bob"]');
+    ok(true, 'renaming works by thumb: tap, type, return');
+    await thumb.type('#roster-input', 'oops');
+    await thumb.keyboard.press('Enter');
+    await thumb.waitForSelector('.tile[data-uname="oops"]');
+    await thumb.tap('.tile[data-uname="oops"] .x');
+    await thumb.waitForFunction(() =>
+      !document.querySelector('.tile[data-uname="oops"]'));
+    ok(true, 'tapping a × removes the row');
+    const thumb2 = await makePage(browser, mobileViewport);
+    await thumb2.goto(BASE + '/thumbs', { waitUntil: 'networkidle0' });
+    await thumb2.tap('.tile[data-uname="bob"] .tu');
+    await thumb2.waitForSelector('.tile.mine .rebid input');
+    ok(true, 'tapping a star (a touch, not a click) claims the row');
+    await thumb2.type('.tile.mine .rebid input', 'the other thumb');
+    await thumb2.keyboard.press('Enter');
+    await thumb2.waitForSelector('.tile.mine.has-bid');
+    await thumb.waitForFunction(() =>  // the poll delivers bob's bid
+      !document.getElementById('seal').disabled);
+    await thumb.tap('#seal');
+    await thumb.waitForFunction(() =>
+      document.getElementById('status').classList.contains('revealed'));
+    ok(await thumb.evaluate(() =>
+      document.getElementById('status').textContent
+        .includes('the other thumb')),
+       'tapping the padlock reveals: the whole auction ran by thumb');
+    await shoot(thumb, 'story5-thumb-revealed');
+
+    /* ================= Story 6: two thumbs, one alice ==================
+       Roommates both open /squabble on their phones; the roster lists
+       alice and bea, unclaimed. Phone 1 taps alice's star. Phone 2 —
+       its screen still showing alice open (no poll yet) — taps alice
+       too. First come, first served: phone 2 loses LOUDLY (no silent
+       stealing, no two-alices), watches the star go dibsed as the
+       recovery snapshot lands, takes bea instead, and the game plays
+       out normally. */
+    gas.handle({ action: 'add', aname: 'squabble', uname: 'alice' });
+    gas.handle({ action: 'add', aname: 'squabble', uname: 'bea' });
+    const p1 = await makePage(browser, mobileViewport);
+    const p2 = await makePage(browser, mobileViewport);
+    await p1.goto(BASE + '/squabble', { waitUntil: 'networkidle0' });
+    await p2.goto(BASE + '/squabble', { waitUntil: 'networkidle0' });
+    await p1.tap('.tile[data-uname="alice"] .tu');
+    await p1.waitForSelector('.tile[data-uname="alice"].mine');
+    ok(await p2.$eval('.tile[data-uname="alice"] .tu',
+        (e) => !e.disabled),
+       "phone 2's stale screen still offers alice: the race is on");
+    await p2.tap('.tile[data-uname="alice"] .tu');
+    await p2.waitForFunction(() =>
+      !document.getElementById('banner').hidden
+      && document.getElementById('banner').textContent
+           .includes('ERROR1304: Claimed by someone on '));
+    ok(true, 'phone 2 loses the race and is told so, loudly');
+    await p2.waitForFunction(() =>
+      document.querySelector('.tile[data-uname="alice"] .tu').disabled
+      && !document.querySelector('#tiles .rebid'));
+    ok(true, 'the recovery snapshot shows phone 2 the dibsed truth');
+    await p2.tap('.tile[data-uname="bea"] .tu');
+    await p2.waitForSelector('.tile[data-uname="bea"].mine .rebid input');
+    ok(true, 'phone 2 takes the open seat instead, one tap');
+    await p2.type('.tile.mine .rebid input', 'a dozen eggs');
+    await p2.keyboard.press('Enter');
+    await p2.waitForSelector('.tile.mine.has-bid');
+    await p1.type('.tile.mine .rebid input', 'my parking spot');
+    await p1.keyboard.press('Enter');
+    await p1.waitForSelector('.tile.mine.has-bid');
+    await p1.waitForFunction(() =>
+      !document.getElementById('seal').disabled);
+    await p1.tap('#seal');
+    await p1.waitForFunction(() =>
+      document.getElementById('status').textContent
+        .includes('a dozen eggs'));
+    ok(true, 'and the game plays out: both bids in, revealed by thumb');
 
     console.log('story-quals: all ' + passed + ' assertions passed');
   } finally {
