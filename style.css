@@ -215,9 +215,14 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   padding: 0;
 }
 
-/* opacity 1: iOS Safari's UA sheet dims disabled controls to ~40%,
-   which grayed the 🎉 — a state indicator, never a dimmed control */
-.seal:disabled { cursor: default; opacity: 1; }
+/* The full-alpha color is the load-bearing part: UA sheets give
+   disabled buttons a low-alpha text color (Chrome: rgba(16,16,16,.3))
+   and color-emoji glyphs MULTIPLY by that alpha — every grayed 🔒/🎉
+   sighting traced here. opacity: 1 belts iOS Safari's dimming too. */
+.seal:disabled { cursor: default; opacity: 1; color: var(--fg); }
+
+/* the 🎉 is a lit lamp, not a control: nothing to press */
+#status.revealed .seal { cursor: default; }
 
 .seal::after {
   content: '🔒';
@@ -528,22 +533,30 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   100% { opacity: 0; transform: scale(1); }
 }
 
-/* each confetto flies its own way: direction, spin, and tint arrive
-   as custom props from celebrate() */
+/* Each confetto is a money glyph flying its own way (direction and
+   spin arrive as custom props from celebrate()): currency signs in
+   glittering green, the coin and scales emoji in their own colors */
 .fete .confetto {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 0.45rem;
-  height: 0.28rem;
-  background: var(--tint);
+  font-size: 0.95rem;
+  line-height: 1;
+  font-weight: 700;
+  color: var(--ok-fg);
   opacity: 0;
-  animation: confetti-fly 2.4s cubic-bezier(0.2, 0.6, 0.6, 1) forwards;
+  animation: confetti-fly 2.4s cubic-bezier(0.2, 0.6, 0.6, 1) forwards,
+             glitter 0.35s linear infinite;
 }
 
-.fete .confetto:nth-child(3n) { border-radius: 50%; width: 0.3rem; }
+.fete .confetto:nth-child(3n) { font-size: 0.7rem; }
 
-.fete .confetto:nth-child(4n) { height: 0.5rem; width: 0.2rem; }
+.fete .confetto:nth-child(4n) { font-size: 1.2rem; }
+
+@keyframes glitter {
+  0%, 100% { text-shadow: 0 0 2px var(--star); }
+  50%      { text-shadow: 0 0 6px var(--star), 0 0 2px #fff; }
+}
 
 @keyframes confetti-fly {
   0% { opacity: 1; transform: none; }

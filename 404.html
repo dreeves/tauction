@@ -21,13 +21,13 @@
   <div class="corner">
     <!-- the Android-style share glyph (three nodes, two links), inline
          SVG in currentColor so it grays and accents like its neighbor -->
-    <button id="share" class="icon" type="button" data-tip="Share"
-            aria-label="Share link"><svg viewBox="0 0 24 24"
+    <button id="share" class="icon" type="button" data-tip="share"
+            aria-label="share link"><svg viewBox="0 0 24 24"
       aria-hidden="true"><circle cx="18" cy="5" r="2.6"/><circle cx="6"
       cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path
       d="M8.2 10.7l7.6-4.4M8.2 13.3l7.6 4.4"/></svg></button>
-    <button id="help" class="icon" type="button" data-tip="Help"
-            aria-label="Help">?</button>
+    <button id="help" class="icon" type="button" data-tip="help"
+            aria-label="help">?</button>
   </div>
 
 
@@ -38,9 +38,9 @@
       <!-- the label itself is the tooltip host (no ? icon);
            tabindex="-1" keeps it tap-focusable but not a tab stop -->
       <label for="aname" tabindex="-1"
-        data-tip="Name of this auction, or just edit the URL">auction</label>
+        data-tip="name of this auction, or just edit the URL">auction</label>
       <input id="aname" autocomplete="off" autocapitalize="off"
-             spellcheck="false" maxlength="40" placeholder="tau"
+             spellcheck="false" maxlength="40" placeholder="Name this auction"
              enterkeyhint="done">
     </div>
   </section>

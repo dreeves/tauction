@@ -36,6 +36,11 @@ let stripTini = false;
 
 function mockFetch(url, opts) {
   url = String(url);
+  // the geo lookup gets a fixture: quals must never touch the network
+  if (url.includes('ipapi.co')) {
+    return Promise.resolve({ json: () =>
+      Promise.resolve({ city: 'Portland', region_code: 'OR' }) });
+  }
   if (!url.startsWith(API_URL)) return Promise.reject(new Error('unexpected URL ' + url));
   let req;
   if (opts && opts.method === 'POST') req = JSON.parse(opts.body);
@@ -184,7 +189,8 @@ function ok(cond, label) {
      + ' here meant a gavel hammering forever');
   type(dom, 'aname', 'Fresh-1!');
   ok(doc.getElementById('aname').value === 'fresh1', 'slug sanitized');
-  await sleep(600);  // past the switch debounce
+  await until(() =>  // debounce + the gate's lookup: wait, don't sample
+    dom.window.location.pathname === '/fresh1');
   ok(dom.window.location.pathname === '/fresh1'
      && dom.window.location.search.includes('api='),
      'naming it navigates, keeping ?api=');
@@ -676,16 +682,17 @@ function ok(cond, label) {
      "machine 2 hasn't polled yet: its stale screen still offers alice");
   claimRow(r2, 'alice');  // the race click
   await until(() =>
-    !r2.window.document.getElementById('banner').hidden);
-  ok(/^ERROR1304: Claimed by someone on /.test(
-       r2.window.document.getElementById('banner').textContent),
-     "the loser is told loudly — naming the winner's rig — not"
-     + ' silently unseated later');
-  await until(() =>
     row(r2.window.document, 'alice').querySelector('.tu').disabled);
-  ok(row(r2.window.document, 'alice').querySelector('.tu').disabled
+  ok(r2.window.document.getElementById('banner').hidden,
+     'losing a seat race is normal auction physics: NO red banner'
+     + " (dreev's call) — the UI itself shows the truth");
+  ok(row(r2.window.document, 'alice').querySelector('.tu').classList
+       .contains('taken')
+     && /^Claimed by someone \(/.test(
+          row(r2.window.document, 'alice').querySelector('.tu')
+            .getAttribute('data-tip'))
      && !r2.window.document.querySelector('#tiles .rebid'),
-     'the recovery snapshot shows machine 2 the dibsed truth');
+     'instead: the filled star and its tooltip explain who beat you');
   ok(gas.handle({ action: 'state', aname: 'race2' }).claims.alice
        === r1.window.localStorage.getItem('tauction-device'),
      "machine 1's claim survived: first come, first served");
@@ -697,6 +704,56 @@ function ok(cond, label) {
     .claims.bea !== undefined);
   ok(row(r2.window.document, 'bea').classList.contains('mine'),
      'machine 2 claims the open seat instead and lives happily');
+
+  /* --- 2k2. seat-race stress battery (dreev: "stress-qual it") ----------
+     Every way two machines can want the same seat in a NEW auction. */
+  // (i) truly simultaneous clicks: both ops in flight at once
+  gas.handle({ action: 'add', aname: 'race4', uname: 'alice' });
+  const s1 = await makePage('/race4?api=' + API_URL);
+  const s2 = await makePage('/race4?api=' + API_URL);
+  mockDelay = 250;  // both claims fly together
+  claimRow(s1, 'alice');
+  claimRow(s2, 'alice');
+  ok(row(s1.window.document, 'alice').classList.contains('mine')
+     && row(s2.window.document, 'alice').classList.contains('mine'),
+     'both machines are optimistic while their claims fly');
+  await sleep(900);
+  mockDelay = 0;
+  const claim4 = gas.handle({ action: 'state', aname: 'race4' })
+    .claims.alice;
+  const dev1 = s1.window.localStorage.getItem('tauction-device');
+  const dev2 = s2.window.localStorage.getItem('tauction-device');
+  ok(claim4 === dev1 || claim4 === dev2,
+     'exactly one of the simultaneous claims wins on the server');
+  const winner = claim4 === dev1 ? s1 : s2;
+  const loser = claim4 === dev1 ? s2 : s1;
+  await until(() =>
+    row(loser.window.document, 'alice').querySelector('.tu').classList
+      .contains('taken'));
+  ok(row(winner.window.document, 'alice').classList.contains('mine')
+     && !row(loser.window.document, 'alice').classList.contains('mine')
+     && loser.window.document.getElementById('banner').hidden,
+     'the loser converges to taken, bannerlessly; the winner holds');
+  // (ii) spam-clicking the taken star stays inert and quiet
+  claimRow(loser, 'alice');
+  claimRow(loser, 'alice');
+  await sleep(200);
+  ok(loser.window.document.getElementById('banner').hidden
+     && gas.handle({ action: 'state', aname: 'race4' }).claims.alice
+          === claim4,
+     'spamming a lost seat: still quiet, still theirs');
+  // (iii) the winner releases; the seat reopens everywhere by poll
+  claimRow(winner, 'alice');  // own lit star: release
+  await until(() => gas.handle({ action: 'state', aname: 'race4' })
+    .claims.alice === undefined);
+  await until(() =>
+    row(loser.window.document, 'alice').classList.contains('mine'));
+  ok(!row(loser.window.document, 'alice').querySelector('.tu').classList
+       .contains('taken')
+     && loser.window.document.getElementById('banner').hidden,
+     'released seats RE-LATCH the loser automatically: their machine'
+     + ' never forgot who they wanted to be, and the seat is open'
+     + ' again — gold star, no click, no noise');
 
   /* --- 2l. the stolen-seat bid: the race, lost mid-keystroke -------------
      Replicata: same stale-screen setup, but machine 2 clicks alice's
@@ -721,10 +778,11 @@ function ok(cond, label) {
   ok(gas.handle({ action: 'state', aname: 'race3' }).claims.alice
        === r3.window.localStorage.getItem('tauction-device'),
      "and machine 1 still holds the seat");
-  await until(() =>
-    row(r4.window.document, 'alice').querySelector('.tu').disabled);
+  await until(() =>  // the RENDERED truth, not the submit-time lock
+    row(r4.window.document, 'alice').querySelector('.tu').classList
+      .contains('taken'));
   ok(!r4.window.document.querySelector('#tiles .rebid'),
-     'machine 2 recovers to reality: dibsed star, no editor');
+     'machine 2 recovers to reality: taken star, no editor');
 
   /* --- 2m. the radio locks at SUBMIT, not at the server's ack ------------
      Replicata (dreev: "claim a participant, submit a bid, then see a
@@ -820,9 +878,11 @@ function ok(cond, label) {
        .contains('taken')
      && row(m2.window.document, 'alice').querySelector('.tu')
           .getAttribute('data-tip')
-          === 'Claimed by someone on machina ignota',
-     "the taken star FILLS in, and its tip names the claimant's rig"
-     + " (jsdom's UA parses to the Latin unknown-device fallback)");
+          === 'Claimed by someone (machina ignota '
+            + m1.window.navigator.language + ' in Portland, OR)',
+     "the taken star FILLS in, and its tip blurbs the claimant's rig,"
+     + " language, and rough geography (jsdom's UA parses to the Latin"
+     + ' unknown-device fallback; the geo comes from the fixture)');
 
   /* --- 3. bob's window: alice's bid sealed there; his bid reveals ------- */
   const dom2 = await makePage('/tau?api=' + API_URL);
@@ -875,11 +935,44 @@ function ok(cond, label) {
      + doc2.querySelector('#status .closed').textContent);
   ok(doc2.querySelector('#status .fete .stamp')
      && doc2.querySelector('#status .fete .stamp').textContent === STAMP
-     && doc2.querySelectorAll('#status .fete .confetto').length >= 60,
-     'the reveal ceremony: the stamp (copy derived from app.js, since'
-     + ' dreev iterates it live) slams down amid confetti');
-  ok(myInput(doc2) && !myInput(doc2).disabled,
-     'bidding stays open after reveal (permissive)');
+     && doc2.querySelectorAll('#status .fete .confetto').length >= 60
+     && [...doc2.querySelectorAll('#status .fete .confetto')].every(
+          (c) => ['$', '\u00a5', '\u00a3', '\u{1fa99}',
+                  '\u2696\ufe0f'].includes(c.textContent)),
+     'the reveal ceremony: the stamp slams down amid a shower of'
+     + " dreev's money glyphs");
+  ok(myInput(doc2) && myInput(doc2).disabled
+     && myInput(doc2).value === '$40 and my dignity',
+     'the gavel drop is a bright line: your bid stays READABLE in your'
+     + ' editor but the field goes dead (2026-07-16, dreev — reversing'
+     + ' the old permissive pin)');
+
+  /* --- the under-the-wire race, LOST: an explicit notice ----------------
+     Replicata: submit a revision while the last straggler's bid — and
+     the reveal — land first. Expectata: the revision bounces with the
+     gavel-fell error; the sheet keeps the pre-reveal bid. */
+  gas.handle({ action: 'add', aname: 'wire', uname: 'ann' });
+  gas.handle({ action: 'add', aname: 'wire', uname: 'zed' });
+  gas.handle({ action: 'bid', aname: 'wire', uname: 'zed', bid: 'safe',
+               deviceID: 'dz' });
+  const domWire = await makePage('/wire?api=' + API_URL);
+  claimRow(domWire, 'ann');
+  typeBid(domWire, 'first thoughts');
+  submitBid(domWire);
+  await settled(domWire);
+  mockDelay = 300;
+  typeBid(domWire, 'second thoughts');
+  submitBid(domWire);         // the revision takes flight...
+  gas.handle({ action: 'reveal', aname: 'wire' });  // ...the gavel falls
+  await settled(domWire);
+  mockDelay = 0;
+  ok(!domWire.window.document.getElementById('banner').hidden
+     && domWire.window.document.getElementById('banner').textContent
+          .includes('ERROR1313'),
+     'losing the under-the-wire race is announced explicitly');
+  ok(gas.handle({ action: 'state', aname: 'wire' }).bids
+       .find((b) => b.uname === 'ann').bid === 'first thoughts',
+     'the sheet keeps the bid that beat the gavel');
 
   // first window catches up via polling (jsdom timers run; wait for it)
   await until(() =>
@@ -1028,7 +1121,10 @@ function ok(cond, label) {
        .carl === 'zoom zoom',
      'bid remembered under the auction it was placed on');
 
-  /* --- 3g. submitting shows progress on your row ------------------------ */
+  /* --- 3g. submitting shows progress; the editor stays HOT --------------
+     (dreev: down to the wire you might change your mind while your
+     bid is still in flight — resubmitting must work. The old pinned
+     behavior disabled the input mid-flight; reversed at his ask.) */
   const domP = await makePage('/progress?api=' + API_URL);
   addName(domP, 'pat');  // self-claims (2j)
   await sleep(800);  // roster push done: the bid is the only POST in flight
@@ -1039,14 +1135,28 @@ function ok(cond, label) {
   await sleep(50);
   ok(domP.window.document.querySelector('#tiles .rebid').classList
        .contains('busy')
-     && myInput(domP.window.document).disabled,
-     'your row shows busy state while the bid is in flight');
-  await sleep(400);
+     && !myInput(domP.window.document).disabled,
+     'your row shows busy while the bid flies — and the editor stays'
+     + ' live for a change of heart');
+  // the change of heart, mid-flight:
+  typeBid(domP, 'hurry HARDER');
+  submitBid(domP);
+  ok(domP.window.document.querySelector('#tiles .rebid').classList
+       .contains('busy'),
+     'the resubmission rides along (still busy)');
+  await until(() => gas.handle({ action: 'state', aname: 'progress' })
+    .bidders.length === 1 && gas.handle({ action: 'state',
+    aname: 'progress' }).bidders[0].bcount === 2);
+  await settled(domP);
   mockDelay = 0;
   ok(!domP.window.document.querySelector('#tiles .rebid').classList
-       .contains('busy')
-     && !myInput(domP.window.document).disabled,
-     'busy state clears after the response');
+       .contains('busy'),
+     'busy clears only after the LAST submission settles');
+  ok(gas.__ss.sheets['bids'].data.filter((r) => r[0] === 'progress')[0][2]
+       === 'hurry HARDER',
+     'the sheet holds the later bid: client-serialized, last word wins');
+  ok(myInput(domP.window.document).value === 'hurry HARDER',
+     'and the editor agrees');
 
   /* --- 3h. the 5s poll must not eat a bid you are mid-typing ------------
      Replicata: claim your row, type a draft, don't submit, wait out a
@@ -1240,7 +1350,8 @@ function ok(cond, label) {
   gas.handle({ action: 'add', aname: 'occupied', uname: 'stranger' });
   const domG = await makePage('/mineown?api=' + API_URL);
   type(domG, 'aname', 'occupied');
-  await sleep(700);  // debounce + the gate's lookup
+  await until(() =>  // the refusal banner is the positive signal
+    !domG.window.document.getElementById('banner').hidden);
   ok(domG.window.location.pathname === '/mineown',
      'typing an occupied name does not navigate');
   ok(!domG.window.document.getElementById('banner').hidden
@@ -1254,7 +1365,8 @@ function ok(cond, label) {
   // repeat attempt after the banner auto-hides banners again
   domG.window.document.getElementById('banner').hidden = true;
   type(domG, 'aname', 'occupied');
-  await sleep(700);  // debounce + the gate's lookup
+  await until(() =>
+    !domG.window.document.getElementById('banner').hidden);
   ok(!domG.window.document.getElementById('banner').hidden
      && domG.window.location.pathname === '/mineown',
      'retyping the taken name banners again: refusal is never silent');

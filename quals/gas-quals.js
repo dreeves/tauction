@@ -56,7 +56,7 @@ ok(ss.sheets['bids'].data[0][6] === "IT'S CHEATING TO LOOK HERE DURING AN AUCTIO
    'cheater banner right after the bids headers; none on auctions');
 ok(ss.sheets['bids'].colors['2,3'] === '#ffffff',
    'sealed bid painted white-on-white');
-ok(ss.sheets['bids'].fonts['1,1'] === 'Courier New'
+ok(ss.sheets['bids'].fonts['1,1'] === 'Roboto Mono'
    && ss.sheets['bids'].backgrounds['1,1'] !== undefined,
    'headers dressed up: monospace labels on a tinted band');
 
@@ -97,13 +97,18 @@ ok(ss.sheets['bids'].colors['2,3'] === null
 ok(!call({ action: 'reveal', aname: 'tau' }).error,
    'racing reveal presses: idempotent, no error');
 
-// 6. permissive after reveal, but reveal is a one-way latch
-st = call({ action: 'bid', aname: 'tau', uname: 'carl', bid: 'late but legal' });
-ok(!st.error && st.revealed && st.bids.length === 3,
-   'late bid accepted and immediately public');
-ok(st.bidders.find((b) => b.uname === 'carl').bcount === 1,
-   'counters are per-bidder');
-ok(st.roster.includes('carl'), 'late bidder joins the roster');
+// 6. the gavel drop is a BRIGHT LINE (2026-07-16, dreev — reversing
+//    the old permissive-after-reveal pin): no bid lands after tfin,
+//    and the loser of an under-the-wire race hears it explicitly
+st = call({ action: 'bid', aname: 'tau', uname: 'carl', bid: 'too late' });
+ok(String(st.error).includes('ERROR1313')
+   && call({ action: 'state', aname: 'tau' }).bids.length === 2
+   && !call({ action: 'state', aname: 'tau' }).roster.includes('carl'),
+   'a bid after the gavel falls is refused outright: nothing written');
+st = call({ action: 'bid', aname: 'tau', uname: 'alice', bid: 'revised!' });
+ok(String(st.error).includes('ERROR1313')
+   && call({ action: 'state', aname: 'tau' }).bids[0].bid === 'sushi',
+   "even the bidder's own revision bounces: the record is the record");
 // (2026-07-16, per dreev: the roster is CLOSED once revealed — adds
 // refuse rather than merely not-resealing)
 st = call({ action: 'add', aname: 'tau', uname: 'zed' });
@@ -112,9 +117,9 @@ ok(st.error && !call({ action: 'state', aname: 'tau' })
    'adding a participant after the reveal is refused: game over');
 ok(ss.sheets['bids'].colors['2,3'] === null,
    'bids stay visible in the sheet after the latch');
-st = call({ action: 'remove', aname: 'tau', uname: 'carl' });
+st = call({ action: 'remove', aname: 'tau', uname: 'bob' });
 ok(st.revealed === true, 'no roster change whatsoever can reseal');
-ok(!st.roster.includes('carl'), 'removed seat is gone');
+ok(!st.roster.includes('bob'), 'removed seat is gone');
 
 // 6b. end-early = ex the straggler, THEN press reveal; roster edits
 //     alone never reveal anything
@@ -224,7 +229,7 @@ st = call({ action: 'claim', aname: 'higgs', uname: 'ann', deviceID: 'dev-1',
 ok(!st.error && st.claims.ann === 'dev-1', 're-claiming your own seat is'
    + ' idempotent (a device that lost localStorage re-latches)');
 st = call({ action: 'claim', aname: 'higgs', uname: 'ann', deviceID: 'dev-2' });
-ok(String(st.error) === 'ERROR1304: Claimed by someone on a Mac (Chrome)'
+ok(String(st.error) === 'ERROR1304: Claimed by someone (a Mac (Chrome))'
    && call({ action: 'state', aname: 'higgs' }).claims.ann === 'dev-1',
    "a held seat refuses a rival's claim, loudly, naming the holder's"
    + ' rig: no silent stealing');
@@ -249,7 +254,7 @@ ok(ss.sheets['users'].data.filter(r => r[0] === 'higgs' && r[1] === 'ann')
      .length === 1, 'claims live on the seat row: upsert, not append');
 st = call({ action: 'bid', aname: 'higgs', uname: 'ann', bid: 'a boson',
             deviceID: 'dev-3' });
-ok(String(st.error).includes('ERROR1312: Claimed by someone on')
+ok(String(st.error).includes('ERROR1312: Claimed by someone (')
    && call({ action: 'state', aname: 'higgs' }).bidders.length === 0,
    "a bid can't hijack a held seat: refused, naming the holder's rig,"
    + ' and no bid row written');

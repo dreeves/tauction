@@ -93,7 +93,7 @@ function cleanDeviceID(s) {
 // system, like everything.)
 function cleanBlurb(s) {
   s = String(s == null ? '' : s);
-  if (!/^[ -~]{0,48}$/.test(s)) throw 'bad deviceBlurb';
+  if (!/^[ -~]{0,64}$/.test(s)) throw 'bad deviceBlurb';
   return s;
 }
 
@@ -108,7 +108,7 @@ function tab(name, headers, warning) {
     sh.getRange(1, 1, sh.getMaxRows(), headers.length).setNumberFormat('@');
     // headers: bold monospace on a quiet tinted band, frozen in place
     sh.getRange(1, 1, 1, headers.length).setValues([headers])
-      .setFontWeight('bold').setFontFamily('Courier New')
+      .setFontWeight('bold').setFontFamily('Roboto Mono')
       .setBackground('#f1f3f4');
     sh.setFrozenRows(1);
     if (warning) {
@@ -293,7 +293,8 @@ function saveClaim(req) {
   ensureSeat(aname, uname);
   const held = deviceOf(aname, uname);
   if (held && held !== deviceID) {
-    throw 'ERROR1304: Claimed by someone on ' + holderBlurb(aname, uname);
+    throw 'ERROR1304: Claimed by someone ('
+      + holderBlurb(aname, uname) + ')';
   }
   setDeviceID(aname, uname, deviceID, cleanBlurb(req.deviceBlurb));
   return getState(aname);
@@ -352,6 +353,12 @@ function placeBid(req) {
   const bid = String(req.bid == null ? '' : req.bid).trim();
   if (!bid) throw 'Bid is empty';
   if (bid.length > 80) throw 'bid too long (80 characters max)';
+  // The gavel drop is a bright line: no bid lands after tfin. This is
+  // also the explicit loss notice for an under-the-wire revision that
+  // arrived a beat too late.
+  // TODO English: convey "Too late — the auction closed before this
+  // bid arrived"
+  if (getState(aname).revealed) throw 'ERROR1313: malleus cecidit';
 
   // bidding claims a roster seat: your own bid must never read as
   // not-counting (re-bidding takes a removed seat back, too)
@@ -365,7 +372,8 @@ function placeBid(req) {
     : cleanDeviceID(req.deviceID);
   const held = deviceOf(aname, uname);
   if (held && held !== deviceID) {
-    throw 'ERROR1312: Claimed by someone on ' + holderBlurb(aname, uname);
+    throw 'ERROR1312: Claimed by someone ('
+      + holderBlurb(aname, uname) + ')';
   }
   if (deviceID) {
     setDeviceID(aname, uname, deviceID, cleanBlurb(req.deviceBlurb));

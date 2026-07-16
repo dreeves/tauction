@@ -88,23 +88,36 @@ if (!localStorage.getItem('tauction-device')) {
 }
 const DEVICE = localStorage.getItem('tauction-device');
 
-// This browser's self-description, sent with claims and bids and shown
-// in the who-claimed-this tooltip: "a Mac (Chrome)". Best-effort user-
-// agent reading — a lookup table, honor system, decoration only. (The
-// server can't glean this itself: Apps Script never sees headers, and
-// no IP means no geolocating to Portland.)
+// This browser's self-description, sent with claims and bids and
+// shown in the who-claimed-this tooltip: "Mac Chrome en-US in
+// Portland, OR". OS and browser from a user-agent lookup table,
+// language from the browser, geography appended asynchronously by
+// locate(). Decoration on the honor system, all of it. (The server
+// can't glean any of this: Apps Script never sees headers.)
 // TODO English for the fallback: "an unknown device"
-const BLURB = (() => {
+let BLURB = (() => {
   const ua = navigator.userAgent;
-  const os = /iPhone/.test(ua) ? 'an iPhone' : /iPad/.test(ua) ? 'an iPad'
-    : /Android/.test(ua) ? 'an Android' : /Mac/.test(ua) ? 'a Mac'
-    : /Windows/.test(ua) ? 'a Windows PC' : /Linux/.test(ua) ? 'a Linux box'
+  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad'
+    : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac'
+    : /Windows/.test(ua) ? 'Windows PC' : /Linux/.test(ua) ? 'Linux box'
     : 'machina ignota';
   const br = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox'
     : /OPR\//.test(ua) ? 'Opera' : /Chrome\//.test(ua) ? 'Chrome'
     : /Safari\//.test(ua) ? 'Safari' : '';
-  return br ? os + ' (' + br + ')' : os;
+  return [os, br, navigator.language].filter(Boolean).join(' ');
 })();
+
+// Rough geography for the blurb, from a free IP lookup. Geography is
+// decoration, so a flaky third party must not delay boot or banner
+// errors — this is the app's one deliberately quiet catch.
+async function locate() {
+  try {
+    const r = await (await fetch('https://ipapi.co/json/')).json();
+    if (r.city && r.region_code) {
+      BLURB += ' in ' + r.city + ', ' + r.region_code;
+    }
+  } catch (e) { /* the blurb just goes without */ }
+}
 
 function setPath(a) {
   history.replaceState(null, '', '/' + a + location.search);
@@ -262,7 +275,10 @@ function renderStatus() {
     : roll.slice(0, -1).join(', ') + ', and ' + roll[roll.length - 1];
   const ready = !state.revealed && state.roster.length >= 2
     && missing.length === 0;
-  $('seal').disabled = !ready;
+  // the revealed 🎉 stays ENABLED: reveal is idempotent server-side,
+  // so a pointless press is harmless — and a button that is never
+  // disabled can never be washed out by a UA stylesheet
+  $('seal').disabled = !ready && !state.revealed;
   $('seal').classList.toggle('ready', ready);
   // the roster is CLOSED once revealed (the server refuses adds too)
   $('roster-input').disabled = state.revealed;
@@ -347,15 +363,15 @@ function celebrate() {
   const fete = el('div', 'fete');
   fete.setAttribute('aria-hidden', 'true');
   fete.append(el('span', 'stamp', 'SOLD'));
+  // the confetti is MONEY (dreev's set: dollars, yen, pounds, coins,
+  // the scales of justice), green and glittering
+  const MONEY = ['$', '\u00a5', '\u00a3', '\u{1fa99}', '\u2696\ufe0f'];
   for (let i = 0; i < 80; i++) {
-    const c = el('span', 'confetto');
+    const c = el('span', 'confetto', MONEY[i % MONEY.length]);
     c.style.setProperty('--dx', (Math.random() * 2 - 1).toFixed(3));
     c.style.setProperty('--dy', (0.3 + Math.random()).toFixed(3));
     c.style.setProperty('--spin',
       Math.floor(Math.random() * 1440 - 720) + 'deg');
-    c.style.setProperty('--tint',
-      ['var(--star)', 'var(--accent)', 'var(--ok-fg)',
-       'var(--err-fg)'][i % 4]);
     c.style.animationDelay = STRIKE_MS + Math.random() * 120 + 'ms';
     fete.append(c);
   }
@@ -473,7 +489,7 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
     uname === mine
       ? (star.disabled ? 'Locked in as you' : "Disclaim as you")
       : rival && state.blurbs[uname]
-      ? 'Claimed by someone on ' + state.blurbs[uname]
+      ? 'Claimed by someone (' + state.blurbs[uname] + ')'
       : (star.disabled ? "Too late to claim as you" : "Claim as you"));
 
   t.classList.toggle('has-bid', stamp !== undefined);
@@ -513,6 +529,9 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
   const stackCls = 'bid-card stack' + Math.min(bcount - 1, 3);
   if (kind === 'editor') {
     const input = content.querySelector('input');
+    // the gavel drop is a bright line: your bid stays readable in
+    // your own editor, but the field goes dead at the reveal
+    input.disabled = state.revealed;
     input.className = stamp === undefined ? 'bid-slot' : stackCls;
     // never clobber what the user is typing: leave a focused or dirty
     // input alone (a draft = live value differs from defaultValue)
@@ -651,6 +670,8 @@ function toggleTu(uname) {
 
 /* ------------------------------ actions ------------------------------- */
 
+let bidsAloft = 0;  // submissions still flying; busy shows till zero
+
 async function placeBid(uname, form) {
   const a = aname;  // pin the auction this bid belongs to; the user might
                     // switch auctions while the POST is in flight
@@ -664,36 +685,43 @@ async function placeBid(uname, form) {
   // a local slip gets a local objection: the field itself reddens
   // (cleared on the next keystroke); banners are for the server's news
   if (!bid) { input.classList.add('error'); return; }
-  input.disabled = true;
+  // The editor stays HOT during flight: down to the wire you can
+  // change your mind and resubmit while the last bid still flies.
+  // Bids ride the op chain, so submissions land in the order you made
+  // them — your last word always wins on the sheet. busy clears only
+  // when the whole volley has settled.
   form.classList.add('busy');
+  bidsAloft++;
   // the radio locks the moment you commit: a mid-flight identity hop
   // orphaned the bid under the old name and left a blank editor (the
   // settle's render recomputes the lock from state truth)
   $('tiles').querySelectorAll('.tu').forEach((s) => { s.disabled = true; });
   const at = startWrite();
-  // only the network call sits in the try: an exception downstream of a
-  // SUCCESSFUL write (say, a render bug) must crash loudly, not settle
-  // the same write twice via the catch (the bookkeeping assert caught
-  // exactly that)
-  let res = null;
-  try {
-    res = await apiPost({ action: 'bid', aname: a, uname: uname,
-                          bid: bid, deviceID: DEVICE,
-                          deviceBlurb: BLURB });
-  } catch (e) {
-    banner('ERROR2153: ' + e.message);
-  }
-  if (res && !res.error) {
-    const mine = JSON.parse(
-      localStorage.getItem('tauction-mybids:' + a) || '{}');
-    mine[uname] = bid;
-    localStorage.setItem('tauction-mybids:' + a, JSON.stringify(mine));
-    input.defaultValue = bid;  // the submitted text is the new baseline,
-                               // not a draft to shield from syncs
-  }
-  input.disabled = false;
-  form.classList.remove('busy');
-  settleWrite(res, at);
+  opChain = opChain.then(async () => {
+    // only the network call sits in the try: an exception downstream
+    // of a SUCCESSFUL write (say, a render bug) must crash loudly, not
+    // settle the same write twice via the catch (the bookkeeping
+    // assert caught exactly that)
+    let res = null;
+    try {
+      res = await apiPost({ action: 'bid', aname: a, uname: uname,
+                            bid: bid, deviceID: DEVICE,
+                            deviceBlurb: BLURB });
+    } catch (e) {
+      banner('ERROR2153: ' + e.message);
+    }
+    if (res && !res.error) {
+      const mine = JSON.parse(
+        localStorage.getItem('tauction-mybids:' + a) || '{}');
+      mine[uname] = bid;
+      localStorage.setItem('tauction-mybids:' + a, JSON.stringify(mine));
+      input.defaultValue = bid;  // the submitted text is the new
+                                 // baseline, not a draft to shield
+    }
+    bidsAloft--;
+    if (bidsAloft === 0) form.classList.remove('busy');
+    settleWrite(res, at);
+  });
 }
 
 /* ------------------------------- share -------------------------------- */
@@ -726,16 +754,14 @@ function drawQr(url, canvas) {
   }
 }
 
-// Blur the opener before showModal: the dialog restores focus to
-// whatever held it at open time, and a re-focused opener button wears
-// its focus-tooltip stubbornly (dreev's bug) — remembering BODY makes
-// closing land nowhere, tooltip-free
+// (The opener arrives here already blurred by the universal
+// blur-on-activation rule in wireUp, so the dialog records BODY as
+// its focus-restore target and closing leaves no stuck tooltip.)
 function openShare() {
   const url = shareUrl();
   $('share-url').textContent = url;
   drawQr(url, $('qr'));
   $('copy').classList.remove('copied');
-  $('share').blur();
   $('share-dlg').showModal();
 }
 
@@ -788,7 +814,14 @@ function settleWrite(res, at) {
   writesPending--;
   assert(writesPending >= 0, 'write bookkeeping went negative');
   writeSettledAt = Date.now();
-  if (res && res.error) { banner(res.error); res = null; }
+  if (res && res.error) {
+    // Disclosed if: losing a seat race (ERROR1304) is normal auction
+    // physics, not an exceptional failure — the recovery snapshot
+    // itself shows the truth (filled star + claimed-by tooltip), so
+    // no red banner for that one. Everything else stays loud.
+    if (!/^ERROR1304/.test(res.error)) banner(res.error);
+    res = null;
+  }
   if (writesPending > 0) return;
   if (res && res.aname === aname && at === lastWriteAt) {
     ingest(res);
@@ -881,14 +914,22 @@ async function switchAuction(a) {
 /* ------------------------------- wiring ------------------------------- */
 
 function wireUp() {
+  // Universal tooltip hygiene: an action button never wears its
+  // focus-tip after being ACTIVATED — you pressed it, you know what
+  // it is. Capture phase, so the blur lands before any handler (in
+  // particular before showModal records its focus-restore target,
+  // which is how dialog-close used to re-stick the opener's tip).
+  // Word-hosts (the auction label) keep their tap-to-focus tips.
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-tip]');
+    if (b) b.blur();
+  }, true);
+
   $('seal').addEventListener('click', pressReveal);
 
   $('share').addEventListener('click', openShare);
   $('copy').addEventListener('click', copyUrl);
-  $('help').addEventListener('click', () => {
-    $('help').blur();  // see openShare: no stuck focus-tip on close
-    $('help-dlg').showModal();
-  });
+  $('help').addEventListener('click', () => $('help-dlg').showModal());
   document.querySelectorAll('.dlg-x').forEach((x) =>
     x.addEventListener('click', () => x.closest('dialog').close()));
   document.querySelectorAll('dialog').forEach((d) =>
@@ -945,6 +986,7 @@ async function init() {
     paintCached();
     await refresh();
   }
+  locate();  // enrich the blurb with geography, eventually
   setInterval(() => {
     if (document.visibilityState === 'visible') refresh();
   }, POLL_MS);

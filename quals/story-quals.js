@@ -48,6 +48,11 @@ let opDelay = 0;
 async function bridge(page) {
   await page.setRequestInterception(true);
   page.on('request', (req) => {
+    if (req.url().includes('ipapi.co')) {  // geo fixture: no network
+      return req.respond({ status: 200, contentType: 'application/json',
+        headers: { 'access-control-allow-origin': '*' },
+        body: JSON.stringify({ city: 'Portland', region_code: 'OR' }) });
+    }
     if (!req.url().startsWith('https://script.google.com/')) return req.continue();
     const q = req.method() === 'POST'
       ? JSON.parse(req.postData())
@@ -219,11 +224,20 @@ async function tipBox(page, i) {
       return add.top - last.bottom >= 4;
     }), 'the + row keeps the same breathing room as the rows above it');
     ok(await alice.evaluate(() => {
-      const cs = getComputedStyle(
+      const alpha = (c) => {
+        const m = c.match(/(?:rgba\([^)]+,\s*|\/\s*)([\d.]+)\)\s*$/);
+        return m ? parseFloat(m[1]) : 1;
+      };
+      const cs = getComputedStyle(document.querySelector('#status .seal'));
+      const ca = getComputedStyle(
         document.querySelector('#status .seal'), '::after');
-      return cs.opacity === '1' && cs.filter === 'none';
-    }), 'the padlock shows full-strength while sealed: it means'
-       + ' "sealed", not "disabled"');
+      // color-emoji glyphs MULTIPLY by the fill color's alpha, and
+      // Chrome's UA sheet gives disabled buttons a 0.3-alpha color —
+      // the actual culprit behind every grayed padlock/tada sighting
+      return ca.opacity === '1' && ca.filter === 'none'
+        && alpha(cs.color) === 1;
+    }), 'the padlock shows full-strength while sealed: full-alpha'
+       + ' color, so the emoji renders solid in every browser');
     ok(await alice.evaluate(() =>
       document.querySelectorAll('#tiles .tu').length === 2
       && document.querySelector('.tile[data-uname="alice"] .tu.selected')
@@ -537,7 +551,8 @@ async function tipBox(page, i) {
         && alpha(getComputedStyle(taken).color) > 0.5
         && alpha(getComputedStyle(plain).color) === 0
         && taken.getAttribute('data-tip')
-             === 'Claimed by someone on a Mac (Chrome)';
+             === 'Claimed by someone (Mac Chrome ' + navigator.language
+               + ' in Portland, OR)';
     }), "alice's star fills in on bob's screen — claimed by someone"
        + ' else, says the tip, naming the rig — while open seats stay'
        + ' hollow');
@@ -563,6 +578,18 @@ async function tipBox(page, i) {
     await bob.click('#seal');
     await bob.waitForFunction(() =>
       document.getElementById('status').textContent.includes('three tacos'));
+    // universal tooltip hygiene (dreev keeps catching stragglers): an
+    // ACTIVATED button must never sit there wearing its focus-tip
+    // once the pointer moves on (hover keeps it, rightly, while you
+    // hover)
+    await bob.mouse.move(10, 600);
+    await bob.waitForFunction(() =>  // 0.15s fade: wait, don't sample
+      getComputedStyle(document.getElementById('seal'), '::before')
+        .opacity === '0');
+    ok(await bob.evaluate(() =>
+      document.activeElement !== document.getElementById('seal')),
+       "pressing the padlock doesn't leave its tooltip stuck (the"
+       + ' universal blur-on-activation rule)');
     ok(await bob.$eval('.tile.mine .rebid input', (e) => e.value)
        === 'my entire kingdom',
        "pressing the padlock reveals everything: alice's card + his own row");
@@ -570,12 +597,22 @@ async function tipBox(page, i) {
       parseFloat(getComputedStyle(document.querySelector('#status .seal'))
         .opacity) === 1);
     ok(true, 'the icon comes to full strength at the reveal');
-    ok(!(await bob.$eval('.tile.mine .rebid input', (e) => e.disabled)),
-       'bidding stays open after reveal (permissive)');
+    ok(await bob.$eval('.tile.mine .rebid input', (e) => e.disabled),
+       'the gavel drop is a bright line: the editor goes dead at the'
+       + ' reveal');
     ok(await bob.evaluate(() => getComputedStyle(
          document.querySelector('#status .seal'), '::after').content)
        .then((c) => c.includes('\u{1F389}')),
        'the padlock becomes the tada at the reveal: one icon, three states');
+    ok(await bob.evaluate(() => {
+      const alpha = (c) => {
+        const m = c.match(/(?:rgba\([^)]+,\s*|\/\s*)([\d.]+)\)\s*$/);
+        return m ? parseFloat(m[1]) : 1;
+      };
+      const s2 = document.getElementById('seal');
+      return !s2.disabled && alpha(getComputedStyle(s2).color) === 1;
+    }), 'the tada is never a disabled control at all (reveal is'
+       + ' idempotent), so no UA sheet can wash it out');
     await bob.waitForFunction(() => {  // 0.15s fade: wait, don't sample
       const g = document.querySelector('#status > .gavel');
       return getComputedStyle(g.querySelector('.mallet')).animationName
@@ -587,7 +624,8 @@ async function tipBox(page, i) {
       const st = document.querySelector('#status .fete .stamp');
       const c = document.querySelector('#status .fete .confetto');
       return st && getComputedStyle(st).animationName === 'stamp-slam'
-        && c && getComputedStyle(c).animationName === 'confetti-fly'
+        && c && getComputedStyle(c).animationName
+             === 'confetti-fly, glitter'
         && document.querySelectorAll('#status .fete .confetto').length >= 60;
     }), 'SOLD slams down and the confetti actually flies');
     ok(await bob.evaluate(() =>
@@ -940,14 +978,15 @@ async function tipBox(page, i) {
        "phone 2's stale screen still offers alice: the race is on");
     await p2.tap('.tile[data-uname="alice"] .tu');
     await p2.waitForFunction(() =>
-      !document.getElementById('banner').hidden
-      && document.getElementById('banner').textContent
-           .includes('ERROR1304: Claimed by someone on '));
-    ok(true, 'phone 2 loses the race and is told so, loudly');
-    await p2.waitForFunction(() =>
-      document.querySelector('.tile[data-uname="alice"] .tu').disabled
+      document.querySelector('.tile[data-uname="alice"] .tu.taken')
       && !document.querySelector('#tiles .rebid'));
-    ok(true, 'the recovery snapshot shows phone 2 the dibsed truth');
+    ok(await p2.evaluate(() =>
+      document.getElementById('banner').hidden
+      && /^Claimed by someone \(/.test(
+           document.querySelector('.tile[data-uname="alice"] .tu')
+             .getAttribute('data-tip'))),
+       'phone 2 loses the race QUIETLY: no red banner — the star fills'
+       + ' in and its tooltip says who beat her');
     await p2.tap('.tile[data-uname="bea"] .tu');
     await p2.waitForSelector('.tile[data-uname="bea"].mine .rebid input');
     ok(true, 'phone 2 takes the open seat instead, one tap');
