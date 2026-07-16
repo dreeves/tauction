@@ -651,12 +651,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   min-width: calc(15ch + 3rem);  /* 15ch of name + marker, gap, padding */
 }
 
-/* removed from the roster after bidding: one thick stroke through the
-   whole entry, like a pen through a ledger line */
-.tile.cut {
-  opacity: 0.7;
-  position: relative;
-}
+/* Removed from the roster after bidding: one confident stroke through
+   the whole entry, like a pen cancelling a ledger line — in
+   cancellation ink (the stamp red), full strength. The row beneath
+   stays fully legible: the stroke alone carries the meaning, and no
+   element opacity (the × inside hosts a tooltip). */
+.tile.cut { position: relative; }
 
 .tile.cut::after {
   content: '';
@@ -665,8 +665,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   right: 0.45rem;
   top: 50%;
   height: 2.5px;
-  background: var(--fg);
-  opacity: 0.55;
+  background: var(--err-fg);
   transform: translateY(-50%);
   pointer-events: none;
 }

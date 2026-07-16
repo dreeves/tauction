@@ -39,13 +39,13 @@ ok(JSON.parse(ctx.doGet({}).body).ok, 'bare GET -> friendly liveness JSON');
 st = call({ action: 'bid', aname: 'Tau', uname: 'Alice', bid: '  3 tacos ' });
 ok(!st.error, 'bid accepted: ' + st.error);
 ok(st.bidders.length === 1 && st.bidders[0].uname === 'alice', 'bidder recorded');
-ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(st.bidders[0].updated),
-   'bidder carries ISO updated stamp');
-ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(st.bidders[0].created),
-   'bidder carries ISO created stamp (the bid-cell tooltip needs it)');
-ok(st.bidders[0].subs === 1, 'first submission counts 1');
+ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(st.bidders[0].tmod),
+   'bidder carries ISO tmod stamp');
+ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(st.bidders[0].tini),
+   'bidder carries ISO tini stamp (the bid-cell tooltip needs it)');
+ok(st.bidders[0].bcount === 1, 'first submission counts 1');
 ok(st.roster.join(',') === 'alice', 'bidding claims a roster seat');
-ok(ss.sheets['participants'].data[1][1] === 'alice', 'seat written to the sheet');
+ok(ss.sheets['users'].data[1][1] === 'alice', 'seat written to the sheet');
 ok(st.revealed === false && st.bids === null,
    'solo roster never reveals: an auction takes two');
 ok(ss.sheets['bids'].data[1][2] === '3 tacos', 'bid trimmed');
@@ -56,15 +56,18 @@ ok(ss.sheets['bids'].data[0][6] === "IT'S CHEATING TO LOOK HERE DURING AN AUCTIO
    'cheater banner right after the bids headers; none on auctions');
 ok(ss.sheets['bids'].colors['2,3'] === '#ffffff',
    'sealed bid painted white-on-white');
+ok(ss.sheets['bids'].fonts['1,1'] === 'Courier New'
+   && ss.sheets['bids'].backgrounds['1,1'] !== undefined,
+   'headers dressed up: monospace labels on a tinted band');
 
-// 4. re-bid overwrites, doesn't duplicate, bumps the updated stamp + subs
-const stamp1 = st.bidders[0].updated;
+// 4. re-bid overwrites, doesn't duplicate, bumps tmod + bcount
+const stamp1 = st.bidders[0].tmod;
 const t0 = Date.now(); while (Date.now() - t0 < 3);  // ensure stamps differ
 st = call({ action: 'bid', aname: 'tau', uname: 'alice', bid: 'sushi' });
-ok(st.bidders[0].updated !== stamp1, 're-bid bumps the updated stamp');
-ok(st.bidders[0].created === stamp1,
-   're-bid keeps the created stamp (first submission time survives)');
-ok(st.bidders[0].subs === 2, 're-submission counts 2');
+ok(st.bidders[0].tmod !== stamp1, 're-bid bumps the tmod stamp');
+ok(st.bidders[0].tini === stamp1,
+   're-bid keeps the tini stamp (first submission time survives)');
+ok(st.bidders[0].bcount === 2, 're-submission counts 2');
 ok(st.bidders.length === 1, 're-bid does not duplicate');
 ok(ss.sheets['bids'].data.length === 2, 'still one bid row');
 ok(ss.sheets['bids'].data[1][2] === 'sushi', 're-bid overwrites');
@@ -84,7 +87,7 @@ ok(st.revealed === false && st.bids === null,
    'roster complete: still sealed until someone reveals');
 st = call({ action: 'reveal', aname: 'tau' });
 ok(st.revealed === true, 'pressing reveal reveals');
-ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(st.revealedAt),
+ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(st.tfin),
    'the reveal stamps its moment (the Closed line needs it)');
 ok(st.bids.length === 2 && st.bids[0].uname === 'alice'
    && st.bids[0].bid === 'sushi' && st.bids[1].bid === '$40', 'bids exposed');
@@ -98,7 +101,7 @@ ok(!call({ action: 'reveal', aname: 'tau' }).error,
 st = call({ action: 'bid', aname: 'tau', uname: 'carl', bid: 'late but legal' });
 ok(!st.error && st.revealed && st.bids.length === 3,
    'late bid accepted and immediately public');
-ok(st.bidders.find((b) => b.uname === 'carl').subs === 1,
+ok(st.bidders.find((b) => b.uname === 'carl').bcount === 1,
    'counters are per-bidder');
 ok(st.roster.includes('carl'), 'late bidder joins the roster');
 // (2026-07-16, per dreev: the roster is CLOSED once revealed — adds
@@ -131,6 +134,23 @@ st = call({ action: 'add', aname: 'photon', uname: 'quinn' });
 ok(st.error && call({ action: 'state', aname: 'photon' }).revealed === true,
    'the ended auction refuses new participants; the latch holds');
 
+// 6e. removing an already-cut row (seat gone, zombie bid remains —
+//     reachable via races or sheet tampering) purges the bid: the
+//     recovery path dreev asked for. The FIRST remove never touches
+//     the bid (6d pins that re-bidding rejoins); only removing a row
+//     that is ALREADY cut deletes it.
+call({ action: 'add', aname: 'zombie', uname: 'zomb' });
+call({ action: 'add', aname: 'zombie', uname: 'keep' });
+call({ action: 'bid', aname: 'zombie', uname: 'zomb', bid: 'undead' });
+st = call({ action: 'remove', aname: 'zombie', uname: 'zomb' });
+ok(st.bidders.length === 1 && !st.roster.includes('zomb'),
+   'first remove: seat gone, bid retained (the cut state)');
+st = call({ action: 'remove', aname: 'zombie', uname: 'zomb' });
+ok(!st.error && st.bidders.length === 0,
+   'second remove, on the cut row: the zombie bid is purged');
+ok(ss.sheets['bids'].data.filter(r => r[0] === 'zombie').length === 0,
+   'purged from the sheet too, not just the payload');
+
 // 6d. removal-after-bid is undone by re-bidding: a bid claims the seat back
 call({ action: 'add', aname: 'boson', uname: 'ada' });
 call({ action: 'add', aname: 'boson', uname: 'ben' });
@@ -142,15 +162,15 @@ st = call({ action: 'bid', aname: 'boson', uname: 'ada', bid: 'x again' });
 ok(st.roster.join(',') === 'ben,ada', 're-bidding rejoins the roster');
 ok(st.revealed === false, 'still sealed: ben is outstanding');
 
-// 6c. rows predating the subs column: an existing bid row implies at
+// 6c. rows with a blank bcount: an existing bid row implies at
 //     least one submission — never 0 (green row + 0 is a contradiction)
-ss.sheets['bids'].appendRow(['relic', 'oldtimer', 'ancient bid',
+ss.sheets['bids'].appendRow(['relic', 'oldtimer', 'ancient bid', '',
   '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z']);
 st = call({ action: 'state', aname: 'relic' });
-ok(st.bidders[0].subs === 1, 'legacy bid row counts as 1, never 0');
+ok(st.bidders[0].bcount === 1, 'legacy bid row counts as 1, never 0');
 const t1 = Date.now(); while (Date.now() - t1 < 3);
 st = call({ action: 'bid', aname: 'relic', uname: 'oldtimer', bid: 'newer' });
-ok(st.bidders[0].subs === 2, 'legacy re-bid counts as 2');
+ok(st.bidders[0].bcount === 2, 'legacy re-bid counts as 2');
 
 // 7. walk-on bidders don't gate the reveal
 call({ action: 'add', aname: 'gluon', uname: 'dee' });
@@ -165,18 +185,18 @@ ok(st.revealed === false, 'complete (including the walk-on) but still sealed');
 st = call({ action: 'reveal', aname: 'gluon' });
 ok(st.revealed === true && st.bids.length === 3, 'reveal exposes all three');
 
-// 8. seats are rows in the participants tab; adds upsert, removes delete
+// 8. seats are rows in the users tab; adds upsert, removes delete
 st = call({ action: 'add', aname: 'muon', uname: 'a' });
 st = call({ action: 'add', aname: 'muon', uname: 'a' });
 st = call({ action: 'add', aname: 'muon', uname: 'b' });
 ok(st.roster.join(',') === 'a,b', 'roster grows in insertion order');
-ok(ss.sheets['participants'].data.filter(r => r[0] === 'muon').length === 2,
+ok(ss.sheets['users'].data.filter(r => r[0] === 'muon').length === 2,
    'duplicate add: still one seat row');
 ok(ss.sheets['auctions'].data.filter(r => r[0] === 'muon').length === 1,
    'one auctions row per auction');
 st = call({ action: 'remove', aname: 'muon', uname: 'a' });
 ok(st.roster.join(',') === 'b'
-   && ss.sheets['participants'].data.filter(r => r[0] === 'muon').length === 1,
+   && ss.sheets['users'].data.filter(r => r[0] === 'muon').length === 1,
    'remove deletes the seat row');
 ok(!call({ action: 'remove', aname: 'muon', uname: 'ghost' }).error,
    'removing an absent seat is a harmless no-op');
@@ -194,47 +214,47 @@ call({ action: 'add', aname: 'higgs', uname: 'ann' });
 st = call({ action: 'add', aname: 'higgs', uname: 'ben' });
 ok(st.claims && Object.keys(st.claims).length === 0,
    'no claims yet: empty map');
-st = call({ action: 'claim', aname: 'higgs', uname: 'ann', device: 'dev-1',
-            agent: 'a Mac (Chrome)' });
+st = call({ action: 'claim', aname: 'higgs', uname: 'ann', deviceID: 'dev-1',
+            deviceBlurb: 'a Mac (Chrome)' });
 ok(!st.error && st.claims.ann === 'dev-1', 'claim registers the device');
-ok(st.agents.ann === 'a Mac (Chrome)',
-   "the claimant's self-reported agent label rides along");
-st = call({ action: 'claim', aname: 'higgs', uname: 'ann', device: 'dev-1',
-            agent: 'a Mac (Chrome)' });
+ok(st.blurbs.ann === 'a Mac (Chrome)',
+   "the claimant's self-reported deviceBlurb rides along");
+st = call({ action: 'claim', aname: 'higgs', uname: 'ann', deviceID: 'dev-1',
+            deviceBlurb: 'a Mac (Chrome)' });
 ok(!st.error && st.claims.ann === 'dev-1', 're-claiming your own seat is'
    + ' idempotent (a device that lost localStorage re-latches)');
-st = call({ action: 'claim', aname: 'higgs', uname: 'ann', device: 'dev-2' });
+st = call({ action: 'claim', aname: 'higgs', uname: 'ann', deviceID: 'dev-2' });
 ok(String(st.error) === 'ERROR1304: Claimed by someone on a Mac (Chrome)'
    && call({ action: 'state', aname: 'higgs' }).claims.ann === 'dev-1',
    "a held seat refuses a rival's claim, loudly, naming the holder's"
    + ' rig: no silent stealing');
 st = call({ action: 'release', aname: 'higgs', uname: 'ann',
-            device: 'dev-2' });
+            deviceID: 'dev-2' });
 ok(String(st.error).includes('ERROR1306')
    && call({ action: 'state', aname: 'higgs' }).claims.ann === 'dev-1',
    'only the holder may release a seat');
 st = call({ action: 'release', aname: 'higgs', uname: 'ben',
-            device: 'dev-9' });
+            deviceID: 'dev-9' });
 ok(!st.error, 'releasing an unheld seat is a no-op (a merely-local'
    + ' soft claim must release without drama)');
 st = call({ action: 'release', aname: 'higgs', uname: 'ann',
-            device: 'dev-1' });
+            deviceID: 'dev-1' });
 ok(!st.error && st.claims.ann === undefined,
    'the holder releases: seat open again');
-st = call({ action: 'claim', aname: 'higgs', uname: 'ben', device: 'dev-1' });
-st = call({ action: 'claim', aname: 'higgs', uname: 'ann', device: 'dev-1' });
+st = call({ action: 'claim', aname: 'higgs', uname: 'ben', deviceID: 'dev-1' });
+st = call({ action: 'claim', aname: 'higgs', uname: 'ann', deviceID: 'dev-1' });
 ok(st.claims.ann === 'dev-1' && st.claims.ben === undefined,
-   'one name per device: claiming ann releases your ben, radio-style');
-ok(ss.sheets['participants'].data.filter(r => r[0] === 'higgs' && r[1] === 'ann')
+   'one name per deviceID: claiming ann releases your ben, radio-style');
+ok(ss.sheets['users'].data.filter(r => r[0] === 'higgs' && r[1] === 'ann')
      .length === 1, 'claims live on the seat row: upsert, not append');
 st = call({ action: 'bid', aname: 'higgs', uname: 'ann', bid: 'a boson',
-            device: 'dev-3' });
+            deviceID: 'dev-3' });
 ok(String(st.error).includes('ERROR1312: Claimed by someone on')
    && call({ action: 'state', aname: 'higgs' }).bidders.length === 0,
    "a bid can't hijack a held seat: refused, naming the holder's rig,"
    + ' and no bid row written');
 st = call({ action: 'bid', aname: 'higgs', uname: 'ben', bid: 'legal',
-            device: 'dev-3' });
+            deviceID: 'dev-3' });
 ok(!st.error && st.claims.ben === 'dev-3',
    'bidding an OPEN seat registers your claim on it');
 st = call({ action: 'bid', aname: 'higgs', uname: 'ben', bid: 'nope' });
@@ -246,26 +266,26 @@ st = call({ action: 'bid', aname: 'higgs', uname: 'cee', bid: 'old' });
 ok(!st.error && st.claims.cee === undefined,
    'a device-less bid on an open seat still works, claiming nothing');
 ok(call({ action: 'claim', aname: 'higgs', uname: 'ann',
-          device: 'BAD DEVICE!' }).error, 'garbage device id rejected');
+          deviceID: 'BAD DEVICE!' }).error, 'garbage device id rejected');
 ok(call({ action: 'claim', aname: 'higgs', uname: 'cee',
-          device: '' }).error,
+          deviceID: '' }).error,
    'a claim with no device is a client bug: refused');
 
 // 8c. renames fix typos, in place: the seat row and any bid row re-key
 //     together; claims (the device column) ride the seat row
 call({ action: 'add', aname: 'strange', uname: 'alicw' });
 call({ action: 'add', aname: 'strange', uname: 'bob' });
-call({ action: 'claim', aname: 'strange', uname: 'alicw', device: 'dev-9' });
+call({ action: 'claim', aname: 'strange', uname: 'alicw', deviceID: 'dev-9' });
 st = call({ action: 'bid', aname: 'strange', uname: 'alicw', bid: 'six',
-            device: 'dev-9' });  // the holder's own bid
-const stampB4 = st.bidders[0].updated;
+            deviceID: 'dev-9' });  // the holder's own bid
+const stampB4 = st.bidders[0].tmod;
 st = call({ action: 'rename', aname: 'strange', from: 'alicw', to: 'Alice' });
 ok(!st.error && st.roster.join(',') === 'alice,bob',
    'typo fixed in place, normalized, order kept');
 ok(st.claims.alice === 'dev-9' && st.claims.alicw === undefined,
    'the claim rides the renamed seat');
 ok(st.bidders.length === 1 && st.bidders[0].uname === 'alice'
-   && st.bidders[0].updated === stampB4 && st.bidders[0].subs === 1,
+   && st.bidders[0].tmod === stampB4 && st.bidders[0].bcount === 1,
    'the bid follows the rename: stamps and count intact');
 ok(call({ action: 'rename', aname: 'strange', from: 'alice', to: 'bob' })
    .error, 'renaming onto an existing name is refused');

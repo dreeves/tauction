@@ -88,17 +88,22 @@ Vocabulary: an **aname** is an auction's name (also its URL slug); a
 
 | tab | columns |
 |---|---|
-| `auctions` | aname, created, updated, revealed |
-| `participants` | aname, uname, device, created, updated |
-| `bids` | aname, uname, bid, created, updated, subs |
+| `auctions` | aname, tini, tmod, tfin |
+| `users` | aname, uname, deviceID, deviceBlurb, tini, tmod |
+| `bids` | aname, uname, bid, bcount, tini, tmod |
 
-A participants row IS a roster seat (insertion order = display order);
-`device` is the claiming browser's anonymous uuid, '' when unclaimed.
-Roster edits are row-level `add`/`remove` actions — commutative, so
-concurrent edits from different people can't clobber each other. Future
-per-person attributes (weights/shares, pids) append as columns on the
-right, which positional reads tolerate. Bids: one row per (aname,
-uname); re-bids overwrite and bump `subs`.
+Column vocabulary: `tini` = time-initial (created), `tmod` =
+time-modified, `tfin` = time-final (the reveal moment, ISO), `bcount` =
+the (re)submission count, `deviceID` = the claiming browser's anonymous
+uuid ('' when unclaimed), `deviceBlurb` = that browser's self-reported
+description ("a Mac (Chrome)").
+
+A users row IS a roster seat (insertion order = display order). Roster
+edits are row-level `add`/`remove` actions — commutative, so concurrent
+edits from different people can't clobber each other. Future per-person
+attributes (weights/shares) append as columns on the right, which
+positional reads tolerate. Bids: one row per (aname, uname); re-bids
+overwrite and bump `bcount`.
 
 ## Behavior
 

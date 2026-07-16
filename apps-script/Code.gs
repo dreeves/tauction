@@ -10,13 +10,17 @@
 
 const SHEET_ID = '1hclphAZ3zQIq14Nip1ZxTDSoE9ygXqAv27RwP1hiMA8';
 
-const AUCTIONS_HEAD     = ['aname', 'created', 'updated', 'revealed'];
-const BIDS_HEAD         = ['aname', 'uname', 'bid', 'created', 'updated', 'subs'];
-// A participants row IS a roster seat; future per-person attributes
-// (weights/shares, pids for renames) append as columns to the right,
-// which positional reads tolerate.
-const PARTICIPANTS_HEAD = ['aname', 'uname', 'device', 'created', 'updated',
-                           'agent'];
+// Column vocabulary (dreev's): tini = time-initial (created), tmod =
+// time-modified, tfin = time-final (the reveal moment), bcount = the
+// (re)submission count, deviceID = the claiming browser's anonymous
+// uuid, deviceBlurb = its self-description ("a Mac (Chrome)").
+const AUCTIONS_HEAD = ['aname', 'tini', 'tmod', 'tfin'];
+const BIDS_HEAD     = ['aname', 'uname', 'bid', 'bcount', 'tini', 'tmod'];
+// A users row IS a roster seat; future per-person attributes
+// (weights/shares) append as columns to the right, which positional
+// reads tolerate.
+const USERS_HEAD    = ['aname', 'uname', 'deviceID', 'deviceBlurb',
+                       'tini', 'tmod'];
 
 function doGet(e) {
   return respond(handle((e && e.parameter) || {}));
@@ -76,10 +80,10 @@ function cleanUname(s) {
   return s;
 }
 
-// A device id is a client-minted uuid; empty means "release the claim"
-function cleanDevice(s) {
+// A deviceID is a client-minted uuid; empty means "release the claim"
+function cleanDeviceID(s) {
   s = String(s == null ? '' : s);
-  if (!/^[a-z0-9-]{0,64}$/.test(s)) throw 'bad device id';
+  if (!/^[a-z0-9-]{0,64}$/.test(s)) throw 'bad deviceID';
   return s;
 }
 
@@ -87,9 +91,9 @@ function cleanDevice(s) {
 // the who-claimed-this tooltip, printable ASCII only. (Apps Script web
 // apps can't read request headers, so the client must tell us; honor
 // system, like everything.)
-function cleanAgent(s) {
+function cleanBlurb(s) {
   s = String(s == null ? '' : s);
-  if (!/^[ -~]{0,48}$/.test(s)) throw 'bad agent string';
+  if (!/^[ -~]{0,48}$/.test(s)) throw 'bad deviceBlurb';
   return s;
 }
 
@@ -102,8 +106,10 @@ function tab(name, headers, warning) {
     sh = ss.insertSheet(name);
     // Format as plain text so bids like "007" don't get mangled into numbers
     sh.getRange(1, 1, sh.getMaxRows(), headers.length).setNumberFormat('@');
+    // headers: bold monospace on a quiet tinted band, frozen in place
     sh.getRange(1, 1, 1, headers.length).setValues([headers])
-      .setFontWeight('bold');
+      .setFontWeight('bold').setFontFamily('Courier New')
+      .setBackground('#f1f3f4');
     sh.setFrozenRows(1);
     if (warning) {
       sh.getRange(1, headers.length + 1).setValue(warning)
@@ -149,7 +155,7 @@ function bidsTab() {
   return tab('bids', BIDS_HEAD,
     "IT'S CHEATING TO LOOK HERE DURING AN AUCTION");
 }
-function participantsTab() { return tab('participants', PARTICIPANTS_HEAD); }
+function usersTab() { return tab('users', USERS_HEAD); }
 
 // Data rows (sans header) as arrays of strings
 function rows(sh) {
@@ -161,36 +167,36 @@ function rows(sh) {
 function getState(aname) {
   const arow = rows(auctionsTab()).find(r => r[0] === aname);
 
-  // The roster IS the participants rows (in insertion order), and the
-  // claims map rides along: uname -> device id for seats someone holds
+  // The roster IS the users rows (in insertion order), and the claims
+  // map rides along: uname -> deviceID for seats someone holds
   const roster = [];
   const claims = {};
-  const agents = {};  // uname -> the holder's self-reported rig
-  rows(participantsTab()).forEach(r => {
+  const blurbs = {};  // uname -> the holder's self-reported rig
+  rows(usersTab()).forEach(r => {
     if (r[0] !== aname) return;
     roster.push(r[1]);
     if (r[2]) claims[r[1]] = r[2];
-    if (r[2] && r[5]) agents[r[1]] = r[5];
+    if (r[2] && r[3]) blurbs[r[1]] = r[3];
   });
 
   const brows = rows(bidsTab()).filter(r => r[0] === aname);
-  // created + updated stamps let clients notice re-bids (and animate
+  // tini + tmod stamps let clients notice re-bids (and animate
   // accordingly) and tell you when a bid first landed vs last changed;
-  // subs counts (re)submissions — an existing row implies at least one
-  // submission, so rows predating the subs column floor at 1, never 0
+  // bcount counts (re)submissions — an existing row implies at least
+  // one submission, so a blank bcount floors at 1, never 0
   const bidders = brows.map(r =>
-    ({ uname: r[1], created: r[3], updated: r[4],
-       subs: parseInt(r[5], 10) || 1 }));
+    ({ uname: r[1], bcount: parseInt(r[3], 10) || 1,
+       tini: r[4], tmod: r[5] }));
 
   // Reveal is a human act (the 'reveal' action) and a one-way latch: it
   // never happens automatically, and once bids have been seen, nothing can
   // reseal them. A complete roster merely makes the reveal button pressable.
-  const revealedAt = arow ? arow[3] : '';  // ISO stamp ('1' on legacy rows)
-  const revealed = revealedAt !== '';
+  const tfin = arow ? arow[3] : '';  // the reveal moment, ISO
+  const revealed = tfin !== '';
 
   return {
     aname: aname, roster: roster, bidders: bidders, revealed: revealed,
-    revealedAt: revealedAt, claims: claims, agents: agents,
+    tfin: tfin, claims: claims, blurbs: blurbs,
     bids: revealed ? brows.map(r => ({ uname: r[1], bid: r[2] })) : null,
   };
 }
@@ -207,10 +213,10 @@ function touchAuction(aname) {
 
 // Make sure a seat row exists; adding is idempotent
 function ensureSeat(aname, uname) {
-  const sh = participantsTab();
+  const sh = usersTab();
   const now = new Date().toISOString();
   const i = rows(sh).findIndex(r => r[0] === aname && r[1] === uname);
-  if (i === -1) sh.appendRow([aname, uname, '', now, now, '']);
+  if (i === -1) sh.appendRow([aname, uname, '', '', now, now]);
 }
 
 // The roster is CLOSED once revealed: the game is over, and a fresh
@@ -232,7 +238,7 @@ function renameParticipant(req) {
   const from = cleanUname(req.from);
   const to = cleanUname(req.to);
   if (to === from) return getState(aname);
-  const sh = participantsTab();
+  const sh = usersTab();
   const prows = rows(sh);
   if (prows.some(r => r[0] === aname && r[1] === to)) {
     throw 'That name is taken';
@@ -241,7 +247,7 @@ function renameParticipant(req) {
   if (i === -1) throw 'No such participant: ' + from;
   const now = new Date().toISOString();
   sh.getRange(i + 2, 2).setValue(to);
-  sh.getRange(i + 2, 5).setValue(now);
+  sh.getRange(i + 2, 6).setValue(now);  // tmod
   const bsh = bidsTab();
   const j = rows(bsh).findIndex(r => r[0] === aname && r[1] === from);
   if (j !== -1) bsh.getRange(j + 2, 2).setValue(to);
@@ -255,9 +261,19 @@ function removeParticipant(req) {
   const aname = cleanAname(req.aname);
   const uname = cleanUname(req.uname);
   touchAuction(aname);
-  const sh = participantsTab();
+  const sh = usersTab();
   const i = rows(sh).findIndex(r => r[0] === aname && r[1] === uname);
-  if (i !== -1) sh.deleteRow(i + 2);
+  if (i !== -1) {
+    // first remove: the seat goes, any bid stays (re-bidding rejoins)
+    sh.deleteRow(i + 2);
+  } else {
+    // no seat = the row was ALREADY cut (a race or sheet tampering
+    // left a zombie bid): removing it again is the recovery path —
+    // purge the bid outright
+    const bsh = bidsTab();
+    const j = rows(bsh).findIndex(r => r[0] === aname && r[1] === uname);
+    if (j !== -1) bsh.deleteRow(j + 2);
+  }
   return getState(aname);
 }
 
@@ -271,15 +287,15 @@ function removeParticipant(req) {
 function saveClaim(req) {
   const aname = cleanAname(req.aname);
   const uname = cleanUname(req.uname);
-  const device = cleanDevice(req.device);
-  if (!device) throw 'ERROR1303: claim requires a device id';
+  const deviceID = cleanDeviceID(req.deviceID);
+  if (!deviceID) throw 'ERROR1303: claim requires a deviceID';
   touchAuction(aname);
   ensureSeat(aname, uname);
   const held = deviceOf(aname, uname);
-  if (held && held !== device) {
-    throw 'ERROR1304: Claimed by someone on ' + holderRig(aname, uname);
+  if (held && held !== deviceID) {
+    throw 'ERROR1304: Claimed by someone on ' + holderBlurb(aname, uname);
   }
-  setDevice(aname, uname, device, cleanAgent(req.agent));
+  setDeviceID(aname, uname, deviceID, cleanBlurb(req.deviceBlurb));
   return getState(aname);
 }
 
@@ -288,32 +304,34 @@ function saveClaim(req) {
 function releaseClaim(req) {
   const aname = cleanAname(req.aname);
   const uname = cleanUname(req.uname);
-  const device = cleanDevice(req.device);
-  if (!device) throw 'ERROR1305: release requires a device id';
+  const deviceID = cleanDeviceID(req.deviceID);
+  if (!deviceID) throw 'ERROR1305: release requires a deviceID';
   touchAuction(aname);
   const held = deviceOf(aname, uname);
-  if (held && held !== device) throw 'ERROR1306: TODO held by someone else';
-  if (held) setDevice(aname, uname, '');
+  if (held && held !== deviceID) {
+    throw 'ERROR1306: TODO held by someone else';
+  }
+  if (held) setDeviceID(aname, uname, '');
   return getState(aname);
 }
 
-// The device currently holding a seat ('' if open or no such seat)
+// The deviceID currently holding a seat ('' if open or no such seat)
 function deviceOf(aname, uname) {
-  const r = rows(participantsTab()).find(
+  const r = rows(usersTab()).find(
     (row) => row[0] === aname && row[1] === uname);
   return r ? r[2] : '';
 }
 
-function setDevice(aname, uname, device, agent) {
-  const sh = participantsTab();
+function setDeviceID(aname, uname, deviceID, blurb) {
+  const sh = usersTab();
   const now = new Date().toISOString();
   rows(sh).forEach((r, i) => {
     if (r[0] !== aname) return;
     if (r[1] === uname) {
       sh.getRange(i + 2, 3, 1, 4)
-        .setValues([[device, r[3], now, agent || '']]);
-    } else if (device && r[2] === device) {
-      sh.getRange(i + 2, 3, 1, 4).setValues([['', r[3], now, '']]);
+        .setValues([[deviceID, blurb || '', r[4], now]]);
+    } else if (deviceID && r[2] === deviceID) {
+      sh.getRange(i + 2, 3, 1, 4).setValues([['', '', r[4], now]]);
     }
   });
 }
@@ -322,10 +340,10 @@ function setDevice(aname, uname, device, agent) {
 // who beat you to it
 // TODO English fallback when the holder reported nothing: currently
 // "another device"
-function holderRig(aname, uname) {
-  const r = rows(participantsTab()).find(
+function holderBlurb(aname, uname) {
+  const r = rows(usersTab()).find(
     (row) => row[0] === aname && row[1] === uname);
-  return (r && r[5]) || 'another device';
+  return (r && r[3]) || 'another device';
 }
 
 function placeBid(req) {
@@ -341,25 +359,28 @@ function placeBid(req) {
   ensureSeat(aname, uname);
   // Bidding as someone is claiming to be them, and claims are first
   // come, first served: a bid may not touch a seat someone else holds.
-  // Old clients carry no device and count as nobody — fine on an open
-  // seat, refused on a held one.
-  const device = req.device === undefined ? '' : cleanDevice(req.device);
+  // Old clients carry no deviceID and count as nobody — fine on an
+  // open seat, refused on a held one.
+  const deviceID = req.deviceID === undefined ? ''
+    : cleanDeviceID(req.deviceID);
   const held = deviceOf(aname, uname);
-  if (held && held !== device) {
-    throw 'ERROR1312: Claimed by someone on ' + holderRig(aname, uname);
+  if (held && held !== deviceID) {
+    throw 'ERROR1312: Claimed by someone on ' + holderBlurb(aname, uname);
   }
-  if (device) setDevice(aname, uname, device, cleanAgent(req.agent));
+  if (deviceID) {
+    setDeviceID(aname, uname, deviceID, cleanBlurb(req.deviceBlurb));
+  }
 
   const sh = bidsTab();
   const brows = rows(sh);
   const now = new Date().toISOString();
   const i = brows.findIndex(r => r[0] === aname && r[1] === uname);
-  if (i !== -1) {  // re-bid: overwrite, keep created, bump updated + subs
-    const subs = (parseInt(brows[i][5], 10) || 1) + 1;  // legacy rows: >= 1
+  if (i !== -1) {  // re-bid: overwrite, keep tini, bump tmod + bcount
+    const bcount = (parseInt(brows[i][3], 10) || 1) + 1;
     sh.getRange(i + 2, 3, 1, 4)
-      .setValues([[bid, brows[i][3], now, String(subs)]]);
+      .setValues([[bid, String(bcount), brows[i][4], now]]);
   } else {
-    sh.appendRow([aname, uname, bid, now, now, '1']);
+    sh.appendRow([aname, uname, bid, '1', now, now]);
   }
   const st = getState(aname);
   repaintBids(aname, st.revealed);

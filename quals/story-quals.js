@@ -680,6 +680,28 @@ async function tipBox(page, i) {
     await alice.waitForFunction(() =>
       document.getElementById('status').textContent.includes('i bid 2 dishes'));
     ok(true, '× the straggler, press the padlock: end-early');
+    // a cut row (bid kept, seat gone — another machine removed dee):
+    // the strike-through must read as a confident pen stroke, not a
+    // grayed-out row (and no element opacity: the × inside hosts a tip)
+    gas.handle({ action: 'remove', aname: 'chores', uname: 'dee' });
+    await alice.waitForFunction(() =>
+      document.querySelector('.tile[data-uname="dee"].cut'));
+    ok(await alice.evaluate(() => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--err-fg)';
+      document.body.append(probe);
+      const ink = getComputedStyle(probe).color;
+      probe.remove();
+      const t = document.querySelector('.tile[data-uname="dee"].cut');
+      const stroke = getComputedStyle(t, '::after');
+      return getComputedStyle(t).opacity === '1'
+        && stroke.opacity === '1'
+        && stroke.backgroundColor === ink;
+    }), 'the cut stroke is full-strength cancellation ink; the row'
+       + ' beneath stays legible');
+    ok(await alice.evaluate(() =>
+      !document.querySelector('.tile[data-uname="dee"] .x').disabled),
+       "the cut row's × stays alive: the recovery path");
     await shoot(alice, 'story3-roster-reveal');
 
     /* ================= Story 4: clicks survive op-ack renders ==========

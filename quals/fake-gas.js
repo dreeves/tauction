@@ -44,10 +44,24 @@ class FakeRange {
     this.sheet.colors[this.row + ',' + this.col] = c;
     return this;
   }
+  setFontFamily(f) {  // recorded so quals can check header cosmetics
+    this.sheet.fonts[this.row + ',' + this.col] = f;
+    return this;
+  }
+  setBackground(b) {  // ditto
+    this.sheet.backgrounds[this.row + ',' + this.col] = b;
+    return this;
+  }
 }
 
 class FakeSheet {
-  constructor(name) { this.name = name; this.data = []; this.colors = {}; }
+  constructor(name) {
+    this.name = name;
+    this.data = [];
+    this.colors = {};
+    this.fonts = {};
+    this.backgrounds = {};
+  }
   getRange(row, col, numRows = 1, numCols = 1) {
     return new FakeRange(this, row, col, numRows, numCols);
   }

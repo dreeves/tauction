@@ -94,7 +94,7 @@ const DEVICE = localStorage.getItem('tauction-device');
 // server can't glean this itself: Apps Script never sees headers, and
 // no IP means no geolocating to Portland.)
 // TODO English for the fallback: "an unknown device"
-const AGENT = (() => {
+const BLURB = (() => {
   const ua = navigator.userAgent;
   const os = /iPhone/.test(ua) ? 'an iPhone' : /iPad/.test(ua) ? 'an iPad'
     : /Android/.test(ua) ? 'an Android' : /Mac/.test(ua) ? 'a Mac'
@@ -114,11 +114,12 @@ function setPath(a) {
 // next page load can paint instantly instead of flashing a blank roster
 function ingest(res) {
   assert(Array.isArray(res.bidders) && res.bidders.every(
-    (b) => typeof b.uname === 'string' && typeof b.created === 'string'
-        && typeof b.updated === 'string' && typeof b.subs === 'number')
+    (b) => typeof b.uname === 'string' && typeof b.tini === 'string'
+        && typeof b.tmod === 'string' && typeof b.bcount === 'number')
     && res.claims !== null && typeof res.claims === 'object'
-    && res.agents !== null && typeof res.agents === 'object'
-    && typeof res.revealedAt === 'string',
+    && res.blurbs !== null && typeof res.blurbs === 'object'
+    && typeof res.tfin === 'string'
+    && (res.tfin === '' || res.tfin.includes('T')),
     'bad state shape — is the deployed Code.gs current?');
   state = res;
   localStorage.setItem('tauction-state:' + res.aname, JSON.stringify(res));
@@ -234,8 +235,8 @@ function renderStatus() {
   // are in the fingerprint because the render right after a reveal or a
   // shimmer must still run: it retires those one-shot effects.
   const print = JSON.stringify([aname, wasRevealed, seen, slotUnames(),
-    state.bidders, state.roster, state.revealed, state.revealedAt,
-    state.claims, state.agents, me(), knownBids()]);
+    state.bidders, state.roster, state.revealed, state.tfin,
+    state.claims, state.blurbs, me(), knownBids()]);
   if (print === lastPrint) return;
   lastPrint = print;
 
@@ -276,12 +277,10 @@ function renderStatus() {
   box.classList.toggle('unclaimed', mine === '');
 
   // Once revealed, the + row retires (CSS, off .revealed) and this
-  // stamp takes its place. Legacy reveals stored '1', not a moment —
-  // they get the word without the when (disclosed branch).
-  $('closed').textContent = !state.revealed ? ''
-    : state.revealedAt.includes('T')
-    ? 'Closed ' + closedStamp(state.revealedAt)
-    : 'Closed';
+  // stamp takes its place (ingest asserts tfin is empty-or-ISO, so no
+  // legacy branch is needed here)
+  $('closed').textContent = state.revealed
+    ? 'Closed ' + closedStamp(state.tfin) : '';
   const known = knownBids();
   const placed = myBids();  // bids THIS browser placed (the dibs exception)
   const byName = {};
@@ -311,7 +310,7 @@ function renderStatus() {
                                    : tiles.firstElementChild);
     }
     cursor = t;
-    nextSeen[uname] = b === undefined ? undefined : b.updated;
+    nextSeen[uname] = b === undefined ? undefined : b.tmod;
   });
   // sweep strays: vanished rows, other auctions' rows
   [...tiles.children].forEach((c) => {
@@ -447,8 +446,8 @@ function buildBidContent(kind, uname) {
 // same DOM out, whatever the node rendered before (a property qual
 // holds this to a fresh build, byte for byte).
 function updateRow(t, uname, b, mine, known, placed, locked) {
-  const stamp = b === undefined ? undefined : b.updated;
-  const subs = b === undefined ? 0 : b.subs;
+  const stamp = b === undefined ? undefined : b.tmod;
+  const bcount = b === undefined ? 0 : b.bcount;
   // Every row leads with its star, a radio for who-you-are: hollow =
   // claimable, dimmed hollow = dibsed, gold fill = you. A row is dibsed by
   // a rival device's registered claim, or (for claim-less legacy rows)
@@ -473,8 +472,8 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
   star.setAttribute('data-tip',
     uname === mine
       ? (star.disabled ? 'Locked in as you' : "Disclaim as you")
-      : rival && state.agents[uname]
-      ? 'Claimed by someone on ' + state.agents[uname]
+      : rival && state.blurbs[uname]
+      ? 'Claimed by someone on ' + state.blurbs[uname]
       : (star.disabled ? "Too late to claim as you" : "Claim as you"));
 
   t.classList.toggle('has-bid', stamp !== undefined);
@@ -511,7 +510,7 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
     else bidEl.prepend(fresh);
     content = fresh;
   }
-  const stackCls = 'bid-card stack' + Math.min(subs - 1, 3);
+  const stackCls = 'bid-card stack' + Math.min(bcount - 1, 3);
   if (kind === 'editor') {
     const input = content.querySelector('input');
     input.className = stamp === undefined ? 'bid-slot' : stackCls;
@@ -534,10 +533,14 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
   }
   // (subs superscript shelved 2026-07-15)
   // t.querySelector('.tile-subs').textContent = String(subs);
+  // the × guards SEATED bids only; a cut row (bid, no seat — races or
+  // tampering) keeps a live × as the recovery path: clicking it purges
+  // the zombie bid outright (server-side second-remove semantics)
+  const seated = stamp !== undefined && roster.includes(uname);
   const x = t.querySelector('.x');
-  x.disabled = stamp !== undefined;
-  x.setAttribute('data-tip', (stamp !== undefined
-    ? 'too late to remove @' : 'remove @') + uname);
+  x.disabled = seated;
+  x.setAttribute('data-tip',
+    (seated ? 'too late to remove @' : 'remove @') + uname);
 }
 
 // "2026-07-16 13:01 Thu" — dreev's exact Closed-line format, in the
@@ -566,12 +569,12 @@ function ago(iso) {
 function bidTip(uname) {
   const b = state.bidders.find((x) => x.uname === uname);
   if (b === undefined) return 'awaiting bid...';
-  if (b.subs === 1) {
+  if (b.bcount === 1) {
     return (uname === me() ? 'your bid' : 'bid')
-      + ' submitted ' + ago(b.created) + ' ago';
+      + ' submitted ' + ago(b.tini) + ' ago';
   }
-  return 'first submitted ' + ago(b.created) + ' ago, resubmitted '
-    + ago(b.updated) + ' ago';
+  return 'first submitted ' + ago(b.tini) + ' ago, resubmitted '
+    + ago(b.tmod) + ' ago';
 }
 
 // The name is a live text field, like the + row's: click in and type.
@@ -633,12 +636,12 @@ function toggleTu(uname) {
   if (me() === uname) {
     localStorage.removeItem('tauction-uname');
     queueOp({ action: 'release', aname: aname, uname: uname,
-              device: DEVICE }); // only the holder can vacate the seat
+              deviceID: DEVICE }); // only the holder can vacate the seat
   } else {
     localStorage.setItem('tauction-uname', uname);
     queueOp({ action: 'claim', aname: aname, uname: uname,
-              device: DEVICE,   // stake it: rival pages show dibs
-              agent: AGENT });  // ...and who by, humanely
+              deviceID: DEVICE,     // stake it: rival pages show dibs
+              deviceBlurb: BLURB }); // ...and who by, humanely
   }
   const input = $('tiles').querySelector('.rebid input');
   if (input) input.focus();
@@ -675,7 +678,8 @@ async function placeBid(uname, form) {
   let res = null;
   try {
     res = await apiPost({ action: 'bid', aname: a, uname: uname,
-                          bid: bid, device: DEVICE, agent: AGENT });
+                          bid: bid, deviceID: DEVICE,
+                          deviceBlurb: BLURB });
   } catch (e) {
     banner('ERROR2153: ' + e.message);
   }

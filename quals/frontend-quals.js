@@ -30,8 +30,9 @@ let opsOverlapped = false;
 
 const WRITES = ['add', 'remove', 'claim', 'release', 'bid', 'reveal'];
 
-// Simulate the deployed @16 server, which predates bidders[].created
-let stripCreated = false;
+// Simulate an outdated deployed server whose payloads predate the
+// current shape (it was bidders[].created when this bit dreev)
+let stripTini = false;
 
 function mockFetch(url, opts) {
   url = String(url);
@@ -51,8 +52,8 @@ function mockFetch(url, opts) {
   return new Promise((resolve) => setTimeout(() => {
     if (OPS.includes(req.action)) opsInFlight--;
     const res = read !== null ? read : gas.handle(req);
-    if (stripCreated && res.bidders) {
-      res.bidders.forEach((b) => { delete b.created; });
+    if (stripTini && res.bidders) {
+      res.bidders.forEach((b) => { delete b.tini; });
     }
     resolve({ json: () => Promise.resolve(res) });
   }, mockDelay));
@@ -268,11 +269,11 @@ function ok(cond, label) {
      'no banner on a routine load: red is for the genuinely exceptional');
 
   /* --- 1c. version skew fails loudly (the red flash dreev saw) -----------
-     Replicata: the deployed Code.gs (@16) predates bidders[].created;
-     the current frontend asserts that field on every ingest.
+     Replicata: the deployed Code.gs lags the frontend's expected
+     payload shape, which the frontend asserts on every ingest.
      Expectata: a loud, honest banner naming the state-shape problem —
      the fix is deploying @17, never softening the assert. */
-  stripCreated = true;
+  stripTini = true;
   gas.handle({ action: 'add', aname: 'skew', uname: 'old' });
   gas.handle({ action: 'bid', aname: 'skew', uname: 'old', bid: 'relic' });
   const domSkew = await makePage('/skew?api=' + API_URL);
@@ -280,7 +281,7 @@ function ok(cond, label) {
      && domSkew.window.document.getElementById('banner').textContent
           .includes('bad state shape'),
      'an old-server payload banners loudly, naming the skew');
-  stripCreated = false;
+  stripTini = false;
 
   // A no-change poll must not rebuild the rows: a rebuild destroys
   // buttons mid-click (mousedown and mouseup need the same node), so a
@@ -602,7 +603,7 @@ function ok(cond, label) {
   gas.handle({ action: 'add', aname: 'caret', uname: 'ann' });
   gas.handle({ action: 'add', aname: 'caret', uname: 'bee' });
   gas.handle({ action: 'claim', aname: 'caret', uname: 'ann',
-               device: 'dev-caret' });
+               deviceID: 'dev-caret' });
   const seedK = (w) => {
     w.localStorage.setItem('tauction-device', 'dev-caret');
     w.localStorage.setItem('tauction-uname', 'ann');
@@ -1102,9 +1103,9 @@ function ok(cond, label) {
      === strip(row(domJ.window.document, 'pip').outerHTML),
      'row updates are idempotent: A->B->A equals a fresh render of A');
 
-  /* --- 3f. legacy bid rows (predating the subs column) still count ------ */
+  /* --- 3f. legacy bid rows (blank bcount) still count -------------------- */
   gas.__ss.sheets['bids'].appendRow(['legacy', 'oldtimer', 'ancient bid',
-    '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z']);
+    '', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z']);
   const domL = await makePage('/legacy?api=' + API_URL);
   const rowL = tiles(domL.window.document, '.has-bid')[0];
   // (subs superscript shelved 2026-07-15; the floor-at-1 rule now shows
@@ -1171,6 +1172,20 @@ function ok(cond, label) {
      'bid-then-removed bidder stays in the box, crossed out');
   ok(!row(domC.window.document, 'quinn').classList.contains('cut'),
      'roster members are not crossed out');
+  // the recovery path (dreev): a cut row's × comes back to life —
+  // clicking it purges the zombie bid outright
+  ok(!patRow.querySelector('.x').disabled
+     && patRow.querySelector('.x').getAttribute('data-tip')
+          === 'remove @pat',
+     "a cut row's × works: the one way back from a tampered/raced"
+     + ' state');
+  patRow.querySelector('.x').click();
+  await until(() => gas.handle({ action: 'state', aname: 'cutcheck' })
+    .bidders.length === 0);
+  await until(() => !row(domC.window.document, 'pat'));
+  ok(!row(domC.window.document, 'pat'),
+     'clicking it purges the zombie bid: the row is gone for good');
+  gas.handle({ action: 'add', aname: 'cutcheck', uname: 'pat' });
   gas.handle({ action: 'bid', aname: 'cutcheck', uname: 'pat', bid: 'back in' });
   const domC2 = await makePage('/cutcheck?api=' + API_URL);
   ok(!row(domC2.window.document, 'pat').classList.contains('cut'),
