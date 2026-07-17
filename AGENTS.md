@@ -38,6 +38,11 @@ that creates its own tabs on first use. The script exists because browsers
 can read a public sheet but all programmatic writes require OAuth (see
 appendix).
 
+The reveal confetti is vendored canvas-confetti v1.9.3
+([vendor/confetti.browser.js](vendor/confetti.browser.js), ISC), the
+same library and burst recipe as dreev's calpuz repo — celebrate() in
+app.js owns the parameters.
+
 All user-visible microcopy the client generates lives in
 [stringles.js](stringles.js) as commented constants (loaded by
 index.html before app.js), so copy can be edited without touching

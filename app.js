@@ -446,9 +446,9 @@ function renderStatus() {
 // down, and confetti flies from the point of impact. One shot, wholly
 // self-cleaning, and skipped for reduced-motion folks (a still frame
 // of falling paper is just litter).
-const FETE_MS = 5000;  // total ceremony length (950 strike + 400
-                       // launch window + 3.2s flight); all self-removes
-const STRIKE_MS = 950;  // when the mallet lands (63% of gavel-verdict)
+const FETE_MS = 5000;   // stamp + ceremony class linger this long
+const STRIKE_MS = 850;  // when the mallet lands (63% of gavel-verdict)
+const CONFETTI_TICKS = 2000;  // piece lifetime in frames (calpuz's)
 function celebrate() {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const box = $('status');
@@ -456,34 +456,36 @@ function celebrate() {
   const fete = el('div', 'fete');
   fete.setAttribute('aria-hidden', 'true');
   fete.append(el('span', 'stamp', stampCopy));
-  // The confetti is money (dreev's set: dollars, yen, pounds, coins,
-  // the scales of justice), green and glittering, bursting from the
-  // seal across the WHOLE viewport (dreev: not just the bid box). Its
-  // layer lives on <body>: the quake animates #status's transform,
-  // which would trap a position:fixed layer inside the card.
-  const sky = el('div', 'sky');
-  sky.setAttribute('aria-hidden', 'true');
-  const seal = $('seal').getBoundingClientRect();
-  sky.style.setProperty('--launch-x',  // clamped: a scrolled-away
-    Math.min(Math.max(seal.left + seal.width / 2, 0),  // seal still
-             innerWidth) + 'px');                      // rains on you
-  sky.style.setProperty('--launch-y',
-    Math.min(Math.max(seal.top + seal.height / 2, 0),
-             innerHeight) + 'px');
-  for (let i = 0; i < 120; i++) {
-    const c = el('span', 'confetto', moneyGlyphs[i % moneyGlyphs.length]);
-    c.style.setProperty('--dx', (Math.random() * 2 - 1).toFixed(3));
-    c.style.setProperty('--dy', (0.3 + Math.random()).toFixed(3));
-    c.style.setProperty('--spin',
-      Math.floor(Math.random() * 1440 - 720) + 'deg');
-    c.style.animationDelay = STRIKE_MS + Math.random() * 400 + 'ms';
-    sky.append(c);
-  }
   box.append(fete);
-  document.body.append(sky);
+  // The confetti is money (dreev's set: dollars, yen, pounds, coins,
+  // the scales of justice) on REAL physics: vendored canvas-confetti
+  // (v1.9.3, the library and burst recipe — counts, velocities,
+  // gravities, stagger — lifted from dreev's calpuz). The library
+  // owns its own fixed whole-viewport canvas on <body>. Currency
+  // signs bake in the theme's money green; the emoji keep their own
+  // colors.
+  const green = getComputedStyle(document.documentElement)
+    .getPropertyValue('--ok-fg').trim();
+  const money = moneyGlyphs.map((g) =>
+    confetti.shapeFromText({ text: g, scalar: 2, color: green }));
+  const fire = (opts) => confetti(Object.assign(
+    { shapes: money, scalar: 2, ticks: CONFETTI_TICKS }, opts));
+  // one burst, straight off the gavel's sound block — the point of
+  // impact (dreev pared back calpuz's side cannons and topper; the
+  // SPEED stays calpuz's). Clamped viewport fractions: a scrolled-
+  // away gavel still rains on you.
+  const block = box.querySelector(':scope > .gavel .block')
+    .getBoundingClientRect();
+  setTimeout(() => {  // the strike is the launch
+    fire({ particleCount: 130, spread: 85, startVelocity: 55,
+           gravity: 0.9, origin: {
+      x: Math.min(Math.max(
+           (block.left + block.width / 2) / innerWidth, 0), 1),
+      y: Math.min(Math.max(
+           (block.top + block.height / 2) / innerHeight, 0), 1) } });
+  }, STRIKE_MS);
   setTimeout(() => {
     fete.remove();
-    sky.remove();
     box.classList.remove('ceremony');
   }, FETE_MS);
 }

@@ -161,6 +161,24 @@ button { font: inherit; cursor: pointer; }
   visibility: visible;
 }
 
+/* A tap is not a hover: touch sticks :hover to whatever it lands on,
+   which parked a tooltip under the row dreev was typing his bid in.
+   No hover-tips on touch; tap-to-FOCUS tips (the word-hosts) stay. */
+@media (hover: none) {
+  [data-tip]:hover:not(:focus)::before {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+/* ...and nowhere does a tip sit under your own typing: the mouse
+   rests right where you clicked, so the cell holding your focused
+   editor keeps its counsel */
+.tile-bid:has(input:focus)::before {
+  opacity: 0;
+  visibility: hidden;
+}
+
 /* only one tip at a time: while any tip is hovered, focus-parked tips
    stand down (tap-to-focus keeps tooltips on touch, but a stuck focus
    must not shadow the one being hovered) */
@@ -531,24 +549,34 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* ------------------------- the reveal ceremony -------------------------
    One mighty ceremonial stroke (windup, dramatic pause, STRIKE at 63%
-   = 950ms of 1.5s — app.js's STRIKE_MS), a card-quake on impact, a
-   VENDITUM stamp, and 120 money confetti bursting from the seal
-   across a fixed whole-viewport .sky layer on <body> (trajectories
-   randomized in custom props). The .ceremony class and the .fete/.sky
-   containers are added and removed by celebrate(); reduced-motion
-   never gets them at all. */
-#status.ceremony > .gavel { opacity: 1; }
+   = 850ms of 1.35s — app.js's STRIKE_MS), a card-quake on impact, a
+   VENDITUM stamp, and money confetti on real physics (vendored
+   canvas-confetti, launched by celebrate() with calpuz's burst
+   recipe — it paints its own whole-viewport canvas, no CSS here).
+   The .ceremony class and .fete container are added and removed by
+   celebrate(); reduced-motion never gets them at all. */
+/* the gavel holds until SOLD is down (~1.11s: the 0.85s strike plus
+   the slam's landing), then takes its bow (dreev) */
+#status.ceremony > .gavel {
+  opacity: 1;
+  animation: gavel-vanish 1.4s forwards;
+}
 
 #status.ceremony > .gavel .mallet {
-  animation: gavel-verdict 1.5s cubic-bezier(0.6, 0, 0.8, 1) forwards;
+  animation: gavel-verdict 1.35s cubic-bezier(0.6, 0, 0.8, 1) forwards;
 }
 
 #status.ceremony > .gavel .bang {
-  animation: verdict-bang 1.5s linear forwards;
+  animation: verdict-bang 1.35s linear forwards;
 }
 
 #status.ceremony > .gavel .block {
-  animation: verdict-thud 1.5s linear forwards;
+  animation: verdict-thud 1.35s linear forwards;
+}
+
+@keyframes gavel-vanish {
+  0%, 82% { opacity: 1; }
+  100%    { opacity: 0; }
 }
 
 @keyframes gavel-verdict {
@@ -578,7 +606,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* the card takes the blow (the glow rides along on the same rule so
    .ceremony and .just-revealed never fight over the animation prop) */
 #status.ceremony {
-  animation: tada-glow 1.4s ease-out, quake 0.5s 0.95s;
+  animation: tada-glow 1.4s ease-out, quake 0.5s 0.85s;
 }
 
 @keyframes quake {
@@ -612,7 +640,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   font-weight: 900;
   letter-spacing: 0.12em;
   opacity: 0;
-  animation: stamp-slam 2.6s 0.95s forwards;
+  animation: stamp-slam 2.6s 0.85s forwards;
 }
 
 @keyframes stamp-slam {
@@ -621,67 +649,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   16%  { transform: scale(1.04); }
   22%, 75% { opacity: 1; transform: scale(1); }
   100% { opacity: 0; transform: scale(1); }
-}
-
-/* The confetti sky: its own fixed whole-viewport layer, on <body>
-   because the quaking card's animated transform would trap a fixed
-   descendant. --launch-x/y (set by celebrate()) is the seal's spot. */
-.sky {
-  position: fixed;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-  z-index: 50;
-}
-
-/* Each confetto is a money glyph flying its own way (direction and
-   spin arrive as custom props from celebrate()): currency signs in
-   glittering green, the coin and scales emoji in their own colors */
-.sky .confetto {
-  position: absolute;
-  left: var(--launch-x);
-  top: var(--launch-y);
-  font-size: 0.95rem;
-  line-height: 1;
-  font-weight: 700;
-  color: var(--ok-fg);
-  opacity: 0;
-  animation: confetti-fly 3.2s forwards,
-             glitter 0.35s linear infinite;
-}
-
-.sky .confetto:nth-child(3n) { font-size: 0.7rem; }
-
-.sky .confetto:nth-child(4n) { font-size: 1.3rem; }
-
-.sky .confetto:nth-child(7n) { font-size: 1.6rem; }
-
-@keyframes glitter {
-  0%, 100% { text-shadow: 0 0 2px var(--star); }
-  50%      { text-shadow: 0 0 6px var(--star), 0 0 2px #fff; }
-}
-
-/* Up fast-then-slowing to a modest apex, then a long gravity fall
-   (dreev: the first cut overshot the top and blasted down) — the
-   easing lives per-segment, in the keyframes */
-@keyframes confetti-fly {
-  0% {
-    opacity: 1;
-    transform: none;
-    animation-timing-function: cubic-bezier(0.22, 0.7, 0.45, 1);
-  }
-  38% {
-    opacity: 1;
-    transform: translate(calc(var(--dx) * 55vw), calc(var(--dy) * -32vh))
-               rotate(var(--spin));
-    animation-timing-function: cubic-bezier(0.5, 0.05, 0.8, 0.5);
-  }
-  100% {
-    opacity: 0;
-    transform: translate(calc(var(--dx) * 65vw),
-                         calc(var(--dy) * -32vh + 62vh))
-               rotate(calc(var(--spin) * 1.5));
-  }
 }
 
 .tiles { display: flex; flex-direction: column; gap: 0.4rem; }

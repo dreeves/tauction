@@ -78,7 +78,8 @@ const STRINGLES = fs.readFileSync(path.join(REPO, 'stringles.js'), 'utf8');
 const STR = new Function(STRINGLES
   + '; return { needTwoTip, needOneMoreTip, waitingTip, youTag,'
   + ' awaitingTip, auctionExistsBanner, simulEditsBanner, stampCopy,'
-  + ' revealedTip, claimedByTip, mysteryDevice, nameTakenBanner };')();
+  + ' revealedTip, claimedByTip, mysteryDevice, nameTakenBanner,'
+  + ' moneyGlyphs };')();
 const STAMP = STR.stampCopy;
 // ...and the server's half, out of the vm context hosting Code.gs
 const SCOPY = require('vm')
@@ -106,6 +107,13 @@ async function makePage(pathAndQuery, seed) {
   // jsdom has no matchMedia; the app (a browser program) rightly
   // assumes it — the harness fills its own gap
   dom.window.matchMedia = (q) => ({ matches: false, media: q });
+  // canvas-confetti (a vendor script in the real page) can't run in
+  // jsdom (no canvas): the harness records each burst's parameters
+  // instead, and the ceremony quals assert the calpuz-modeled physics
+  const bursts = [];
+  dom.window.__confettiCalls = bursts;
+  dom.window.confetti = Object.assign((opts) => { bursts.push(opts); },
+    { shapeFromText: (o) => o });
   if (seed) seed(dom.window);  // e.g. pre-populate localStorage
   // one eval: eval-scoped consts aren't visible across separate
   // evals the way script tags share scope, so copy + code go together
@@ -1189,13 +1197,25 @@ function ok(cond, label) {
      "the Closed line stamps the moment, dreev's exact format: "
      + doc2.querySelector('#status .closed').textContent);
   ok(doc2.querySelector('#status .fete .stamp')
-     && doc2.querySelector('#status .fete .stamp').textContent === STAMP
-     && doc2.querySelectorAll('body > .sky .confetto').length >= 90
-     && [...doc2.querySelectorAll('body > .sky .confetto')].every(
-          (c) => ['$', '\u00a5', '\u00a3', '\u{1fa99}',
-                  '\u2696\ufe0f'].includes(c.textContent)),
-     'the reveal ceremony: the stamp slams the bid box; the money'
-     + ' rains on a whole-VIEWPORT layer (dreev: not just the box)');
+     && doc2.querySelector('#status .fete .stamp').textContent === STAMP,
+     'the reveal ceremony: the stamp slams down on the bid box');
+  // the money flies on real physics: vendored canvas-confetti at
+  // calpuz's speed (velocity 55, gravity 0.9), in ONE burst straight
+  // off the gavel (dreev pared back the side cannons and topper) —
+  // pinned here from the recorded call
+  await until(() => dom2.window.__confettiCalls.length === 1);
+  const burst = dom2.window.__confettiCalls[0];
+  ok(burst.particleCount === 130
+     && burst.startVelocity === 55 && burst.gravity === 0.9
+     && burst.spread === 85 && burst.ticks === 2000
+     && burst.shapes.length === STR.moneyGlyphs.length
+     && burst.shapes.every((s, i) => s.text === STR.moneyGlyphs[i]),
+     'one calpuz-speed burst: 130 money glyphs at velocity 55 under'
+     + ' gravity 0.9');
+  ok(burst.origin.x >= 0 && burst.origin.x <= 1
+     && burst.origin.y >= 0 && burst.origin.y <= 1,
+     "erupting from the gavel's block (a clamped viewport-fraction"
+     + " origin — jsdom's zero-layout puts it at 0,0)");
   ok(myInput(doc2) && myInput(doc2).disabled
      && myInput(doc2).value === '$40 and my dignity',
      'the gavel drop is a bright line: your bid stays READABLE in your'
@@ -1251,7 +1271,7 @@ function ok(cond, label) {
           .contains('just-revealed'),
      'arriving after the fact: lit tada, no fanfare');
   ok(!late.window.document.querySelector('#status .fete')
-     && !late.window.document.querySelector('body > .sky'),
+     && late.window.__confettiCalls.length === 0,
      'and no ceremony either: it belongs to the moment');
   ok(late.window.document.getElementById('status').textContent
        .includes('three tacos')

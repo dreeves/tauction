@@ -594,6 +594,18 @@ async function tipBox(page, i) {
     await shoot(bob, 'story2-bob-sealed');
 
     await claimRow(bob, 'bob');
+    // the desktop cousin of the stuck-tip bug: the mouse rests right
+    // where you clicked, so the cell you are TYPING in hovered a tip
+    // under your editor — a focused editor's cell keeps its counsel
+    await bob.hover('.tile.mine .tile-bid');
+    ok(await bob.evaluate(() =>
+         document.activeElement === document.querySelector(
+           '.tile.mine .rebid input')
+         && getComputedStyle(document.querySelector(
+              '.tile.mine .tile-bid'), '::before')
+              .visibility === 'hidden'),
+       'no tooltip under your own typing: a bid cell holding your'
+       + ' focused editor shows no tip even hovered');
     await bid(bob, 'my entire kingdom');
     await bob.waitForFunction(() =>
       document.querySelectorAll('#tiles .tile.has-bid').length === 2);
@@ -653,36 +665,38 @@ async function tipBox(page, i) {
       return !s2.disabled && alpha(getComputedStyle(s2).color) === 1;
     }), 'the tada is never a disabled control at all (reveal is'
        + ' idempotent), so no UA sheet can wash it out');
-    // The ceremony is a 5s transient: gate on its LOUDEST early moment
-    // (a shower of airborne confetti, ~1.4s in) and assert everything
-    // else in that same beat — sampling at the tail flaked when a
-    // loaded machine ate the window
+    // The ceremony is a transient: gate on its LOUDEST early moment
+    // (canvas-confetti mounts its canvas at the strike) and assert
+    // everything else in that same beat — sampling at the tail flaked
+    // when a loaded machine ate the window
     await bob.waitForFunction(() =>
-      [...document.querySelectorAll('body > .sky .confetto')]
-        .filter((c) => getComputedStyle(c).opacity === '1').length > 30);
+      document.querySelector('body > canvas'));
     ok(await bob.evaluate(() => {
       const g = document.querySelector('#status > .gavel');
       const st = document.querySelector('#status .fete .stamp');
-      const c = document.querySelector('body > .sky .confetto');
-      const sky = document.querySelector('body > .sky');
-      const box = sky.getBoundingClientRect();
+      const cv = document.querySelector('body > canvas');
+      const box = cv.getBoundingClientRect();
       return getComputedStyle(g.querySelector('.mallet')).animationName
              === 'gavel-verdict'
-        && getComputedStyle(g).opacity === '1'
+        && getComputedStyle(g).animationName === 'gavel-vanish'
         && st && getComputedStyle(st).animationName === 'stamp-slam'
-        && c && getComputedStyle(c).animationName
-             === 'confetti-fly, glitter'
-        && document.querySelectorAll('body > .sky .confetto').length >= 90
-        && getComputedStyle(sky).position === 'fixed'
+        && getComputedStyle(cv).position === 'fixed'
+        && getComputedStyle(cv).pointerEvents === 'none'
         && box.width === window.innerWidth
         && box.height === window.innerHeight;
     }), 'one ceremonial gavel stroke, SOLD slammed on the bid box, and'
-       + ' the money raining across the WHOLE screen (a fixed'
-       + ' full-viewport layer — dreev sprang it from the box)');
-    // viewport shot, not fullPage: the sky is position:fixed and this
-    // catches the money mid-flight for eyeballing
+       + ' real-physics money (vendored canvas-confetti, the calpuz'
+       + ' recipe) raining on a fixed whole-viewport canvas');
+    // let the volley bloom, then a viewport shot for eyeballing
+    await new Promise((r) => setTimeout(r, 500));
     await bob.screenshot({
       path: path.join(SHOTS, 'story3-ceremony-sky.png') });
+    await bob.waitForFunction(() =>  // its work done, the gavel bows
+      getComputedStyle(document.querySelector('#status > .gavel'))
+        .opacity === '0'
+      && document.querySelector('#status .fete .stamp'));
+    ok(true, 'the gavel disappears right after SOLD is down (dreev),'
+       + ' leaving the stamp the stage');
     ok(await bob.evaluate(() =>
       getComputedStyle(document.querySelector('.addrow')).display
         === 'none'
@@ -692,10 +706,11 @@ async function tipBox(page, i) {
            .textContent)),
        'the + row retires at the reveal; the Closed stamp takes its'
        + ' place');
-    await bob.waitForFunction(() =>  // the ceremony self-cleans
-      !document.querySelector('#status .fete')
-      && !document.querySelector('body > .sky'), { timeout: 6000 });
-    ok(true, 'the ceremony packs up after itself, sky included');
+    await bob.waitForFunction(() =>  // the ceremony self-cleans (the
+      // confetti canvas is the library's own; it lingers, inert and
+      // invisible, until the last long-lived piece times out)
+      !document.querySelector('#status .fete'), { timeout: 6000 });
+    ok(true, 'the ceremony packs up after itself');
     ok(await bob.$eval('#seal', (e) => e.getAttribute('data-tip'))
        !== 'Reveal bids!',
        'the tip stops offering to reveal once revealed');
@@ -999,7 +1014,18 @@ async function tipBox(page, i) {
     await thumb2.tap('.tile[data-uname="bob"] .tu');
     await thumb2.waitForSelector('.tile.mine .rebid input');
     ok(true, 'tapping a star (a touch, not a click) claims the row');
-    await thumb2.type('.tile.mine .rebid input', 'the other thumb');
+    await thumb2.tap('.tile.mine .rebid input');
+    /* Replicata (dreev, phone): his is-you row — row two here — wore
+       a stuck 'awaiting bid...' tooltip below it while he typed his
+       bid. A tap sticks :hover to the bid cell and the tap's
+       synthetic mouseenter stocks data-tip. Expectata: a tap is not
+       a hover; touch shows no hover-tooltips at all. */
+    ok(await thumb2.evaluate(() => getComputedStyle(
+         document.querySelector('.tile.mine .tile-bid'), '::before')
+         .visibility === 'hidden'),
+       "no tooltip under a thumb's typing: tapping your bid cell is"
+       + ' not hovering it');
+    await thumb2.keyboard.type('the other thumb');
     await thumb2.keyboard.press('Enter');
     await thumb2.waitForSelector('.tile.mine.has-bid');
     await thumb.waitForFunction(() =>  // the poll delivers bob's bid
