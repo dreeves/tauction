@@ -646,10 +646,13 @@ async function tipBox(page, i) {
     ok(await bob.$eval('.tile.mine .rebid input', (e) => e.disabled),
        'the gavel drop is a bright line: the editor goes dead at the'
        + ' reveal');
-    ok(await bob.evaluate(() => getComputedStyle(
-         document.querySelector('#status .seal'), '::after').content)
-       .then((c) => c.includes('\u{1F389}')),
-       'the padlock becomes the tada at the reveal: one icon, three states');
+    // the flip now rides the STRIKE's beat (dreev lined up SOLD and
+    // the tada), so wait for it rather than sampling the wind-up
+    await bob.waitForFunction(() => getComputedStyle(
+      document.querySelector('#status .seal'), '::after').content
+        .includes('\u{1F389}'));
+    ok(true,
+       'the padlock becomes the tada at the strike: one icon, three states');
     ok(await bob.evaluate(() => {
       const alpha = (c) => {
         const m = c.match(/(?:rgba\([^)]+,\s*|\/\s*)([\d.]+)\)\s*$/);

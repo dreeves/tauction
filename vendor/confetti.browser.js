@@ -1,4 +1,7 @@
 // canvas-confetti v1.9.3 built on 2024-04-30T22:19:17.794Z
+// [local edit: two upstream TODO comments removed — they were the
+// library author's own performance notes, and TODO is a reserved
+// marker in this repo]
 !(function (window, module) {
 // source content
 /* globals Map */
@@ -652,7 +655,6 @@
 
       function onResize() {
         if (worker) {
-          // TODO this really shouldn't be immediate, because it is expensive
           var obj = {
             getBoundingClientRect: function () {
               if (!isLibCanvas) {
@@ -854,7 +856,6 @@
 
     return {
       type: 'bitmap',
-      // TODO these probably need to be transfered for workers
       bitmap: canvas.transferToImageBitmap(),
       matrix: [scale, 0, 0, scale, -width * scale / 2, -height * scale / 2]
     };

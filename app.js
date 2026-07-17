@@ -453,7 +453,11 @@ const CONFETTI_TICKS = 2000;  // piece lifetime in frames (calpuz's)
 function celebrate() {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const box = $('status');
-  box.classList.add('ceremony');
+  // prestrike holds the 🔒 (CSS) until the mallet lands, so the 🎉
+  // flip, glow, quake, SOLD, and money all land on the strike's one
+  // beat (dreev lined them up) — the bids themselves unmask at the
+  // render, information ahead of fanfare
+  box.classList.add('ceremony', 'prestrike');
   const fete = el('div', 'fete');
   fete.setAttribute('aria-hidden', 'true');
   fete.append(el('span', 'stamp', stampCopy));
@@ -477,7 +481,8 @@ function celebrate() {
   // away gavel still rains on you.
   const block = box.querySelector(':scope > .gavel .block')
     .getBoundingClientRect();
-  setTimeout(() => {  // the strike is the launch
+  setTimeout(() => {  // the strike is the launch, and the beat drop
+    box.classList.remove('prestrike');
     fire({ particleCount: 130, spread: 85, startVelocity: 55,
            gravity: 0.9, origin: {
       x: Math.min(Math.max(

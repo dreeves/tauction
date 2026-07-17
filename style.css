@@ -338,6 +338,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 #status.revealed .seal::after { content: '🎉'; }
 
+/* ...but during the ceremony's wind-up the seal still says sealed:
+   the flip joins the strike's beat (celebrate() drops .prestrike at
+   STRIKE_MS) rather than leaking ahead of the verdict */
+#status.revealed.prestrike .seal::after { content: '🔒'; }
+
 #status.revealed { border-color: var(--ok-fg); }
 
 #status.just-revealed { animation: tada-glow 1.4s ease-out; }
@@ -600,7 +605,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* the card takes the blow (the glow rides along on the same rule so
    .ceremony and .just-revealed never fight over the animation prop) */
 #status.ceremony {
-  animation: tada-glow 1.4s ease-out, quake 0.5s 0.85s;
+  animation: tada-glow 1.4s ease-out 0.85s, quake 0.5s 0.85s;
 }
 
 @keyframes quake {
