@@ -1,6 +1,6 @@
 // canvas-confetti v1.9.3 built on 2024-04-30T22:19:17.794Z
-// [local edit: two upstream TODO comments removed — they were the
-// library author's own performance notes, and TODO is a reserved
+// [local edit: two upstream TO-DO comments removed — they were the
+// library author's own performance notes, and TO-DO is a reserved
 // marker in this repo]
 !(function (window, module) {
 // source content
