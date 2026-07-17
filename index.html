@@ -7,6 +7,9 @@
 <title>tauction</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext x='50' y='50' dy='.36em' text-anchor='middle' font-size='90' font-family='Georgia,serif' fill='%235b5bd6'%3E%CF%84%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
+<!-- installable as a proper app (the icon is the gavel); without
+     this, Android's "install" is only Chrome's fallback shortcut -->
+<link rel="manifest" href="/manifest.json">
 <!-- ==================== GITHUB PAGES 404 HACK ====================
      index.html and 404.html are EXACT COPIES of each other, enforced
      by a qual. GitHub Pages serves 404.html for every path that isn't
@@ -47,13 +50,16 @@
 
   <!-- The auction description: freeform markdown, no label (the
        placeholder explains), editable by anyone before or after the
-       close. The corner toggle flips source <-> rendered — the compact
-       eat-the-richtext. -->
+       close. The corner ✎ (rendered mode only) opens the editor;
+       leaving the editor saves and renders — no save button. -->
   <section id="desc" class="card desc">
     <div id="descview" class="descview"></div>
     <textarea id="descedit" class="descedit" maxlength="2000" rows="3"
       placeholder="Describe this auction..."></textarea>
-    <button id="desctoggle" class="desctoggle" type="button" tabindex="-1"></button>
+    <!-- the ✎ shows only in rendered mode: editing ends by clicking
+         away (which saves), not by any button -->
+    <button id="desctoggle" class="desctoggle" type="button"
+            tabindex="-1">✎</button>
   </section>
 
   <section id="status" class="card">
@@ -91,7 +97,7 @@
     <!-- tabindex: tab is for editable fields; the link stays clickable -->
     <a href="/sourcery.html" tabindex="-1">sourcery</a>
     <span class="sep">·</span>
-    <span class="version">v2026.07.17-e</span>
+    <span class="version">v2026.07.17-f</span>
   </footer>
 </main>
 

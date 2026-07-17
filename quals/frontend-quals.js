@@ -81,6 +81,7 @@ const STR = new Function(STRINGLES
   + ' claimedByTip, mysteryDevice, nameTakenBanner,'
   + ' moneyGlyphs };')();
 const STAMP = STR.stampCopy;
+
 // ...and the server's half, out of the vm context hosting Code.gs
 const SCOPY = require('vm')
   .runInContext('({ gavelFellCopy, simulEditsCopy, mysteryDeviceCopy,'
@@ -126,6 +127,13 @@ function type(dom, id, text) {
   const input = dom.window.document.getElementById(id);
   input.value = text;
   input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+}
+
+// Commit whatever is typed in the + row (the enter path)
+function submitName(dom) {
+  dom.window.document.getElementById('roster-input').dispatchEvent(
+    new dom.window.KeyboardEvent('keydown',
+      { key: 'Enter', bubbles: true, cancelable: true }));
 }
 
 // Add a person via the ledger's + row
@@ -197,6 +205,19 @@ function ok(cond, label) {
 }
 
 (async () => {
+  /* --- installable: a real manifest, with the gavel as the icon ------- */
+  const MANIFEST = JSON.parse(
+      fs.readFileSync(path.join(REPO, 'manifest.json'), 'utf8'));
+  ok(MANIFEST.name === 'tauction' && MANIFEST.start_url === '/'
+     && MANIFEST.display === 'standalone'
+     && MANIFEST.icons.length >= 3
+     && MANIFEST.icons.every((i) =>
+          fs.existsSync(path.join(REPO, i.src.replace(/^\//, '')))),
+     'manifest.json: a standalone app whose every icon file exists'
+     + " (dreev's Android install was manifest-less Chrome fallback)");
+  ok(INDEX_HTML.includes('rel="manifest"'),
+     'index.html links the manifest');
+
   /* --- 1. bare visit: no server-invented name — the user picks ---------- */
   let dom = await makePage('/?api=' + API_URL);
   let doc = dom.window.document;
@@ -338,13 +359,16 @@ function ok(cond, label) {
   ok(row(doc, 'alice').querySelector('.rename input').value === 'alice'
      && row(doc, 'bob').querySelector('.rename input').value === 'bob',
      'rows are named (in live name fields)');
-  // a duplicate add is a local slip: the field objects (red ring),
-  // the text stays put for fixing, and nothing is silently swallowed
+  // [reworked 2026-07-17: typing an existing name now MEANS that
+  // row (the hallway test); your own name = quietly nothing to do.
+  // The red-ring objection lives on for HELD names — pinned in the
+  // hallway section]
   addName(dom, 'alice');  // again!
-  ok(doc.getElementById('roster-input').value === 'alice'
-     && doc.getElementById('roster-input').classList.contains('error')
+  ok(doc.getElementById('roster-input').value === ''
+     && !doc.getElementById('roster-input').classList.contains('error')
      && tiles(doc).length === 2,
-     'adding a dupe keeps your typing, reddens the field, adds nothing');
+     're-adding yourself clears quietly: nothing to do, nothing to'
+     + ' object to');
   type(dom, 'roster-input', 'alicia');
   ok(!doc.getElementById('roster-input').classList.contains('error'),
      'typing withdraws the objection');
@@ -716,9 +740,12 @@ function ok(cond, label) {
      'an undescribed auction opens in edit mode, placeholder explaining');
   dsDoc.getElementById('descedit').value = '# Brunch\n\n**bring** cash';
   ok(!dsDoc.getElementById('desctoggle').hasAttribute('data-tip'),
-     'the toggle explains itself by icon (pencil/floppy): no tooltip'
-     + ' [dreev retired his toggle-tip copy 2026-07-17]');
-  dsDoc.getElementById('desctoggle').click();  // flip to view = commit
+     'the pencil explains itself by icon: no tooltip [dreev retired'
+     + ' his toggle-tip copy 2026-07-17]');
+  // clicking away = save + flip to rendered (dreev killed the 💾:
+  // the blurb obeys the same rule as bids and names now)
+  dsDoc.getElementById('descedit').dispatchEvent(
+    new domDs.window.Event('blur'));
   await until(() => gas.handle({ action: 'state', aname: 'descy' })
     .blurb === '# Brunch\n\n**bring** cash');
   await until(() => !!dsDoc.querySelector('#descview h1'));
@@ -726,6 +753,43 @@ function ok(cond, label) {
      && dsDoc.querySelector('#descview h1').textContent === 'Brunch'
      && dsDoc.querySelector('#descview strong').textContent === 'bring',
      'flipping to view commits, and the markdown renders (h1, bold)');
+  // the mode flip is gated on having something to show: pencil-only
+  // model edge cases (dreev's redesign 2026-07-17)
+  dsDoc.getElementById('desctoggle').click();  // pencil: back to edit
+  ok(!dsDoc.getElementById('desc').classList.contains('viewing'),
+     'the pencil reopens the editor');
+  const descOps = () =>
+    apiCalls.filter((c) => c.action === 'describe').length;
+  const opsBefore = descOps();
+  dsDoc.getElementById('descedit').focus();
+  dsDoc.getElementById('descedit').dispatchEvent(
+    new domDs.window.Event('blur'));
+  ok(dsDoc.getElementById('desc').classList.contains('viewing')
+     && descOps() === opsBefore,
+     'a CLEAN blur just flips back to rendered: nothing to save,'
+     + ' nothing sent');
+  dsDoc.getElementById('desctoggle').click();
+  dsDoc.getElementById('descedit').focus();
+  dsDoc.getElementById('descedit').value = '# Brunch\n\nno wait';
+  dsDoc.getElementById('descedit').dispatchEvent(
+    new domDs.window.KeyboardEvent('keydown',
+      { key: 'Escape', bubbles: true }));
+  ok(dsDoc.getElementById('descedit').value
+       === '# Brunch\n\n**bring** cash'
+     && dsDoc.getElementById('desc').classList.contains('viewing')
+     && descOps() === opsBefore,
+     'Escape abandons the edit: reverted, back to rendered, nothing'
+     + ' sent (mobile is out of luck — tapping away saves)');
+  const domBk = await makePage('/blank?api=' + API_URL);
+  await sleep(20);
+  domBk.window.document.getElementById('descedit').focus();
+  domBk.window.document.getElementById('descedit').dispatchEvent(
+    new domBk.window.Event('blur'));
+  ok(!domBk.window.document.getElementById('desc').classList
+       .contains('viewing'),
+     'a clean blur of a BLANK blurb stays in edit mode: flipping'
+     + ' would trade the placeholder for an invisible empty pane');
+
   // hostile markdown renders inert (escape-first, whitelisted links)
   gas.handle({ action: 'describe', aname: 'evil', base: '',
     blurb: '<script>window.pwned=1</script>\n\n'
@@ -747,12 +811,15 @@ function ok(cond, label) {
   const dB = await makePage('/descy?api=' + API_URL);
   dA.window.document.getElementById('desctoggle').click();  // to edit
   dA.window.document.getElementById('descedit').value = 'A version';
-  dA.window.document.getElementById('desctoggle').click();  // commit
+  dA.window.document.getElementById('descedit').dispatchEvent(
+    new dA.window.Event('blur'));  // click away = commit
   await until(() => gas.handle({ action: 'state', aname: 'descy' })
     .blurb === 'A version');
   dB.window.document.getElementById('desctoggle').click();  // stale base
   dB.window.document.getElementById('descedit').value = 'B version';
-  dB.window.document.getElementById('desctoggle').click();  // commit!
+  dB.window.document.getElementById('descedit').blur();  // = commit!
+  // ...and B moves on: clicks into the + row and starts thinking
+  dB.window.document.getElementById('roster-input').focus();
   await until(() =>
     !dB.window.document.getElementById('banner').hidden);
   ok(dB.window.document.getElementById('banner').textContent
@@ -812,6 +879,10 @@ function ok(cond, label) {
      'a bounced commit reopens the EDITOR with the field red (the'
      + ' banner is global; the problem is THIS box) and your words'
      + ' intact');
+  ok(dB.window.document.activeElement
+       === dB.window.document.getElementById('roster-input'),
+     "...but it never STEALS the caret from the field B moved on to"
+     + ' (the arrival-caret law): the red editor waits its turn');
   await until(() => dB.window.document.getElementById('descview')
     .textContent.includes('A version'));
   ok(!dB.window.document.getElementById('descview').textContent
@@ -827,7 +898,8 @@ function ok(cond, label) {
   await until(() =>
     dB.window.document.getElementById('descedit').dataset.base
     === gas.handle({ action: 'state', aname: 'descy' }).tblurb);
-  dB.window.document.getElementById('desctoggle').click();  // re-commit
+  dB.window.document.getElementById('descedit').dispatchEvent(
+    new dB.window.Event('blur'));  // click away again = re-commit
   await until(() => gas.handle({ action: 'state', aname: 'descy' })
     .blurb === 'B version');
   ok(true, 'saving again, informed, wins: one warning per clobber');
@@ -1107,7 +1179,8 @@ function ok(cond, label) {
   dI.window.document.getElementById('descedit').value
     = '# Big News\n\nmuch **bold**';
   mockDelay = 500;  // a slow server must not delay the paint
-  dI.window.document.getElementById('desctoggle').click();
+  dI.window.document.getElementById('descedit').dispatchEvent(
+    new dI.window.Event('blur'));
   const instaView = dI.window.document.getElementById('descview');
   ok(dI.window.document.getElementById('desc').classList
        .contains('viewing')
@@ -1147,6 +1220,31 @@ function ok(cond, label) {
      + ' inner links stay tabbable: an open dialog is navigated by'
      + ' them)');
 
+  /* --- 2t2. dead ends are STICKY and walkable (dreev's PWA report:
+     an installed app has no URL bar, so "use the URL" must BE the
+     URL, and the sign must not vanish while you read it) --------- */
+  const dPwa = await makePage('/gate2?api=' + API_URL);
+  await sleep(20);
+  gas.handle({ action: 'add', aname: 'occupied', uname: 'zoe' });
+  type(dPwa, 'aname', 'occupied');
+  await until(() => !dPwa.window.document.getElementById('banner').hidden);
+  const gateLink = dPwa.window.document.querySelector('#banner a');
+  ok(gateLink && gateLink.getAttribute('href') === '/occupied'
+     && dPwa.window.document.getElementById('banner').textContent
+          === STR.auctionExistsBanner('/occupied')
+              .replace(/<[^>]+>/g, ''),
+     'the exists-banner offers the URL as a real LINK (a PWA has no'
+     + ' URL bar to fall back on), in dreev\'s words');
+  await sleep(5300);  // outlive the ordinary banner timer
+  ok(!dPwa.window.document.getElementById('banner').hidden,
+     'and the dead-end sign does NOT dismiss itself (dreev: you are'
+     + ' stuck until you act on it)');
+  type(dPwa, 'aname', 'gate3');
+  await until(() =>
+    dPwa.window.location.pathname === '/gate3');
+  ok(dPwa.window.document.getElementById('banner').hidden,
+     'landing somewhere real finally clears it');
+
   /* --- 2u. name, TAB, bid (dreev's add-self flow) ----------------------
      Adding YOURSELF should leave the bid field one tab away: type
      your name, tab, type your bid. Only when the fresh row is yours
@@ -1175,6 +1273,85 @@ function ok(cond, label) {
      "tab-adding someone ELSE books the row but doesn't jump: the"
      + ' caret stays in the + row for the next name');
 
+  /* --- 2u2. the hallway test (dreev + bee, verbatim fumbles) -----------
+     Scene: bee's row exists, unclaimed and bidless. A fresh visitor
+     (a) taps bee's empty bid box — "clicking on this box doesn't
+     work"; (b) types "bee" into the + row — "maybe i type in the
+     name i want to make a bid for?". Both intents are OBVIOUS, so
+     both now work: they claim bee's seat and ready the editor. --- */
+  gas.handle({ action: 'add', aname: 'hallway', uname: 'bee' });
+  const dHall = await makePage('/hallway?api=' + API_URL);
+  await sleep(20);
+  row(dHall.window.document, 'bee').querySelector('.tile-bid').click();
+  await settled(dHall);
+  ok(row(dHall.window.document, 'bee').classList.contains('mine')
+     && dHall.window.document.activeElement
+          === myInput(dHall.window.document),
+     "tapping a takeable row's empty bid box claims it and puts the"
+     + ' caret in the editor: the intent was never ambiguous');
+  claimRow(dHall, 'bee');  // release again (radio) for scene (b)
+  await settled(dHall);
+  const dHall2 = await makePage('/hallway?api=' + API_URL);
+  await sleep(20);
+  dHall2.window.document.getElementById('roster-input').focus();
+  type(dHall2, 'roster-input', 'bee');
+  submitName(dHall2);
+  await settled(dHall2);
+  ok(row(dHall2.window.document, 'bee').classList.contains('mine')
+     && dHall2.window.document.activeElement
+          === myInput(dHall2.window.document)
+     && dHall2.window.document.getElementById('roster-input').value === ''
+     && !dHall2.window.document.getElementById('roster-input')
+          .classList.contains('error'),
+     'typing an existing takeable name claims that seat (no red-ring'
+     + ' rejection when the intent is "I am bee")');
+  typeBid(dHall2, 'bee bids at last');
+  submitBid(dHall2);
+  await settled(dHall2);
+  ok(gas.handle({ action: 'state', aname: 'hallway' }).bidders
+       .some((b) => b.uname === 'bee'),
+     '...and the bid lands: the whole hallway flow, frictionless');
+  const dHall3 = await makePage('/hallway?api=' + API_URL);
+  await sleep(20);
+  row(dHall3.window.document, 'bee').querySelector('.tile-bid').click();
+  await sleep(50);
+  ok(!row(dHall3.window.document, 'bee').classList.contains('mine'),
+     "a DIBSED row's bid box stays dead: bee's registered seat can't"
+     + ' be tapped away');
+  dHall3.window.document.getElementById('roster-input').focus();
+  type(dHall3, 'roster-input', 'bee');
+  submitName(dHall3);
+  ok(dHall3.window.document.getElementById('roster-input').value === 'bee'
+     && dHall3.window.document.getElementById('roster-input').classList
+          .contains('error')
+     && !row(dHall3.window.document, 'bee').classList.contains('mine'),
+     'typing a HELD name still objects: red ring, text kept — that'
+     + ' seat is spoken for');
+
+  /* --- 2u3. committing a typed name never needs enter (mobile) ---------
+     Blur commits the + row too now (dreev: frictionless self-add;
+     the old click-swallow that banned this died with keyed node
+     reuse), and an empty blur objects to nothing. --------------- */
+  const dAdd = await makePage('/blurauda?api=' + API_URL);
+  await sleep(20);
+  dAdd.window.document.getElementById('roster-input').focus();
+  type(dAdd, 'roster-input', 'gala');
+  dAdd.window.document.getElementById('roster-input').dispatchEvent(
+    new dAdd.window.Event('blur'));
+  await settled(dAdd);
+  ok(row(dAdd.window.document, 'gala') !== undefined
+     && row(dAdd.window.document, 'gala').classList.contains('mine')
+     && dAdd.window.document.activeElement
+          === myInput(dAdd.window.document),
+     'tapping away commits the typed name — and a self-add lands the'
+     + ' caret in YOUR fresh bid editor, no enter anywhere (dreev:'
+     + ' show up, add your name, bid)');
+  dAdd.window.document.getElementById('roster-input').dispatchEvent(
+    new dAdd.window.Event('blur'));
+  ok(!dAdd.window.document.getElementById('roster-input').classList
+       .contains('error'),
+     'an empty blur of the + row objects to nothing');
+
   /* --- 2v. clicking away from the bid editor SAVES (dreev, esp.
      mobile: nobody expects enter) — and the enter-then-blur pair
      (the mobile keyboard closing right after submit) fires ONCE. -- */
@@ -1201,6 +1378,16 @@ function ok(cond, label) {
   ok(myInput(dBlur.window.document).value === 'enter then blur'
      && dBlur.window.document.getElementById('banner').hidden,
      'and an idle blur of a clean editor commits nothing');
+  typeBid(dBlur, 'abandoned thought');
+  myInput(dBlur.window.document).dispatchEvent(
+    new dBlur.window.KeyboardEvent('keydown',
+      { key: 'Escape', bubbles: true }));
+  await settled(dBlur);
+  ok(myInput(dBlur.window.document).value === 'enter then blur'
+     && gas.handle({ action: 'state', aname: 'blursave' })
+          .bidders.find((b) => b.uname === 'bea').bcount === 2,
+     'Escape abandons a bid edit (the only way out now that clicking'
+     + ' away saves): reverted, nothing submitted');
 
   /* --- 3. bob's window: alice's bid sealed there; his bid reveals ------- */
   const dom2 = await makePage('/tau?api=' + API_URL);
@@ -1716,7 +1903,7 @@ function ok(cond, label) {
      'typing an occupied name does not navigate');
   ok(!domG.window.document.getElementById('banner').hidden
      && domG.window.document.getElementById('banner').textContent
-          === STR.auctionExistsBanner,
+          === STR.auctionExistsBanner('/fresh1').replace(/<[^>]+>/g, ''),
      "the refusal says why, in dreev's words");
   ok(!domG.window.document.getElementById('status').classList
        .contains('stale'),

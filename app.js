@@ -57,6 +57,18 @@ function banner(msg, kind) {
   bannerTimer = setTimeout(() => { b.hidden = true; }, 5000);
 }
 
+// A dead-end sign: stays up until replaced or explicitly cleared (a
+// timer must not snatch it while you read — dreev). innerHTML, for
+// the link inside; ONLY app-built markup may come here, never server
+// or user text (that all goes through banner()'s textContent).
+function stickyBanner(html) {
+  const b = $('banner');
+  b.innerHTML = html;
+  b.className = 'err';
+  b.hidden = false;
+  clearTimeout(bannerTimer);
+}
+
 /* ------------------------------- state -------------------------------- */
 
 let aname = '';
@@ -237,22 +249,26 @@ function renderDesc() {
   if (!descModeSet) {
     descModeSet = true;
     $('desc').classList.toggle('viewing', state.blurb !== '');
-    syncDescToggle();
   }
 }
 
-// The corner toggle: flipping source -> rendered commits any change
-// (viewing is done-editing); Escape in the editor reverts instead
-function syncDescToggle() {
-  const viewing = $('desc').classList.contains('viewing');
-  $('desctoggle').textContent = viewing ? toSourceGlyph
-                                         : toRenderedGlyph;
+// The corner ✎ (rendered mode's only control; the glyph lives in
+// index.html) reopens the editor. There is no save button: leaving
+// the editor saves (dreev killed the 💾 — the blurb obeys the same
+// clicking-away-saves rule as bids and names). Escape reverts first,
+// so its blur commits nothing.
+function editDesc() {
+  $('desc').classList.remove('viewing');
+  $('descedit').focus();
 }
 
-function toggleDesc() {
-  const toView = !$('desc').classList.contains('viewing');
+// Save any change and flip back to rendered. Disclosed ifs: dirty →
+// save; the flip is gated on having something to show — a blur
+// leaving the blurb EMPTY stays in edit mode (flipping would trade
+// the placeholder for an invisible empty pane).
+function commitDesc() {
   const edit = $('descedit');
-  if (toView && edit.value !== edit.defaultValue) {
+  if (edit.value !== edit.defaultValue) {
     const draft = edit.value;
     const cleanBase = edit.defaultValue;  // pre-edit server truth
     queueOp({ action: 'describe', aname: aname, blurb: draft,
@@ -267,8 +283,10 @@ function toggleDesc() {
       edit.defaultValue = cleanBase;
       edit.classList.add('error');
       $('desc').classList.remove('viewing');
-      syncDescToggle();
-      edit.focus();
+      // reopen but never STEAL: the caret returns only if the page
+      // is idle (the arrival-caret law) — if you've moved on to
+      // another field, the red editor waits its turn
+      if (document.activeElement === document.body) edit.focus();
     });
     edit.defaultValue = draft;  // ours is the working base now
     edit.classList.remove('error');
@@ -279,9 +297,7 @@ function toggleDesc() {
     view.dataset.md = draft;
     view.innerHTML = mdRender(draft);
   }
-  $('desc').classList.toggle('viewing', toView);
-  if (!toView) edit.focus();
-  syncDescToggle();
+  $('desc').classList.toggle('viewing', edit.value !== '');
 }
 
 // You are whoever this browser last bid (or claimed a row) as — but only
@@ -512,6 +528,19 @@ function buildRow(uname) {
   const nameEl = el('div', 'tile-name');
   nameEl.append(star, buildNameField(uname));
   const bidEl = el('div', 'tile-bid');
+  // The empty bid box of a takeable row is where dreev's hallway
+  // tester kept tapping ("clicking on this box doesn't work"), so it
+  // works: while you are NOBODY, tapping it claims the seat and
+  // readies the editor — same deal as the star, and the intent is
+  // just as unambiguous. Disclosed ifs: only for the unclaimed
+  // (misclicks must not switch a claimed identity), only on takeable
+  // (star-enabled) rows, only while bidless (a slot, not a card).
+  bidEl.addEventListener('click', () => {
+    if (me() === '' && !t.querySelector('.tu').disabled
+        && !t.classList.contains('has-bid')) {
+      toggleTu(uname);
+    }
+  });
   // the tip is computed on entry, not at render: its "3m ago" ages must
   // be hover-fresh, and render stays idempotent (no clock in the DOM)
   bidEl.addEventListener('mouseenter', () => {
@@ -559,6 +588,12 @@ function buildBidContent(kind, uname) {
       const v = input.value.trim();
       if (v !== '' && v !== input.defaultValue
           && v !== input.dataset.sent) placeBid(uname, form);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {  // abandon the edit, like the names —
+        input.value = input.defaultValue;  // the only way out, now
+        input.blur();  // that clicking away saves (clean blur: no-op)
+      }
     });
     form.append(input);
     // the row-local busy sign: a mini gavel, shown by .rebid.busy
@@ -1044,10 +1079,27 @@ async function pressReveal() {
 
 function addName() {  // returns the added uname ('' if refused)
   const uname = sanUname($('roster-input').value);
-  // a dupe (or nothing usable) is a local slip: the field objects —
-  // red ring, text kept for fixing — rather than silently swallowing
-  // what you typed (the old code cleared the field FIRST)
-  if (!uname || roster.includes(uname)) {
+  if (!uname) {
+    $('roster-input').classList.add('error');
+    return '';
+  }
+  if (roster.includes(uname)) {
+    // Typing an existing name is POINTING at that row (the hallway
+    // test: "maybe i type in the name i want to make a bid for?" —
+    // yes): a takeable seat is taken, with the editor readied.
+    // Already you = nothing to do, quietly. A held/dibsed/locked
+    // seat objects: red ring, text kept for fixing — never silently
+    // swallowing what you typed.
+    const trow = rowNodes[uname];
+    if (uname === me()) {
+      $('roster-input').value = '';
+      return '';
+    }
+    if (trow && !trow.querySelector('.tu').disabled) {
+      $('roster-input').value = '';
+      toggleTu(uname);  // claims the seat and focuses the editor
+      return uname;
+    }
     $('roster-input').classList.add('error');
     return '';
   }
@@ -1095,11 +1147,13 @@ async function switchAuction(a) {
     // the user kept typing: a newer probe owns the field now
     if (a !== sanAname($('aname').value)) return;
     if (res.roster.length > 0 || res.bidders.length > 0) {
-      banner(auctionExistsBanner);
+      stickyBanner(auctionExistsBanner('/' + a));
       return;
     }
     aname = a;
     setPath(aname);
+    $('banner').hidden = true;  // landing somewhere real clears any
+                                // dead-end sign still standing
     state = null;
     roster = [];
     seen = {};
@@ -1132,13 +1186,15 @@ function wireUp() {
   }, true);
 
   $('seal').addEventListener('click', pressReveal);
-  $('desctoggle').addEventListener('click', toggleDesc);
+  $('desctoggle').addEventListener('click', editDesc);
+  $('descedit').addEventListener('blur', commitDesc);
   $('descedit').addEventListener('input', () => {
     $('descedit').classList.remove('error');  // objection acknowledged
   });
   $('descedit').addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {  // revert, like the name fields
-      $('descedit').value = $('descedit').defaultValue;
+    if (e.key === 'Escape') {  // revert, like the name fields; the
+      $('descedit').value = $('descedit').defaultValue;  // now-clean
+      $('descedit').blur();  // blur just flips back to rendered
     }
   });
 
@@ -1163,24 +1219,37 @@ function wireUp() {
   // fires mid-click when you tap a row control, and the rebuild it
   // triggered used to destroy the very button being clicked. An
   // uncommitted name just stays visible in the + row.
+  // Commit the + row and — iff the fresh row is YOURS (the gold
+  // star: you just added yourself) — land in its bid editor: name,
+  // tab (or tap away, or enter), bid. Frictionless self-add is the
+  // whole game (dreev's hallway test); adding someone ELSE keeps the
+  // caret here for the next name.
+  const commitAdd = () => {
+    const added = addName();
+    const t = rowNodes[added];
+    if (t && t.classList.contains('mine')) {
+      t.querySelector('.rebid input').focus();
+    }
+  };
   $('roster-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ',' || e.key === ' ') {
       e.preventDefault();
-      addName();
+      commitAdd();
     }
-    // Tab commits too, and — iff the fresh row is YOURS (the gold
-    // star: you just added yourself) — lands in its bid editor:
-    // name, tab, bid (dreev's flow). Tab-adding someone else keeps
-    // the caret here for the next name; enter (above) always does.
     if (e.key === 'Tab' && !e.shiftKey
         && $('roster-input').value !== '') {
       e.preventDefault();
-      const added = addName();
-      const t = rowNodes[added];
-      if (t && t.classList.contains('mine')) {
-        t.querySelector('.rebid input').focus();
-      }
+      commitAdd();
     }
+    if (e.key === 'Escape') {  // abandon, like every field
+      $('roster-input').value = '';
+      $('roster-input').blur();
+    }
+  });
+  // tapping away commits here too (the + row is a field like any
+  // other; an empty blur commits nothing and objects to nothing)
+  $('roster-input').addEventListener('blur', () => {
+    if ($('roster-input').value !== '') commitAdd();
   });
   $('roster-input').addEventListener('input', () => {
     $('roster-input').classList.remove('error');  // objection withdrawn

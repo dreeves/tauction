@@ -40,18 +40,15 @@ const closedLine = (stamp) => 'Closed ' + stamp;
 const stampCopy = 'SOLD';
 const moneyGlyphs = ['$', '¥', '£', '\u{1fa99}', '⚖️'];
 
-// The description toggle, self-evident by icon (dreev: so no
-// tooltip): the pencil enters edit mode; the floppy disk saves —
-// commits the text and shows it rendered.
-const toSourceGlyph = '✎';
-const toRenderedGlyph = '💾';
-
 // The blurb's unknown-device fallback (when user-agent comes up empty)
 const mysteryDevice = 'mystery device';
 
 // The typed-name gate: names you type CREATE auctions; occupied ones
-// point you at the URL
-const auctionExistsBanner = 'Auction exists — use the URL to join it';
+// point you at the URL — which is a real link, because an installed
+// PWA has no URL bar to fall back on (dreev). Renders via innerHTML:
+// the url is app-built from a sanitized slug, never user text.
+const auctionExistsBanner = (url) =>
+  'Auction exists — use <a href="' + url + '">the URL</a> to join it';
 
 // renaming onto a name that's already seated: the client pre-checks
 // its own roster, the server refuses stale-roster races — identical

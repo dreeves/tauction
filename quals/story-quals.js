@@ -41,6 +41,10 @@ function ok(cond, label) {
 }
 
 const gas = makeGas();
+// server copy derived from Code.gs (via its vm context), same as the
+// frontend suite does
+const SCOPY = require('vm')
+  .runInContext('({ gavelFellCopy })', gas);
 
 // Answer any request to the deployed API URL with the local Code.gs
 // logic; write ops can be artificially delayed for in-flight-race quals
@@ -170,20 +174,23 @@ async function tipBox(page, i) {
     ok((await alice.$$('#status .tile:not(.addrow)')).length === 0,
        'no roster yet: the ledger is just the + row');
     // the description block: no label, placeholder says it; typing
-    // markdown and flipping the corner toggle renders it in place
+    // markdown and clicking AWAY commits and renders it in place
+    // (dreev's pencil-only model: the pencil is the only control,
+    // and it only appears in rendered mode)
     ok(await alice.evaluate(() => {
       const t = document.getElementById('descedit');
       return getComputedStyle(t).display !== 'none'
         && t.placeholder.length > 0
-        && document.getElementById('desctoggle').textContent
-             === toRenderedGlyph
+        && getComputedStyle(document.getElementById('desctoggle'))
+             .display === 'none'
         && getComputedStyle(document.getElementById('desc'))
              .borderTopColor !== 'rgba(0, 0, 0, 0)';
     }), 'the description sits between name and ledger, explaining'
-       + ' itself by placeholder, boxed like the field it is');
+       + ' itself by placeholder, boxed like the field it is — and'
+       + ' NO save button anywhere');
     await alice.click('#descedit');
     await alice.type('#descedit', '# Rules\n\nLoser buys **coffee**');
-    await alice.click('#desctoggle');
+    await alice.click('#aname');  // clicking away = save
     await alice.waitForFunction(() =>
       document.querySelector('#descview h1'));
     ok(await alice.evaluate(() =>
@@ -191,10 +198,11 @@ async function tipBox(page, i) {
         === 'none'
       && document.querySelector('#descview strong').textContent
            === 'coffee'
-      && document.getElementById('desctoggle').textContent
-           === toSourceGlyph),
-       'one flip: committed, rendered rich (h1 + bold), toggle now'
-       + ' offers the source back');
+      && getComputedStyle(document.getElementById('desctoggle'))
+           .display !== 'none'
+      && document.getElementById('desctoggle').textContent.length > 0),
+       'clicking away commits and renders rich (h1 + bold); the'
+       + ' pencil appears, the only way back to the source');
     ok(await alice.evaluate(() => {
       const box = getComputedStyle(document.getElementById('desc'));
       return box.borderTopColor === 'rgba(0, 0, 0, 0)'
@@ -317,22 +325,26 @@ async function tipBox(page, i) {
         && name.borderTopWidth === '1px' && bid.borderTopWidth === '0px';
     }), 'person cell boxed; the bid floats free (its card is box enough)');
 
-    /* Replicata: type into the + row, then — without pressing enter —
-       click a row's (you?) button. Expectata: the click lands (and the
-       typed text stays put in the + row, uncommitted but not lost).
-       Resultata pre-fix: the input's blur committed the name, which
-       synchronously rebuilt every row, destroying the button between
-       mousedown and mouseup — the click silently died. */
+    /* [FLIPPED 2026-07-17 per dreev's frictionless-add: the + row
+       commits on blur like every other field now — the click-swallow
+       that banned blur-commit died with keyed node reuse. The click
+       must STILL land: mousedown and mouseup need the same node
+       across the commit's rebuild.] */
     await alice.type('#roster-input', 'carol');
     await alice.click('.tile[data-uname="bob"] .tu');  // a radio switch
     await alice.waitForSelector('.tile[data-uname="bob"].mine',
                                 { timeout: 2000 });
-    ok(true, 'clicking a star works even with an uncommitted name pending');
-    ok(await alice.$eval('#roster-input', (e) => e.value) === 'carol',
-       'the pending name stays visible in the + row, not lost, not added');
+    ok(true, 'clicking a star works even mid-add: the blur-commit'
+       + ' rebuild reuses the clicked node');
+    await alice.waitForSelector('.tile[data-uname="carol"]');
+    ok(await alice.$eval('#roster-input', (e) => e.value) === '',
+       'and the tapped-away name is COMMITTED, not lost — mobile'
+       + ' never heard of enter');
+    await alice.click('.tile[data-uname="carol"] .x');  // tidy the scene
+    await alice.waitForFunction(() =>
+      !document.querySelector('.tile[data-uname="carol"]'));
     await alice.click('.tile[data-uname="alice"] .tu');  // and back
     await alice.waitForSelector('.tile[data-uname="alice"].mine');
-    await alice.$eval('#roster-input', (e) => { e.value = ''; });
 
     ok(await alice.evaluate(() =>
       document.activeElement === document.querySelector('.tile.mine .rebid input')),
@@ -1099,6 +1111,36 @@ async function tipBox(page, i) {
       document.getElementById('status').textContent
         .includes('a dozen eggs'));
     ok(true, 'and the game plays out: both bids in, revealed by thumb');
+
+    /* ====== the gavel catches a half-typed revision ==================
+       Pins the emergent auto-submit dreev blessed 2026-07-17:
+       disabling a focused editor blurs it in real Chrome (probed),
+       and blur-commit races the draft against the gavel. Replicata:
+       ann edits her bid, never submits; the reveal lands elsewhere.
+       Expectata: the dying editor's blur submits the draft, it loses
+       EXPLICITLY (Womp Womp), and the sheet keeps the pre-gavel
+       bid. */
+    const wire = await makePage(browser, DESKTOP);
+    gas.handle({ action: 'add', aname: 'wirestory', uname: 'ann' });
+    gas.handle({ action: 'add', aname: 'wirestory', uname: 'bee' });
+    gas.handle({ action: 'bid', aname: 'wirestory', uname: 'bee',
+                 bid: 'bee bid' });
+    await wire.goto(BASE + '/wirestory', { waitUntil: 'networkidle0' });
+    await claimRow(wire, 'ann');
+    await wire.type('.tile.mine .rebid input', 'first word');
+    await wire.keyboard.press('Enter');
+    await wire.waitForSelector('.tile.mine.has-bid');
+    await wire.click('.tile.mine .rebid input');
+    await wire.keyboard.type('!!!');  // a dirty, focused revision
+    gas.handle({ action: 'reveal', aname: 'wirestory' });
+    await wire.waitForFunction((womp) =>
+      !document.getElementById('banner').hidden
+      && document.getElementById('banner').textContent.includes(womp),
+      {}, SCOPY.gavelFellCopy);
+    ok(gas.handle({ action: 'state', aname: 'wirestory' }).bids
+         .find((b) => b.uname === 'ann').bid === 'first word',
+       'a half-typed revision races the gavel on its own and loses'
+       + ' out loud; the sheet keeps the pre-gavel bid');
 
     console.log('story-quals: all ' + passed + ' assertions passed');
   } finally {

@@ -279,7 +279,14 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .desctoggle:hover { color: var(--accent); }
 
+/* the pencil is rendered-mode's control only: while editing, its
+   spot is just more click-away-to-save (dreev killed the 💾) */
+.desc:not(.viewing) .desctoggle { display: none; }
+
 /* ----------------------------- BIDS box -------------------------------- */
+
+/* the dead-end banner's link is part of the message: same ink */
+#banner a { color: inherit; }
 
 #banner {
   position: absolute;  /* overlays the column: never shifts the layout */
