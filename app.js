@@ -94,28 +94,39 @@ const DEVICE = localStorage.getItem('tauction-device');
 // language from the browser, geography appended asynchronously by
 // locate(). Decoration on the honor system, all of it. (The server
 // can't glean any of this: Apps Script never sees headers.)
-// TODO English for the fallback: "an unknown device"
-let BLURB = (() => {
+let DEVBLURB = (() => {
   const ua = navigator.userAgent;
   const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad'
     : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac'
     : /Windows/.test(ua) ? 'Windows PC' : /Linux/.test(ua) ? 'Linux box'
-    : 'machina ignota';
+    : mysteryDevice;
   const br = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox'
     : /OPR\//.test(ua) ? 'Opera' : /Chrome\//.test(ua) ? 'Chrome'
     : /Safari\//.test(ua) ? 'Safari' : '';
   return [os, br, navigator.language].filter(Boolean).join(' ');
 })();
 
-// Rough geography for the blurb, from a free IP lookup. Geography is
-// decoration, so a flaky third party must not delay boot or banner
-// errors — this is the app's one deliberately quiet catch.
+// Rough geography for the blurb, from a free IP lookup (ipwho.is:
+// real CORS headers even on failures, unlike ipapi.co, whose
+// rate-limited responses lack them and spam the console). Geography
+// is decoration, so a flaky third party must not delay boot or banner
+// errors — this is the app's one deliberately quiet catch. The result
+// is cached in localStorage for a week: locate() runs every page load,
+// dev live-reload loads on every file save, and that burned the free
+// rate limit into 429s. Cities don't move much.
+const GEO_TTL_MS = 7 * 24 * 3600 * 1000;
 async function locate() {
   try {
-    const r = await (await fetch('https://ipapi.co/json/')).json();
-    if (r.city && r.region_code) {
-      BLURB += ' in ' + r.city + ', ' + r.region_code;
+    let geo = localStorage.getItem('tauction-geo');
+    const at = localStorage.getItem('tauction-geo-at');
+    if (!(geo && Date.now() - Date.parse(at) < GEO_TTL_MS)) {
+      const r = await (await fetch('https://ipwho.is/')).json();
+      if (!(r.city && r.region_code)) return;  // next load retries
+      geo = r.city + ', ' + r.region_code;
+      localStorage.setItem('tauction-geo', geo);
+      localStorage.setItem('tauction-geo-at', new Date().toISOString());
     }
+    DEVBLURB += ' in ' + geo;
   } catch (e) { /* the blurb just goes without */ }
 }
 
@@ -174,7 +185,7 @@ async function refresh() {
     else if (res.aname === aname && writesPending === 0
              && started >= writeSettledAt) { ingest(res); render(); }
   } catch (e) {
-    banner('ERROR2152: ' + e.message);
+    banner(e2152(e.message));
   } finally {
     refreshing = false;
     // the auction switched mid-flight, and the refreshing guard swallowed
@@ -192,7 +203,63 @@ function render() {
   // edit — no shielding needed
   roster = state.roster.slice();
   renderStatus();
+  renderDesc();
   $('status').classList.remove('stale');  // server truth is on screen
+}
+
+// The description block: the view pane always mirrors server truth;
+// the editor syncs only when you're not mid-edit (never-clobber, same
+// as the bid editor). If someone else's edit lands while yours is in
+// progress, warn once and RE-BASE the draft — your next save, made
+// informed, wins (the server's compare-and-swap remains the backstop
+// for sub-poll races).
+let descModeSet = false;  // initial mode chosen once per auction
+function renderDesc() {
+  const view = $('descview');
+  const edit = $('descedit');
+  if (view.dataset.md !== state.blurb) {
+    view.dataset.md = state.blurb;
+    view.innerHTML = mdRender(state.blurb);
+  }
+  edit.disabled = false;  // only the unnamed idle page keeps it off
+  if (edit !== document.activeElement
+      && edit.value === edit.defaultValue) {
+    edit.value = state.blurb;
+    edit.defaultValue = state.blurb;
+    edit.dataset.base = state.tblurb;
+  } else if (edit.dataset.base !== state.tblurb) {
+    edit.defaultValue = state.blurb;
+    edit.dataset.base = state.tblurb;
+    banner(simulEditsBanner);
+  }
+  if (!descModeSet) {
+    descModeSet = true;
+    $('desc').classList.toggle('viewing', state.blurb !== '');
+    syncDescToggle();
+  }
+}
+
+// The corner toggle: flipping source -> rendered commits any change
+// (viewing is done-editing); Escape in the editor reverts instead
+function syncDescToggle() {
+  const viewing = $('desc').classList.contains('viewing');
+  $('desctoggle').textContent = viewing ? toSourceGlyph
+                                         : toRenderedGlyph;
+  $('desctoggle').setAttribute('data-tip',
+    viewing ? toSourceTip : toRenderedTip);
+}
+
+function toggleDesc() {
+  const toView = !$('desc').classList.contains('viewing');
+  const edit = $('descedit');
+  if (toView && edit.value !== edit.defaultValue) {
+    queueOp({ action: 'describe', aname: aname, blurb: edit.value,
+              base: edit.dataset.base });
+    edit.defaultValue = edit.value;  // ours is the working base now
+  }
+  $('desc').classList.toggle('viewing', toView);
+  if (!toView) edit.focus();
+  syncDescToggle();
 }
 
 // You are whoever this browser last bid (or claimed a row) as — but only
@@ -270,7 +337,7 @@ function renderStatus() {
   // unlocks a solo auction), so the tip names THAT then instead.
   const missing = state.roster.filter(
     (u) => !state.bidders.some((b) => b.uname === u));
-  const roll = missing.map((u) => u + (u === mine ? ' (you)' : ''));
+  const roll = missing.map((u) => u + (u === mine ? youTag : ''));
   const listed = roll.length <= 2 ? roll.join(' and ')
     : roll.slice(0, -1).join(', ') + ', and ' + roll[roll.length - 1];
   const ready = !state.revealed && state.roster.length >= 2
@@ -283,11 +350,11 @@ function renderStatus() {
   // the roster is CLOSED once revealed (the server refuses adds too)
   $('roster-input').disabled = state.revealed;
   $('seal').setAttribute('data-tip',
-    state.revealed ? 'Revealed!'
+    state.revealed ? revealedTip
     : ready ? SEAL_TIP
-    : state.roster.length === 0 ? 'Need at least two bidders'
-    : state.roster.length === 1 ? 'Need at least one more bidder'
-    : 'Waiting for ' + listed + ' to bid...');
+    : state.roster.length === 0 ? needTwoTip
+    : state.roster.length === 1 ? needOneMoreTip
+    : waitingTip(listed));
 
   // no row is you yet: the you-star perches on the + row instead, so
   // the legend's ★ always has a referent
@@ -297,7 +364,7 @@ function renderStatus() {
   // stamp takes its place (ingest asserts tfin is empty-or-ISO, so no
   // legacy branch is needed here)
   $('closed').textContent = state.revealed
-    ? 'Closed ' + closedStamp(state.tfin) : '';
+    ? closedLine(closedStamp(state.tfin)) : '';
   const known = knownBids();
   const placed = myBids();  // bids THIS browser placed (the dibs exception)
   const byName = {};
@@ -363,12 +430,11 @@ function celebrate() {
   box.classList.add('ceremony');
   const fete = el('div', 'fete');
   fete.setAttribute('aria-hidden', 'true');
-  fete.append(el('span', 'stamp', 'SOLD'));
-  // the confetti is MONEY (dreev's set: dollars, yen, pounds, coins,
+  fete.append(el('span', 'stamp', stampCopy));
+  // the confetti is money (dreev's set: dollars, yen, pounds, coins,
   // the scales of justice), green and glittering
-  const MONEY = ['$', '\u00a5', '\u00a3', '\u{1fa99}', '\u2696\ufe0f'];
   for (let i = 0; i < 80; i++) {
-    const c = el('span', 'confetto', MONEY[i % MONEY.length]);
+    const c = el('span', 'confetto', moneyGlyphs[i % moneyGlyphs.length]);
     c.style.setProperty('--dx', (Math.random() * 2 - 1).toFixed(3));
     c.style.setProperty('--dy', (0.3 + Math.random()).toFixed(3));
     c.style.setProperty('--spin',
@@ -488,10 +554,10 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
   // everything else stays a pure function of (pressable, whose)
   star.setAttribute('data-tip',
     uname === mine
-      ? (star.disabled ? 'Locked in as you' : "Disclaim as you")
+      ? (star.disabled ? lockedTip : disclaimTip)
       : rival && state.blurbs[uname]
-      ? 'Claimed by someone (' + state.blurbs[uname] + ')'
-      : (star.disabled ? "Too late to claim as you" : "Claim as you"));
+      ? claimedByTip(state.blurbs[uname])
+      : (star.disabled ? tooLateTip : claimTip));
 
   t.classList.toggle('has-bid', stamp !== undefined);
   t.classList.toggle('mine', uname === mine);
@@ -560,7 +626,49 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
   const x = t.querySelector('.x');
   x.disabled = seated;
   x.setAttribute('data-tip',
-    (seated ? 'too late to remove @' : 'remove @') + uname);
+    seated ? tooLateRemoveTip(uname) : removeTip(uname));
+}
+
+// Render a small, safe markdown subset to HTML. Escape-first: the
+// raw text is entity-escaped before any markup applies, so nothing an
+// author writes can smuggle live HTML in — only OUR transforms emit
+// tags, and link hrefs must be http(s), so javascript: links never
+// become links at all. Covers #/##/### headings, **bold**, *italic*,
+// `code`, [text](url), - and 1. lists, > quotes, --- rules, and
+// blank-line paragraphs (single newlines are <br>s).
+function mdRender(md) {
+  const esc = md.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const inline = (s) => s
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  return esc.split(/\n{2,}/).map((b) => {
+    const lines = b.split('\n');
+    const h = lines.length === 1 && lines[0].match(/^(#{1,3}) (.*)$/);
+    if (h) {
+      const n = h[1].length;
+      return '<h' + n + '>' + inline(h[2]) + '</h' + n + '>';
+    }
+    if (/^\s*(-{3,}|\*{3,})\s*$/.test(b)) return '<hr>';
+    if (lines.every((l) => /^\s*[-*] /.test(l))) {
+      return '<ul>' + lines.map((l) =>
+        '<li>' + inline(l.replace(/^\s*[-*] /, '')) + '</li>').join('')
+        + '</ul>';
+    }
+    if (lines.every((l) => /^\s*\d+[.)] /.test(l))) {
+      return '<ol>' + lines.map((l) =>
+        '<li>' + inline(l.replace(/^\s*\d+[.)] /, '')) + '</li>')
+        .join('') + '</ol>';
+    }
+    if (lines.every((l) => /^\s*&gt; ?/.test(l))) {
+      return '<blockquote>' + inline(lines.map((l) =>
+        l.replace(/^\s*&gt; ?/, '')).join('<br>')) + '</blockquote>';
+    }
+    return '<p>' + inline(lines.join('<br>')) + '</p>';
+  }).join('');
 }
 
 // "2026-07-16 13:01 Thu" — dreev's exact Closed-line format, in the
@@ -588,13 +696,12 @@ function ago(iso) {
 // (first vs latest submission times, same wording for every row).
 function bidTip(uname) {
   const b = state.bidders.find((x) => x.uname === uname);
-  if (b === undefined) return 'awaiting bid...';
+  if (b === undefined) return awaitingTip;
   if (b.bcount === 1) {
-    return (uname === me() ? 'your bid' : 'bid')
-      + ' submitted ' + ago(b.tini) + ' ago';
+    return submittedTip(uname === me() ? yourBidWord : bidWord,
+                        ago(b.tini));
   }
-  return 'first submitted ' + ago(b.tini) + ' ago, resubmitted '
-    + ago(b.tmod) + ' ago';
+  return resubmittedTip(ago(b.tini), ago(b.tmod));
 }
 
 // The name is a live text field, like the + row's: click in and type.
@@ -661,7 +768,7 @@ function toggleTu(uname) {
     localStorage.setItem('tauction-uname', uname);
     queueOp({ action: 'claim', aname: aname, uname: uname,
               deviceID: DEVICE,     // stake it: rival pages show dibs
-              deviceBlurb: BLURB }); // ...and who by, humanely
+              deviceBlurb: DEVBLURB }); // ...and who by, humanely
   }
   const input = $('tiles').querySelector('.rebid input');
   if (input) input.focus();
@@ -707,9 +814,9 @@ async function placeBid(uname, form) {
     try {
       res = await apiPost({ action: 'bid', aname: a, uname: uname,
                             bid: bid, deviceID: DEVICE,
-                            deviceBlurb: BLURB });
+                            deviceBlurb: DEVBLURB });
     } catch (e) {
-      banner('ERROR2153: ' + e.message);
+      banner(e2153(e.message));
     }
     if (res && !res.error) {
       const mine = JSON.parse(
@@ -771,7 +878,7 @@ async function copyUrl() {
     await navigator.clipboard.writeText(shareUrl());
     $('copy').classList.add('copied');
   } catch (e) {
-    banner('could not copy: ' + e.message);
+    banner(copyFailBanner(e.message));
   }
 }
 
@@ -792,7 +899,7 @@ function queueOp(body) {
     try {
       res = await apiPost(body);
     } catch (e) {
-      banner('ERROR2154: ' + e.message);
+      banner(e2154(e.message));
     }
     settleWrite(res, at);  // exactly once, whatever happened
   });
@@ -843,7 +950,7 @@ async function pressReveal() {
   try {
     res = await apiPost({ action: 'reveal', aname: aname });
   } catch (e) {
-    banner('ERROR2155: ' + e.message);
+    banner(e2155(e.message));
   }
   settleWrite(res, at);  // exactly once, whatever happened
 }
@@ -901,7 +1008,7 @@ async function switchAuction(a) {
     // the user kept typing: a newer probe owns the field now
     if (a !== sanAname($('aname').value)) return;
     if (res.roster.length > 0 || res.bidders.length > 0) {
-      banner('Auction exists — use the URL to join it');
+      banner(auctionExistsBanner);
       return;
     }
     aname = a;
@@ -911,10 +1018,11 @@ async function switchAuction(a) {
     seen = {};
     wasRevealed = null;
     caretPlaced = false;  // the new auction gets its own arrival focus
+    descModeSet = false;  // and picks its description mode afresh
     ingest(res);  // the probe IS a live snapshot: paint it, no refetch
     render();
   } catch (e) {
-    banner('ERROR2157: ' + e.message);
+    banner(e2157(e.message));
   } finally {
     // on any non-commit path the old (or unnamed) page is back in
     // charge and isn't busy; after a commit render() already unstaled
@@ -937,6 +1045,12 @@ function wireUp() {
   }, true);
 
   $('seal').addEventListener('click', pressReveal);
+  $('desctoggle').addEventListener('click', toggleDesc);
+  $('descedit').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {  // revert, like the name fields
+      $('descedit').value = $('descedit').defaultValue;
+    }
+  });
 
   $('share').addEventListener('click', openShare);
   $('copy').addEventListener('click', copyUrl);
@@ -981,7 +1095,7 @@ async function init() {
   $('aname').value = aname;
 
   if (!configured) {
-    banner('ERROR2156: Missing API constant in app.js');
+    banner(e2156);
     return;
   }
 
@@ -992,6 +1106,7 @@ async function init() {
   // busy (the gavel hammers), and an unnamed page is idle, not busy.
   if (!aname) {
     $('roster-input').disabled = true;
+    $('descedit').disabled = true;  // nothing to describe yet
     $('aname').focus();
   } else {
     setPath(aname);

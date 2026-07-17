@@ -21,6 +21,14 @@ function ok(cond, label) {
   let r = await (await fetch(API)).json();
   ok(r.ok, 'live API answers: ' + JSON.stringify(r));
   r = await (await fetch(API + '?action=state&aname=tau')).json();
+  // A schema-changing deploy makes the API refuse the old tabs by
+  // name; surface that as marching orders, not a shape-assert failure
+  if (String(r.error).includes('schema drift')) {
+    console.error('DEPLOYED CODE REFUSES THE OLD TABS:\n  ' + r.error
+      + '\n  -> open the sheet, rename (or delete) the named tab and'
+      + ' any other outdated ones, then rerun: node quals/live-quals.js');
+    process.exit(1);
+  }
   ok(r.aname === 'tau' && Array.isArray(r.bidders)
      && r.bidders.every((b) => typeof b.uname === 'string'
                             && typeof b.tini === 'string'

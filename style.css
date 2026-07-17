@@ -171,13 +171,89 @@ body:has([data-tip]:hover) [data-tip]:focus:not(:hover)::before {
 
 /* right-anchored elements get right-anchored tooltips (else they overflow) */
 .seal::before, .corner button::before, .tile .x::before,
-.tile-bid::before { left: auto; right: 0; }
+.tile-bid::before, .desctoggle::before { left: auto; right: 0; }
 
 
 /* buttons get the same accent focus ring as inputs (the tooltip words
    need none: tap-focus exists only to show the tip, which IS the
    feedback) */
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ------------------------- auction description ------------------------- */
+/* One field, two modes: markdown source in the textarea, rendered
+   richtext in the view pane; the corner toggle flips (the compact
+   eat-the-richtext). No label — the placeholder explains. */
+
+.desc { position: relative; padding: 0.75rem 1rem; }
+
+.desc.viewing .descedit { display: none; }
+
+.desc:not(.viewing) .descview { display: none; }
+
+.descedit {
+  font: inherit;
+  font-size: 0.85rem;
+  color: inherit;
+  background: transparent;
+  border: none;
+  outline: none;
+  width: calc(100% - 2rem);  /* clear of the corner toggle */
+  resize: vertical;
+}
+
+.descview {
+  font-size: 0.85rem;
+  padding-right: 2rem;  /* clear of the corner toggle */
+  overflow-wrap: break-word;
+}
+
+.descview h1 { font-size: 1.15rem; margin: 0 0 0.4rem; }
+
+.descview h2 { font-size: 1rem; margin: 0 0 0.35rem; }
+
+.descview h3 { font-size: 0.9rem; margin: 0 0 0.3rem; }
+
+.descview p, .descview ul, .descview ol, .descview blockquote {
+  margin: 0 0 0.5rem;
+}
+
+.descview :last-child { margin-bottom: 0; }
+
+.descview ul, .descview ol { padding-left: 1.4rem; }
+
+.descview blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 0.6rem;
+  color: var(--muted);
+}
+
+.descview code {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 0.25rem;
+  font-size: 0.8rem;
+}
+
+.descview a { color: var(--accent); }
+
+.descview hr { border: none; border-top: 1px solid var(--border); }
+
+/* the mode toggle: a whisper in the corner */
+.desctoggle {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.6rem;
+  padding: 0 0.25rem;
+  border: none;
+  background: none;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--muted) 70%, transparent);
+}
+
+.desctoggle:hover { color: var(--accent); }
 
 /* ----------------------------- BIDS box -------------------------------- */
 

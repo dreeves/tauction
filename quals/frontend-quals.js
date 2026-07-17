@@ -20,6 +20,7 @@ const gas = require('./fake-gas')();
 
 const API_URL = 'https://script.example/exec';
 let apiCalls = [];
+let geoHits = 0;  // ipwho.is fixture servings (the cache quals count)
 let mockDelay = 0;  // artificial latency, for in-flight race quals
 
 // Overlapping write ops pile onto the server's script lock; track
@@ -37,7 +38,8 @@ let stripTini = false;
 function mockFetch(url, opts) {
   url = String(url);
   // the geo lookup gets a fixture: quals must never touch the network
-  if (url.includes('ipapi.co')) {
+  if (url.includes('ipwho.is')) {
+    geoHits++;
     return Promise.resolve({ json: () =>
       Promise.resolve({ city: 'Portland', region_code: 'OR' }) });
   }
@@ -68,9 +70,20 @@ function mockFetch(url, opts) {
 
 const INDEX_HTML = fs.readFileSync(path.join(REPO, 'index.html'), 'utf8');
 const APP_JS = fs.readFileSync(path.join(REPO, 'app.js'), 'utf8');
+const STRINGLES = fs.readFileSync(path.join(REPO, 'stringles.js'), 'utf8');
 
-// Microcopy derived from the app, so copy edits there don't break here
-const STAMP = APP_JS.match(/el\('span', 'stamp', '([^']+)'\)/)[1];
+// Microcopy DERIVED from stringles.js, so dreev's copy edits there
+// never break the quals — the quals pin that the right string shows
+// in the right state, not what the string says
+const STR = new Function(STRINGLES
+  + '; return { needTwoTip, needOneMoreTip, waitingTip, youTag,'
+  + ' awaitingTip, auctionExistsBanner, simulEditsBanner, stampCopy,'
+  + ' revealedTip, claimedByTip, mysteryDevice };')();
+const STAMP = STR.stampCopy;
+// ...and the server's half, out of the vm context hosting Code.gs
+const SCOPY = require('vm')
+  .runInContext('({ gavelFellCopy, simulEditsCopy, mysteryDeviceCopy })',
+                gas);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -94,7 +107,9 @@ async function makePage(pathAndQuery, seed) {
   // assumes it — the harness fills its own gap
   dom.window.matchMedia = (q) => ({ matches: false, media: q });
   if (seed) seed(dom.window);  // e.g. pre-populate localStorage
-  dom.window.eval(APP_JS);
+  // one eval: eval-scoped consts aren't visible across separate
+  // evals the way script tags share scope, so copy + code go together
+  dom.window.eval(STRINGLES + '\n;\n' + APP_JS);
   await sleep(50); // let init()'s awaits settle
   return dom;
 }
@@ -216,7 +231,7 @@ function ok(cond, label) {
      'the padlock sits with BIDS');
   ok(tiles(doc).length === 0, 'an auction with no roster is just an empty box');
   ok(doc.getElementById('seal').getAttribute('data-tip')
-       === 'Need at least two bidders',
+       === STR.needTwoTip,
      'empty roster: the tip names the real blocker — and counts it'
      + ' right (two needed, not "one more" than nobody)');
   ok(doc.querySelector('#status .addrow #roster-input'),
@@ -331,19 +346,19 @@ function ok(cond, label) {
   // commented code in app.js/style.css)
   // ok(tiles(doc)[0].querySelector('.tile-subs').textContent === '0',
   //    'submission counter reads 0 before bidding');
-  ok(hoverBid(dom, 'bob') === 'awaiting bid...',
-     'bidless cell tooltip: awaiting bid...');
+  ok(hoverBid(dom, 'bob') === STR.awaitingTip,
+     'bidless cell tooltip: awaiting the bid');
   ok(doc.querySelector('#status .closed').textContent === '',
      'no Closed line while the auction lives');
   ok(doc.getElementById('seal'), 'seal-state badge present');
   ok(doc.getElementById('seal').getAttribute('data-tip')
-       === 'Waiting for alice (you) and bob to bid...',
+       === STR.waitingTip('alice' + STR.youTag + ' and bob'),
      'padlock tip NAMES the stragglers, tagging you as you');
   addName(dom, 'carol');
   await until(() => gas.handle({ action: 'state', aname: 'tau' })
     .roster.join(',') === 'alice,bob,carol');
   ok(doc.getElementById('seal').getAttribute('data-tip')
-       === 'Waiting for alice (you), bob, and carol to bid...',
+       === STR.waitingTip('alice' + STR.youTag + ', bob, and carol'),
      'three stragglers: Oxford comma and all');
   row(doc, 'carol').querySelector('.x').click();
   await until(() => gas.handle({ action: 'state', aname: 'tau' })
@@ -444,7 +459,7 @@ function ok(cond, label) {
      && !doc.getElementById('seal').classList.contains('ready'),
      'padlock locked while bob is outstanding');
   ok(doc.getElementById('seal').getAttribute('data-tip')
-       === 'Waiting for bob to bid...',
+       === STR.waitingTip('bob'),
      'one straggler: named alone, no (you) since he is not');
 
   /* --- 2b. fresh auction: add yourself, claim, bid — seat uncut --------- */
@@ -461,7 +476,7 @@ function ok(cond, label) {
   ok(domF.window.document.getElementById('seal').disabled,
      'padlock stays locked for a solo bidder');
   ok(domF.window.document.getElementById('seal').getAttribute('data-tip')
-       === 'Need at least one more bidder',
+       === STR.needOneMoreTip,
      'solo bidder: bidding cannot unlock a roster of one, and the tip'
      + ' says so instead of inventing someone to wait for');
 
@@ -674,6 +689,81 @@ function ok(cond, label) {
      'the self-add registers no server claim: a real dree on another'
      + ' device can still claim the seat out from under it');
 
+  /* --- 2p. the auction description: markdown, a corner toggle, and
+     compare-and-swap against clobbers (the compact eat-the-richtext:
+     one field, source and rendered modes) ------------------------------ */
+  gas.handle({ action: 'add', aname: 'descy', uname: 'ann' });
+  const domDs = await makePage('/descy?api=' + API_URL);
+  const dsDoc = domDs.window.document;
+  ok(dsDoc.getElementById('descedit')
+     && !dsDoc.getElementById('desc').classList.contains('viewing')
+     && dsDoc.getElementById('descedit').placeholder.length > 0,
+     'an undescribed auction opens in edit mode, placeholder explaining');
+  dsDoc.getElementById('descedit').value = '# Brunch\n\n**bring** cash';
+  dsDoc.getElementById('desctoggle').click();  // flip to view = commit
+  await until(() => gas.handle({ action: 'state', aname: 'descy' })
+    .blurb === '# Brunch\n\n**bring** cash');
+  await until(() => !!dsDoc.querySelector('#descview h1'));
+  ok(dsDoc.getElementById('desc').classList.contains('viewing')
+     && dsDoc.querySelector('#descview h1').textContent === 'Brunch'
+     && dsDoc.querySelector('#descview strong').textContent === 'bring',
+     'flipping to view commits, and the markdown renders (h1, bold)');
+  // hostile markdown renders inert (escape-first, whitelisted links)
+  gas.handle({ action: 'describe', aname: 'evil', base: '',
+    blurb: '<script>window.pwned=1</script>\n\n'
+      + '[x](javascript:alert(1)) <img src=x onerror=alert(1)>' });
+  gas.handle({ action: 'add', aname: 'evil', uname: 'e' });
+  const domEv = await makePage('/evil?api=' + API_URL);
+  const evDoc = domEv.window.document;
+  ok(evDoc.getElementById('desc').classList.contains('viewing'),
+     'an existing description arrives rendered');
+  ok(!evDoc.querySelector('#descview script')
+     && !evDoc.querySelector('#descview img')
+     && !evDoc.querySelector('#descview a')
+     && evDoc.getElementById('descview').textContent
+          .includes('<script>'),
+     'hostile markdown is inert: tags mere text, javascript: links'
+     + ' never become links at all');
+  // the clobber dance: two windows, one description
+  const dA = await makePage('/descy?api=' + API_URL);
+  const dB = await makePage('/descy?api=' + API_URL);
+  dA.window.document.getElementById('desctoggle').click();  // to edit
+  dA.window.document.getElementById('descedit').value = 'A version';
+  dA.window.document.getElementById('desctoggle').click();  // commit
+  await until(() => gas.handle({ action: 'state', aname: 'descy' })
+    .blurb === 'A version');
+  dB.window.document.getElementById('desctoggle').click();  // stale base
+  dB.window.document.getElementById('descedit').value = 'B version';
+  dB.window.document.getElementById('desctoggle').click();  // commit!
+  await until(() =>
+    !dB.window.document.getElementById('banner').hidden);
+  ok(dB.window.document.getElementById('banner').textContent
+       .includes(SCOPY.simulEditsCopy),
+     "the clobber bounces off the compare-and-swap, loudly, in dreev's"
+     + ' words');
+  // the load-bearing cross-runtime pin: the client warns about a
+  // simultaneous edit in EXACTLY the server's words, so the locally-
+  // and remotely-detected banners read as one message
+  ok(STR.simulEditsBanner === SCOPY.simulEditsCopy,
+     'stringles.js and Code.gs agree verbatim on the simultaneous-edits'
+     + ' copy');
+  ok(STR.mysteryDevice === SCOPY.mysteryDeviceCopy,
+     'stringles.js and Code.gs agree verbatim on the nameless-rig'
+     + " fallback (both ends decorate tooltips with the holder's rig)");
+  ok(dB.window.document.getElementById('descedit').value === 'B version'
+     && gas.handle({ action: 'state', aname: 'descy' }).blurb
+          === 'A version',
+     "B's words survive in B's editor; A's words survive on the server");
+  // B, now informed, insists: the recovery poll re-based the draft
+  await until(() =>
+    dB.window.document.getElementById('descedit').dataset.base
+    === gas.handle({ action: 'state', aname: 'descy' }).tblurb);
+  dB.window.document.getElementById('desctoggle').click();  // to edit
+  dB.window.document.getElementById('desctoggle').click();  // re-commit
+  await until(() => gas.handle({ action: 'state', aname: 'descy' })
+    .blurb === 'B version');
+  ok(true, 'saving again, informed, wins: one warning per clobber');
+
   /* --- 2k. the alice race: two machines, one seat ------------------------
      Replicata (dreev's report): machine 1 and machine 2 both have the
      auction open, alice unclaimed on both screens. Machine 1 claims
@@ -700,9 +790,10 @@ function ok(cond, label) {
      + " (dreev's call) — the UI itself shows the truth");
   ok(row(r2.window.document, 'alice').querySelector('.tu').classList
        .contains('taken')
-     && /^Claimed by someone \(/.test(
-          row(r2.window.document, 'alice').querySelector('.tu')
-            .getAttribute('data-tip'))
+     && row(r2.window.document, 'alice').querySelector('.tu')
+          .getAttribute('data-tip')
+          // the tip up to the parenthesized rig, whatever the copy says
+          .startsWith(STR.claimedByTip('').slice(0, -1))
      && !r2.window.document.querySelector('#tiles .rebid'),
      'instead: the filled star and its tooltip explain who beat you');
   ok(gas.handle({ action: 'state', aname: 'race2' }).claims.alice
@@ -890,11 +981,52 @@ function ok(cond, label) {
        .contains('taken')
      && row(m2.window.document, 'alice').querySelector('.tu')
           .getAttribute('data-tip')
-          === 'Claimed by someone (machina ignota '
-            + m1.window.navigator.language + ' in Portland, OR)',
+          === STR.claimedByTip(STR.mysteryDevice + ' '
+            + m1.window.navigator.language + ' in Portland, OR'),
      "the taken star FILLS in, and its tip blurbs the claimant's rig,"
-     + " language, and rough geography (jsdom's UA parses to the Latin"
-     + ' unknown-device fallback; the geo comes from the fixture)');
+     + " language, and rough geography (jsdom's UA parses to dreev's"
+     + ' mystery-device fallback; the geo comes from the fixture)');
+
+  /* --- 2r. geography is looked up ONCE A WEEK, not once a load ----------
+     Replicata (dreev's 429 report): locate() fetched ipwho.is on every
+     page load, and dev live-reload means a load per file save — the
+     free rate limit burned into console spam. Expectata: first load
+     fetches and stamps a localStorage cache; loads within the TTL use
+     the cache (NO network); a stale stamp refetches. ---------------- */
+  const geoBefore = geoHits;
+  const g1 = await makePage('/geocache1?api=' + API_URL);
+  await until(() => g1.window.localStorage.getItem('tauction-geo'));
+  ok(geoHits === geoBefore + 1
+     && g1.window.localStorage.getItem('tauction-geo') === 'Portland, OR'
+     && !Number.isNaN(Date.parse(
+          g1.window.localStorage.getItem('tauction-geo-at'))),
+     'first load fetches geography once and stamps the dated cache');
+  const g2 = await makePage('/geocache2?api=' + API_URL, (win) => {
+    win.localStorage.setItem('tauction-geo', 'Rainbow City, AL');
+    win.localStorage.setItem('tauction-geo-at', new Date().toISOString());
+  });
+  addName(g2, 'gina');
+  typeBid(g2, 'a rainbow');
+  submitBid(g2);
+  await settled(g2);
+  ok(geoHits === geoBefore + 1,
+     'a fresh cache means NO lookup: reload-heavy dev must not burn'
+     + ' the rate limit');
+  ok(gas.handle({ action: 'state', aname: 'geocache2' }).blurbs.gina
+       === STR.mysteryDevice + ' ' + g2.window.navigator.language
+         + ' in Rainbow City, AL',
+     "...and the cached geography actually decorates the blurb (the"
+     + ' seeded city shows, proving no silent refetch either)');
+  const g3 = await makePage('/geocache3?api=' + API_URL, (win) => {
+    win.localStorage.setItem('tauction-geo', 'Nowhere, ZZ');
+    win.localStorage.setItem('tauction-geo-at',
+      new Date(Date.now() - 8 * 24 * 3600 * 1000).toISOString());
+  });
+  await until(() =>
+    g3.window.localStorage.getItem('tauction-geo') === 'Portland, OR');
+  ok(geoHits === geoBefore + 2,
+     'a stale stamp (8 days) refetches and re-stamps: cities do'
+     + ' occasionally move');
 
   /* --- 3. bob's window: alice's bid sealed there; his bid reveals ------- */
   const dom2 = await makePage('/tau?api=' + API_URL);
@@ -986,8 +1118,9 @@ function ok(cond, label) {
   mockDelay = 0;
   ok(!domWire.window.document.getElementById('banner').hidden
      && domWire.window.document.getElementById('banner').textContent
-          .includes('ERROR1313'),
-     'losing the under-the-wire race is announced explicitly');
+          .includes(SCOPY.gavelFellCopy),
+     'losing the under-the-wire race is announced explicitly, in'
+     + " dreev's words");
   ok(gas.handle({ action: 'state', aname: 'wire' }).bids
        .find((b) => b.uname === 'ann').bid === 'first thoughts',
      'the sheet keeps the bid that beat the gavel');
@@ -1350,6 +1483,9 @@ function ok(cond, label) {
      "bidding joined @rando to the roster: not crossed out");
 
   /* --- 6. no 404 dead-ends: 404.html IS the app -------------------------
+     (404.html is a derived artifact; `npm run quals` regenerates it via
+     sync-404 before running, so this only fires when the suites are
+     invoked directly with node)
      Replicata: navigate straight to /tau, or reload there. GitHub Pages
      answers unknown paths with 404.html. Expectata: that IS the app, booted
      at /tau — no bounce, no flash, nothing to dead-end. */
@@ -1374,7 +1510,7 @@ function ok(cond, label) {
      'typing an occupied name does not navigate');
   ok(!domG.window.document.getElementById('banner').hidden
      && domG.window.document.getElementById('banner').textContent
-          === 'Auction exists \u2014 use the URL to join it',
+          === STR.auctionExistsBanner,
      "the refusal says why, in dreev's words");
   ok(!domG.window.document.getElementById('status').classList
        .contains('stale'),

@@ -14,13 +14,57 @@ const SHEET_ID = '1hclphAZ3zQIq14Nip1ZxTDSoE9ygXqAv27RwP1hiMA8';
 // time-modified, tfin = time-final (the reveal moment), bcount = the
 // (re)submission count, deviceID = the claiming browser's anonymous
 // uuid, deviceBlurb = its self-description ("a Mac (Chrome)").
-const AUCTIONS_HEAD = ['aname', 'tini', 'tmod', 'tfin'];
+const AUCTIONS_HEAD = ['aname', 'tini', 'tmod', 'tfin', 'blurb',
+                       'tblurb'];
 const BIDS_HEAD     = ['aname', 'uname', 'bid', 'bcount', 'tini', 'tmod'];
 // A users row IS a roster seat; future per-person attributes
 // (weights/shares) append as columns to the right, which positional
 // reads tolerate.
 const USERS_HEAD    = ['aname', 'uname', 'deviceID', 'deviceBlurb',
                        'tini', 'tmod'];
+
+// Microcopy (the server half of stringles.js): everything user-visible
+// that this file generates. Throw strings land verbatim in the client's
+// error banner. stringles.js can't be shared across the deployment
+// boundary, so this block mirrors its role — edit copy here as freely.
+// The ERROR-numbered prefixes are load-bearing (the client quietly
+// swallows /^ERROR1304/ as an expected seat race); keep them.
+const badAnameCopy = 'auction name must be alphanumeric';
+const badUnameCopy = 'username must be alphanumeric and start with a letter';
+const badDeviceCopy = 'bad deviceID';
+const badDevBlurbCopy = 'bad deviceBlurb';
+const unknownActionCopy = (action) => 'unknown action: ' + action;
+const notReadyCopy = 'not ready to reveal: everyone on the roster'
+  + ' (at least two people) must bid first';
+const blurbTooLongCopy = 'blurb too long (2000 chars max)';
+// must match stringles.js simulEditsBanner EXACTLY (a qual checks):
+// the client shows the same words for locally- and remotely-detected
+// simultaneous edits, so back-to-back banners read as one message
+const simulEditsCopy = 'Oops, someone else is making simultaneous edits';
+const rosterClosedCopy = 'Auction complete — no new participants';
+const nameTakenCopy = 'That name is taken';
+const noSuchOneCopy = (from) => 'No such participant: ' + from;
+const claimNeedsDeviceCopy = 'ERROR1303: claim requires a deviceID';
+const seatHeldCopy = (blurb) =>
+  'ERROR1304: Claimed by someone (' + blurb + ')';
+const releaseNeedsDeviceCopy = 'ERROR1305: release requires a deviceID';
+const notYourSeatCopy = 'ERROR1306: Can this error ever happen?'
+  + ' Disclaiming yourself as a participant failed?';
+const emptyBidCopy = 'Bid is empty';
+const bidTooLongCopy = 'bid too long (80 characters max)';
+const gavelFellCopy =
+  'Womp Womp! The auction closed before your bid got through';
+const bidSeatHeldCopy = (blurb) =>
+  'ERROR1312: Claimed by someone (' + blurb + ')';
+// operator-facing (dreev sees this, users only if very unlucky): the
+// sheet's tabs predate the running code's schema
+const schemaDriftCopy = (name, got, want) =>
+  'schema drift: the "' + name + '" tab\'s headers are [' + got
+  + '] but this code expects [' + want + '] — rename the tab for'
+  + ' posterity (or delete it) and retry: the script rebuilds it fresh';
+// a holder whose claim carried no self-description (must match
+// stringles.js mysteryDevice: it's the same rig-naming fallback)
+const mysteryDeviceCopy = 'mystery device';
 
 function doGet(e) {
   return respond(handle((e && e.parameter) || {}));
@@ -45,13 +89,14 @@ function handle(req) {
       case 'bid':      return withLock(() => placeBid(req));
       case 'claim':    return withLock(() => saveClaim(req));
       case 'release':  return withLock(() => releaseClaim(req));
+      case 'describe': return withLock(() => describe(req));
       case 'add':      return withLock(() => addParticipant(req));
       case 'remove':   return withLock(() => removeParticipant(req));
       case 'rename':   return withLock(() => renameParticipant(req));
       case 'reveal':   return withLock(() => reveal(req));
       case undefined:  return { ok: 'tauction API is live',
                                 try: '?action=state&aname=tau' };
-      default:         return { error: 'unknown action: ' + req.action };
+      default:         return { error: unknownActionCopy(req.action) };
     }
   } catch (err) {
     return { error: String(err) };
@@ -68,14 +113,14 @@ function withLock(fn) {
 
 function cleanAname(s) {
   s = String(s || '').toLowerCase();
-  if (!/^[a-z0-9]{1,40}$/.test(s)) throw 'auction name must be alphanumeric';
+  if (!/^[a-z0-9]{1,40}$/.test(s)) throw badAnameCopy;
   return s;
 }
 
 function cleanUname(s) {
   s = String(s || '').toLowerCase();
   if (!/^[a-z][a-z0-9]{0,29}$/.test(s)) {
-    throw 'username must be alphanumeric and start with a letter';
+    throw badUnameCopy;
   }
   return s;
 }
@@ -83,7 +128,7 @@ function cleanUname(s) {
 // A deviceID is a client-minted uuid; empty means "release the claim"
 function cleanDeviceID(s) {
   s = String(s == null ? '' : s);
-  if (!/^[a-z0-9-]{0,64}$/.test(s)) throw 'bad deviceID';
+  if (!/^[a-z0-9-]{0,64}$/.test(s)) throw badDeviceCopy;
   return s;
 }
 
@@ -93,15 +138,32 @@ function cleanDeviceID(s) {
 // system, like everything.)
 function cleanBlurb(s) {
   s = String(s == null ? '' : s);
-  if (!/^[ -~]{0,64}$/.test(s)) throw 'bad deviceBlurb';
+  if (!/^[ -~]{0,64}$/.test(s)) throw badDevBlurbCopy;
   return s;
 }
 
 /* ---------------------------- sheet access ---------------------------- */
 
+// Which tabs this execution already header-checked. Globals reset per
+// Apps Script execution, so this only spares the repeat tab() calls
+// within one request (each check costs a Sheets read).
+const tabsChecked = {};
+
 function tab(name, headers, warning) {
   const ss = SpreadsheetApp.openById(SHEET_ID);
   let sh = ss.getSheetByName(name);
+  if (sh && !tabsChecked[name]) {
+    // The header row IS the schema. Everything reads positionally, so
+    // a drifted tab would misread every row — refuse loudly
+    // instead. Only the first headers.length cells count: columns
+    // appended to the right (and the cheater banner) are legal.
+    const got = sh.getRange(1, 1, 1, headers.length).getValues()[0]
+      .map(String);
+    if (!headers.every((h, i) => got[i] === h)) {
+      throw schemaDriftCopy(name, got.join(', '), headers.join(', '));
+    }
+  }
+  tabsChecked[name] = true;
   if (!sh) {
     sh = ss.insertSheet(name);
     // Format as plain text so bids like "007" don't get mangled into numbers
@@ -128,7 +190,7 @@ function reveal(req) {
   const unames = st.bidders.map(b => b.uname);
   if (!(st.roster.length >= 2
         && st.roster.every(u => unames.indexOf(u) !== -1))) {
-    throw 'not ready to reveal: everyone on the roster (at least two people) must bid first';
+    throw notReadyCopy;
   }
   const sh = auctionsTab();
   const i = rows(sh).findIndex(r => r[0] === aname);
@@ -193,10 +255,13 @@ function getState(aname) {
   // reseal them. A complete roster merely makes the reveal button pressable.
   const tfin = arow ? arow[3] : '';  // the reveal moment, ISO
   const revealed = tfin !== '';
+  const blurb = arow ? arow[4] || '' : '';   // freeform markdown
+  const tblurb = arow ? arow[5] || '' : '';  // its own edit stamp (CAS)
 
   return {
     aname: aname, roster: roster, bidders: bidders, revealed: revealed,
-    tfin: tfin, claims: claims, blurbs: blurbs,
+    tfin: tfin, blurb: blurb, tblurb: tblurb,
+    claims: claims, blurbs: blurbs,
     bids: revealed ? brows.map(r => ({ uname: r[1], bid: r[2] })) : null,
   };
 }
@@ -219,12 +284,33 @@ function ensureSeat(aname, uname) {
   if (i === -1) sh.appendRow([aname, uname, '', '', now, now]);
 }
 
+// The auction blurb: freeform markdown, editable by anyone at any
+// time — before or after the close. Concurrent edits are guarded by
+// compare-and-swap: the request carries the tblurb stamp the edit was
+// based on, and a stale base is refused loudly rather than silently
+// clobbering someone's words.
+function describe(req) {
+  const aname = cleanAname(req.aname);
+  const blurb = String(req.blurb == null ? '' : req.blurb);
+  if (blurb.length > 2000) throw blurbTooLongCopy;
+  touchAuction(aname);
+  const sh = auctionsTab();
+  const i = rows(sh).findIndex(r => r[0] === aname);
+  const current = rows(sh)[i][5] || '';
+  if (String(req.base == null ? '' : req.base) !== current) {
+    throw simulEditsCopy;
+  }
+  sh.getRange(i + 2, 5, 1, 2)
+    .setValues([[blurb, new Date().toISOString()]]);
+  return getState(aname);
+}
+
 // The roster is CLOSED once revealed: the game is over, and a fresh
 // participant could neither bid meaningfully nor be waited on.
 function addParticipant(req) {
   const aname = cleanAname(req.aname);
   const uname = cleanUname(req.uname);
-  if (getState(aname).revealed) throw 'Auction complete — no new participants';
+  if (getState(aname).revealed) throw rosterClosedCopy;
   touchAuction(aname);
   ensureSeat(aname, uname);
   return getState(aname);
@@ -241,10 +327,10 @@ function renameParticipant(req) {
   const sh = usersTab();
   const prows = rows(sh);
   if (prows.some(r => r[0] === aname && r[1] === to)) {
-    throw 'That name is taken';
+    throw nameTakenCopy;
   }
   const i = prows.findIndex(r => r[0] === aname && r[1] === from);
-  if (i === -1) throw 'No such participant: ' + from;
+  if (i === -1) throw noSuchOneCopy(from);
   const now = new Date().toISOString();
   sh.getRange(i + 2, 2).setValue(to);
   sh.getRange(i + 2, 6).setValue(now);  // tmod
@@ -288,13 +374,12 @@ function saveClaim(req) {
   const aname = cleanAname(req.aname);
   const uname = cleanUname(req.uname);
   const deviceID = cleanDeviceID(req.deviceID);
-  if (!deviceID) throw 'ERROR1303: claim requires a deviceID';
+  if (!deviceID) throw claimNeedsDeviceCopy;
   touchAuction(aname);
   ensureSeat(aname, uname);
   const held = deviceOf(aname, uname);
   if (held && held !== deviceID) {
-    throw 'ERROR1304: Claimed by someone ('
-      + holderBlurb(aname, uname) + ')';
+    throw seatHeldCopy(holderBlurb(aname, uname));
   }
   setDeviceID(aname, uname, deviceID, cleanBlurb(req.deviceBlurb));
   return getState(aname);
@@ -306,11 +391,11 @@ function releaseClaim(req) {
   const aname = cleanAname(req.aname);
   const uname = cleanUname(req.uname);
   const deviceID = cleanDeviceID(req.deviceID);
-  if (!deviceID) throw 'ERROR1305: release requires a deviceID';
+  if (!deviceID) throw releaseNeedsDeviceCopy;
   touchAuction(aname);
   const held = deviceOf(aname, uname);
   if (held && held !== deviceID) {
-    throw 'ERROR1306: TODO held by someone else';
+    throw notYourSeatCopy;
   }
   if (held) setDeviceID(aname, uname, '');
   return getState(aname);
@@ -339,26 +424,24 @@ function setDeviceID(aname, uname, deviceID, blurb) {
 
 // The holder's rig, for refusal messages: every seat-taken error names
 // who beat you to it
-// TODO English fallback when the holder reported nothing: currently
-// "another device"
 function holderBlurb(aname, uname) {
   const r = rows(usersTab()).find(
     (row) => row[0] === aname && row[1] === uname);
-  return (r && r[3]) || 'another device';
+  return (r && r[3]) || mysteryDeviceCopy;
 }
 
 function placeBid(req) {
   const aname = cleanAname(req.aname);
   const uname = cleanUname(req.uname);
   const bid = String(req.bid == null ? '' : req.bid).trim();
-  if (!bid) throw 'Bid is empty';
-  if (bid.length > 80) throw 'bid too long (80 characters max)';
+  if (!bid) throw emptyBidCopy;
+  if (bid.length > 80) throw bidTooLongCopy;
   // The gavel drop is a bright line: no bid lands after tfin. This is
   // also the explicit loss notice for an under-the-wire revision that
   // arrived a beat too late.
-  // TODO English: convey "Too late — the auction closed before this
-  // bid arrived"
-  if (getState(aname).revealed) throw 'ERROR1313: malleus cecidit';
+  if (getState(aname).revealed) {
+    throw gavelFellCopy;
+  }
 
   // bidding claims a roster seat: your own bid must never read as
   // not-counting (re-bidding takes a removed seat back, too)
@@ -372,8 +455,7 @@ function placeBid(req) {
     : cleanDeviceID(req.deviceID);
   const held = deviceOf(aname, uname);
   if (held && held !== deviceID) {
-    throw 'ERROR1312: Claimed by someone ('
-      + holderBlurb(aname, uname) + ')';
+    throw bidSeatHeldCopy(holderBlurb(aname, uname));
   }
   if (deviceID) {
     setDeviceID(aname, uname, deviceID, cleanBlurb(req.deviceBlurb));

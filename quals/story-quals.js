@@ -48,7 +48,7 @@ let opDelay = 0;
 async function bridge(page) {
   await page.setRequestInterception(true);
   page.on('request', (req) => {
-    if (req.url().includes('ipapi.co')) {  // geo fixture: no network
+    if (req.url().includes('ipwho.is')) {  // geo fixture: no network
       return req.respond({ status: 200, contentType: 'application/json',
         headers: { 'access-control-allow-origin': '*' },
         body: JSON.stringify({ city: 'Portland', region_code: 'OR' }) });
@@ -169,6 +169,30 @@ async function tipBox(page, i) {
     const slug = 'brunch';
     ok((await alice.$$('#status .tile:not(.addrow)')).length === 0,
        'no roster yet: the ledger is just the + row');
+    // the description block: no label, placeholder says it; typing
+    // markdown and flipping the corner toggle renders it in place
+    ok(await alice.evaluate(() => {
+      const t = document.getElementById('descedit');
+      return getComputedStyle(t).display !== 'none'
+        && t.placeholder.length > 0
+        && document.getElementById('desctoggle').textContent
+             === toRenderedGlyph;
+    }), 'the description sits between name and ledger, explaining'
+       + ' itself by placeholder');
+    await alice.click('#descedit');
+    await alice.type('#descedit', '# Rules\n\nLoser buys **coffee**');
+    await alice.click('#desctoggle');
+    await alice.waitForFunction(() =>
+      document.querySelector('#descview h1'));
+    ok(await alice.evaluate(() =>
+      getComputedStyle(document.getElementById('descedit')).display
+        === 'none'
+      && document.querySelector('#descview strong').textContent
+           === 'coffee'
+      && document.getElementById('desctoggle').textContent
+           === toSourceGlyph),
+       'one flip: committed, rendered rich (h1 + bold), toggle now'
+       + ' offers the source back');
 
     await alice.reload({ waitUntil: 'networkidle0' });
     await alice.waitForSelector('#tiles');
@@ -551,8 +575,8 @@ async function tipBox(page, i) {
         && alpha(getComputedStyle(taken).color) > 0.5
         && alpha(getComputedStyle(plain).color) === 0
         && taken.getAttribute('data-tip')
-             === 'Claimed by someone (Mac Chrome ' + navigator.language
-               + ' in Portland, OR)';
+             === claimedByTip('Mac Chrome ' + navigator.language
+                              + ' in Portland, OR');
     }), "alice's star fills in on bob's screen — claimed by someone"
        + ' else, says the tip, naming the rig — while open seats stay'
        + ' hollow');
@@ -990,9 +1014,10 @@ async function tipBox(page, i) {
       && !document.querySelector('#tiles .rebid'));
     ok(await p2.evaluate(() =>
       document.getElementById('banner').hidden
-      && /^Claimed by someone \(/.test(
-           document.querySelector('.tile[data-uname="alice"] .tu')
-             .getAttribute('data-tip'))),
+      && document.querySelector('.tile[data-uname="alice"] .tu')
+           .getAttribute('data-tip')
+           // the tip up to the rig, whatever the copy says
+           .startsWith(claimedByTip('').slice(0, -1))),
        'phone 2 loses the race QUIETLY: no red banner — the star fills'
        + ' in and its tooltip says who beat her');
     await p2.tap('.tile[data-uname="bea"] .tu');

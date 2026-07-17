@@ -9,6 +9,18 @@ const ctx = require('./fake-gas')();
 const ss = ctx.__ss;
 const call = (req) => ctx.handle(req);
 
+// Server microcopy DERIVED from Code.gs's block (read back out of the
+// vm context hosting it), so copy edits there never break these quals
+// — they pin the right words in the right place, not the wording
+const COPY = require('vm').runInContext('({ gavelFellCopy,'
+  + ' simulEditsCopy, seatHeldCopy, bidSeatHeldCopy, unknownActionCopy,'
+  + ' mysteryDeviceCopy, schemaDriftCopy })', ctx);
+// Real Apps Script resets globals every execution; one shared vm
+// context hosts the whole qual run, so drift quals empty the
+// header-check memo by hand to simulate a fresh execution
+const resetTabMemo = () => require('vm').runInContext(
+  'Object.keys(tabsChecked).forEach((k) => delete tabsChecked[k])', ctx);
+
 /* ------------------------------ quals --------------------------------- */
 
 let passed = 0;
@@ -52,7 +64,7 @@ ok(ss.sheets['bids'].data[1][2] === '3 tacos', 'bid trimmed');
 ok(ss.sheets['auctions'].data[1][0] === 'tau', 'default settings row created');
 ok(ss.sheets['bids'].data[0][6] === "IT'S CHEATING TO LOOK HERE DURING AN AUCTION"
    && ss.sheets['bids'].data[0][7] === undefined
-   && ss.sheets['auctions'].data[0].length === 4,
+   && ss.sheets['auctions'].data[0].length === 6,
    'cheater banner right after the bids headers; none on auctions');
 ok(ss.sheets['bids'].colors['2,3'] === '#ffffff',
    'sealed bid painted white-on-white');
@@ -101,12 +113,12 @@ ok(!call({ action: 'reveal', aname: 'tau' }).error,
 //    the old permissive-after-reveal pin): no bid lands after tfin,
 //    and the loser of an under-the-wire race hears it explicitly
 st = call({ action: 'bid', aname: 'tau', uname: 'carl', bid: 'too late' });
-ok(String(st.error).includes('ERROR1313')
+ok(String(st.error) === COPY.gavelFellCopy
    && call({ action: 'state', aname: 'tau' }).bids.length === 2
    && !call({ action: 'state', aname: 'tau' }).roster.includes('carl'),
    'a bid after the gavel falls is refused outright: nothing written');
 st = call({ action: 'bid', aname: 'tau', uname: 'alice', bid: 'revised!' });
-ok(String(st.error).includes('ERROR1313')
+ok(String(st.error) === COPY.gavelFellCopy
    && call({ action: 'state', aname: 'tau' }).bids[0].bid === 'sushi',
    "even the bidder's own revision bounces: the record is the record");
 // (2026-07-16, per dreev: the roster is CLOSED once revealed — adds
@@ -190,6 +202,35 @@ ok(st.revealed === false, 'complete (including the walk-on) but still sealed');
 st = call({ action: 'reveal', aname: 'gluon' });
 ok(st.revealed === true && st.bids.length === 3, 'reveal exposes all three');
 
+// 7b. the auction description: arbitrary markdown, editable by anyone
+//     before OR after the close, guarded against silent clobbers by
+//     compare-and-swap on dtmod (send the stamp your edit was based
+//     on; a stale base is refused loudly)
+st = call({ action: 'state', aname: 'tau' });
+ok(st.blurb === '' && st.tblurb === '', 'no blurb to start');
+st = call({ action: 'describe', aname: 'tau',
+            blurb: '# Brunch\n\nBring **cash**.', base: '' });
+ok(!st.error && st.blurb === '# Brunch\n\nBring **cash**.'
+   && /^\d{4}-/.test(st.tblurb),
+   'a blurb lands, newlines and all, and stamps tblurb');
+const dt1 = st.tblurb;
+{ const t = Date.now(); while (Date.now() - t < 3); }  // stamps differ
+st = call({ action: 'describe', aname: 'tau',
+            blurb: 'second thoughts', base: dt1 });
+ok(!st.error && st.blurb === 'second thoughts' && st.tblurb !== dt1,
+   'an edit based on the current stamp goes through');
+st = call({ action: 'describe', aname: 'tau',
+            blurb: 'clobber attempt', base: dt1 });
+ok(String(st.error) === COPY.simulEditsCopy
+   && call({ action: 'state', aname: 'tau' }).blurb === 'second thoughts',
+   'an edit based on a STALE stamp is refused: no silent clobbering');
+st = call({ action: 'describe', aname: 'tau', blurb: 'x'.repeat(2001),
+            base: call({ action: 'state', aname: 'tau' }).tblurb });
+ok(st.error, 'a novel is refused (2000 chars is plenty)');
+ok(!call({ action: 'describe', aname: 'tau', blurb: 'post-close note',
+           base: call({ action: 'state', aname: 'tau' }).tblurb }).error,
+   'the blurb stays editable after the gavel: tau is revealed');
+
 // 8. seats are rows in the users tab; adds upsert, removes delete
 st = call({ action: 'add', aname: 'muon', uname: 'a' });
 st = call({ action: 'add', aname: 'muon', uname: 'a' });
@@ -229,7 +270,7 @@ st = call({ action: 'claim', aname: 'higgs', uname: 'ann', deviceID: 'dev-1',
 ok(!st.error && st.claims.ann === 'dev-1', 're-claiming your own seat is'
    + ' idempotent (a device that lost localStorage re-latches)');
 st = call({ action: 'claim', aname: 'higgs', uname: 'ann', deviceID: 'dev-2' });
-ok(String(st.error) === 'ERROR1304: Claimed by someone (a Mac (Chrome))'
+ok(String(st.error) === COPY.seatHeldCopy('a Mac (Chrome)')
    && call({ action: 'state', aname: 'higgs' }).claims.ann === 'dev-1',
    "a held seat refuses a rival's claim, loudly, naming the holder's"
    + ' rig: no silent stealing');
@@ -254,7 +295,7 @@ ok(ss.sheets['users'].data.filter(r => r[0] === 'higgs' && r[1] === 'ann')
      .length === 1, 'claims live on the seat row: upsert, not append');
 st = call({ action: 'bid', aname: 'higgs', uname: 'ann', bid: 'a boson',
             deviceID: 'dev-3' });
-ok(String(st.error).includes('ERROR1312: Claimed by someone (')
+ok(String(st.error) === COPY.bidSeatHeldCopy(COPY.mysteryDeviceCopy)
    && call({ action: 'state', aname: 'higgs' }).bidders.length === 0,
    "a bid can't hijack a held seat: refused, naming the holder's rig,"
    + ' and no bid row written');
@@ -324,7 +365,44 @@ ok(call({ action: 'nonsense' }).error, 'unknown action rejected');
 
 // 10. the fresh-name endpoint is gone (particle names scrapped
 //     2026-07-16 per dreev: users pick their own auction names)
-ok(String(call({ action: 'fresh' }).error).includes('unknown action'),
+ok(String(call({ action: 'fresh' }).error)
+     === COPY.unknownActionCopy('fresh'),
    'no server-invented names: fresh is an unknown action now');
+
+// 11. schema drift: the header row IS the schema — positional reads
+//     against a tab from an older deploy would misread every row, so
+//     the API must refuse loudly, naming the tab and both layouts
+//     (this is also the delete-the-tabs reminder after a deploy)
+const uhead = ss.sheets['users'].data[0];
+uhead[2] = 'device';  // the pre-rename column name
+resetTabMemo();
+st = call({ action: 'state', aname: 'tau' });
+ok(String(st.error) === COPY.schemaDriftCopy('users',
+     'aname, uname, device, deviceBlurb, tini, tmod',
+     'aname, uname, deviceID, deviceBlurb, tini, tmod'),
+   'a drifted tab refuses reads, naming the tab and both layouts');
+st = call({ action: 'bid', aname: 'tau3', uname: 'zoe', bid: 'nope' });
+ok(String(st.error).includes('schema drift')
+   && !ss.sheets['bids'].data.some((r) => r[0] === 'tau3'),
+   'writes refuse too: nothing lands positionally in a drifted world');
+uhead[2] = 'deviceID';
+resetTabMemo();
+ok(!call({ action: 'state', aname: 'tau' }).error,
+   'headers restored: same tabs read fine again');
+ss.sheets['auctions'].data[0][6] = 'appended-attribute';
+resetTabMemo();
+ok(!call({ action: 'state', aname: 'tau' }).error,
+   'columns appended past the schema are legal, not drift (future'
+   + ' per-person attributes grow rightward)');
+ss.sheets['auctions'].data[0].length = 6;
+const bhead = ss.sheets['bids'].data[0];
+ss.sheets['bids'].data[0] = [];  // cleared-but-not-deleted tab
+resetTabMemo();
+ok(String(call({ action: 'state', aname: 'tau' }).error)
+     .includes('schema drift'),
+   'a cleared header row is drift too: the fix is DELETING the tab,'
+   + ' not emptying it');
+ss.sheets['bids'].data[0] = bhead;
+resetTabMemo();
 
 console.log('gas-quals: all ' + passed + ' assertions passed');
