@@ -638,7 +638,8 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
     && ((holder !== undefined && holder !== DEVICE)
         || (stamp !== undefined && placed[uname] === undefined));
   const star = t.querySelector('.tu');
-  star.disabled = dibsed || locked;
+  // revealed: identity is part of the frozen record, like the names
+  star.disabled = dibsed || locked || state.revealed;
   star.classList.toggle('selected', uname === mine);
   // a rival's REGISTERED claim fills the star in (hollow = open,
   // filled = claimed by someone else, gold = you)...

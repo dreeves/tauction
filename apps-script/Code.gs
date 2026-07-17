@@ -47,7 +47,9 @@ const simulEditsCopy =
   'Oops, someone else is making simultaneous edits to the description';
 const rosterClosedCopy = 'Auction complete — no new participants';
 const nameTakenCopy = 'That name is taken';
-const renameClosedCopy = 'Auction closed, no editing';
+// the frozen-record refusal (dreev's copy): renames, claims, and
+// releases all bounce off it once the auction closes
+const auctionClosedCopy = 'Auction closed, no editing';
 const noSuchOneCopy = (from) => 'No such participant: ' + from;
 const claimNeedsDeviceCopy = 'ERROR1303: claim requires a deviceID';
 const seatHeldCopy = (blurb) =>
@@ -343,7 +345,7 @@ function renameParticipant(req) {
   if (to === from) return getState(aname);
   // names freeze at the gavel: a post-close rename could swap
   // around who bid what (dreev, reversing always-editable)
-  if (getState(aname).revealed) throw renameClosedCopy;
+  if (getState(aname).revealed) throw auctionClosedCopy;
   const sh = usersTab();
   const prows = rows(sh);
   if (prows.some(r => r[0] === aname && r[1] === to)) {
@@ -402,6 +404,9 @@ function saveClaim(req) {
   const uname = cleanUname(req.uname);
   const deviceID = cleanDeviceID(req.deviceID);
   if (!deviceID) throw claimNeedsDeviceCopy;
+  // identity is part of the frozen record, like names and bids: a
+  // post-close claim would dress a revealed bid in a stranger's rig
+  if (getState(aname).revealed) throw auctionClosedCopy;
   touchAuction(aname);
   ensureSeat(aname, uname);
   const held = deviceOf(aname, uname);
@@ -419,6 +424,7 @@ function releaseClaim(req) {
   const uname = cleanUname(req.uname);
   const deviceID = cleanDeviceID(req.deviceID);
   if (!deviceID) throw releaseNeedsDeviceCopy;
+  if (getState(aname).revealed) throw auctionClosedCopy;  // frozen too
   touchAuction(aname);
   const held = deviceOf(aname, uname);
   if (held && held !== deviceID) {

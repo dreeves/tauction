@@ -1477,6 +1477,10 @@ function ok(cond, label) {
      && burst.origin.y >= 0 && burst.origin.y <= 1,
      "erupting from the gavel's block (a clamped viewport-fraction"
      + " origin — jsdom's zero-layout puts it at 0,0)");
+  ok([...doc2.querySelectorAll('#tiles .tu')]
+       .every((s) => s.disabled),
+     'every star grays at the gavel: identity is part of the frozen'
+     + ' record (found hunting dreev\'s one-more-bug)');
   ok(row(doc2, 'alice').querySelector('.rename input').disabled
      && !dom2.window.document.getElementById('seal')
           .hasAttribute('data-tip'),

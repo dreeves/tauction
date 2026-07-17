@@ -14,7 +14,7 @@ const call = (req) => ctx.handle(req);
 // — they pin the right words in the right place, not the wording
 const COPY = require('vm').runInContext('({ gavelFellCopy,'
   + ' simulEditsCopy, seatHeldCopy, bidSeatHeldCopy, unknownActionCopy,'
-  + ' mysteryDeviceCopy, schemaDriftCopy, renameClosedCopy })', ctx);
+  + ' mysteryDeviceCopy, schemaDriftCopy, auctionClosedCopy })', ctx);
 // Real Apps Script resets globals every execution; one shared vm
 // context hosts the whole qual run, so drift quals empty the
 // header-check memo by hand to simulate a fresh execution
@@ -130,13 +130,27 @@ ok(String(st.error) === COPY.gavelFellCopy
    && call({ action: 'state', aname: 'tau' }).bids[0].bid === 'sushi',
    "even the bidder's own revision bounces: the record is the record");
 st = call({ action: 'rename', aname: 'tau', from: 'alice', to: 'mallory' });
-ok(String(st.error) === COPY.renameClosedCopy
+ok(String(st.error) === COPY.auctionClosedCopy
    && call({ action: 'state', aname: 'tau' }).roster.includes('alice')
    && call({ action: 'state', aname: 'tau' }).bids
         .some((b) => b.uname === 'alice'),
    'names freeze at the gavel too (dreev 2026-07-17, reversing'
    + ' always-editable: a post-close rename could swap around who bid'
    + " what): refused, and alice's bid stays alice's");
+// ...and so do SEATS: found hunting dreev's one-more-bug 2026-07-17 —
+// post-reveal claims re-attributed a revealed bid to a stranger's rig,
+// and releases reopened seats for the taking. The whole record
+// freezes at the gavel.
+st = call({ action: 'claim', aname: 'tau', uname: 'alice',
+            deviceID: 'd-x', deviceBlurb: 'mallory rig' });
+ok(String(st.error) === COPY.auctionClosedCopy
+   && call({ action: 'state', aname: 'tau' }).claims.alice === undefined,
+   "identities freeze at the gavel: a post-close claim can't dress a"
+   + " revealed bid in a stranger's rig");
+st = call({ action: 'release', aname: 'tau', uname: 'alice',
+            deviceID: 'd-x' });
+ok(String(st.error) === COPY.auctionClosedCopy,
+   'releases freeze too: no reopening seats after the game');
 // (2026-07-16, per dreev: the roster is CLOSED once revealed — adds
 // refuse rather than merely not-resealing)
 st = call({ action: 'add', aname: 'tau', uname: 'zed' });
