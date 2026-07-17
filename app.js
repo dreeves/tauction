@@ -446,7 +446,8 @@ function renderStatus() {
 // down, and confetti flies from the point of impact. One shot, wholly
 // self-cleaning, and skipped for reduced-motion folks (a still frame
 // of falling paper is just litter).
-const FETE_MS = 4000;   // total ceremony length; everything self-removes
+const FETE_MS = 5000;  // total ceremony length (950 strike + 400
+                       // launch window + 3.2s flight); all self-removes
 const STRIKE_MS = 950;  // when the mallet lands (63% of gavel-verdict)
 function celebrate() {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -761,6 +762,7 @@ function buildNameField(uname) {
   // the mobile return key names the deed
   input.setAttribute('enterkeyhint', 'done');
   input.addEventListener('input', () => {
+    input.classList.remove('error');  // objection acknowledged
     const v = sanUname(input.value);
     if (v !== input.value) input.value = v;
   });
@@ -770,7 +772,7 @@ function buildNameField(uname) {
   input.addEventListener('blur', () => { input.value = uname; });
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    commitRename(uname, input.value);
+    commitRename(uname, input.value, input);
   });
   form.append(input);
   return form;
@@ -779,10 +781,14 @@ function buildNameField(uname) {
 // Fix a typo'd name — anyone may, honor system, like all roster edits.
 // The server re-keys the seat and any bid together and refuses names
 // already seated.
-function commitRename(from, raw) {
+function commitRename(from, raw, field) {
   const to = sanUname(raw);
   if (!to || to === from) return;
-  if (roster.includes(to)) return banner('That name is taken');
+  if (roster.includes(to)) {
+    banner(nameTakenBanner);
+    field.classList.add('error');  // the problem is THIS field
+    return;
+  }
   if (from === me()) {
     // your own rename must not unseat you while the op flies: local
     // identity and bid memory follow immediately
@@ -796,7 +802,10 @@ function commitRename(from, raw) {
     }
   }
   roster = roster.map((u) => (u === from ? to : u));
-  queueOp({ action: 'rename', aname: aname, from: from, to: to });
+  // a server-side refusal (a stale-roster race the local guard can't
+  // see) reddens the field too, same as the local objection
+  queueOp({ action: 'rename', aname: aname, from: from, to: to },
+          () => field.classList.add('error'));
 }
 
 // Claim a row as yourself, or release it if it's already yours
@@ -1152,6 +1161,9 @@ async function init() {
   // waiting in the empty auction field; switchAuction wakes
   // everything when the user picks. NOT marked stale: stale means
   // busy (the gavel hammers), and an unnamed page is idle, not busy.
+  // geography first (fire-and-forget): the earlier it resolves, the
+  // more claims and bids carry it in their deviceBlurb
+  locate();
   if (!aname) {
     $('roster-input').disabled = true;
     $('descedit').disabled = true;  // nothing to describe yet
@@ -1161,7 +1173,6 @@ async function init() {
     paintCached();
     await refresh();
   }
-  locate();  // enrich the blurb with geography, eventually
   setInterval(() => {
     if (document.visibilityState === 'visible') refresh();
   }, POLL_MS);

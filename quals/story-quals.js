@@ -653,34 +653,34 @@ async function tipBox(page, i) {
       return !s2.disabled && alpha(getComputedStyle(s2).color) === 1;
     }), 'the tada is never a disabled control at all (reveal is'
        + ' idempotent), so no UA sheet can wash it out');
-    await bob.waitForFunction(() => {  // 0.15s fade: wait, don't sample
-      const g = document.querySelector('#status > .gavel');
-      return getComputedStyle(g.querySelector('.mallet')).animationName
-        === 'gavel-verdict'
-        && getComputedStyle(g).opacity === '1';
-    });
-    ok(true, 'the gavel returns for one ceremonial verdict stroke');
+    // The ceremony is a 5s transient: gate on its LOUDEST early moment
+    // (a shower of airborne confetti, ~1.4s in) and assert everything
+    // else in that same beat — sampling at the tail flaked when a
+    // loaded machine ate the window
+    await bob.waitForFunction(() =>
+      [...document.querySelectorAll('body > .sky .confetto')]
+        .filter((c) => getComputedStyle(c).opacity === '1').length > 30);
     ok(await bob.evaluate(() => {
+      const g = document.querySelector('#status > .gavel');
       const st = document.querySelector('#status .fete .stamp');
       const c = document.querySelector('body > .sky .confetto');
       const sky = document.querySelector('body > .sky');
       const box = sky.getBoundingClientRect();
-      return st && getComputedStyle(st).animationName === 'stamp-slam'
+      return getComputedStyle(g.querySelector('.mallet')).animationName
+             === 'gavel-verdict'
+        && getComputedStyle(g).opacity === '1'
+        && st && getComputedStyle(st).animationName === 'stamp-slam'
         && c && getComputedStyle(c).animationName
              === 'confetti-fly, glitter'
         && document.querySelectorAll('body > .sky .confetto').length >= 90
         && getComputedStyle(sky).position === 'fixed'
         && box.width === window.innerWidth
         && box.height === window.innerHeight;
-    }), 'SOLD slams the bid box and the money rains across the WHOLE'
-       + ' screen (a fixed full-viewport layer — dreev sprang it from'
-       + ' the box)');
+    }), 'one ceremonial gavel stroke, SOLD slammed on the bid box, and'
+       + ' the money raining across the WHOLE screen (a fixed'
+       + ' full-viewport layer — dreev sprang it from the box)');
     // viewport shot, not fullPage: the sky is position:fixed and this
-    // catches the money mid-flight for eyeballing (wait out the
-    // launch delay first — pieces are opacity 0 until they fly)
-    await bob.waitForFunction(() =>
-      [...document.querySelectorAll('body > .sky .confetto')]
-        .filter((c) => getComputedStyle(c).opacity === '1').length > 30);
+    // catches the money mid-flight for eyeballing
     await bob.screenshot({
       path: path.join(SHOTS, 'story3-ceremony-sky.png') });
     ok(await bob.evaluate(() =>

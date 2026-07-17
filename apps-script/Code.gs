@@ -267,7 +267,7 @@ function getState(aname) {
   };
 }
 
-// Make sure the auction has its settings row (created/updated/revealed)
+// Make sure the auction has its row (tini/tmod stamped; tfin empty)
 function touchAuction(aname) {
   const sh = auctionsTab();
   const arows = rows(sh);

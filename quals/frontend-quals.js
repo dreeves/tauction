@@ -78,12 +78,12 @@ const STRINGLES = fs.readFileSync(path.join(REPO, 'stringles.js'), 'utf8');
 const STR = new Function(STRINGLES
   + '; return { needTwoTip, needOneMoreTip, waitingTip, youTag,'
   + ' awaitingTip, auctionExistsBanner, simulEditsBanner, stampCopy,'
-  + ' revealedTip, claimedByTip, mysteryDevice };')();
+  + ' revealedTip, claimedByTip, mysteryDevice, nameTakenBanner };')();
 const STAMP = STR.stampCopy;
 // ...and the server's half, out of the vm context hosting Code.gs
 const SCOPY = require('vm')
-  .runInContext('({ gavelFellCopy, simulEditsCopy, mysteryDeviceCopy })',
-                gas);
+  .runInContext('({ gavelFellCopy, simulEditsCopy, mysteryDeviceCopy,'
+    + ' nameTakenCopy })', gas);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -754,6 +754,36 @@ function ok(cond, label) {
   ok(STR.mysteryDevice === SCOPY.mysteryDeviceCopy,
      'stringles.js and Code.gs agree verbatim on the nameless-rig'
      + " fallback (both ends decorate tooltips with the holder's rig)");
+  ok(STR.nameTakenBanner === SCOPY.nameTakenCopy,
+     'stringles.js and Code.gs agree verbatim on the name-taken copy'
+     + ' (the client pre-check and the server refusal must read as one'
+     + ' message)');
+
+  /* --- 2p2. a rename that loses the race reddens the FIELD ------------
+     Replicata: the local roster is a poll behind — someone else just
+     added zed — and you rename bob to zed. The client's own dupe guard
+     can't know, the server refuses. Expectata: the banner plus the
+     name field itself turning red (cleared on input), same recipe as
+     every other field objection. --------------------------------- */
+  gas.handle({ action: 'add', aname: 'renrace', uname: 'alice' });
+  gas.handle({ action: 'add', aname: 'renrace', uname: 'bob' });
+  const dR = await makePage('/renrace?api=' + API_URL);
+  await sleep(20);
+  gas.handle({ action: 'add', aname: 'renrace', uname: 'zed' });
+  const bobName = dR.window.document
+    .querySelector('.tile[data-uname="bob"] .rename input');
+  bobName.value = 'zed';
+  bobName.form.dispatchEvent(
+    new dR.window.Event('submit', { bubbles: true, cancelable: true }));
+  await until(() => !dR.window.document.getElementById('banner').hidden);
+  ok(dR.window.document.getElementById('banner').textContent
+       .includes(SCOPY.nameTakenCopy)
+     && bobName.classList.contains('error'),
+     'the lost rename race: banner in the server\'s words AND the name'
+     + ' field itself red — the problem localized');
+  bobName.dispatchEvent(new dR.window.Event('input', { bubbles: true }));
+  ok(!bobName.classList.contains('error'),
+     'the red clears at the next keystroke');
   ok(dB.window.document.getElementById('descedit').value === 'B version'
      && gas.handle({ action: 'state', aname: 'descy' }).blurb
           === 'A version',
@@ -1094,6 +1124,14 @@ function ok(cond, label) {
      && dTab.window.document.getElementById('roster-input').tabIndex === 0
      && dTab.window.document.getElementById('aname').tabIndex === 0,
      '...which all remain tab stops themselves');
+  ok(dTab.window.document.querySelector(
+       '.tile[data-uname="tia"] .rebid input').tabIndex === 0,
+     "your own bid editor is an editable field: in the ring (dreev's"
+     + ' checklist pinned it)');
+  ok(dTab.window.document.querySelector('footer a').tabIndex === -1,
+     'the footer github link is not a tab stop (the help dialog\'s'
+     + ' inner links stay tabbable: an open dialog is navigated by'
+     + ' them)');
 
   /* --- 3. bob's window: alice's bid sealed there; his bid reveals ------- */
   const dom2 = await makePage('/tau?api=' + API_URL);
@@ -1332,7 +1370,12 @@ function ok(cond, label) {
   mockDelay = 600;  // response lands after the 500ms auction-switch debounce
   submitBid(domR);
   type(domR, 'aname', 'elsewhere');
-  await sleep(1800);  // settings flush + bid POST, both at 600ms
+  // wait on the CONDITIONS, not the clock (the old 1800ms sleep left
+  // ~100ms slack over the delayed hops and flaked under load): the
+  // switch must commit and the delayed bid response must land
+  await until(() => domR.window.location.pathname === '/elsewhere');
+  await until(() => domR.window.localStorage
+    .getItem('tauction-mybids:race') !== null);
   mockDelay = 0;
   ok(domR.window.localStorage.getItem('tauction-mybids:elsewhere') === null,
      'no bid attributed to the auction you switched to');

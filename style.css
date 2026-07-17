@@ -205,7 +205,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   background: transparent;
   border: none;
   outline: none;
-  width: calc(100% - 2rem);  /* clear of the corner toggle */
+  /* full width so the native resize grip sits in the card's true
+     corner (dreev caught it drifting left); the padding, not the
+     width, keeps text clear of the corner toggle */
+  width: 100%;
+  padding-right: 2rem;
   resize: vertical;
 }
 
@@ -642,7 +646,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   font-weight: 700;
   color: var(--ok-fg);
   opacity: 0;
-  animation: confetti-fly 2.4s cubic-bezier(0.2, 0.6, 0.6, 1) forwards,
+  animation: confetti-fly 3.2s forwards,
              glitter 0.35s linear infinite;
 }
 
@@ -657,17 +661,25 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   50%      { text-shadow: 0 0 6px var(--star), 0 0 2px #fff; }
 }
 
+/* Up fast-then-slowing to a modest apex, then a long gravity fall
+   (dreev: the first cut overshot the top and blasted down) — the
+   easing lives per-segment, in the keyframes */
 @keyframes confetti-fly {
-  0% { opacity: 1; transform: none; }
-  60% {
+  0% {
     opacity: 1;
-    transform: translate(calc(var(--dx) * 55vw), calc(var(--dy) * -45vh))
+    transform: none;
+    animation-timing-function: cubic-bezier(0.22, 0.7, 0.45, 1);
+  }
+  38% {
+    opacity: 1;
+    transform: translate(calc(var(--dx) * 55vw), calc(var(--dy) * -32vh))
                rotate(var(--spin));
+    animation-timing-function: cubic-bezier(0.5, 0.05, 0.8, 0.5);
   }
   100% {
     opacity: 0;
     transform: translate(calc(var(--dx) * 65vw),
-                         calc(var(--dy) * -45vh + 60vh))
+                         calc(var(--dy) * -32vh + 62vh))
                rotate(calc(var(--spin) * 1.5));
   }
 }
@@ -1006,7 +1018,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* the empty-bid objection: the field itself reddens (outline beats
    the accent focus ring while it stands) */
-.rebid input.error { outline: 2px solid var(--err-fg); outline-offset: -1px; }
+.rebid input.error, .rename input.error {
+  outline: 2px solid var(--err-fg);
+  outline-offset: -1px;
+}
 
 /* the + row's objection rings its wrapper, where its focus ring lives */
 .at-wrap:has(input.error) {

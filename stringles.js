@@ -41,11 +41,12 @@ const closedLine = (stamp) => 'Closed ' + stamp;
 const stampCopy = 'SOLD';
 const moneyGlyphs = ['$', '¥', '£', '\u{1fa99}', '⚖️'];
 
-// The description toggle: glyph and tooltip for each mode's exit
-// (¶ = "render it", # = "show me the markdown source")
-const toSourceGlyph = '#';
+// The description toggle: glyph and tooltip for each mode's exit.
+// The standard pair (dreev asked): a pencil enters edit mode; while
+// editing it becomes a checkmark = done, commit, show it rendered.
+const toSourceGlyph = '✎';
 const toSourceTip = 'toggle view/edit mode';
-const toRenderedGlyph = '¶';
+const toRenderedGlyph = '✓';
 const toRenderedTip = 'toggle edit/view mode';
 
 // The blurb's unknown-device fallback (when user-agent comes up empty)
@@ -54,6 +55,11 @@ const mysteryDevice = 'mystery device';
 // The typed-name gate: names you type CREATE auctions; occupied ones
 // point you at the URL
 const auctionExistsBanner = 'Auction exists — use the URL to join it';
+
+// renaming onto a name that's already seated: the client pre-checks
+// its own roster, the server refuses stale-roster races — identical
+// words (a qual pins the match), so both read as one message
+const nameTakenBanner = 'That name is taken';
 
 // Someone saved the description while you were editing yours (also
 // thrown by the server's compare-and-swap; must match it exactly so
