@@ -285,7 +285,8 @@ function renderStatus() {
   $('seal').setAttribute('data-tip',
     state.revealed ? 'Revealed!'
     : ready ? SEAL_TIP
-    : state.roster.length < 2 ? 'Need at least one more bidder'
+    : state.roster.length === 0 ? 'Need at least two bidders'
+    : state.roster.length === 1 ? 'Need at least one more bidder'
     : 'Waiting for ' + listed + ' to bid...');
 
   // no row is you yet: the you-star perches on the + row instead, so
@@ -833,6 +834,10 @@ function settleWrite(res, at) {
 
 async function pressReveal() {
   $('seal').disabled = true;  // no double-fire; render recomputes it
+  // the reveal is the most table-wide op there is: the big gavel
+  // hammers over the grayed ledger while it round-trips (the settle's
+  // render lifts the stale)
+  $('status').classList.add('stale');
   const at = startWrite();
   let res = null;
   try {
@@ -846,8 +851,14 @@ async function pressReveal() {
 
 function addName() {
   const uname = sanUname($('roster-input').value);
+  // a dupe (or nothing usable) is a local slip: the field objects —
+  // red ring, text kept for fixing — rather than silently swallowing
+  // what you typed (the old code cleared the field FIRST)
+  if (!uname || roster.includes(uname)) {
+    $('roster-input').classList.add('error');
+    return;
+  }
   $('roster-input').value = '';
-  if (!uname || roster.includes(uname)) return;
   // Disclosed if: on a browser with NO remembered identity at all,
   // the first name typed into the (you-starred) + row is YOURS —
   // dreev's expectata: "load a new auction, add a name = i've added
@@ -955,6 +966,7 @@ function wireUp() {
     }
   });
   $('roster-input').addEventListener('input', () => {
+    $('roster-input').classList.remove('error');  // objection withdrawn
     const v = $('roster-input').value;
     const s = sanUname(v);
     if (s !== v) $('roster-input').value = s;

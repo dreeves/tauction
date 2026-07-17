@@ -57,7 +57,7 @@ async function bridge(page) {
     const q = req.method() === 'POST'
       ? JSON.parse(req.postData())
       : Object.fromEntries(new URL(req.url()).searchParams);
-    const wait = ['add', 'remove', 'claim', 'release', 'bid']
+    const wait = ['add', 'remove', 'claim', 'release', 'bid', 'reveal']
       .includes(q.action) ? opDelay : 0;
     const body = JSON.stringify(gas.handle(q));
     setTimeout(() => req.respond({
@@ -568,6 +568,7 @@ async function tipBox(page, i) {
     ok(!(await text(bob, '#status')).includes('three tacos'),
        'complete but sealed: nothing reveals without a press');
     await bob.waitForFunction(() => !document.getElementById('seal').disabled);
+    opDelay = 900;  // the reveal round-trips like everything else
     ok(await bob.evaluate(() =>
       getComputedStyle(document.getElementById('seal'), '::after')
         .animationName === 'lockpulse'
@@ -576,6 +577,13 @@ async function tipBox(page, i) {
        'the pressable padlock pulses for attention — on the glyph, so'
        + " the button never opens a stacking context under its tooltip");
     await bob.click('#seal');
+    await bob.waitForFunction(() => {  // 0.15s fade: wait, don't sample
+      const g = document.querySelector('#status > .gavel');
+      return getComputedStyle(g).opacity === '1';
+    });
+    ok(true, 'the big gavel hammers while the reveal is in flight —'
+       + ' pressing the padlock visibly DOES something');
+    opDelay = 0;
     await bob.waitForFunction(() =>
       document.getElementById('status').textContent.includes('three tacos'));
     // universal tooltip hygiene (dreev keeps catching stragglers): an

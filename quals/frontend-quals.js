@@ -216,9 +216,9 @@ function ok(cond, label) {
      'the padlock sits with BIDS');
   ok(tiles(doc).length === 0, 'an auction with no roster is just an empty box');
   ok(doc.getElementById('seal').getAttribute('data-tip')
-       === 'Need at least one more bidder',
-     'empty roster: the tip names the real blocker — too few'
-     + ' participants, not phantom people to wait on');
+       === 'Need at least two bidders',
+     'empty roster: the tip names the real blocker — and counts it'
+     + ' right (two needed, not "one more" than nobody)');
   ok(doc.querySelector('#status .addrow #roster-input'),
      'the + row is part of the ledger from the start');
   ok(doc.querySelector('#status .legend')
@@ -311,6 +311,18 @@ function ok(cond, label) {
   ok(row(doc, 'alice').querySelector('.rename input').value === 'alice'
      && row(doc, 'bob').querySelector('.rename input').value === 'bob',
      'rows are named (in live name fields)');
+  // a duplicate add is a local slip: the field objects (red ring),
+  // the text stays put for fixing, and nothing is silently swallowed
+  addName(dom, 'alice');  // again!
+  ok(doc.getElementById('roster-input').value === 'alice'
+     && doc.getElementById('roster-input').classList.contains('error')
+     && tiles(doc).length === 2,
+     'adding a dupe keeps your typing, reddens the field, adds nothing');
+  type(dom, 'roster-input', 'alicia');
+  ok(!doc.getElementById('roster-input').classList.contains('error'),
+     'typing withdraws the objection');
+  doc.getElementById('roster-input').value = '';
+
   // her first add self-claimed (2j): row 0 is already hers
   ok(row(doc, 'bob').querySelector('.bid-card.slot')
      && !row(doc, 'bob').querySelector('.rebid'),
@@ -912,8 +924,14 @@ function ok(cond, label) {
      'padlock unlocks when the roster is complete');
   ok(seal2.getAttribute('data-tip') === 'Reveal bids!',
      'everyone in: the tip offers the reveal');
+  mockDelay = 150;
   seal2.click();
-  await sleep(50);
+  ok(doc2.getElementById('status').classList.contains('stale'),
+     'pressing the padlock shows busy AT ONCE: the gavel hammers while'
+     + ' the reveal round-trips (dreev: "nothing seems to happen")');
+  await until(() =>
+    doc2.getElementById('status').classList.contains('revealed'));
+  mockDelay = 0;
   ok(doc2.querySelector('#status .th-bid').textContent.includes('BIDS'),
      'BIDS column heading, before and after reveal');
   ok(doc2.getElementById('status').textContent.includes('three tacos')

@@ -909,6 +909,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    the accent focus ring while it stands) */
 .rebid input.error { outline: 2px solid var(--err-fg); outline-offset: -1px; }
 
+/* the + row's objection rings its wrapper, where its focus ring lives */
+.at-wrap:has(input.error) {
+  outline: 2px solid var(--err-fg);
+  outline-offset: -1px;
+}
+
 /* In-flight feedback: the same gavel, zoomed down and perched at the
    busy row's right end — a bid is row-local, so its busy sign is too
    (the big gavel means a whole-table snapshot is in flight) */
