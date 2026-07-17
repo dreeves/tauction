@@ -455,20 +455,34 @@ function celebrate() {
   const fete = el('div', 'fete');
   fete.setAttribute('aria-hidden', 'true');
   fete.append(el('span', 'stamp', stampCopy));
-  // the confetti is money (dreev's set: dollars, yen, pounds, coins,
-  // the scales of justice), green and glittering
-  for (let i = 0; i < 80; i++) {
+  // The confetti is money (dreev's set: dollars, yen, pounds, coins,
+  // the scales of justice), green and glittering, bursting from the
+  // seal across the WHOLE viewport (dreev: not just the bid box). Its
+  // layer lives on <body>: the quake animates #status's transform,
+  // which would trap a position:fixed layer inside the card.
+  const sky = el('div', 'sky');
+  sky.setAttribute('aria-hidden', 'true');
+  const seal = $('seal').getBoundingClientRect();
+  sky.style.setProperty('--launch-x',  // clamped: a scrolled-away
+    Math.min(Math.max(seal.left + seal.width / 2, 0),  // seal still
+             innerWidth) + 'px');                      // rains on you
+  sky.style.setProperty('--launch-y',
+    Math.min(Math.max(seal.top + seal.height / 2, 0),
+             innerHeight) + 'px');
+  for (let i = 0; i < 120; i++) {
     const c = el('span', 'confetto', moneyGlyphs[i % moneyGlyphs.length]);
     c.style.setProperty('--dx', (Math.random() * 2 - 1).toFixed(3));
     c.style.setProperty('--dy', (0.3 + Math.random()).toFixed(3));
     c.style.setProperty('--spin',
       Math.floor(Math.random() * 1440 - 720) + 'deg');
-    c.style.animationDelay = STRIKE_MS + Math.random() * 120 + 'ms';
-    fete.append(c);
+    c.style.animationDelay = STRIKE_MS + Math.random() * 400 + 'ms';
+    sky.append(c);
   }
   box.append(fete);
+  document.body.append(sky);
   setTimeout(() => {
     fete.remove();
+    sky.remove();
     box.classList.remove('ceremony');
   }, FETE_MS);
 }

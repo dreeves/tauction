@@ -1152,12 +1152,12 @@ function ok(cond, label) {
      + doc2.querySelector('#status .closed').textContent);
   ok(doc2.querySelector('#status .fete .stamp')
      && doc2.querySelector('#status .fete .stamp').textContent === STAMP
-     && doc2.querySelectorAll('#status .fete .confetto').length >= 60
-     && [...doc2.querySelectorAll('#status .fete .confetto')].every(
+     && doc2.querySelectorAll('body > .sky .confetto').length >= 90
+     && [...doc2.querySelectorAll('body > .sky .confetto')].every(
           (c) => ['$', '\u00a5', '\u00a3', '\u{1fa99}',
                   '\u2696\ufe0f'].includes(c.textContent)),
-     'the reveal ceremony: the stamp slams down amid a shower of'
-     + " dreev's money glyphs");
+     'the reveal ceremony: the stamp slams the bid box; the money'
+     + ' rains on a whole-VIEWPORT layer (dreev: not just the box)');
   ok(myInput(doc2) && myInput(doc2).disabled
      && myInput(doc2).value === '$40 and my dignity',
      'the gavel drop is a bright line: your bid stays READABLE in your'
@@ -1212,7 +1212,8 @@ function ok(cond, label) {
      && !late.window.document.getElementById('status').classList
           .contains('just-revealed'),
      'arriving after the fact: lit tada, no fanfare');
-  ok(!late.window.document.querySelector('#status .fete'),
+  ok(!late.window.document.querySelector('#status .fete')
+     && !late.window.document.querySelector('body > .sky'),
      'and no ceremony either: it belongs to the moment');
   ok(late.window.document.getElementById('status').textContent
        .includes('three tacos')

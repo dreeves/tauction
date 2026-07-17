@@ -662,12 +662,27 @@ async function tipBox(page, i) {
     ok(true, 'the gavel returns for one ceremonial verdict stroke');
     ok(await bob.evaluate(() => {
       const st = document.querySelector('#status .fete .stamp');
-      const c = document.querySelector('#status .fete .confetto');
+      const c = document.querySelector('body > .sky .confetto');
+      const sky = document.querySelector('body > .sky');
+      const box = sky.getBoundingClientRect();
       return st && getComputedStyle(st).animationName === 'stamp-slam'
         && c && getComputedStyle(c).animationName
              === 'confetti-fly, glitter'
-        && document.querySelectorAll('#status .fete .confetto').length >= 60;
-    }), 'SOLD slams down and the confetti actually flies');
+        && document.querySelectorAll('body > .sky .confetto').length >= 90
+        && getComputedStyle(sky).position === 'fixed'
+        && box.width === window.innerWidth
+        && box.height === window.innerHeight;
+    }), 'SOLD slams the bid box and the money rains across the WHOLE'
+       + ' screen (a fixed full-viewport layer — dreev sprang it from'
+       + ' the box)');
+    // viewport shot, not fullPage: the sky is position:fixed and this
+    // catches the money mid-flight for eyeballing (wait out the
+    // launch delay first — pieces are opacity 0 until they fly)
+    await bob.waitForFunction(() =>
+      [...document.querySelectorAll('body > .sky .confetto')]
+        .filter((c) => getComputedStyle(c).opacity === '1').length > 30);
+    await bob.screenshot({
+      path: path.join(SHOTS, 'story3-ceremony-sky.png') });
     ok(await bob.evaluate(() =>
       getComputedStyle(document.querySelector('.addrow')).display
         === 'none'
@@ -678,8 +693,9 @@ async function tipBox(page, i) {
        'the + row retires at the reveal; the Closed stamp takes its'
        + ' place');
     await bob.waitForFunction(() =>  // the ceremony self-cleans
-      !document.querySelector('#status .fete'), { timeout: 6000 });
-    ok(true, 'the ceremony packs up after itself');
+      !document.querySelector('#status .fete')
+      && !document.querySelector('body > .sky'), { timeout: 6000 });
+    ok(true, 'the ceremony packs up after itself, sky included');
     ok(await bob.$eval('#seal', (e) => e.getAttribute('data-tip'))
        !== 'Reveal bids!',
        'the tip stops offering to reveal once revealed');

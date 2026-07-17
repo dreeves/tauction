@@ -528,9 +528,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* ------------------------- the reveal ceremony -------------------------
    One mighty ceremonial stroke (windup, dramatic pause, STRIKE at 63%
    = 950ms of 1.5s — app.js's STRIKE_MS), a card-quake on impact, a
-   VENDITUM stamp, and 80 confetti with randomized trajectories in
-   custom props. The .ceremony class and .fete container are added and
-   removed by celebrate(); reduced-motion never gets them at all. */
+   VENDITUM stamp, and 120 money confetti bursting from the seal
+   across a fixed whole-viewport .sky layer on <body> (trajectories
+   randomized in custom props). The .ceremony class and the .fete/.sky
+   containers are added and removed by celebrate(); reduced-motion
+   never gets them at all. */
 #status.ceremony > .gavel { opacity: 1; }
 
 #status.ceremony > .gavel .mallet {
@@ -617,13 +619,24 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   100% { opacity: 0; transform: scale(1); }
 }
 
+/* The confetti sky: its own fixed whole-viewport layer, on <body>
+   because the quaking card's animated transform would trap a fixed
+   descendant. --launch-x/y (set by celebrate()) is the seal's spot. */
+.sky {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 50;
+}
+
 /* Each confetto is a money glyph flying its own way (direction and
    spin arrive as custom props from celebrate()): currency signs in
    glittering green, the coin and scales emoji in their own colors */
-.fete .confetto {
+.sky .confetto {
   position: absolute;
-  left: 50%;
-  top: 50%;
+  left: var(--launch-x);
+  top: var(--launch-y);
   font-size: 0.95rem;
   line-height: 1;
   font-weight: 700;
@@ -633,9 +646,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
              glitter 0.35s linear infinite;
 }
 
-.fete .confetto:nth-child(3n) { font-size: 0.7rem; }
+.sky .confetto:nth-child(3n) { font-size: 0.7rem; }
 
-.fete .confetto:nth-child(4n) { font-size: 1.2rem; }
+.sky .confetto:nth-child(4n) { font-size: 1.3rem; }
+
+.sky .confetto:nth-child(7n) { font-size: 1.6rem; }
 
 @keyframes glitter {
   0%, 100% { text-shadow: 0 0 2px var(--star); }
@@ -646,13 +661,13 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   0% { opacity: 1; transform: none; }
   60% {
     opacity: 1;
-    transform: translate(calc(var(--dx) * 9rem), calc(var(--dy) * -7rem))
+    transform: translate(calc(var(--dx) * 55vw), calc(var(--dy) * -45vh))
                rotate(var(--spin));
   }
   100% {
     opacity: 0;
-    transform: translate(calc(var(--dx) * 11rem),
-                         calc(var(--dy) * -7rem + 9rem))
+    transform: translate(calc(var(--dx) * 65vw),
+                         calc(var(--dy) * -45vh + 60vh))
                rotate(calc(var(--spin) * 1.5));
   }
 }
