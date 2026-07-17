@@ -1278,6 +1278,38 @@ function ok(cond, label) {
      "tab-adding someone ELSE books the row but doesn't jump: the"
      + ' caret stays in the + row for the next name');
 
+  /* --- 2p3. enter-then-blur on a RENAME fires once ---------------------
+     Replicata (dreev 2026-07-17): fresh auction, add yourself as
+     alice, bid immediately, add bob, immediately rename bob to
+     bob123 (never used anywhere). Resultata pre-fix: "That name is
+     taken" — the enter commit remapped the local roster and the
+     trailing blur commit re-ran against its own success. Expectata:
+     it just lets you. */
+  const dRn = await makePage('/freshren?api=' + API_URL);
+  await sleep(20);
+  dRn.window.document.getElementById('roster-input').focus();
+  type(dRn, 'roster-input', 'alice');
+  submitName(dRn);
+  typeBid(dRn, 'my bid');
+  submitBid(dRn);
+  type(dRn, 'roster-input', 'bob');
+  submitName(dRn);
+  const bobInp = row(dRn.window.document, 'bob')
+    .querySelector('.rename input');
+  bobInp.focus();
+  bobInp.value = 'bob123';
+  bobInp.form.dispatchEvent(new dRn.window.Event('submit',
+    { bubbles: true, cancelable: true }));
+  bobInp.dispatchEvent(new dRn.window.Event('blur'));
+  await settled(dRn);
+  ok(dRn.window.document.getElementById('banner').hidden
+     && row(dRn.window.document, 'bob123') !== undefined
+     && gas.handle({ action: 'state', aname: 'freshren' })
+          .roster.includes('bob123'),
+     'enter-then-blur renames ONCE: no false "taken" (the trailing'
+     + ' commit of a row already renamed away is a stale event, not'
+     + ' a request)');
+
   /* --- 2u2. the hallway test (dreev + bee, verbatim fumbles) -----------
      Scene: bee's row exists, unclaimed and bidless. A fresh visitor
      (a) taps bee's empty bid box — "clicking on this box doesn't

@@ -850,6 +850,14 @@ function buildNameField(uname) {
 function commitRename(from, raw, field) {
   const to = sanUname(raw);
   if (!to || to === from) return;
+  // A commit for a row the local roster no longer knows is a STALE
+  // EVENT, not a request: the enter-then-blur pair fires this twice,
+  // and the second run arrives after the first already remapped
+  // 'from' away — its pre-check then found its own success and
+  // falsely cried "taken" (dreev's bug). Also quiets a row removed
+  // mid-edit, and cut rows (rosterless by definition), which used to
+  // error server-side instead of declining.
+  if (!roster.includes(from)) return;
   if (roster.includes(to)) {
     banner(nameTakenBanner);
     field.classList.add('error');  // the problem is THIS field
