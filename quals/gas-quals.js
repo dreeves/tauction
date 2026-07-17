@@ -14,7 +14,7 @@ const call = (req) => ctx.handle(req);
 // — they pin the right words in the right place, not the wording
 const COPY = require('vm').runInContext('({ gavelFellCopy,'
   + ' simulEditsCopy, seatHeldCopy, bidSeatHeldCopy, unknownActionCopy,'
-  + ' mysteryDeviceCopy, schemaDriftCopy })', ctx);
+  + ' mysteryDeviceCopy, schemaDriftCopy, renameClosedCopy })', ctx);
 // Real Apps Script resets globals every execution; one shared vm
 // context hosts the whole qual run, so drift quals empty the
 // header-check memo by hand to simulate a fresh execution
@@ -121,6 +121,14 @@ st = call({ action: 'bid', aname: 'tau', uname: 'alice', bid: 'revised!' });
 ok(String(st.error) === COPY.gavelFellCopy
    && call({ action: 'state', aname: 'tau' }).bids[0].bid === 'sushi',
    "even the bidder's own revision bounces: the record is the record");
+st = call({ action: 'rename', aname: 'tau', from: 'alice', to: 'mallory' });
+ok(String(st.error) === COPY.renameClosedCopy
+   && call({ action: 'state', aname: 'tau' }).roster.includes('alice')
+   && call({ action: 'state', aname: 'tau' }).bids
+        .some((b) => b.uname === 'alice'),
+   'names freeze at the gavel too (dreev 2026-07-17, reversing'
+   + ' always-editable: a post-close rename could swap around who bid'
+   + " what): refused, and alice's bid stays alice's");
 // (2026-07-16, per dreev: the roster is CLOSED once revealed — adds
 // refuse rather than merely not-resealing)
 st = call({ action: 'add', aname: 'tau', uname: 'zed' });

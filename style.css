@@ -161,19 +161,12 @@ button { font: inherit; cursor: pointer; }
   visibility: visible;
 }
 
-/* A tap is not a hover: touch sticks :hover to whatever it lands on,
-   which parked a tooltip under the row dreev was typing his bid in.
-   No hover-tips on touch; tap-to-FOCUS tips (the word-hosts) stay. */
-@media (hover: none) {
-  [data-tip]:hover:not(:focus)::before {
-    opacity: 0;
-    visibility: hidden;
-  }
-}
-
-/* ...and nowhere does a tip sit under your own typing: the mouse
-   rests right where you clicked, so the cell holding your focused
-   editor keeps its counsel */
+/* No tip sits under your own typing (this also covers dreev's
+   phone: the tap that focused the editor sticks :hover on its cell):
+   the cell holding your focused editor keeps its counsel. Sticky
+   hover on OTHER elements is deliberately kept — it is the only way
+   button tips show on touch at all (activation blurs the focus leg;
+   an over-broad hover-none rule once silenced every mobile tip). */
 .tile-bid:has(input:focus)::before {
   opacity: 0;
   visibility: hidden;
@@ -188,8 +181,8 @@ body:has([data-tip]:hover) [data-tip]:focus:not(:hover)::before {
 }
 
 /* right-anchored elements get right-anchored tooltips (else they overflow) */
-.seal::before, .corner button::before, .tile .x::before,
-.tile-bid::before, .desctoggle::before { left: auto; right: 0; }
+.seal::before, .tile .x::before,
+.tile-bid::before { left: auto; right: 0; }
 
 
 /* buttons get the same accent focus ring as inputs (the tooltip words
@@ -277,10 +270,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   padding: 0 0.25rem;
   border: none;
   background: none;
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: color-mix(in srgb, var(--muted) 70%, transparent);
+  /* icon-sized and full-ink: the ✎/💾 pair was illegibly tiny at
+     the 0.7rem faint gray the #/¶ wore — and the pencil is now THE
+     edit affordance, so it must read at a glance */
+  font-size: 1.15rem;
+  color: var(--muted);
 }
 
 .desctoggle:hover { color: var(--accent); }

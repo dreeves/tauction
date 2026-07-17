@@ -534,16 +534,14 @@ async function tipBox(page, i) {
     await alice.click('#help-dlg .dlg-x');
     await alice.waitForFunction(() => !document.getElementById('help-dlg').open);
     /* Replicata (dreev): open help, click OUTSIDE the box to dismiss.
-       Expectata: popup gone and no tooltip. Resultata pre-fix: closing
-       restored focus to the ? button, whose focus-tip stuck until the
-       next click. */
+       Expectata: popup gone, and focus NOT restored to the ? button
+       (that restore used to re-stick its focus-tooltip; the ? lost
+       its tip 2026-07-17 but the blur-before-showModal mechanism
+       still guards every tipped button). */
     await alice.click('#help');
     await alice.waitForFunction(() => document.getElementById('help-dlg').open);
     await alice.mouse.click(10, 500);  // the backdrop, far from the box
     await alice.waitForFunction(() => !document.getElementById('help-dlg').open);
-    await alice.waitForFunction(() =>  // 0.15s fade: wait, don't sample
-      getComputedStyle(document.getElementById('help'), '::before')
-        .opacity === '0');
     ok(await alice.evaluate(() =>
       document.activeElement !== document.getElementById('help')),
        'dismissing the dialog leaves no stuck tooltip on the ? button');
@@ -630,14 +628,10 @@ async function tipBox(page, i) {
     opDelay = 0;
     await bob.waitForFunction(() =>
       document.getElementById('status').textContent.includes('three tacos'));
-    // universal tooltip hygiene (dreev keeps catching stragglers): an
-    // ACTIVATED button must never sit there wearing its focus-tip
-    // once the pointer moves on (hover keeps it, rightly, while you
-    // hover)
+    // universal button hygiene (dreev keeps catching stragglers): an
+    // ACTIVATED button holds no focus — and the revealed seal wears
+    // no tip at all now (dreev: obvious is obvious)
     await bob.mouse.move(10, 600);
-    await bob.waitForFunction(() =>  // 0.15s fade: wait, don't sample
-      getComputedStyle(document.getElementById('seal'), '::before')
-        .opacity === '0');
     ok(await bob.evaluate(() =>
       document.activeElement !== document.getElementById('seal')),
        "pressing the padlock doesn't leave its tooltip stuck (the"
@@ -680,6 +674,8 @@ async function tipBox(page, i) {
              === 'gavel-verdict'
         && getComputedStyle(g).animationName === 'gavel-vanish'
         && st && getComputedStyle(st).animationName === 'stamp-slam'
+        && getComputedStyle(document.querySelector('#status .seal'),
+             '::after').content.includes('\u{1F389}')
         && getComputedStyle(cv).position === 'fixed'
         && getComputedStyle(cv).pointerEvents === 'none'
         && box.width === window.innerWidth
@@ -712,8 +708,9 @@ async function tipBox(page, i) {
       !document.querySelector('#status .fete'), { timeout: 6000 });
     ok(true, 'the ceremony packs up after itself');
     ok(await bob.$eval('#seal', (e) => e.getAttribute('data-tip'))
-       !== 'Reveal bids!',
-       'the tip stops offering to reveal once revealed');
+       === null,
+       'the revealed tada wears NO tip at all (dreev: obvious is'
+       + ' obvious)');
     await shoot(bob, 'story2-bob-desktop');
 
     // alice reloads and sees the results too
@@ -1014,6 +1011,17 @@ async function tipBox(page, i) {
     await thumb2.tap('.tile[data-uname="bob"] .tu');
     await thumb2.waitForSelector('.tile.mine .rebid input');
     ok(true, 'tapping a star (a touch, not a click) claims the row');
+    /* Replicata (dreev, phone): ALL tooltips vanished, surviving
+       reload. The over-broad hover-none rule had killed the sticky-
+       hover leg — the ONLY way button/cell tips ever showed on touch
+       (activation blurs their focus leg). Expectata: tapping a star
+       still shows its tip; only the cell you are TYPING in stays
+       quiet. */
+    ok(await thumb2.evaluate(() => getComputedStyle(
+         document.querySelector('.tile.mine .tu'), '::before')
+         .visibility === 'visible'),
+       'tooltips LIVE on touch: the star she just tapped wears its'
+       + " tip via the tap's sticky hover");
     await thumb2.tap('.tile.mine .rebid input');
     /* Replicata (dreev, phone): his is-you row — row two here — wore
        a stuck 'awaiting bid...' tooltip below it while he typed his
@@ -1026,7 +1034,9 @@ async function tipBox(page, i) {
        "no tooltip under a thumb's typing: tapping your bid cell is"
        + ' not hovering it');
     await thumb2.keyboard.type('the other thumb');
-    await thumb2.keyboard.press('Enter');
+    // no enter: she taps elsewhere and the bid SAVES (dreev: nobody
+    // on a phone expects the return key to be load-bearing)
+    await thumb2.tap('.th-person');
     await thumb2.waitForSelector('.tile.mine.has-bid');
     await thumb.waitForFunction(() =>  // the poll delivers bob's bid
       !document.getElementById('seal').disabled);

@@ -17,9 +17,8 @@ const claimedByTip = (blurb) => 'Claimed by someone (' + blurb + ')';
 const removeTip = (uname) => 'remove @' + uname;
 const tooLateRemoveTip = (uname) => 'too late to remove @' + uname;
 
-// The padlock's tooltips (the "Reveal bids!" one lives in index.html
-// and is read from there)
-const revealedTip = 'Revealed!';
+// The padlock's tooltips (the "Reveal bids!" one lives in index.html;
+// the revealed 🎉 wears none — dreev: obvious is obvious)
 const needTwoTip = 'Need at least two bidders';
 const needOneMoreTip = 'Need at least one more bidder';
 const waitingTip = (roll) => 'Waiting for ' + roll + ' to bid...';
@@ -41,13 +40,11 @@ const closedLine = (stamp) => 'Closed ' + stamp;
 const stampCopy = 'SOLD';
 const moneyGlyphs = ['$', '¥', '£', '\u{1fa99}', '⚖️'];
 
-// The description toggle: glyph and tooltip for each mode's exit.
-// The standard pair (dreev asked): a pencil enters edit mode; while
-// editing it becomes a checkmark = done, commit, show it rendered.
+// The description toggle, self-evident by icon (dreev: so no
+// tooltip): the pencil enters edit mode; the floppy disk saves —
+// commits the text and shows it rendered.
 const toSourceGlyph = '✎';
-const toSourceTip = 'toggle view/edit mode';
-const toRenderedGlyph = '✓';
-const toRenderedTip = 'toggle edit/view mode';
+const toRenderedGlyph = '💾';
 
 // The blurb's unknown-device fallback (when user-agent comes up empty)
 const mysteryDevice = 'mystery device';

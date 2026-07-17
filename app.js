@@ -247,8 +247,6 @@ function syncDescToggle() {
   const viewing = $('desc').classList.contains('viewing');
   $('desctoggle').textContent = viewing ? toSourceGlyph
                                          : toRenderedGlyph;
-  $('desctoggle').setAttribute('data-tip',
-    viewing ? toSourceTip : toRenderedTip);
 }
 
 function toggleDesc() {
@@ -373,12 +371,15 @@ function renderStatus() {
   $('seal').classList.toggle('ready', ready);
   // the roster is CLOSED once revealed (the server refuses adds too)
   $('roster-input').disabled = state.revealed;
-  $('seal').setAttribute('data-tip',
-    state.revealed ? revealedTip
-    : ready ? SEAL_TIP
-    : state.roster.length === 0 ? needTwoTip
-    : state.roster.length === 1 ? needOneMoreTip
-    : waitingTip(listed));
+  // the lit 🎉 explains itself (dreev): revealed needs no tooltip
+  if (state.revealed) $('seal').removeAttribute('data-tip');
+  else {
+    $('seal').setAttribute('data-tip',
+      ready ? SEAL_TIP
+      : state.roster.length === 0 ? needTwoTip
+      : state.roster.length === 1 ? needOneMoreTip
+      : waitingTip(listed));
+  }
 
   // no row is you yet: the you-star perches on the + row instead, so
   // the legend's ★ always has a referent
@@ -544,6 +545,16 @@ function buildBidContent(kind, uname) {
     input.setAttribute('enterkeyhint', 'send');
     // typing withdraws the empty-bid objection
     input.addEventListener('input', () => input.classList.remove('error'));
+    // Clicking/tapping away SAVES, like the name fields (dreev).
+    // Empty = nothing to place (no objection: leaving an empty
+    // editor is normal); unchanged = nothing new; already-sent =
+    // enter-then-blur (the mobile keyboard closing right after a
+    // submit) must not fire twice.
+    input.addEventListener('blur', () => {
+      const v = input.value.trim();
+      if (v !== '' && v !== input.defaultValue
+          && v !== input.dataset.sent) placeBid(uname, form);
+    });
     form.append(input);
     // the row-local busy sign: a mini gavel, shown by .rebid.busy
     const g = el('span', 'gavel mini');
@@ -605,6 +616,9 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
 
   t.classList.toggle('has-bid', stamp !== undefined);
   t.classList.toggle('mine', uname === mine);
+  // names freeze at the gavel, like bids (dreev: a post-close rename
+  // could swap around who bid what) — grayed, never suppressed
+  t.querySelector('.rename input').disabled = state.revealed;
   t.classList.toggle('cut',
     stamp !== undefined && !roster.includes(uname));
   // one-shot shimmer; a reused node needs the remove-reflow-add dance
@@ -771,7 +785,16 @@ function buildNameField(uname) {
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { input.value = uname; input.blur(); }
   });
-  input.addEventListener('blur', () => { input.value = uname; });
+  // Clicking/tapping away SAVES (dreev, 2026-07-17, reversing the
+  // old restore-on-blur: on a phone nobody expects the return key to
+  // be load-bearing). Escape above still reverts first, so its blur
+  // arrives with to === from and commits nothing. The old blur-
+  // rebuild click-swallow is gone with keyed node reuse; the one
+  // remaining edge is clicking a control on the SAME row you are
+  // renaming (the re-key replaces that node mid-click).
+  input.addEventListener('blur', () => {
+    commitRename(uname, input.value, input);
+  });
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     commitRename(uname, input.value, input);
@@ -845,6 +868,8 @@ async function placeBid(uname, form) {
   // a local slip gets a local objection: the field itself reddens
   // (cleared on the next keystroke); banners are for the server's news
   if (!bid) { input.classList.add('error'); return; }
+  input.dataset.sent = bid;  // this exact text is on its way: the
+                             // blur that follows an enter is a no-op
   // The editor stays HOT during flight: down to the wire you can
   // change your mind and resubmit while the last bid still flies.
   // Bids ride the op chain, so submissions land in the order you made
@@ -1012,14 +1037,14 @@ async function pressReveal() {
 }
 
 
-function addName() {
+function addName() {  // returns the added uname ('' if refused)
   const uname = sanUname($('roster-input').value);
   // a dupe (or nothing usable) is a local slip: the field objects —
   // red ring, text kept for fixing — rather than silently swallowing
   // what you typed (the old code cleared the field FIRST)
   if (!uname || roster.includes(uname)) {
     $('roster-input').classList.add('error');
-    return;
+    return '';
   }
   $('roster-input').value = '';
   // Disclosed if: on a browser with NO remembered identity at all,
@@ -1036,6 +1061,7 @@ function addName() {
   }
   roster.push(uname);
   queueOp({ action: 'add', aname: aname, uname: uname });
+  return uname;
 }
 
 // Instant paint from the last-known state of this auction, grayed until
@@ -1089,14 +1115,14 @@ async function switchAuction(a) {
 /* ------------------------------- wiring ------------------------------- */
 
 function wireUp() {
-  // Universal tooltip hygiene: an action button never wears its
-  // focus-tip after being ACTIVATED — you pressed it, you know what
-  // it is. Capture phase, so the blur lands before any handler (in
-  // particular before showModal records its focus-restore target,
-  // which is how dialog-close used to re-stick the opener's tip).
-  // Word-hosts (the auction label) keep their tap-to-focus tips.
+  // Universal button hygiene: an activated button doesn't keep
+  // focus — you pressed it, you know what it is (none is a tab stop,
+  // so focus on one serves nothing). This also drops any focus-tip
+  // and, in capture phase, lands before showModal records its
+  // focus-restore target (dialog-close used to re-stick the opener's
+  // tip). Word-hosts (the auction label) keep their tap-to-focus tips.
   document.addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-tip]');
+    const b = e.target.closest('button');
     if (b) b.blur();
   }, true);
 
@@ -1136,6 +1162,19 @@ function wireUp() {
     if (e.key === 'Enter' || e.key === ',' || e.key === ' ') {
       e.preventDefault();
       addName();
+    }
+    // Tab commits too, and — iff the fresh row is YOURS (the gold
+    // star: you just added yourself) — lands in its bid editor:
+    // name, tab, bid (dreev's flow). Tab-adding someone else keeps
+    // the caret here for the next name; enter (above) always does.
+    if (e.key === 'Tab' && !e.shiftKey
+        && $('roster-input').value !== '') {
+      e.preventDefault();
+      const added = addName();
+      const t = rowNodes[added];
+      if (t && t.classList.contains('mine')) {
+        t.querySelector('.rebid input').focus();
+      }
     }
   });
   $('roster-input').addEventListener('input', () => {

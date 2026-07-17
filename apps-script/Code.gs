@@ -44,6 +44,7 @@ const simulEditsCopy =
   'Oops, someone else is making simultaneous edits to the description';
 const rosterClosedCopy = 'Auction complete — no new participants';
 const nameTakenCopy = 'That name is taken';
+const renameClosedCopy = 'Auction closed, no editing';
 const noSuchOneCopy = (from) => 'No such participant: ' + from;
 const claimNeedsDeviceCopy = 'ERROR1303: claim requires a deviceID';
 const seatHeldCopy = (blurb) =>
@@ -325,6 +326,9 @@ function renameParticipant(req) {
   const from = cleanUname(req.from);
   const to = cleanUname(req.to);
   if (to === from) return getState(aname);
+  // names freeze at the gavel: a post-close rename could swap
+  // around who bid what (dreev, reversing always-editable)
+  if (getState(aname).revealed) throw renameClosedCopy;
   const sh = usersTab();
   const prows = rows(sh);
   if (prows.some(r => r[0] === aname && r[1] === to)) {

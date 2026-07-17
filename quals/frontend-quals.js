@@ -78,7 +78,7 @@ const STRINGLES = fs.readFileSync(path.join(REPO, 'stringles.js'), 'utf8');
 const STR = new Function(STRINGLES
   + '; return { needTwoTip, needOneMoreTip, waitingTip, youTag,'
   + ' awaitingTip, auctionExistsBanner, simulEditsBanner, stampCopy,'
-  + ' revealedTip, claimedByTip, mysteryDevice, nameTakenBanner,'
+  + ' claimedByTip, mysteryDevice, nameTakenBanner,'
   + ' moneyGlyphs };')();
 const STAMP = STR.stampCopy;
 // ...and the server's half, out of the vm context hosting Code.gs
@@ -595,9 +595,12 @@ function ok(cond, label) {
   ok(nameInp.value === 'alicw', 'escape restores the name, commits nothing');
   nameInp.value = 'wronger';
   nameInp.dispatchEvent(new domT2.window.Event('blur'));
-  ok(nameInp.value === 'alicw' && row(docT2, 'alicw'),
-     'clicking away restores it too: enter is the only commit');
-  renameTo(domT2, 'alicw', 'alice');
+  // [dreev FLIPPED the old enter-only-commit pin 2026-07-17: mobile
+  // users never hit enter — clicking/tapping away now SAVES]
+  await until(() => row(docT2, 'wronger') !== undefined);
+  ok(!row(docT2, 'alicw') && row(docT2, 'wronger'),
+     'clicking away SAVES the rename, like every field edit');
+  renameTo(domT2, 'wronger', 'alice');
   ok(row(docT2, 'alice') && !row(docT2, 'alicw')
      && tiles(docT2)[0].dataset.uname === 'alice',
      'the typo is fixed in place immediately, order kept');
@@ -712,6 +715,9 @@ function ok(cond, label) {
      && dsDoc.getElementById('descedit').placeholder.length > 0,
      'an undescribed auction opens in edit mode, placeholder explaining');
   dsDoc.getElementById('descedit').value = '# Brunch\n\n**bring** cash';
+  ok(!dsDoc.getElementById('desctoggle').hasAttribute('data-tip'),
+     'the toggle explains itself by icon (pencil/floppy): no tooltip'
+     + ' [dreev retired his toggle-tip copy 2026-07-17]');
   dsDoc.getElementById('desctoggle').click();  // flip to view = commit
   await until(() => gas.handle({ action: 'state', aname: 'descy' })
     .blurb === '# Brunch\n\n**bring** cash');
@@ -1141,6 +1147,61 @@ function ok(cond, label) {
      + ' inner links stay tabbable: an open dialog is navigated by'
      + ' them)');
 
+  /* --- 2u. name, TAB, bid (dreev's add-self flow) ----------------------
+     Adding YOURSELF should leave the bid field one tab away: type
+     your name, tab, type your bid. Only when the fresh row is yours
+     (the gold star); a facilitator tab-adding others keeps the caret
+     in the + row for the next name. */
+  const dSelf = await makePage('/tabflow?api=' + API_URL);
+  await sleep(20);
+  dSelf.window.document.getElementById('roster-input').focus();
+  type(dSelf, 'roster-input', 'dree');
+  dSelf.window.document.getElementById('roster-input').dispatchEvent(
+    new dSelf.window.KeyboardEvent('keydown',
+      { key: 'Tab', bubbles: true, cancelable: true }));
+  ok(dSelf.window.document.activeElement
+       === myInput(dSelf.window.document)
+     && row(dSelf.window.document, 'dree').classList.contains('mine'),
+     'add yourself, tab: the caret lands in YOUR fresh bid editor');
+  dSelf.window.document.getElementById('roster-input').focus();
+  type(dSelf, 'roster-input', 'gwen');
+  dSelf.window.document.getElementById('roster-input').dispatchEvent(
+    new dSelf.window.KeyboardEvent('keydown',
+      { key: 'Tab', bubbles: true, cancelable: true }));
+  ok(row(dSelf.window.document, 'gwen') !== undefined
+     && !row(dSelf.window.document, 'gwen').classList.contains('mine')
+     && dSelf.window.document.activeElement
+          === dSelf.window.document.getElementById('roster-input'),
+     "tab-adding someone ELSE books the row but doesn't jump: the"
+     + ' caret stays in the + row for the next name');
+
+  /* --- 2v. clicking away from the bid editor SAVES (dreev, esp.
+     mobile: nobody expects enter) — and the enter-then-blur pair
+     (the mobile keyboard closing right after submit) fires ONCE. -- */
+  const dBlur = await makePage('/blursave?api=' + API_URL);
+  await sleep(20);
+  addName(dBlur, 'bea');
+  await settled(dBlur);
+  typeBid(dBlur, 'saved by blur');
+  myInput(dBlur.window.document).dispatchEvent(
+    new dBlur.window.Event('blur'));
+  await until(() => (gas.handle({ action: 'state', aname: 'blursave' })
+    .bidders.find((b) => b.uname === 'bea') || {}).bcount === 1);
+  ok(true, 'clicking away places the bid: no enter required');
+  await settled(dBlur);
+  typeBid(dBlur, 'enter then blur');
+  submitBid(dBlur);
+  myInput(dBlur.window.document).dispatchEvent(
+    new dBlur.window.Event('blur'));  // the keyboard closes
+  await settled(dBlur);
+  ok(gas.handle({ action: 'state', aname: 'blursave' })
+       .bidders.find((b) => b.uname === 'bea').bcount === 2,
+     'enter then blur is ONE submission, not two (the closing mobile'
+     + ' keyboard must not double-fire)');
+  ok(myInput(dBlur.window.document).value === 'enter then blur'
+     && dBlur.window.document.getElementById('banner').hidden,
+     'and an idle blur of a clean editor commits nothing');
+
   /* --- 3. bob's window: alice's bid sealed there; his bid reveals ------- */
   const dom2 = await makePage('/tau?api=' + API_URL);
   const doc2 = dom2.window.document;
@@ -1190,6 +1251,14 @@ function ok(cond, label) {
   ok(doc2.getElementById('status').classList.contains('revealed')
      && doc2.getElementById('status').classList.contains('just-revealed'),
      'reveal lights the tada and glows, once');
+  ok(doc2.getElementById('status').classList.contains('prestrike'),
+     'but until the mallet lands the seal still SAYS sealed: the 🎉'
+     + " flip joins the strike's beat with SOLD (dreev lined them up)"
+     + ' — the bids themselves unmask right away');
+  await until(() => !doc2.getElementById('status').classList
+    .contains('prestrike'));
+  ok(true, 'the beat drops at STRIKE_MS: prestrike retires, the flip'
+     + ' and the slam land together');
   ok(doc2.getElementById('roster-input').disabled,
      'the roster is closed once revealed: the + row is off');
   ok(/^Closed \d{4}-\d{2}-\d{2} \d{2}:\d{2} (Sun|Mon|Tue|Wed|Thu|Fri|Sat)$/
@@ -1216,6 +1285,12 @@ function ok(cond, label) {
      && burst.origin.y >= 0 && burst.origin.y <= 1,
      "erupting from the gavel's block (a clamped viewport-fraction"
      + " origin — jsdom's zero-layout puts it at 0,0)");
+  ok(row(doc2, 'alice').querySelector('.rename input').disabled
+     && !dom2.window.document.getElementById('seal')
+          .hasAttribute('data-tip'),
+     'the gavel freezes the NAMES too (dreev: a post-close rename'
+     + ' could swap who bid what), and the lit tada needs no tip —'
+     + ' revealed is self-evident');
   ok(myInput(doc2) && myInput(doc2).disabled
      && myInput(doc2).value === '$40 and my dignity',
      'the gavel drop is a bright line: your bid stays READABLE in your'
