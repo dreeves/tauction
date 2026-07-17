@@ -62,8 +62,8 @@ ok(st.revealed === false && st.bids === null,
    'solo roster never reveals: an auction takes two');
 ok(ss.sheets['bids'].data[1][2] === '3 tacos', 'bid trimmed');
 ok(ss.sheets['auctions'].data[1][0] === 'tau', 'default settings row created');
-ok(ss.sheets['bids'].data[0][6] === "IT'S CHEATING TO LOOK HERE DURING AN AUCTION"
-   && ss.sheets['bids'].data[0][7] === undefined
+ok(ss.sheets['bids'].data[0][4] === "IT'S CHEATING TO LOOK HERE DURING AN AUCTION"
+   && ss.sheets['bids'].data[0][5] === undefined
    && ss.sheets['auctions'].data[0].length === 6,
    'cheater banner right after the bids headers; none on auctions');
 ok(ss.sheets['bids'].colors['2,3'] === '#ffffff',
@@ -72,17 +72,25 @@ ok(ss.sheets['bids'].fonts['1,1'] === 'Roboto Mono'
    && ss.sheets['bids'].backgrounds['1,1'] !== undefined,
    'headers dressed up: monospace labels on a tinted band');
 
-// 4. re-bid overwrites, doesn't duplicate, bumps tmod + bcount
+// 4. the bids tab is an append-only LOG (dreev's 2026-07-17
+//    rearchitecture, replacing upsert): every submission is its own
+//    row with one stamp, tbid; a person's standing bid is their
+//    LATEST row, and tini/tmod/bcount arrive in the payload DERIVED
 const stamp1 = st.bidders[0].tmod;
 const t0 = Date.now(); while (Date.now() - t0 < 3);  // ensure stamps differ
 st = call({ action: 'bid', aname: 'tau', uname: 'alice', bid: 'sushi' });
-ok(st.bidders[0].tmod !== stamp1, 're-bid bumps the tmod stamp');
+ok(ss.sheets['bids'].data.length === 3
+   && ss.sheets['bids'].data[1][2] === '3 tacos'
+   && ss.sheets['bids'].data[2][2] === 'sushi'
+   && ss.sheets['bids'].data[2][3] > ss.sheets['bids'].data[1][3],
+   're-bid APPENDS: both submissions on the sheet, later tbid below');
+ok(st.bidders[0].tmod !== stamp1, 'derived tmod = the latest tbid');
 ok(st.bidders[0].tini === stamp1,
-   're-bid keeps the tini stamp (first submission time survives)');
-ok(st.bidders[0].bcount === 2, 're-submission counts 2');
-ok(st.bidders.length === 1, 're-bid does not duplicate');
-ok(ss.sheets['bids'].data.length === 2, 'still one bid row');
-ok(ss.sheets['bids'].data[1][2] === 'sushi', 're-bid overwrites');
+   'derived tini = the first tbid (first submission time survives)');
+ok(st.bidders[0].bcount === 2, 'derived bcount = the row count');
+ok(st.bidders.length === 1
+   && call({ action: 'state', aname: 'tau' }).bidders[0].uname === 'alice',
+   'one BIDDER in the payload however many rows: latest-row-wins');
 
 // 5. reveal is a human act: a complete roster only UNLOCKS it.
 //    (The motivating bug: two drive-by bidders who never stated a roster

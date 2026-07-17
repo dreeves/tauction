@@ -11,12 +11,15 @@
 const SHEET_ID = '1hclphAZ3zQIq14Nip1ZxTDSoE9ygXqAv27RwP1hiMA8';
 
 // Column vocabulary (dreev's): tini = time-initial (created), tmod =
-// time-modified, tfin = time-final (the reveal moment), bcount = the
-// (re)submission count, deviceID = the claiming browser's anonymous
+// time-modified, tfin = time-final (the reveal moment), tbid = a
+// submission's moment, deviceID = the claiming browser's anonymous
 // uuid, deviceBlurb = its self-description ("a Mac (Chrome)").
 const AUCTIONS_HEAD = ['aname', 'tini', 'tmod', 'tfin', 'blurb',
                        'tblurb'];
-const BIDS_HEAD     = ['aname', 'uname', 'bid', 'bcount', 'tini', 'tmod'];
+// The bids tab is an append-only LOG (dreev's 2026-07-17
+// rearchitecture): every submission is its own row, nothing is ever
+// overwritten, and the payload's tini/tmod/bcount are DERIVED
+const BIDS_HEAD     = ['aname', 'uname', 'bid', 'tbid'];
 // A users row IS a roster seat; future per-person attributes
 // (weights/shares) append as columns to the right, which positional
 // reads tolerate.
@@ -243,15 +246,6 @@ function getState(aname) {
     if (r[2] && r[3]) blurbs[r[1]] = r[3];
   });
 
-  const brows = rows(bidsTab()).filter(r => r[0] === aname);
-  // tini + tmod stamps let clients notice re-bids (and animate
-  // accordingly) and tell you when a bid first landed vs last changed;
-  // bcount counts (re)submissions — an existing row implies at least
-  // one submission, so a blank bcount floors at 1, never 0
-  const bidders = brows.map(r =>
-    ({ uname: r[1], bcount: parseInt(r[3], 10) || 1,
-       tini: r[4], tmod: r[5] }));
-
   // Reveal is a human act (the 'reveal' action) and a one-way latch: it
   // never happens automatically, and once bids have been seen, nothing can
   // reseal them. A complete roster merely makes the reveal button pressable.
@@ -260,11 +254,32 @@ function getState(aname) {
   const blurb = arow ? arow[4] || '' : '';   // freeform markdown
   const tblurb = arow ? arow[5] || '' : '';  // its own edit stamp (CAS)
 
+  // A person's standing bid is their LATEST log row at or before tfin
+  // (<=, dreev's call: a bid stamped the gavel's own millisecond made
+  // it — belt only, since placeBid refuses after the reveal anyway).
+  // The payload keeps its vocabulary, derived per person from the log:
+  // tini = first tbid, tmod = latest, bcount = row count. ISO stamps
+  // compare lexicographically; rows are in submission order.
+  const agg = {};  // uname -> derived bidder, in first-bid order
+  rows(bidsTab()).forEach(r => {
+    if (r[0] !== aname) return;
+    if (revealed && r[3] > tfin) return;  // after the gavel: not in
+    const a = agg[r[1]] || (agg[r[1]] =
+      { uname: r[1], bcount: 0, tini: r[3] });
+    a.bcount++;
+    a.tmod = r[3];
+    a.bid = r[2];
+  });
+  const people = Object.keys(agg).map(u => agg[u]);
+  const bidders = people.map(a =>
+    ({ uname: a.uname, bcount: a.bcount, tini: a.tini, tmod: a.tmod }));
+
   return {
     aname: aname, roster: roster, bidders: bidders, revealed: revealed,
     tfin: tfin, blurb: blurb, tblurb: tblurb,
     claims: claims, blurbs: blurbs,
-    bids: revealed ? brows.map(r => ({ uname: r[1], bid: r[2] })) : null,
+    bids: revealed ? people.map(a => ({ uname: a.uname, bid: a.bid }))
+                   : null,
   };
 }
 
@@ -340,8 +355,11 @@ function renameParticipant(req) {
   sh.getRange(i + 2, 2).setValue(to);
   sh.getRange(i + 2, 6).setValue(now);  // tmod
   const bsh = bidsTab();
-  const j = rows(bsh).findIndex(r => r[0] === aname && r[1] === from);
-  if (j !== -1) bsh.getRange(j + 2, 2).setValue(to);
+  rows(bsh).forEach((r, j) => {  // re-key every log row of theirs
+    if (r[0] === aname && r[1] === from) {
+      bsh.getRange(j + 2, 2).setValue(to);
+    }
+  });
   touchAuction(aname);
   return getState(aname);
 }
@@ -362,8 +380,12 @@ function removeParticipant(req) {
     // left a zombie bid): removing it again is the recovery path —
     // purge the bid outright
     const bsh = bidsTab();
-    const j = rows(bsh).findIndex(r => r[0] === aname && r[1] === uname);
-    if (j !== -1) bsh.deleteRow(j + 2);
+    const brows = rows(bsh);
+    for (let j = brows.length - 1; j >= 0; j--) {  // bottom-up: row
+      if (brows[j][0] === aname && brows[j][1] === uname) {  // indices
+        bsh.deleteRow(j + 2);                          // stay honest
+      }
+    }
   }
   return getState(aname);
 }
@@ -466,17 +488,9 @@ function placeBid(req) {
     setDeviceID(aname, uname, deviceID, cleanBlurb(req.deviceBlurb));
   }
 
-  const sh = bidsTab();
-  const brows = rows(sh);
-  const now = new Date().toISOString();
-  const i = brows.findIndex(r => r[0] === aname && r[1] === uname);
-  if (i !== -1) {  // re-bid: overwrite, keep tini, bump tmod + bcount
-    const bcount = (parseInt(brows[i][3], 10) || 1) + 1;
-    sh.getRange(i + 2, 3, 1, 4)
-      .setValues([[bid, String(bcount), brows[i][4], now]]);
-  } else {
-    sh.appendRow([aname, uname, bid, '1', now, now]);
-  }
+  // every submission is its own log row; the read side derives the
+  // rest (latest wins, first stamps tini, count counts)
+  bidsTab().appendRow([aname, uname, bid, new Date().toISOString()]);
   const st = getState(aname);
   repaintBids(aname, st.revealed);
   return st;

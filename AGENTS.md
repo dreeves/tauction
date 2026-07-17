@@ -126,11 +126,17 @@ Vocabulary: an **aname** is an auction's name (also its URL slug); a
 |---|---|
 | `auctions` | aname, tini, tmod, tfin, blurb, tblurb |
 | `users` | aname, uname, deviceID, deviceBlurb, tini, tmod |
-| `bids` | aname, uname, bid, bcount, tini, tmod |
+| `bids` | aname, uname, bid, tbid |
+
+The bids tab is an append-only LOG (2026-07-17): every submission is
+its own row, nothing is overwritten, and a person's standing bid is
+their latest row at or before `tfin` (`<=`). The API payload still
+carries `tini`/`tmod`/`bcount` per bidder — derived at read time
+(first tbid, latest tbid, row count).
 
 Column vocabulary: `tini` = time-initial (created), `tmod` =
-time-modified, `tfin` = time-final (the reveal moment, ISO), `bcount` =
-the (re)submission count, `deviceID` = the claiming browser's anonymous
+time-modified, `tfin` = time-final (the reveal moment, ISO), `tbid` =
+a bid submission's moment, `deviceID` = the claiming browser's anonymous
 uuid ('' when unclaimed), `deviceBlurb` = that browser's self-reported
 description ("Mac Chrome en-US in Portland, OR"), `blurb` = the
 auction's freeform markdown description, `tblurb` = its own edit stamp

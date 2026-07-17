@@ -37,6 +37,14 @@ function ok(cond, label) {
      && r.blurbs !== null && typeof r.blurbs === 'object'
      && typeof r.tfin === 'string',
      'live state shape matches what app.js expects: ' + JSON.stringify(r).slice(0, 120));
+  // Self-HEALING preamble: a previous run that died between its
+  // claim and its release strands smokey's seat, and every later
+  // run's deviceless bid then bounces off ERROR1312 (it happened;
+  // dreev had to clean the sheet by hand). Releasing an unheld seat
+  // is a documented no-op, so this is safe in every state.
+  await fetch(API, { method: 'POST',
+    body: JSON.stringify({ action: 'release', aname: 'smoketest',
+      uname: 'smokey', deviceID: 'smoke-dev' }) });
   // end-to-end write+read: place a smoke bid, read it back from the
   // returned post-write state (self-seeding: no fixture data needed)
   r = await (await fetch(API, { method: 'POST',

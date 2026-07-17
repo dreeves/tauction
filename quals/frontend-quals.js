@@ -217,6 +217,11 @@ function ok(cond, label) {
      + " (dreev's Android install was manifest-less Chrome fallback)");
   ok(INDEX_HTML.includes('rel="manifest"'),
      'index.html links the manifest');
+  ok(/rel="icon" href="data:image\/svg\+xml,[^"]*%238a5a2b/
+       .test(INDEX_HTML),
+     'the favicon is the gavel too — all gavel, no more \u03c4'
+     + " (dreev killed the tau 2026-07-17); it shares the app icons'"
+     + ' wood');
 
   /* --- 1. bare visit: no server-invented name — the user picks ---------- */
   let dom = await makePage('/?api=' + API_URL);
@@ -1696,9 +1701,14 @@ function ok(cond, label) {
   ok(!domP.window.document.querySelector('#tiles .rebid').classList
        .contains('busy'),
      'busy clears only after the LAST submission settles');
-  ok(gas.__ss.sheets['bids'].data.filter((r) => r[0] === 'progress')[0][2]
-       === 'hurry HARDER',
-     'the sheet holds the later bid: client-serialized, last word wins');
+  // (the bids tab is an append-only log now: the standing bid is the
+  // LAST row, and both submissions are on the record)
+  const progressRows = gas.__ss.sheets['bids'].data
+    .filter((r) => r[0] === 'progress');
+  ok(progressRows.length === 2
+     && progressRows[1][2] === 'hurry HARDER',
+     'the log holds both; the later row wins: client-serialized, last'
+     + ' word standing');
   ok(myInput(domP.window.document).value === 'hurry HARDER',
      'and the editor agrees');
 
@@ -1757,16 +1767,17 @@ function ok(cond, label) {
      === strip(row(domJ.window.document, 'pip').outerHTML),
      'row updates are idempotent: A->B->A equals a fresh render of A');
 
-  /* --- 3f. legacy bid rows (blank bcount) still count -------------------- */
+  /* --- 3f. a hand-written log row (sheet surgery) still counts ----------
+     [reworked for the 2026-07-17 append-only log: the old fixture
+     seeded a blank-bcount legacy row; bcount is derived now, so a
+     bare (aname, uname, bid, tbid) row IS the whole story] ------- */
   gas.__ss.sheets['bids'].appendRow(['legacy', 'oldtimer', 'ancient bid',
-    '', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z']);
+    '2026-01-01T00:00:00.000Z']);
   const domL = await makePage('/legacy?api=' + API_URL);
   const rowL = tiles(domL.window.document, '.has-bid')[0];
-  // (subs superscript shelved 2026-07-15; the floor-at-1 rule now shows
-  // in the tooltip taking the single-submission branch)
   ok(rowL && /^bid submitted \d+d ago$/
        .test(hoverBid(domL, 'oldtimer')),
-     'legacy row floors at 1 submission: tooltip takes the single-'
+     'a lone log row derives one submission: tooltip takes the single-'
      + 'submission branch, got ' + hoverBid(domL, 'oldtimer'));
   ok(rowL.querySelector('.bid-card.stack0'), 'legacy row: single card');
 
