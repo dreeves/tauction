@@ -58,7 +58,8 @@ const auctionExistsBanner = 'Auction exists — use the URL to join it';
 // Someone saved the description while you were editing yours (also
 // thrown by the server's compare-and-swap; must match it exactly so
 // the back-to-back banners read as one)
-const simulEditsBanner = 'Oops, someone else is making simultaneous edits';
+const simulEditsBanner = 
+  'Oops, someone else is making simultaneous edits to the description';
 
 // Plumbing failures we expect to never see
 const e2152 = (msg) => 'ERROR2152: ' + msg;  // poll fetch failed

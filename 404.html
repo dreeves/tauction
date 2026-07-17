@@ -21,12 +21,12 @@
   <div class="corner">
     <!-- the Android-style share glyph (three nodes, two links), inline
          SVG in currentColor so it grays and accents like its neighbor -->
-    <button id="share" class="icon" type="button" data-tip="share"
+    <button id="share" class="icon" type="button" tabindex="-1" data-tip="share"
             aria-label="share link"><svg viewBox="0 0 24 24"
       aria-hidden="true"><circle cx="18" cy="5" r="2.6"/><circle cx="6"
       cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path
       d="M8.2 10.7l7.6-4.4M8.2 13.3l7.6 4.4"/></svg></button>
-    <button id="help" class="icon" type="button" data-tip="help"
+    <button id="help" class="icon" type="button" tabindex="-1" data-tip="help"
             aria-label="help">?</button>
   </div>
 
@@ -53,14 +53,14 @@
     <div id="descview" class="descview"></div>
     <textarea id="descedit" class="descedit" maxlength="2000" rows="3"
       placeholder="Describe this auction..."></textarea>
-    <button id="desctoggle" class="desctoggle" type="button"></button>
+    <button id="desctoggle" class="desctoggle" type="button" tabindex="-1"></button>
   </section>
 
   <section id="status" class="card">
     <div class="thead">
       <div class="th th-person">PARTICIPANTS</div>
       <div class="th th-bid">BIDS<button
-        id="seal" class="seal" type="button" disabled
+        id="seal" class="seal" type="button" disabled tabindex="-1"
         data-tip="Reveal bids!"></button></div>
     </div>
     <!-- the busy gavel: hammers its block over the grayed ledger while
@@ -90,20 +90,20 @@
   <footer>
     <a href="https://github.com/dreeves/tauction">github.com/dreeves/tauction</a>
     <span class="sep">·</span>
-    <span class="version">v2026.07.16-c</span>
+    <span class="version">v2026.07.16-d</span>
   </footer>
 </main>
 
 <dialog id="share-dlg" class="dlg">
-  <button class="dlg-x" type="button" aria-label="Remove">×</button>
+  <button class="dlg-x" type="button" tabindex="-1" aria-label="Remove">×</button>
   <canvas id="qr" class="qr"></canvas>
   <p id="share-url" class="share-url"></p>
-  <button id="copy" class="copy" type="button" data-copied="Copied!"><span
+  <button id="copy" class="copy" type="button" tabindex="-1" data-copied="Copied!"><span
     class="copy-label">Copy link</span></button>
 </dialog>
 
 <dialog id="help-dlg" class="dlg">
-  <button class="dlg-x" type="button" aria-label="Close">×</button>
+  <button class="dlg-x" type="button" tabindex="-1" aria-label="Close">×</button>
 
 <div class="help-body">
 
@@ -123,6 +123,10 @@ Or just use it to play Schelling’s coordination game. <a href="#fn1" id="fnref
 You’re free to replace your bid by just submitting again, which is allowed until the bids are revealed.
 When all the bids are in, the padlock starts glowing and the final revelation happens when someone clicks it.
 </p>
+<p>
+Thanks to Bethany Soule and Christopher Moravec for making predecessors of this tool.
+</p>
+
 <h2>Footnotes</h2>
 
 <p><a href="#fnref1" id="fn1">[1]</a>

@@ -40,7 +40,8 @@ const blurbTooLongCopy = 'blurb too long (2000 chars max)';
 // must match stringles.js simulEditsBanner EXACTLY (a qual checks):
 // the client shows the same words for locally- and remotely-detected
 // simultaneous edits, so back-to-back banners read as one message
-const simulEditsCopy = 'Oops, someone else is making simultaneous edits';
+const simulEditsCopy =
+  'Oops, someone else is making simultaneous edits to the description';
 const rosterClosedCopy = 'Auction complete — no new participants';
 const nameTakenCopy = 'That name is taken';
 const noSuchOneCopy = (from) => 'No such participant: ' + from;

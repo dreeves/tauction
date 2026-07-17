@@ -111,10 +111,10 @@ let DEVBLURB = (() => {
 // rate-limited responses lack them and spam the console). Geography
 // is decoration, so a flaky third party must not delay boot or banner
 // errors — this is the app's one deliberately quiet catch. The result
-// is cached in localStorage for a week: locate() runs every page load,
+// is cached in localStorage for a day: locate() runs every page load,
 // dev live-reload loads on every file save, and that burned the free
-// rate limit into 429s. Cities don't move much.
-const GEO_TTL_MS = 7 * 24 * 3600 * 1000;
+// rate limit into 429s (~30 lookups/month vs the 10k/month tier).
+const GEO_TTL_MS = 24 * 3600 * 1000;
 async function locate() {
   try {
     let geo = localStorage.getItem('tauction-geo');
@@ -231,6 +231,8 @@ function renderDesc() {
     edit.defaultValue = state.blurb;
     edit.dataset.base = state.tblurb;
     banner(simulEditsBanner);
+    edit.classList.add('error');  // the banner is global; the problem
+                                  // is this field (cleared on input)
   }
   if (!descModeSet) {
     descModeSet = true;
@@ -253,9 +255,31 @@ function toggleDesc() {
   const toView = !$('desc').classList.contains('viewing');
   const edit = $('descedit');
   if (toView && edit.value !== edit.defaultValue) {
-    queueOp({ action: 'describe', aname: aname, blurb: edit.value,
-              base: edit.dataset.base });
-    edit.defaultValue = edit.value;  // ours is the working base now
+    const draft = edit.value;
+    const cleanBase = edit.defaultValue;  // pre-edit server truth
+    queueOp({ action: 'describe', aname: aname, blurb: draft,
+              base: edit.dataset.base }, () => {
+      // The commit bounced (someone's edit beat ours): back into the
+      // editor, your words intact and the field red — the recovery
+      // snapshot re-bases the (again-dirty) draft, so saving again,
+      // now informed, wins. Hiding a textarea blurs it in real
+      // browsers, so never-clobber alone can't protect a bounced
+      // draft; this restore is what does.
+      edit.value = draft;
+      edit.defaultValue = cleanBase;
+      edit.classList.add('error');
+      $('desc').classList.remove('viewing');
+      syncDescToggle();
+      edit.focus();
+    });
+    edit.defaultValue = draft;  // ours is the working base now
+    edit.classList.remove('error');
+    // paint the draft NOW — rendering is pure client work; the write
+    // settles in the background. If its CAS bounces, the recovery
+    // snapshot's differing blurb repaints this pane with server truth.
+    const view = $('descview');
+    view.dataset.md = draft;
+    view.innerHTML = mdRender(draft);
   }
   $('desc').classList.toggle('viewing', toView);
   if (!toView) edit.focus();
@@ -457,7 +481,9 @@ function buildRow(uname) {
   t.dataset.uname = uname;
   // one solid glyph for every star: CSS draws it hollow (outline)
   // until .selected fills it gold — a real radio button
+  // buttons act on click or tap; tab is for editable fields (dreev)
   const star = el('button', 'tu', '★');
+  star.tabIndex = -1;
   star.type = 'button';
   star.addEventListener('click', () => toggleTu(uname));
   const nameEl = el('div', 'tile-name');
@@ -479,6 +505,7 @@ function buildRow(uname) {
   // in, because a sealed bid is never deletable (its tip is bid-state-
   // dependent, so updateRow owns it)
   const x = el('button', 'x', '×');
+  x.tabIndex = -1;
   x.type = 'button';
   x.addEventListener('click', () => {
     roster = roster.filter((u) => u !== uname);
@@ -889,7 +916,7 @@ async function copyUrl() {
 // the server confirms. Only the NEWEST op's snapshot is adopted —
 // earlier ones predate later local edits.
 let opChain = Promise.resolve();
-function queueOp(body) {
+function queueOp(body, onRefusal) {
   $('status').classList.add('stale');
   if (state) renderStatus();
   if (!configured) return;
@@ -901,7 +928,7 @@ function queueOp(body) {
     } catch (e) {
       banner(e2154(e.message));
     }
-    settleWrite(res, at);  // exactly once, whatever happened
+    settleWrite(res, at, onRefusal);  // exactly once, whatever happened
   });
 }
 
@@ -918,7 +945,10 @@ function startWrite() {
 // paints directly only when it's also the newest write; otherwise (out-
 // of-order settles, failures, stale aname) fetch a snapshot that's
 // guaranteed to postdate everything.
-function settleWrite(res, at) {
+// onRefusal (optional): the op's own recovery beyond the banner —
+// e.g. a bounced describe turns its field red and reopens the editor
+// (the banner is global; the problem is one specific field)
+function settleWrite(res, at, onRefusal) {
   writesPending--;
   assert(writesPending >= 0, 'write bookkeeping went negative');
   writeSettledAt = Date.now();
@@ -928,6 +958,7 @@ function settleWrite(res, at) {
     // itself shows the truth (filled star + claimed-by tooltip), so
     // no red banner for that one. Everything else stays loud.
     if (!/^ERROR1304/.test(res.error)) banner(res.error);
+    if (onRefusal) onRefusal();
     res = null;
   }
   if (writesPending > 0) return;
@@ -1046,6 +1077,9 @@ function wireUp() {
 
   $('seal').addEventListener('click', pressReveal);
   $('desctoggle').addEventListener('click', toggleDesc);
+  $('descedit').addEventListener('input', () => {
+    $('descedit').classList.remove('error');  // objection acknowledged
+  });
   $('descedit').addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {  // revert, like the name fields
       $('descedit').value = $('descedit').defaultValue;

@@ -186,6 +186,14 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .desc { position: relative; padding: 0.75rem 1rem; }
 
+/* Rendered blurb = prose on the page; the box means "editable here"
+   and appears only in edit mode (dreev). Colors go transparent rather
+   than the border going away so nothing shifts by its 1px. */
+.desc.viewing { background: transparent; border-color: transparent; }
+
+/* the field objection recipe, same as the bid editor's */
+.descedit.error { outline: 2px solid var(--err-fg); outline-offset: -1px; }
+
 .desc.viewing .descedit { display: none; }
 
 .desc:not(.viewing) .descview { display: none; }

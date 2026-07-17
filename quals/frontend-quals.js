@@ -212,7 +212,11 @@ function ok(cond, label) {
   ok(!doc.getElementById('roster-input').disabled
      && !doc.getElementById('status').classList.contains('stale'),
      'the named ledger wakes: + row live, gray gone');
-  ok(doc.querySelectorAll('[data-tip][tabindex="-1"]').length === 1
+  // (was a count of [data-tip][tabindex="-1"] === 1, from when the
+  // label was the only tap-focusable non-tab-stop; every button joined
+  // that club 2026-07-16 per dreev, so pin the label itself instead)
+  ok(doc.querySelector('label[for="aname"]').getAttribute('data-tip')
+     && doc.querySelector('label[for="aname"]').tabIndex === -1
      && !doc.querySelector('.tip'),
      'the auction label is its own tooltip host (tap-focusable, not a'
      + ' tab stop); the ? icons are gone');
@@ -420,7 +424,7 @@ function ok(cond, label) {
   // (subs superscript shelved 2026-07-15)
   // ok(tiles(doc, '.has-bid')[0].querySelector('.tile-subs').textContent === '1',
   //    'submission counter ticks to 1');
-  ok(/^your bid submitted \d+s ago$/.test(hoverBid(dom, 'alice')),
+  ok(/^your bid submitted \d+[sm] ago$/.test(hoverBid(dom, 'alice')),
      "own single-submission tooltip: 'your bid submitted Ns ago', got "
      + hoverBid(dom, 'alice'));
   ok(tiles(doc, '.has-bid')[0].style.animationDelay === '',
@@ -754,11 +758,31 @@ function ok(cond, label) {
      && gas.handle({ action: 'state', aname: 'descy' }).blurb
           === 'A version',
      "B's words survive in B's editor; A's words survive on the server");
+  await until(() =>  // the bounce boots B straight back into the editor
+    !dB.window.document.getElementById('desc').classList
+      .contains('viewing'));
+  ok(dB.window.document.getElementById('descedit').classList
+       .contains('error')
+     && dB.window.document.getElementById('descedit').value
+          === 'B version',
+     'a bounced commit reopens the EDITOR with the field red (the'
+     + ' banner is global; the problem is THIS box) and your words'
+     + ' intact');
+  await until(() => dB.window.document.getElementById('descview')
+    .textContent.includes('A version'));
+  ok(!dB.window.document.getElementById('descview').textContent
+       .includes('B version'),
+     "meanwhile the (hidden) view pane holds the server's truth: flip"
+     + ' over to read what won before insisting');
+  dB.window.document.getElementById('descedit')
+    .dispatchEvent(new dB.window.Event('input', { bubbles: true }));
+  ok(!dB.window.document.getElementById('descedit').classList
+       .contains('error'),
+     'the red clears at the next keystroke, like every field objection');
   // B, now informed, insists: the recovery poll re-based the draft
   await until(() =>
     dB.window.document.getElementById('descedit').dataset.base
     === gas.handle({ action: 'state', aname: 'descy' }).tblurb);
-  dB.window.document.getElementById('desctoggle').click();  // to edit
   dB.window.document.getElementById('desctoggle').click();  // re-commit
   await until(() => gas.handle({ action: 'state', aname: 'descy' })
     .blurb === 'B version');
@@ -1028,6 +1052,49 @@ function ok(cond, label) {
      'a stale stamp (8 days) refetches and re-stamps: cities do'
      + ' occasionally move');
 
+  /* --- 2s. flipping to view paints INSTANTLY --------------------------
+     Replicata (dreev): type markdown, click the toggle, and the box
+     basically disappears for a while — the view pane waited for the
+     describe write to round-trip the server. Expectata: rendering is
+     pure client work; the committed draft paints synchronously and
+     the write settles in the background (a CAS bounce repaints). --- */
+  const dI = await makePage('/instadesc?api=' + API_URL);
+  await sleep(20);
+  dI.window.document.getElementById('descedit').value
+    = '# Big News\n\nmuch **bold**';
+  mockDelay = 500;  // a slow server must not delay the paint
+  dI.window.document.getElementById('desctoggle').click();
+  const instaView = dI.window.document.getElementById('descview');
+  ok(dI.window.document.getElementById('desc').classList
+       .contains('viewing')
+     && instaView.querySelector('h1')
+     && instaView.querySelector('h1').textContent === 'Big News'
+     && instaView.querySelector('strong').textContent === 'bold',
+     'the rendered markdown appears the instant the toggle is clicked,'
+     + ' not when the database answers');
+  await settled(dI);
+  mockDelay = 0;
+  ok(gas.handle({ action: 'state', aname: 'instadesc' }).blurb
+       === '# Big News\n\nmuch **bold**'
+     && instaView.querySelector('h1') !== null,
+     '...and the background write lands the same text; the settle'
+     + ' repaints nothing');
+
+  /* --- 2t. tab walks EDITABLE FIELDS only (dreev): buttons act on
+     click or tap; none of them is a tab stop. ----------------------- */
+  const dTab = await makePage('/taborder?api=' + API_URL);
+  addName(dTab, 'tia');
+  await settled(dTab);
+  const allButtons
+    = Array.from(dTab.window.document.querySelectorAll('button'));
+  ok(allButtons.length >= 8 && allButtons.every((b) => b.tabIndex === -1),
+     'no button is a tab stop (stars, ×s, desc toggle, share, help,'
+     + ' seal, copy, dialog ×s) — tab is for editable fields');
+  ok(dTab.window.document.getElementById('descedit').tabIndex === 0
+     && dTab.window.document.getElementById('roster-input').tabIndex === 0
+     && dTab.window.document.getElementById('aname').tabIndex === 0,
+     '...which all remain tab stops themselves');
+
   /* --- 3. bob's window: alice's bid sealed there; his bid reveals ------- */
   const dom2 = await makePage('/tau?api=' + API_URL);
   const doc2 = dom2.window.document;
@@ -1041,7 +1108,7 @@ function ok(cond, label) {
      'sealed bid rendered as a masked decoy, not the real text');
   ok(row(doc2, 'alice').querySelector('.tu').disabled,
      "alice's bid dibses her row: a fresh browser can't usurp it");
-  ok(/^bid submitted \d+s ago$/.test(hoverBid(dom2, 'alice')),
+  ok(/^bid submitted \d+[sm] ago$/.test(hoverBid(dom2, 'alice')),
      "someone else's single-submission tooltip drops the 'your', got "
      + hoverBid(dom2, 'alice'));
   claimRow(dom2, 'bob');
@@ -1182,7 +1249,7 @@ function ok(cond, label) {
   // (subs superscript shelved 2026-07-15)
   // ok(own[0].querySelector('.tile-subs').textContent === '2',
   //    'counter ticks on re-submission');
-  ok(/^first submitted \d+s ago, resubmitted \d+s ago$/
+  ok(/^first submitted \d+[sm] ago, resubmitted \d+s ago$/
        .test(hoverBid(domA, 'ann')),
      "re-submission tooltip: 'first submitted ..., resubmitted ...', got "
      + hoverBid(domA, 'ann'));

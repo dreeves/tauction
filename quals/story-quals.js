@@ -176,9 +176,11 @@ async function tipBox(page, i) {
       return getComputedStyle(t).display !== 'none'
         && t.placeholder.length > 0
         && document.getElementById('desctoggle').textContent
-             === toRenderedGlyph;
+             === toRenderedGlyph
+        && getComputedStyle(document.getElementById('desc'))
+             .borderTopColor !== 'rgba(0, 0, 0, 0)';
     }), 'the description sits between name and ledger, explaining'
-       + ' itself by placeholder');
+       + ' itself by placeholder, boxed like the field it is');
     await alice.click('#descedit');
     await alice.type('#descedit', '# Rules\n\nLoser buys **coffee**');
     await alice.click('#desctoggle');
@@ -193,6 +195,12 @@ async function tipBox(page, i) {
            === toSourceGlyph),
        'one flip: committed, rendered rich (h1 + bold), toggle now'
        + ' offers the source back');
+    ok(await alice.evaluate(() => {
+      const box = getComputedStyle(document.getElementById('desc'));
+      return box.borderTopColor === 'rgba(0, 0, 0, 0)'
+        && box.backgroundColor === 'rgba(0, 0, 0, 0)';
+    }), 'and the rendered blurb sheds its box: prose on the page, not'
+       + ' a field — the box itself says "editable here" (dreev)');
 
     await alice.reload({ waitUntil: 'networkidle0' });
     await alice.waitForSelector('#tiles');
