@@ -63,6 +63,13 @@ const gavelFellCopy =
   'Womp Womp! The auction closed before your bid got through';
 const bidSeatHeldCopy = (blurb) =>
   'ERROR1312: Claimed by someone (' + blurb + ')';
+// operator-facing, like schemaDriftCopy: a closed auction violating
+// the covenant (revealed ⇒ roster of two-plus, all with bids) was
+// edited by hand or written by pre-freeze code — refuse to render
+// nonsense (dreev's test0916: revealed, solo bidless roster)
+const covenantCopy = (aname, why) =>
+  'closed-state covenant broken for "' + aname + '": ' + why
+  + ' — fix or delete its sheet rows';
 // operator-facing (dreev sees this, users only if very unlucky): the
 // sheet's tabs predate the running code's schema
 const schemaDriftCopy = (name, got, want) =>
@@ -275,6 +282,16 @@ function getState(aname) {
   const people = Object.keys(agg).map(u => agg[u]);
   const bidders = people.map(a =>
     ({ uname: a.uname, bcount: a.bcount, tini: a.tini, tmod: a.tmod }));
+
+  // the closed-state covenant, asserted on every read: a revealed
+  // auction has two-plus roster members, every one of them with a
+  // bid — forever (the post-close freezes make it eternal)
+  if (revealed && !(roster.length >= 2
+      && roster.every(u => bidders.some(b => b.uname === u)))) {
+    throw covenantCopy(aname, 'roster [' + roster.join(', ')
+      + '] but bids only from ['
+      + bidders.map(b => b.uname).join(', ') + ']');
+  }
 
   return {
     aname: aname, roster: roster, bidders: bidders, revealed: revealed,

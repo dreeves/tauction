@@ -7,7 +7,22 @@
 
 const ctx = require('./fake-gas')();
 const ss = ctx.__ss;
-const call = (req) => ctx.handle(req);
+// Every action's result is checked against THE CLOSED-STATE COVENANT
+// (dreev found live auction test0916 revealed with a solo, bidless
+// roster — fabricated by pre-freeze code plus tab recreations): once
+// revealed, at least two roster members, every one of them with a
+// bid, forever (the freezes make it eternal).
+const call = (req) => {
+  const st = ctx.handle(req);
+  if (st && !st.error && st.revealed) {
+    ok(st.roster.length >= 2
+       && st.roster.every((u) => st.bidders.some((b) => b.uname === u)),
+       'closed-state covenant after "' + req.action + '" on '
+         + st.aname + ': roster=' + JSON.stringify(st.roster)
+         + ' bidders=' + JSON.stringify(st.bidders.map((b) => b.uname)));
+  }
+  return st;
+};
 
 // Server microcopy DERIVED from Code.gs's block (read back out of the
 // vm context hosting it), so copy edits there never break these quals
@@ -493,5 +508,22 @@ FROZEN.forEach((a) => {
   ok(REFUSALS.includes(String(r.error)),
      'frozen action refuses on a closed auction: ' + a + ' -> ' + r.error);
 });
+
+// 13. the covenant is the SERVER's law, not just this suite's: a
+//     sheet edited by hand (or written by pre-freeze code) into a
+//     covenant-breaking state is REFUSED loudly, never rendered as
+//     nonsense (replicata: test0916 — revealed, roster [alice],
+//     no bids anywhere)
+ss.sheets['users'].appendRow(['tau', 'ghost', '', '',
+  '2026-07-18T00:00:00.000Z', '2026-07-18T00:00:00.000Z']);
+st = ctx.handle({ action: 'state', aname: 'tau' });
+ok(String(st.error).includes('covenant'),
+   'a corrupted closed auction states its corruption instead of'
+   + ' rendering it: ' + st.error);
+const ghostRow = ss.sheets['users'].data
+  .findIndex((r) => r[1] === 'ghost');
+ss.sheets['users'].deleteRow(ghostRow + 1);
+ok(!call({ action: 'state', aname: 'tau' }).error,
+   'rows fixed: the auction speaks again');
 
 console.log('gas-quals: all ' + passed + ' assertions passed');
