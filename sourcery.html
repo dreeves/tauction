@@ -3210,8 +3210,15 @@ Object</pre>
 <article class="exchange" id="p210">
 <pre class="prompt">woof, well, at this point there are surely a lot of similar things lurking. dive in and track one down? maybe simplify the code while you're at it? and reread AGENTS.md</pre>
 <details>
-<summary><a class="anchor" href="#p210"><time datetime="2026-07-18T05:32:29.541000+00:00">22:32</time></a> <span class="agent">Claude Code</span></summary>
-<div class="reply machine empty"><p>Response still generating when this transcript was captured</p></div>
+<summary><a class="anchor" href="#p210"><time datetime="2026-07-18T05:32:29.541000+00:00">22:32</time></a> <span class="agent">Claude Code</span> <span class="model">claude-fable-5</span> <span class="elapsed">thought for 4m50s</span></summary>
+<div class="reply machine"><p>Rereading AGENTS.md first as asked, then hunting the class systematically — the 0.6 bug's shape was *the same selector defined twice, later silently winning*, so that's the grep to industrialize:</p>
+<p>Expedition report — twice green at 525 (117 gas + 276 frontend + 8 serve + 124 story). AGENTS.md reread, including your rewrite: thirteen rules plus the Cutting Room Floor; the retired three (empiricism, QA, quals-liberal) I'm treating as still binding, just unspoken.</p>
+<p><strong>Three detectors built, and the headline is reassuring:</strong> the 0.6-relic class appears to be *empty* now. (1) The duplicate-selector analyzer found exactly two same-selector conflicts in all of style.css — both intentional (the + row zeroing the shared gap; the spark's longer middle ray). (2) The silent-battle detector — per element, per property, every pair of matching rules asserting different values, run on live identity-seeded pages both open and closed — found only deliberate state-variant overrides. No second 0.6. (3) The dead-selector sweep across live states caught one true corpse.</p>
+<p><strong>Tracked down and fixed:</strong></p>
+<ul><li><code>input[type="text"]</code> in the base input rule matched *nothing* — every input in the app is typeless. Deleted; the selector now says what's true.</li><li>A lying comment: "the marker slot (1.6rem, set above)" — the live slot is 1.9rem, and the alignment works *because* 1.9 = star 1.5 + gap 0.4. The prose now states the actual math. (This one's worth a beat: it's the same rot pattern as the 0.6 — an older recipe's remnant contradicting the newer truth — just in comments instead of properties.)</li></ul>
+<p><strong>The class-closer, since one-off finds are whack-a-mole:</strong> a <code>CSS_OVERRIDE_REGISTRY</code> qual, sibling to the z-ladder — any same-selector, same-property, different-value pair in style.css must be consciously registered or the suite fails. The two intentional cases are registered with their reasons; <strong>the 0.6 relic would have failed this qual the day it was born</strong>, which is the test of whether a doctrine qual earns its place.</p>
+<p>One operational note: probes killed by timeout skip their exit hooks, which is how a fresh zombie server appeared mid-run — the pre-flight guard caught it, as designed, and that's now twice the guard has paid for itself in one day.</p>
+<p>Ledger unchanged: <code>npm run deploy</code>, push, and your screens finally get everything — including full-ink <code>testd</code>.</p></div>
 </details>
 </article>
 </main>
