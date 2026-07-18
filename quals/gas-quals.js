@@ -159,9 +159,17 @@ ok(st.error && !call({ action: 'state', aname: 'tau' })
    'adding a participant after the reveal is refused: game over');
 ok(ss.sheets['bids'].colors['2,3'] === null,
    'bids stay visible in the sheet after the latch');
+// [FLIPPED 2026-07-18, dreev's report "it just let me remove someone
+// from a closed auction": the freeze doctrine never reached remove.
+// The old pins blessed permissive removal; now the whole record —
+// seats, bids, cut-row zombie purges — freezes at the gavel.]
 st = call({ action: 'remove', aname: 'tau', uname: 'bob' });
-ok(st.revealed === true, 'no roster change whatsoever can reseal');
-ok(!st.roster.includes('bob'), 'removed seat is gone');
+ok(String(st.error) === COPY.auctionClosedCopy
+   && call({ action: 'state', aname: 'tau' }).roster.includes('bob'),
+   'removing a seat from a CLOSED auction is refused: the roster is'
+   + ' part of the frozen record');
+ok(call({ action: 'state', aname: 'tau' }).revealed === true,
+   'and still revealed, of course');
 
 // 6b. end-early = ex the straggler, THEN press reveal; roster edits
 //     alone never reveal anything
@@ -434,5 +442,27 @@ ok(String(call({ action: 'state', aname: 'tau' }).error)
    + ' not emptying it');
 ss.sheets['bids'].data[0] = bhead;
 resetTabMemo();
+
+// the cut-row × stays alive pre-reveal as the zombie-purge recovery —
+// but post-reveal even THAT freezes: one tap must not delete a
+// REVEALED bid from the record (the actual mischief dreev hit; the
+// purged bids also explained his 'awaiting bid...' on a closed
+// auction — seats without bid rows)
+call({ action: 'add', aname: 'frozenx', uname: 'gus' });
+call({ action: 'add', aname: 'frozenx', uname: 'hana' });
+call({ action: 'add', aname: 'frozenx', uname: 'ivy' });
+call({ action: 'bid', aname: 'frozenx', uname: 'gus', bid: 'g' });
+call({ action: 'bid', aname: 'frozenx', uname: 'hana', bid: 'h' });
+call({ action: 'bid', aname: 'frozenx', uname: 'ivy', bid: 'i' });
+call({ action: 'remove', aname: 'frozenx', uname: 'gus' });  // cut: bid stays
+call({ action: 'add', aname: 'frozenx', uname: 'gus' });  // re-seat...
+call({ action: 'remove', aname: 'frozenx', uname: 'gus' });  // ...re-cut
+call({ action: 'reveal', aname: 'frozenx' });
+st = call({ action: 'remove', aname: 'frozenx', uname: 'gus' });
+ok(String(st.error) === COPY.auctionClosedCopy
+   && call({ action: 'state', aname: 'frozenx' }).bids
+        .some((b) => b.uname === 'gus'),
+   "even the cut-row zombie purge freezes at the gavel: gus's"
+   + ' revealed bid stays on the record');
 
 console.log('gas-quals: all ' + passed + ' assertions passed');

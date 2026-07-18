@@ -88,10 +88,6 @@ let anameTimer = null;
 let refreshing = false;
 let caretPlaced = false;  // the on-arrival focus into your editor fired
 
-// The padlock's tip, cached from the HTML so the copy lives in one place;
-// once revealed the icon is a 🎉 and offers nothing, so the tip changes
-const SEAL_TIP = $('seal').getAttribute('data-tip');
-
 // This browser's anonymous device id. Claims are keyed by it on the
 // server, so every page agrees who's taken — two machines can no longer
 // both be @alice. It's a consistency marker, not auth (honor system).
@@ -391,7 +387,7 @@ function renderStatus() {
   if (state.revealed) $('seal').removeAttribute('data-tip');
   else {
     $('seal').setAttribute('data-tip',
-      ready ? SEAL_TIP
+      ready ? revealTip
       : state.roster.length === 0 ? needTwoTip
       : state.roster.length === 1 ? needOneMoreTip
       : waitingTip(listed));
@@ -686,13 +682,23 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
     else bidEl.prepend(fresh);
     content = fresh;
   }
-  const stackCls = 'bid-card stack' + Math.min(bcount - 1, 3);
+  // One sheet of shadow per re-submission, UNCAPPED (dreev, per ZOI:
+  // zero, one, or infinity — never three): heavy revisers wear their
+  // pile, and that's the disinducement. Each sheet = a fill ring + an
+  // outline ring stepping 2px down-right; var(--lift) rides along.
+  const sheets = [];
+  for (let i = 1; i < bcount; i++) {
+    sheets.push(2 * i + 'px ' + 2 * i + 'px 0 -1px var(--ok-bg)',
+                2 * i + 'px ' + 2 * i + 'px 0 0 var(--ok-fg)');
+  }
+  const stackShadow = sheets.concat('var(--lift)').join(', ');
   if (kind === 'editor') {
     const input = content.querySelector('input');
     // the gavel drop is a bright line: your bid stays readable in
     // your own editor, but the field goes dead at the reveal
     input.disabled = state.revealed;
-    input.className = stamp === undefined ? 'bid-slot' : stackCls;
+    input.className = stamp === undefined ? 'bid-slot' : 'bid-card';
+    input.style.boxShadow = stamp === undefined ? '' : stackShadow;
     // never clobber what the user is typing: leave a focused or dirty
     // input alone (a draft = live value differs from defaultValue)
     if (input !== document.activeElement
@@ -705,7 +711,8 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
     // a received bid is a card; each re-submission stacks a sheet
     // behind it (visual depth caps at 3; the counter stays exact)
     const sealed = known[uname] === undefined;
-    content.className = stackCls;
+    content.className = 'bid-card';
+    content.style.boxShadow = stackShadow;
     const text = content.firstElementChild;
     text.className = sealed ? 'bid-text masked' : 'bid-text';
     text.textContent = sealed ? MASK : known[uname];
@@ -716,10 +723,13 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
   // tampering) keeps a live × as the recovery path: clicking it purges
   // the zombie bid outright (server-side second-remove semantics)
   const seated = stamp !== undefined && roster.includes(uname);
+  // the record freezes at the gavel: every × grays once revealed —
+  // even the cut-row zombie purge, which would delete a REVEALED bid
+  const frozen = seated || state.revealed;
   const x = t.querySelector('.x');
-  x.disabled = seated;
+  x.disabled = frozen;
   x.setAttribute('data-tip',
-    seated ? tooLateRemoveTip(uname) : removeTip(uname));
+    frozen ? tooLateRemoveTip(uname) : removeTip(uname));
 }
 
 // Render a small, safe markdown subset to HTML. Escape-first: the
@@ -1175,6 +1185,11 @@ async function switchAuction(a) {
 /* ------------------------------- wiring ------------------------------- */
 
 function wireUp() {
+  // The resting truth of an empty page, stamped unconditionally: zero
+  // bidders need two more (dreev caught the padlock resting on the
+  // HTML's old "Reveal bids!"). Any real render paints over it.
+  $('seal').setAttribute('data-tip', needTwoTip);
+
   // Universal button hygiene: an activated button doesn't keep
   // focus — you pressed it, you know what it is (none is a tab stop,
   // so focus on one serves nothing). This also drops any focus-tip

@@ -828,23 +828,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   box-shadow: var(--lift);
 }
 
-.bid-card.stack1 {
-  box-shadow: 2px 2px 0 -1px var(--ok-bg), 2px 2px 0 0 var(--ok-fg),
-              var(--lift);
-}
-
-.bid-card.stack2 {
-  box-shadow: 2px 2px 0 -1px var(--ok-bg), 2px 2px 0 0 var(--ok-fg),
-              4px 4px 0 -1px var(--ok-bg), 4px 4px 0 0 var(--ok-fg),
-              var(--lift);
-}
-
-.bid-card.stack3 {
-  box-shadow: 2px 2px 0 -1px var(--ok-bg), 2px 2px 0 0 var(--ok-fg),
-              4px 4px 0 -1px var(--ok-bg), 4px 4px 0 0 var(--ok-fg),
-              6px 6px 0 -1px var(--ok-bg), 6px 6px 0 0 var(--ok-fg),
-              var(--lift);
-}
+/* (re-submission sheets are inline box-shadows built in updateRow —
+   uncapped per ZOI; the old stack1/2/3 classes died 2026-07-18) */
 
 /* the empty card: the same shape a bid arrives in, nothing in it yet —
    dressed like an empty person cell, breathing in step with it */

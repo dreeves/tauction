@@ -79,7 +79,7 @@ const STR = new Function(STRINGLES
   + '; return { needTwoTip, needOneMoreTip, waitingTip, youTag,'
   + ' awaitingTip, auctionExistsBanner, simulEditsBanner, stampCopy,'
   + ' claimedByTip, mysteryDevice, nameTakenBanner,'
-  + ' moneyGlyphs };')();
+  + ' moneyGlyphs, revealTip };')();
 const STAMP = STR.stampCopy;
 
 // ...and the server's half, out of the vm context hosting Code.gs
@@ -227,6 +227,12 @@ function ok(cond, label) {
   let dom = await makePage('/?api=' + API_URL);
   let doc = dom.window.document;
   ok(dom.window.location.pathname === '/', 'a bare visit stays at /');
+  ok(doc.getElementById('seal').disabled
+     && doc.getElementById('seal').getAttribute('data-tip')
+          === STR.needTwoTip,
+     "the unnamed page's padlock is gray with the standard"
+     + ' need-two-bidders tip (dreev caught it resting on "Reveal'
+     + ' bids!" — the truth of an empty page needs no branch)');
   ok(!apiCalls.some((c) => c.action === 'fresh'),
      'no fresh-name round trip: particle names are gone');
   ok(doc.activeElement === doc.getElementById('aname')
@@ -456,8 +462,10 @@ function ok(cond, label) {
      'one green, one empty after first bid');
   ok(!tiles(doc, '.has-bid')[0].classList.contains('cut'),
      'roster member not crossed out');
-  ok(myInput(doc).className === 'bid-card stack0',
-     'first bid: your editor becomes a single card, no stack');
+  ok(myInput(doc).className === 'bid-card'
+     && myInput(doc).style.boxShadow === 'var(--lift)',
+     'first bid: your editor becomes a single card, no sheets — just'
+     + ' the composable lift');
   // (subs superscript shelved 2026-07-15)
   // ok(tiles(doc, '.has-bid')[0].querySelector('.tile-subs').textContent === '1',
   //    'submission counter ticks to 1');
@@ -1338,6 +1346,28 @@ function ok(cond, label) {
      + ' commit of a row already renamed away is a stale event, not'
      + ' a request)');
 
+  /* --- 2q2. the record freezes at the gavel, × included ----------------
+     Replicata (dreev): "it just let me remove someone from a closed
+     auction" — and a cut row's zombie-purge × could even delete a
+     REVEALED bid (whose seatless remains then tooltip'd 'awaiting
+     bid...', his other sighting). Expectata: every × grays at the
+     gavel. -------------------------------------------------------- */
+  gas.handle({ action: 'add', aname: 'frozencut', uname: 'pam' });
+  gas.handle({ action: 'add', aname: 'frozencut', uname: 'quinn' });
+  gas.handle({ action: 'add', aname: 'frozencut', uname: 'rex' });
+  gas.handle({ action: 'bid', aname: 'frozencut', uname: 'pam', bid: 'p' });
+  gas.handle({ action: 'bid', aname: 'frozencut', uname: 'quinn', bid: 'q' });
+  gas.handle({ action: 'bid', aname: 'frozencut', uname: 'rex', bid: 'r' });
+  gas.handle({ action: 'remove', aname: 'frozencut', uname: 'rex' });
+  gas.handle({ action: 'reveal', aname: 'frozencut' });
+  const dFz = await makePage('/frozencut?api=' + API_URL);
+  await sleep(20);
+  ok(row(dFz.window.document, 'rex').classList.contains('cut')
+     && [...dFz.window.document.querySelectorAll('#tiles .x')]
+          .every((x) => x.disabled),
+     "every × grays at the gavel — even the cut row's zombie-purge ×:"
+     + ' a revealed bid never leaves the record');
+
   /* --- 2u2. the hallway test (dreev + bee, verbatim fumbles) -----------
      Scene: bee's row exists, unclaimed and bidless. A fresh visitor
      (a) taps bee's empty bid box — "clicking on this box doesn't
@@ -1480,7 +1510,7 @@ function ok(cond, label) {
   const seal2 = doc2.getElementById('seal');
   ok(!seal2.disabled && seal2.classList.contains('ready'),
      'padlock unlocks when the roster is complete');
-  ok(seal2.getAttribute('data-tip') === 'Reveal bids!',
+  ok(seal2.getAttribute('data-tip') === STR.revealTip,
      'everyone in: the tip offers the reveal');
   mockDelay = 150;
   seal2.click();
@@ -1643,7 +1673,8 @@ function ok(cond, label) {
        .test(hoverBid(domA, 'ann')),
      "re-submission tooltip: 'first submitted ..., resubmitted ...', got "
      + hoverBid(domA, 'ann'));
-  ok(own[0].querySelector('.rebid input').className === 'bid-card stack1',
+  ok(own[0].querySelector('.rebid input').style.boxShadow
+       .includes('2px 2px'),
      're-bid stacks a sheet behind your card');
   await until(() =>  // domB polls
     tiles(domB.window.document, '.updated').length > 0);
@@ -1654,7 +1685,8 @@ function ok(cond, label) {
     !tiles(domB.window.document, '.updated').length);
   ok(!tiles(domB.window.document, '.updated').length, 'shimmer is one-shot');
 
-  // stack depth caps at 3 layers; the counter stays exact
+  // [FLIPPED 2026-07-18, dreev per ZOI: the cap at 3 was an arbitrary
+  // constant — sheets are UNCAPPED now; heavy revisers wear the pile]
   for (let k = 0; k < 4; k++) {
     await sleep(4);  // stamps must differ
     typeBid(domA, 'edit ' + k);
@@ -1662,8 +1694,10 @@ function ok(cond, label) {
     await settled(domA);
   }
   const annRow = tiles(domA.window.document, '.has-bid')[0];
-  ok(annRow.querySelector('.bid-card').className === 'bid-card stack3',
-     'stack depth caps at 3: ' + annRow.querySelector('.bid-card').className);
+  ok(annRow.querySelector('.bid-card').style.boxShadow
+       .includes('10px 10px'),
+     'six submissions = five sheets, uncapped: the pile IS the'
+     + ' disinducement');
   // (subs superscript shelved 2026-07-15)
   // ok(annRow.querySelector('.tile-subs').textContent === '6',
   //    'counter keeps the exact count past the cap');
@@ -1843,7 +1877,8 @@ function ok(cond, label) {
        .test(hoverBid(domL, 'oldtimer')),
      'a lone log row derives one submission: tooltip takes the single-'
      + 'submission branch, got ' + hoverBid(domL, 'oldtimer'));
-  ok(rowL.querySelector('.bid-card.stack0'), 'legacy row: single card');
+  ok(rowL.querySelector('.bid-card').style.boxShadow === 'var(--lift)',
+     'legacy row: single card, no sheets');
 
   /* --- 4. switching auctions via the auction field; grayed while loading
      (a fresh page: its first 5s poll can't be mid-flight during the

@@ -17,8 +17,11 @@ const claimedByTip = (blurb) => 'Claimed by someone (' + blurb + ')';
 const removeTip = (uname) => 'remove @' + uname;
 const tooLateRemoveTip = (uname) => 'too late to remove @' + uname;
 
-// The padlock's tooltips (the "Reveal bids!" one lives in index.html;
-// the revealed 🎉 wears none — dreev: obvious is obvious)
+// The padlock's tooltips (the revealed 🎉 wears none — dreev:
+// obvious is obvious). revealTip moved here verbatim from
+// index.html 2026-07-18, retiring the SEAL_TIP cache hack; the
+// resting page wears needTwoTip (the truth of an empty roster).
+const revealTip = 'Reveal bids!';
 const needTwoTip = 'Need at least two bidders';
 const needOneMoreTip = 'Need at least one more bidder';
 const waitingTip = (roll) => 'Waiting for ' + roll + ' to bid...';

@@ -371,6 +371,9 @@ function renameParticipant(req) {
 function removeParticipant(req) {
   const aname = cleanAname(req.aname);
   const uname = cleanUname(req.uname);
+  // the record freezes at the gavel — seats AND the cut-row zombie
+  // purge (which would delete a REVEALED bid; dreev caught it live)
+  if (getState(aname).revealed) throw auctionClosedCopy;
   touchAuction(aname);
   const sh = usersTab();
   const i = rows(sh).findIndex(r => r[0] === aname && r[1] === uname);

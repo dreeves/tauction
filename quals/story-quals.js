@@ -794,35 +794,44 @@ async function tipBox(page, i) {
     ok(cols.every((c) => c.bid === cols[0].bid),
        'bid column aligns across rows: ' + JSON.stringify(cols));
 
-    // end early: × the straggler right off the ledger
+    // Another machine's zed bids and gets cut BEFORE the gavel (bid
+    // kept, seat gone — post-close removes are frozen now, so the cut
+    // must precede the reveal); then alice ends early: × the
+    // straggler right off the ledger.
+    gas.handle({ action: 'bid', aname: 'chores', uname: 'zed',
+                 bid: 'zed was here' });
+    gas.handle({ action: 'remove', aname: 'chores', uname: 'zed' });
     await alice.click('.tile[data-uname="evy"] .x');
+    await alice.waitForFunction(() =>
+      document.querySelector('.tile[data-uname="zed"].cut'));
     await alice.waitForFunction(() => !document.getElementById('seal').disabled);
     await alice.click('#seal');
     await alice.waitForFunction(() =>
       document.getElementById('status').textContent.includes('i bid 2 dishes'));
     ok(true, '× the straggler, press the padlock: end-early');
-    // a cut row (bid kept, seat gone — another machine removed dee):
     // the strike-through must read as a confident pen stroke, not a
     // grayed-out row (and no element opacity: the × inside hosts a tip)
-    gas.handle({ action: 'remove', aname: 'chores', uname: 'dee' });
-    await alice.waitForFunction(() =>
-      document.querySelector('.tile[data-uname="dee"].cut'));
     ok(await alice.evaluate(() => {
       const probe = document.createElement('span');
       probe.style.color = 'var(--err-fg)';
       document.body.append(probe);
       const ink = getComputedStyle(probe).color;
       probe.remove();
-      const t = document.querySelector('.tile[data-uname="dee"].cut');
+      const t = document.querySelector('.tile[data-uname="zed"].cut');
       const stroke = getComputedStyle(t, '::after');
       return getComputedStyle(t).opacity === '1'
         && stroke.opacity === '1'
         && stroke.backgroundColor === ink;
     }), 'the cut stroke is full-strength cancellation ink; the row'
        + ' beneath stays legible');
+    // [FLIPPED 2026-07-18: the cut row's × used to stay alive as the
+    // zombie-purge recovery — but post-close it would delete a
+    // REVEALED bid from the record (dreev caught it live), so at the
+    // gavel even that freezes]
     ok(await alice.evaluate(() =>
-      !document.querySelector('.tile[data-uname="dee"] .x').disabled),
-       "the cut row's × stays alive: the recovery path");
+      document.querySelector('.tile[data-uname="zed"] .x').disabled),
+       "the cut row's × grays at the gavel: a revealed bid never"
+       + ' leaves the record');
     await shoot(alice, 'story3-roster-reveal');
 
     /* ================= Story 4: clicks survive op-ack renders ==========
@@ -856,10 +865,12 @@ async function tipBox(page, i) {
        test above) ----------------------------------------------------- */
     await carol.waitForSelector('.tile.mine .rebid input');
     await bid(carol, 'one fish');
-    await carol.waitForSelector('.tile.mine .rebid input.stack0');
+    await carol.waitForSelector('.tile.mine .rebid input.bid-card');
     await carol.$eval('.tile.mine .rebid input', (e) => { e.value = ''; });
     await bid(carol, 'two fish');
-    await carol.waitForSelector('.tile.mine .rebid input.stack1');
+    await carol.waitForFunction(() =>  // one sheet: the 2px pair
+      document.querySelector('.tile.mine .rebid input')
+        .style.boxShadow.includes('2px 2px'));
     ok(await carol.evaluate(() =>
       (getComputedStyle(document.querySelector('.tile.mine .rebid input'))
         .boxShadow.match(/rgba?\(/g) || []).length >= 3),
