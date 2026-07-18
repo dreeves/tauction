@@ -14,7 +14,8 @@ const call = (req) => ctx.handle(req);
 // — they pin the right words in the right place, not the wording
 const COPY = require('vm').runInContext('({ gavelFellCopy,'
   + ' simulEditsCopy, seatHeldCopy, bidSeatHeldCopy, unknownActionCopy,'
-  + ' mysteryDeviceCopy, schemaDriftCopy, auctionClosedCopy })', ctx);
+  + ' mysteryDeviceCopy, schemaDriftCopy, auctionClosedCopy,'
+  + ' rosterClosedCopy })', ctx);
 // Real Apps Script resets globals every execution; one shared vm
 // context hosts the whole qual run, so drift quals empty the
 // header-check memo by hand to simulate a fresh execution
@@ -464,5 +465,33 @@ ok(String(st.error) === COPY.auctionClosedCopy
         .some((b) => b.uname === 'gus'),
    "even the cut-row zombie purge freezes at the gavel: gus's"
    + ' revealed bid stays on the record');
+
+// 12. the freeze doctrine is COMPLETE by construction: every action
+//     in handle()'s switch must be explicitly classified. A new
+//     action added without deciding its post-close policy fails here
+//     — this is the anti-whack-a-mole (each of bid/add/rename/claim/
+//     release/remove was individually forgotten once).
+const CODE_GS = require('fs').readFileSync(
+  require('path').join(__dirname, '..', 'apps-script', 'Code.gs'),
+  'utf8');
+const actions = [...CODE_GS.matchAll(/case '(\w+)':/g)].map((m) => m[1]);
+const FROZEN = ['bid', 'add', 'rename', 'claim', 'release', 'remove'];
+const OPEN = ['state', 'reveal',   // reads and the idempotent latch
+              'describe'];         // the blurb: editable post-close
+                                   // by dreev's explicit design
+ok(actions.length >= 9 && actions.every((a) =>
+     FROZEN.includes(a) || OPEN.includes(a)),
+   'every API action has a declared post-close policy: '
+     + actions.join(','));
+// each freeze speaks its own copy (Womp Womp for bids, no-new-
+// participants for adds, no-editing for the rest) — all refusals
+const REFUSALS = [COPY.auctionClosedCopy, COPY.gavelFellCopy,
+                  COPY.rosterClosedCopy].map(String);
+FROZEN.forEach((a) => {
+  const r = call({ action: a, aname: 'tau', uname: 'alice', from: 'alice',
+                   to: 'zzz', bid: 'x', deviceID: 'd-z', base: '' });
+  ok(REFUSALS.includes(String(r.error)),
+     'frozen action refuses on a closed auction: ' + a + ' -> ' + r.error);
+});
 
 console.log('gas-quals: all ' + passed + ' assertions passed');

@@ -71,6 +71,7 @@ function mockFetch(url, opts) {
 const INDEX_HTML = fs.readFileSync(path.join(REPO, 'index.html'), 'utf8');
 const APP_JS = fs.readFileSync(path.join(REPO, 'app.js'), 'utf8');
 const STRINGLES = fs.readFileSync(path.join(REPO, 'stringles.js'), 'utf8');
+const STYLE_CSS = fs.readFileSync(path.join(REPO, 'style.css'), 'utf8');
 
 // Microcopy DERIVED from stringles.js, so dreev's copy edits there
 // never break the quals — the quals pin that the right string shows
@@ -204,7 +205,35 @@ function ok(cond, label) {
   passed++;
 }
 
+// The z-LADDER is a registry, not folklore (dreev: "still sounds
+// whack-a-moley" — the tips-behind-banner bug was a latent ordering
+// no one had declared). Every z-index in style.css must appear here,
+// at exactly this height; a new overlay must join the ladder
+// CONSCIOUSLY or the suite fails. Heights: summoned beats ambient.
+const Z_LADDER = {
+  '[data-tip]::before': 6,   // a summoned tip outranks everything ours
+  '.fete': 5,                // ...except it: the SOLD stamp moment
+  '#banner': 4,              // ambient news over content
+  '.gavel': 2,               // the busy sign over the grayed ledger
+  '.corner': 2,              // share/help float over the aname card
+  '.rebid .gavel.mini': 1,   // the row-local busy sign
+};                           // (the confetti canvas rides above all
+                             // at the library's 100, by design)
+const zFound = {};
+for (const m of STYLE_CSS.matchAll(/z-index:\s*(\d+)/g)) {
+  const start = STYLE_CSS.lastIndexOf('}', m.index) + 1;
+  const sel = STYLE_CSS.slice(start, m.index)
+    .replace(/\/\*[^]*?\*\//g, '').split('{')[0].trim()
+    .replace(/\s+/g, ' ');
+  zFound[sel] = parseInt(m[1], 10);
+}
+
 (async () => {
+  ok(JSON.stringify(zFound) === JSON.stringify(Z_LADDER)
+     || (Object.keys(zFound).length === Object.keys(Z_LADDER).length
+         && Object.keys(zFound).every((k) => zFound[k] === Z_LADDER[k])),
+     'every z-index in style.css sits declared on the ladder: '
+       + JSON.stringify(zFound));
   /* --- installable: a real manifest, with the gavel as the icon ------- */
   const MANIFEST = JSON.parse(
       fs.readFileSync(path.join(REPO, 'manifest.json'), 'utf8'));

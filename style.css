@@ -147,7 +147,10 @@ button { font: inherit; cursor: pointer; }
   visibility: hidden;
   transition: opacity 0.15s;
   pointer-events: none;
-  z-index: 3;
+  /* above the banner (4) and the ceremony stamp (5): a tip you are
+     actively summoning outranks ambient overlays — the sticky
+     dead-end banner exposed the old z:3 losing to the banner's 4 */
+  z-index: 6;
   /* the host's text styling must not leak into the tip (the gold
      star's glow and stroke famously did) */
   text-transform: none;

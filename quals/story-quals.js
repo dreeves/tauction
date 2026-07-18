@@ -567,6 +567,33 @@ async function tipBox(page, i) {
     await bob.goto(BASE + '/' + slug, { waitUntil: 'networkidle0' });
     await bob.waitForSelector('#tiles .tile.has-bid');
     const bobSees = await text(bob, '#status');
+    /* ---- universal tooltip-host hygiene (the whole CLASS, not just
+       the hosts that bit us in the original behind-the-rows bug): no
+       [data-tip] host nor any ancestor may create a stacking context
+       — swept live on a page holding every row state (bid-in row,
+       breathing bidless row, header hosts). --------------------- */
+    await bob.waitForFunction(() => !document.getElementById('status')
+      .classList.contains('stale'));
+    ok(await bob.evaluate(() => {
+      const makers = [];
+      document.querySelectorAll('[data-tip]').forEach((host) => {
+        for (let el = host; el && el !== document.body;
+             el = el.parentElement) {
+          const s = getComputedStyle(el);
+          const why = [];
+          if (s.opacity !== '1') why.push('opacity');
+          if (s.transform !== 'none') why.push('transform');
+          if (s.filter !== 'none') why.push('filter');
+          if (s.willChange !== 'auto') why.push('will-change');
+          if (s.zIndex !== 'auto' && s.position !== 'static'
+              && el !== host) why.push('z-index');
+          if (why.length) makers.push((host.className || host.id)
+            + ' under ' + (el.className || el.id) + ': ' + why);
+        }
+      });
+      return makers.length ? makers.join('; ') : true;
+    }) === true,
+       'no tooltip host sits inside a stacking context, anywhere');
     ok(!bobSees.includes('three tacos') && await bob.$('#status .tile-bid .masked'),
        "bob can't see alice's bid, only a masked decoy");
     ok(await bob.evaluate(() => getComputedStyle(
@@ -658,6 +685,33 @@ async function tipBox(page, i) {
     ok(await bob.$eval('.tile.mine .rebid input', (e) => e.disabled),
        'the gavel drop is a bright line: the editor goes dead at the'
        + ' reveal');
+    /* Replicata (dreev's screenshot): his own revealed bid rendered
+       GRAY — the dead editor wears the UA's disabled wash while
+       everyone else's card reads in full ink. The record is not gray
+       history. And the whole CLASS closes: NO rendered text on any
+       disabled control may wear the UA wash (the grayed-🎉 bug's
+       family; our own dims always set an explicit color). */
+    ok(await bob.evaluate(() => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--fg)';
+      document.body.append(probe);
+      const ink = getComputedStyle(probe).color;
+      probe.remove();
+      return getComputedStyle(document.querySelector(
+        '.tile.mine .rebid input')).color === ink;
+    }), 'your own revealed bid reads in FULL ink, same as every card');
+    ok(await bob.evaluate(() => {
+      const washed = [];
+      document.querySelectorAll(':disabled').forEach((el) => {
+        if (!(el.value || el.textContent || '').trim()) return;
+        if (getComputedStyle(el).color === 'rgba(16, 16, 16, 0.3)') {
+          washed.push(el.className || el.id);
+        }
+      });
+      return washed.length ? washed.join(';') : true;
+    }) === true,
+       "no rendered control anywhere wears the UA's disabled wash:"
+       + ' dimming is always ours, never the browser default');
     // the flip now rides the STRIKE's beat (dreev lined up SOLD and
     // the tada), so wait for it rather than sampling the wind-up
     await bob.waitForFunction(() => getComputedStyle(
@@ -1152,6 +1206,28 @@ async function tipBox(page, i) {
          .find((b) => b.uname === 'ann').bid === 'first word',
        'a half-typed revision races the gavel on its own and loses'
        + ' out loud; the sheet keeps the pre-gavel bid');
+
+    /* ---- tooltips outrank the banner --------------------------------
+       Replicata (dreev: "tooltips appearing behind other elements" —
+       again, but NOT the old stacking-context class; those quals
+       hold): the banner always sat at z 4 over z-3 tips, invisible
+       for months because banners self-dismissed in 5s. The sticky
+       dead-end banner made the latent ordering observable.
+       Expectata: a tip you are actively summoning outranks the
+       ambient banner. ---------------------------------------------- */
+    await wire.$eval('#aname', (e) => { e.value = ''; });
+    await wire.type('#aname', 'chores');  // occupied: sticky banner
+    await wire.waitForFunction(() =>
+      !document.getElementById('banner').hidden
+      && document.querySelector('#banner a'));
+    await wire.hover('label[for="aname"]');
+    ok(await wire.evaluate(() =>
+      parseInt(getComputedStyle(document.querySelector(
+        'label[for="aname"]'), '::before').zIndex, 10)
+      > parseInt(getComputedStyle(
+          document.getElementById('banner')).zIndex, 10)),
+       'a summoned tooltip paints over the standing banner, not'
+       + ' behind it');
 
     console.log('story-quals: all ' + passed + ' assertions passed');
   } finally {
