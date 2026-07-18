@@ -229,7 +229,47 @@ for (const m of STYLE_CSS.matchAll(/z-index:\s*(\d+)/g)) {
   zFound[sel] = parseInt(m[1], 10);
 }
 
+// The 0.6-RELIC detector (dreev's grayed bid: a forgotten
+// `.rebid input:disabled { opacity: 0.6 }` later in the file
+// silently beat the intended rule). Its mechanical signature: the
+// same selector assigning the same property two different values.
+// The rare INTENTIONAL cases live in this registry; anything else
+// is a silent battle and fails loudly.
+const CSS_OVERRIDE_REGISTRY = [
+  // the + row zeroes the shared row-cell gap: its 1.9rem marker slot
+  // absorbs it so the @s align down the column
+  '.addrow .at-wrap|gap',
+  // the spark's middle ray is longer than its ::before/::after mates
+  '.gavel .bang > span|width',
+];
+const cssBattles = [];
+{
+  const flatCss = STYLE_CSS.replace(/\/\*[^]*?\*\//g, '')
+    .replace(/@keyframes[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '')
+    .replace(/@media[^{]*\{((?:[^{}]*\{[^{}]*\})*)[^{}]*\}/g, '');
+  const assign = {};  // 'selector|prop' -> value first seen
+  for (const m of flatCss.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    for (const rawSel of m[1].split(',')) {
+      const sel = rawSel.trim().replace(/\s+/g, ' ');
+      for (const d of m[2].split(';')) {
+        if (!d.includes(':')) continue;
+        const i = d.indexOf(':');
+        const key = sel + '|' + d.slice(0, i).trim();
+        const val = d.slice(i + 1).trim();
+        if (key in assign && assign[key] !== val
+            && !CSS_OVERRIDE_REGISTRY.includes(key)) {
+          cssBattles.push(key + ': ' + assign[key] + ' VS ' + val);
+        }
+        assign[key] = val;
+      }
+    }
+  }
+}
+
 (async () => {
+  ok(cssBattles.length === 0,
+     'no unregistered same-selector CSS battles (the 0.6-relic'
+     + ' class): ' + cssBattles.join('; '));
   ok(JSON.stringify(zFound) === JSON.stringify(Z_LADDER)
      || (Object.keys(zFound).length === Object.keys(Z_LADDER).length
          && Object.keys(zFound).every((k) => zFound[k] === Z_LADDER[k])),
