@@ -1250,6 +1250,34 @@ function ok(cond, label) {
   ok(dPwa.window.document.getElementById('banner').hidden,
      'landing somewhere real finally clears it');
 
+  /* --- 2t3. Escape means "never mind" in EVERY field -------------------
+     One universal rule: Escape reverts a field to its baseline
+     (defaultValue, the committed truth everywhere) and leaves. New
+     ground covered: the auction-name field — abandoning a half-typed
+     switch used to be impossible (the debounce fired regardless). */
+  const dEsc = await makePage('/eschome?api=' + API_URL);
+  await sleep(20);
+  dEsc.window.document.getElementById('aname').focus();
+  type(dEsc, 'aname', 'somewhereelse');
+  dEsc.window.document.getElementById('aname').dispatchEvent(
+    new dEsc.window.KeyboardEvent('keydown',
+      { key: 'Escape', bubbles: true }));
+  await sleep(700);  // outlive the switch debounce
+  ok(dEsc.window.document.getElementById('aname').value === 'eschome'
+     && dEsc.window.location.pathname === '/eschome',
+     'Escape in the auction field abandons the half-typed switch:'
+     + ' name restored, nobody navigates');
+  dEsc.window.document.getElementById('roster-input').focus();
+  type(dEsc, 'roster-input', 'oops');
+  dEsc.window.document.getElementById('roster-input').dispatchEvent(
+    new dEsc.window.KeyboardEvent('keydown',
+      { key: 'Escape', bubbles: true }));
+  await sleep(50);
+  ok(dEsc.window.document.getElementById('roster-input').value === ''
+     && !row(dEsc.window.document, 'oops'),
+     'Escape in the + row abandons the typed name: cleared, not'
+     + ' committed (the blur that follows finds nothing)');
+
   /* --- 2u. name, TAB, bid (dreev's add-self flow) ----------------------
      Adding YOURSELF should leave the bid field one tab away: type
      your name, tab, type your bid. Only when the fresh row is yours

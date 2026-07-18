@@ -589,12 +589,6 @@ function buildBidContent(kind, uname) {
       if (v !== '' && v !== input.defaultValue
           && v !== input.dataset.sent) placeBid(uname, form);
     });
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {  // abandon the edit, like the names —
-        input.value = input.defaultValue;  // the only way out, now
-        input.blur();  // that clicking away saves (clean blur: no-op)
-      }
-    });
     form.append(input);
     // the row-local busy sign: a mini gavel, shown by .rebid.busy
     const g = el('span', 'gavel mini');
@@ -822,9 +816,6 @@ function buildNameField(uname) {
     input.classList.remove('error');  // objection acknowledged
     const v = sanUname(input.value);
     if (v !== input.value) input.value = v;
-  });
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { input.value = uname; input.blur(); }
   });
   // Clicking/tapping away SAVES (dreev, 2026-07-17, reversing the
   // old restore-on-blur: on a phone nobody expects the return key to
@@ -1161,6 +1152,7 @@ async function switchAuction(a) {
     }
     aname = a;
     setPath(aname);
+    $('aname').defaultValue = a;  // the new committed baseline
     $('banner').hidden = true;  // landing somewhere real clears any
                                 // dead-end sign still standing
     state = null;
@@ -1194,17 +1186,22 @@ function wireUp() {
     if (b) b.blur();
   }, true);
 
+  // Universal field hygiene, part two: Escape means "never mind" —
+  // revert to the baseline and leave. defaultValue IS the committed
+  // truth in every field (the never-clobber convention), so ONE rule
+  // covers them all; the blur that follows finds a clean field and
+  // commits nothing. No per-field Escape wiring anywhere.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const f = e.target.closest('input, textarea');
+    if (f) { f.value = f.defaultValue; f.blur(); }
+  }, true);
+
   $('seal').addEventListener('click', pressReveal);
   $('desctoggle').addEventListener('click', editDesc);
   $('descedit').addEventListener('blur', commitDesc);
   $('descedit').addEventListener('input', () => {
     $('descedit').classList.remove('error');  // objection acknowledged
-  });
-  $('descedit').addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {  // revert, like the name fields; the
-      $('descedit').value = $('descedit').defaultValue;  // now-clean
-      $('descedit').blur();  // blur just flips back to rendered
-    }
   });
 
   $('share').addEventListener('click', openShare);
@@ -1250,10 +1247,6 @@ function wireUp() {
       e.preventDefault();
       commitAdd();
     }
-    if (e.key === 'Escape') {  // abandon, like every field
-      $('roster-input').value = '';
-      $('roster-input').blur();
-    }
   });
   // tapping away commits here too (the + row is a field like any
   // other; an empty blur commits nothing and objects to nothing)
@@ -1274,6 +1267,7 @@ async function init() {
   const m = location.pathname.match(/^\/([a-zA-Z0-9]{1,40})\/?$/);
   if (m) aname = m[1].toLowerCase();
   $('aname').value = aname;
+  $('aname').defaultValue = aname;  // the baseline Escape reverts to
 
   if (!configured) {
     banner(e2156);
