@@ -713,6 +713,31 @@ const cssBattles = [];
   ok(gas.handle({ action: 'state', aname: 'keepname' }).roster.join(',')
      === 'uno,dos', 'both names reach the server');
 
+  /* --- 2w. the cold-page double-add must not dead-key --------------------
+     Replicata: first-ever visit to an auction URL (no cache to paint)
+     on a slow server; type your name, enter. No snapshot has landed,
+     so no row can render — nothing visibly happens — and you type the
+     name again. Resultata pre-fix: me() dereferenced the null state
+     and the keystroke died silently in the listener; the + row was a
+     dead key from then on. Expectata: the retype clears quietly (that
+     pending name is already you) and one seat lands. */
+  mockDelay = 900;
+  const dCold2 = await makePage('/coldadd?api=' + API_URL);
+  addName(dCold2, 'ann');
+  addName(dCold2, 'ann');  // the impatient retype, everything in flight
+  ok(dCold2.window.document.getElementById('roster-input').value === ''
+     && !dCold2.window.document.getElementById('roster-input')
+          .classList.contains('error'),
+     'retyping your own cold-pending name clears quietly: no dead key,'
+     + ' no objection');
+  mockDelay = 0;
+  await until(() => gas.handle({ action: 'state', aname: 'coldadd' })
+    .roster.join(',') === 'ann');
+  ok(gas.handle({ action: 'state', aname: 'coldadd' }).roster.join(',')
+       === 'ann'
+     && dCold2.window.localStorage.getItem('tauction-uname') === 'ann',
+     'one seat, once, when the dust settles — and it is yours');
+
   /* --- 2h. fix a typo: rename in place -----------------------------------
      Anyone can rename anyone (honor system, like all roster edits) via
      the ✎, which uses window.prompt — no in-place edit state. The seat,
@@ -908,6 +933,33 @@ const cssBattles = [];
      'a clean blur of a BLANK blurb stays in edit mode: flipping'
      + ' would trade the placeholder for an invisible empty pane');
 
+  /* code spans are LITERAL. Replicata: describe an auction with
+     backticked text containing markdown syntax. Resultata pre-fix:
+     the bold/italic/link passes ran over the <code> contents the
+     code pass had just emitted, so `a*b*c` rendered with live
+     italics inside the code span. Expectata: what's in backticks
+     comes out verbatim — while code can still LABEL a link, and
+     emphasis outside code still works. */
+  gas.handle({ action: 'describe', aname: 'codespan', base: '',
+    blurb: 'ecce `a*b*c` et `**x**` et [`y`](https://e.com) et *z*' });
+  gas.handle({ action: 'add', aname: 'codespan', uname: 'c' });
+  const domCs = await makePage('/codespan?api=' + API_URL);
+  const csDoc = domCs.window.document;
+  const codeEls = [...csDoc.querySelectorAll('#descview code')];
+  ok(codeEls.length === 3
+     && codeEls[0].textContent === 'a*b*c'
+     && codeEls[1].textContent === '**x**'
+     && !csDoc.querySelector('#descview code em')
+     && !csDoc.querySelector('#descview code strong'),
+     'code spans are literal: stars inside backticks never'
+     + ' italicize or bold');
+  ok(csDoc.querySelector('#descview a code')
+     && csDoc.querySelector('#descview a').textContent === 'y',
+     'a code span can still label a link');
+  ok(csDoc.querySelector('#descview em')
+     && csDoc.querySelector('#descview em').textContent === 'z',
+     'emphasis outside the backticks still works');
+
   // hostile markdown renders inert (escape-first, whitelisted links)
   gas.handle({ action: 'describe', aname: 'evil', base: '',
     blurb: '<script>window.pwned=1</script>\n\n'
@@ -924,6 +976,93 @@ const cssBattles = [];
           .includes('<script>'),
      'hostile markdown is inert: tags mere text, javascript: links'
      + ' never become links at all');
+
+  /* --- 2p4. the mdRender fuzz battery ----------------------------------
+     500 deterministic rounds of adversarial markdown soup (seeded, so
+     a failure is a permanent replicata: the label prints the exact
+     input). The renderer's promises, held under fire: it never
+     throws, it's a pure function, only whitelisted tags materialize,
+     attributes appear only on <a> (href http(s)-only), the code-stash
+     placeholder neither leaks nor can be counterfeited, and code
+     spans admit no markup. The soup leans into collisions: half-open
+     syntax, nested markers, hostile HTML, and a forged <<0>>. */
+  const domMd = await makePage('/?api=' + API_URL);
+  // the app's eval scope is sealed ('use strict'), so re-eval the
+  // same sources with mdRender as the completion value; the duplicate
+  // init() idles harmlessly on this throwaway unnamed page
+  const mdRender = domMd.window.eval(
+    STRINGLES + '\n;\n' + APP_JS + '\n;mdRender');
+  const mdProbe = domMd.window.document.createElement('div');
+  const MD_TAGS = ['P', 'BR', 'H1', 'H2', 'H3', 'HR', 'UL', 'OL', 'LI',
+                   'BLOCKQUOTE', 'CODE', 'STRONG', 'EM', 'A'];
+  // (the whole-link tokens are load-bearing: random shards of [ ] ( )
+  // essentially never assemble a valid link, so without them the <a>
+  // invariants sat unexercised — caught by the coverage floor below)
+  const MD_SOUP = ['`', '*', '**', '[', ']', '(', ')', '# ', '## ',
+    '### ', '[t](https://e.co/x)', '[`t`](https://e.co/x)',
+    '- ', '1. ', '> ', '---', '\n', '\n\n', ' ', 'tau',
+    'https://e.co/p?a=1&b=2', '<script>alert(1)</script>',
+    '<img src=x onerror=alert(1)>', '](javascript:alert(1))', '"',
+    '&amp;', '&', '<<0>>', '\\', '_', '\u{1f4b8}'];
+  // mulberry32: tiny, seeded, deterministic — the same soup every run
+  let mdSeed = 0x5eed;
+  const mdRand = () => {
+    mdSeed = mdSeed + 0x6d2b79f5 | 0;
+    let t = Math.imul(mdSeed ^ mdSeed >>> 15, 1 | mdSeed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+  const mdSins = {};  // broken promise -> the first input that broke it
+  const sin = (label, input) => {
+    if (mdSins[label] === undefined) mdSins[label] = input;
+  };
+  const mdSeen = {};  // tag -> times materialized (the vacuity guard)
+  for (let i = 0; i < 500; i++) {
+    let input = '';
+    const n = 1 + Math.floor(mdRand() * 30);
+    for (let j = 0; j < n; j++) {
+      input += MD_SOUP[Math.floor(mdRand() * MD_SOUP.length)];
+    }
+    let html;
+    try { html = mdRender(input); } catch (e) { sin('throws', input); }
+    if (html === undefined) continue;
+    if (typeof html !== 'string') { sin('non-string', input); continue; }
+    if (html !== mdRender(input)) sin('impure', input);
+    if (/<<\d+>>/.test(html)) sin('placeholder leak', input);
+    mdProbe.innerHTML = html;
+    for (const el of mdProbe.querySelectorAll('*')) {
+      mdSeen[el.tagName] = (mdSeen[el.tagName] || 0) + 1;
+      if (!MD_TAGS.includes(el.tagName)) {
+        sin('tag off the whitelist (' + el.tagName + ')', input);
+      }
+      const attrs = el.getAttributeNames().sort().join();
+      if (attrs !== (el.tagName === 'A' ? 'href,rel,target' : '')) {
+        sin('attribute off the whitelist (' + attrs + ')', input);
+      }
+      if (el.tagName === 'A'
+          && !/^https?:\/\//.test(el.getAttribute('href'))) {
+        sin('non-http(s) href', input);
+      }
+    }
+    for (const code of mdProbe.querySelectorAll('code')) {
+      // (a <br> may ride inside: line joins precede the inline pass)
+      if ([...code.querySelectorAll('*')]
+            .some((e) => e.tagName !== 'BR')) {
+        sin('markup inside a code span', input);
+      }
+    }
+  }
+  mdProbe.innerHTML = '';  // leave no fuzz behind
+  ok(Object.keys(mdSins).length === 0,
+     'the fuzz battery: 500 rounds of markdown soup keep every promise'
+       + Object.entries(mdSins).map(([k, v]) =>
+           '; BROKEN, ' + k + ', by input ' + JSON.stringify(v)).join(''));
+  // a battery with no coverage passes vacuously: every whitelisted
+  // tag must actually have materialized under fire (deterministic
+  // soup, so this can never flake — only rot, loudly)
+  ok(MD_TAGS.every((t) => mdSeen[t] > 0),
+     'the soup exercises every whitelisted tag, sat: '
+       + JSON.stringify(mdSeen));
   // the clobber dance: two windows, one description
   const dA = await makePage('/descy?api=' + API_URL);
   const dB = await makePage('/descy?api=' + API_URL);
@@ -1867,6 +2006,42 @@ const cssBattles = [];
   ok(gas.handle({ action: 'state', aname: 'wire' }).bids
        .find((b) => b.uname === 'ann').bid === 'first thoughts',
      'the sheet keeps the bid that beat the gavel');
+
+  /* --- the under-the-wire race you can't lose AGAINST YOURSELF ----------
+     Replicata: everyone's in; you submit a revision and press the
+     (lit) padlock while the revision still flies. Resultata pre-fix:
+     the reveal bypassed the op chain and could overtake your own bid
+     on the wire — Womp Womp by your own hand, with the OLD bid
+     standing revealed under an editor showing the new text.
+     Expectata: writes land in the order you made them — the reveal
+     rides the same chain as every other write, so the revision
+     stands. */
+  gas.handle({ action: 'add', aname: 'selfwire', uname: 'ann' });
+  gas.handle({ action: 'add', aname: 'selfwire', uname: 'zed' });
+  gas.handle({ action: 'bid', aname: 'selfwire', uname: 'zed', bid: 'z',
+               deviceID: 'dz' });
+  const domSW = await makePage('/selfwire?api=' + API_URL);
+  claimRow(domSW, 'ann');
+  typeBid(domSW, 'first thoughts');
+  submitBid(domSW);
+  await settled(domSW);
+  mockDelay = 500;             // the revision is slow...
+  typeBid(domSW, 'final answer');
+  submitBid(domSW);
+  mockDelay = 0;               // ...and the reveal press is instant
+  domSW.window.document.getElementById('seal').click();
+  await settled(domSW);
+  await until(() => gas.handle({ action: 'state', aname: 'selfwire' })
+    .revealed);
+  ok(domSW.window.document.getElementById('banner').hidden,
+     'no Womp Womp by your own hand: your reveal press never overtakes'
+     + ' your still-flying revision');
+  ok(gas.handle({ action: 'state', aname: 'selfwire' }).bids
+       .find((b) => b.uname === 'ann').bid === 'final answer',
+     'the revision beat the gavel: writes land in click order');
+  ok(myInput(domSW.window.document).value === 'final answer'
+     && myInput(domSW.window.document).disabled,
+     'and the frozen editor agrees with the revealed record');
 
   // first window catches up via polling (jsdom timers run; wait for it)
   await until(() =>

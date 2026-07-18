@@ -334,7 +334,9 @@ function commitDesc() {
 function me() {
   const u = localStorage.getItem('tauction-uname') || '';
   if (!slotUnames().includes(u)) return '';
-  const holder = state.claims[u];
+  // no snapshot yet = no claims are known: optimistically yours (the
+  // same optimistic moment as an unclaimed-on-the-server seat)
+  const holder = state === null ? undefined : state.claims[u];
   return holder === undefined || holder === DEVICE ? u : '';
 }
 
@@ -369,7 +371,10 @@ function knownBids() {
 // Uses the LOCAL roster so your chip edits show up instantly (the box
 // stays grayed via .stale until the server confirms them).
 function slotUnames() {
-  const unames = state.bidders.map((b) => b.uname);
+  // pre-snapshot (a cold page's first seconds, names already typed)
+  // the local roster is the whole story: no walk-ons are known yet
+  const unames = state === null ? []
+    : state.bidders.map((b) => b.uname);
   return roster.concat(unames.filter((u) => !roster.includes(u)));
 }
 
@@ -798,12 +803,22 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
 function mdRender(md) {
   const esc = md.replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const inline = (s) => s
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
-      '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // Code spans are LITERAL, so they're stashed behind placeholders
+  // while the other transforms run (`*x*` must not italicize) and
+  // restored after — which also lets a code span label a link. The
+  // placeholder is unforgeable: the escape pass left no raw '<' in
+  // the text, and emitted tags never put two in a row.
+  const inline = (s) => {
+    const stash = [];
+    return s
+      .replace(/`([^`]+)`/g, (_, c) =>
+        '<<' + (stash.push('<code>' + c + '</code>') - 1) + '>>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+        '<a href="$2" target="_blank" rel="noopener">$1</a>')
+      .replace(/<<(\d+)>>/g, (_, i) => stash[i]);
+  };
   return esc.split(/\n{2,}/).map((b) => {
     const lines = b.split('\n');
     const h = lines.length === 1 && lines[0].match(/^(#{1,3}) (.*)$/);
@@ -1120,20 +1135,25 @@ function settleWrite(res, at, onRefusal) {
   }
 }
 
-async function pressReveal() {
+function pressReveal() {
   $('seal').disabled = true;  // no double-fire; render recomputes it
   // the reveal is the most table-wide op there is: the big gavel
   // hammers over the grayed ledger while it round-trips (the settle's
   // render lifts the stale)
   $('status').classList.add('stale');
   const at = startWrite();
-  let res = null;
-  try {
-    res = await apiPost({ action: 'reveal', aname: aname });
-  } catch (e) {
-    banner(e2155(e.message));
-  }
-  settleWrite(res, at);  // exactly once, whatever happened
+  // the reveal rides the op chain like every other write: it must
+  // never overtake your own still-flying revision on the wire (your
+  // clicks land in the order you made them)
+  opChain = opChain.then(async () => {
+    let res = null;
+    try {
+      res = await apiPost({ action: 'reveal', aname: aname });
+    } catch (e) {
+      banner(e2155(e.message));
+    }
+    settleWrite(res, at);  // exactly once, whatever happened
+  });
 }
 
 
