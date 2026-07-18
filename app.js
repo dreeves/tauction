@@ -184,6 +184,14 @@ function setPath(a) {
   history.replaceState(null, '', '/' + a + location.search);
 }
 
+// The one true stamp shape: what toISOString mints, what the sheet
+// stores as text, what compares lexicographically. Asserted in FULL
+// (anti-Postel): a stamp cell that loses its plain-text format gets
+// coerced by Sheets and reads back as "Fri Jul ... GMT-0700 (...)" —
+// whose GMT smuggled a 'T' past the old includes-check while silently
+// breaking the stamp ordering (and a blank stamp rendered "NaNd ago").
+const STAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
 function assertState(res) {
   assert(res !== null && typeof res === 'object'
     && typeof res.aname === 'string'
@@ -191,11 +199,11 @@ function assertState(res) {
     && Array.isArray(res.roster)
     && res.roster.every((u) => typeof u === 'string')
     && Array.isArray(res.bidders) && res.bidders.every(
-      (b) => typeof b.uname === 'string' && typeof b.tini === 'string'
-          && typeof b.tmod === 'string' && typeof b.bcount === 'number')
+      (b) => typeof b.uname === 'string' && STAMP_RE.test(b.tini)
+          && STAMP_RE.test(b.tmod) && typeof b.bcount === 'number')
     && typeof res.revealed === 'boolean'
     && typeof res.tfin === 'string'
-    && (res.tfin === '' || res.tfin.includes('T'))
+    && (res.tfin === '' || STAMP_RE.test(res.tfin))
     && typeof res.blurb === 'string' && typeof res.tblurb === 'string'
     && res.claims !== null && typeof res.claims === 'object'
     && !Array.isArray(res.claims)
@@ -213,16 +221,9 @@ function assertState(res) {
 // next page load can paint instantly instead of flashing a blank roster
 function ingest(res) {
   assertState(res);
-  const serverUnames = new Set(res.roster.concat(
-    res.bidders.map((b) => b.uname)));
-  pendingRenames.forEach((pending) => {
-    if (!serverUnames.has(pending.to) || serverUnames.has(pending.from)) {
-      pending.restoreIdentity();
-    }
-  });
+  reconcileTransportRenames(res);
   res.claims = umap(res.claims);
   res.blurbs = umap(res.blurbs);
-  pendingRenames.clear();
   state = res;
   localStorage.setItem('tauction-state:' + res.aname, JSON.stringify(res));
   // Your device's registered claim is authoritative for who you are: if
@@ -423,6 +424,11 @@ function slotUnames() {
 let lastPrint = '';  // fingerprint of the last-rendered rows
 let rowNodes = umap();   // uname -> its living row node (keyed reuse)
 
+function pendingRename(uname) {
+  return pendingRenames.get(uname) || [...pendingRenames.values()]
+    .find((tx) => tx.confirmed === uname);
+}
+
 function renderStatus() {
   // Skip no-op rebuilds: replacing the nodes destroys any button mid-
   // click (mousedown and mouseup must hit the same node), so a rebuild
@@ -430,7 +436,10 @@ function renderStatus() {
   // are in the fingerprint because the render right after a reveal or a
   // shimmer must still run: it retires those one-shot effects.
   const print = JSON.stringify([aname, wasRevealed, seen,
-    [...pendingRenames.keys()], slotUnames(),
+    [...pendingRenames.values()].map((tx) => [
+      tx.confirmed, tx.desired,
+      tx.flight === null ? null : [tx.flight.from, tx.flight.to],
+    ]), slotUnames(),
     state.bidders, state.roster, state.revealed, state.tfin,
     state.claims, state.blurbs, me(), knownBids()]);
   if (print === lastPrint) return;
@@ -739,7 +748,8 @@ function buildBidContent(kind, uname) {
 function updateRow(t, uname, b, mine, known, placed, locked) {
   const stamp = b === undefined ? undefined : b.tmod;
   const bcount = b === undefined ? 0 : b.bcount;
-  const pending = pendingRenames.has(uname);
+  const rename = pendingRename(uname);
+  const pending = rename !== undefined;
   // Every row leads with its star, a radio for who-you-are: hollow =
   // claimable, dimmed hollow = dibsed, gold fill = you. A row is dibsed by
   // a rival device's registered claim, or (for claim-less legacy rows)
@@ -773,7 +783,8 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
   t.classList.toggle('mine', uname === mine);
   // names freeze at the gavel, like bids (dreev: a post-close rename
   // could swap around who bid what) — grayed, never suppressed
-  t.querySelector('.rename input').disabled = state.revealed || pending;
+  t.querySelector('.rename input').disabled = state.revealed
+    || (pending && uname !== rename.desired);
   t.classList.toggle('cut',
     stamp !== undefined && !roster.includes(uname));
   // one-shot shimmer; a reused node needs the remove-reflow-add dance
@@ -910,6 +921,10 @@ function mdRender(md) {
 
 // "2026-07-16 13:01 Thu" — dreev's exact Closed-line format, in the
 // viewer's local time
+// (deliberately local, and with no zone marker: two viewers in
+// different zones see different wall-clock text for the same tfin
+// instant — the line is for reading in place, not for quoting
+// across timezones)
 function closedStamp(iso) {
   const d = new Date(iso);
   const p = (n) => String(n).padStart(2, '0');
@@ -979,9 +994,38 @@ function buildNameField(uname) {
   return form;
 }
 
+// Snapshot this browser's identity pair (uname + the raw bid-memory
+// string) as it stands RIGHT NOW; the returned restorer reapplies it
+// byte for byte — but only if the identity still rides the given tx
+// (the user may have moved to another row via a star meanwhile:
+// never clobber that)
+function identitySnap(tx) {
+  const key = 'tauction-mybids:' + aname;
+  const uname = localStorage.getItem('tauction-uname');
+  const bids = localStorage.getItem(key);
+  return () => {
+    if (localStorage.getItem('tauction-uname') !== tx.desired) return;
+    if (uname === null) localStorage.removeItem('tauction-uname');
+    else localStorage.setItem('tauction-uname', uname);
+    if (bids === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, bids);
+  };
+}
+
 // Fix a typo'd name — anyone may, honor system, like all roster edits.
 // The server re-keys the seat and any bid together and refuses names
 // already seated.
+//
+// A rename is a TRANSACTION: confirmed = the name the server last
+// acknowledged for this seat, desired = the name on screen, flight =
+// the one leg on the wire. Edits to a settling row stay LIVE: they
+// advance the screen and identity instantly but ride the wire only
+// as the NEXT leg, launched after the current one confirms — so a
+// chain can never send a from-name the server never granted us (the
+// stale alice→beta→gamma edit that renamed someone else's remote
+// beta). rollback restores identity to the confirmed point when a
+// leg is refused; nextRollback remembers the newest point consistent
+// with the flight, for chained edits.
 function commitRename(from, raw, field) {
   const to = sanUname(raw);
   if (!to || to === from) { field.value = field.defaultValue; return; }
@@ -992,50 +1036,102 @@ function commitRename(from, raw, field) {
   // falsely cried "taken" (dreev's bug). Also quiets a row removed
   // mid-edit, and cut rows (rosterless by definition), which used to
   // error server-side instead of declining.
-  if (!roster.includes(from) || pendingRenames.has(from)) return;
-  if (slotUnames().includes(to)) {
+  if (!roster.includes(from)) return;
+  let tx = pendingRename(from);
+  assert(tx === undefined || tx.desired === from,
+    'rename edit on a name that is not the on-screen one');
+  // Typing the pending edit's ORIGINAL name back is the undo of that
+  // edit, never a collision with its own ghost (the old name's bid
+  // row walks on until the wire catches up), so the tx's own
+  // confirmed name is always a legal destination — the leg machinery
+  // below then walks the server back of its own accord.
+  if (slotUnames().includes(to)
+      && !(tx !== undefined && to === tx.confirmed)) {
     banner(nameTakenBanner);
     field.classList.add('error');  // the problem is THIS field
     return;
   }
-  const renamedAt = roster.indexOf(from);
-  let restoreIdentity = () => {};
+  let fresh = false;
+  if (tx === undefined) {
+    fresh = true;
+    tx = { confirmed: from, desired: to, flight: null,
+           rollback: null, nextRollback: null };
+    tx.rollback = identitySnap(tx);  // the pre-rename state
+  } else {
+    // a dependent edit: remember the newest flight-consistent state
+    // once per leg (later edits before the next leg keep the first)
+    if (tx.nextRollback === null) tx.nextRollback = identitySnap(tx);
+    pendingRenames.delete(tx.desired);
+    tx.desired = to;
+  }
   if (from === me()) {
     // your own rename must not unseat you while the op flies: local
     // identity and bid memory follow immediately
-    const bidKey = 'tauction-mybids:' + aname;
-    const savedBids = localStorage.getItem(bidKey);
-    const restoreBids = savedBids === null
-      ? () => localStorage.removeItem(bidKey)
-      : () => localStorage.setItem(bidKey, savedBids);
-    restoreIdentity = () => {
-      if (localStorage.getItem('tauction-uname') !== to) return;
-      localStorage.setItem('tauction-uname', from);
-      restoreBids();
-    };
     localStorage.setItem('tauction-uname', to);
     rekeyMyBids(aname, from, to);
   }
-  pendingRenames.set(to, { from: from, to: to,
-                           restoreIdentity: restoreIdentity });
   roster = roster.map((u) => (u === from ? to : u));
-  // a server-side refusal (a stale-roster race the local guard can't
-  // see) reddens the field too, same as the local objection
-  queueOp({ action: 'rename', aname: aname, from: from, to: to },
-          () => {
-            pendingRenames.delete(to);
-            restoreIdentity();
-            roster = roster.map((u, i) =>
-              i === renamedAt && u === to ? from : u);
-            renderStatus();
-            const recovered = rowNodes[from];
-            assert(recovered, 'rename rollback lost its source row');
-            recovered.querySelector('.rename input')
-              .classList.add('error');
-          }, () => {
-            pendingRenames.delete(to);
-            renderStatus();
-          });
+  pendingRenames.set(to, tx);
+  if (fresh) launchRename(tx);
+  if (state) renderStatus();  // a dependent edit repaints without a queue
+}
+
+// Put a rename transaction's next leg on the op chain: always from
+// the CONFIRMED name, so the server is only ever asked about names
+// it granted us.
+function launchRename(tx) {
+  // the leg is fixed NOW, not at send: an edit made while it waits
+  // in the queue must ride as the next leg, never rewrite this one
+  const leg = { from: tx.confirmed, to: tx.desired };
+  queueLazyOp(() => {
+    tx.flight = leg;
+    return { action: 'rename', aname: aname,
+             from: leg.from, to: leg.to };
+  }, () => {
+    // refused (a stale-roster race the local guard can't see): the
+    // whole tx rolls back to its confirmed point — identity, memory,
+    // roster — and the field reddens there, same as a local objection
+    pendingRenames.delete(tx.desired);
+    tx.rollback();
+    roster = roster.map((u) => (u === tx.desired ? tx.confirmed : u));
+    renderStatus();
+    const recovered = rowNodes[tx.confirmed];
+    assert(recovered, 'rename rollback lost its source row');
+    recovered.querySelector('.rename input').classList.add('error');
+  }, () => {
+    // this leg is the confirmed truth now; a dependent edit made
+    // meanwhile launches as the next leg, re-based on it
+    tx.confirmed = tx.flight.to;
+    tx.flight = null;
+    if (tx.desired === tx.confirmed) {
+      pendingRenames.delete(tx.desired);
+      renderStatus();  // the row's controls come back to life
+    } else {
+      tx.rollback = tx.nextRollback;
+      tx.nextRollback = null;
+      launchRename(tx);
+    }
+  });
+}
+
+// The transport-loss sweep, run on every adopted snapshot: adoption
+// is gated on all writes having settled, so any transaction still
+// pending here lost its response in transport — the server's roster
+// is the verdict on whether its flight committed. Committed: keep
+// the leg that landed (walking a dependent edit back onto it); lost:
+// the whole tx rolls back. Either way the tx retires — the adopted
+// snapshot repaints the roster itself.
+function reconcileTransportRenames(res) {
+  const serverUnames = new Set(res.roster.concat(
+    res.bidders.map((b) => b.uname)));
+  pendingRenames.forEach((tx, key) => {
+    assert(tx.flight !== null, 'a settled rename left its tx behind');
+    const committed = serverUnames.has(tx.flight.to)
+      && !serverUnames.has(tx.flight.from);
+    if (!committed) tx.rollback();
+    else if (tx.nextRollback !== null) tx.nextRollback();
+    pendingRenames.delete(key);
+  });
 }
 
 // Claim a row as yourself, or release it if it's already yours

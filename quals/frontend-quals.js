@@ -38,6 +38,12 @@ const WRITES = [
 // current shape (it was bidders[].created when this bit dreev)
 let stripTini = false;
 
+// Simulate a sheet whose stamp cells lost their plain-text armor: set
+// to a string and every served stamp becomes it — bidder tini/tmod on
+// sealed auctions, tfin on revealed ones (split so each assertState
+// leg gets its own isolated red)
+let stampSwap = null;
+
 function mockFetch(url, opts) {
   url = String(url);
   // the geo lookup gets a fixture: quals must never touch the network
@@ -63,6 +69,10 @@ function mockFetch(url, opts) {
     const res = read !== null ? read : gas.handle(req);
     if (stripTini && res.bidders) {
       res.bidders.forEach((b) => { delete b.tini; });
+    }
+    if (stampSwap !== null && res.bidders) {
+      if (res.revealed) res.tfin = stampSwap;
+      else res.bidders.forEach((b) => { b.tini = b.tmod = stampSwap; });
     }
     resolve({ json: () => Promise.resolve(JSON.parse(JSON.stringify(res))) });
   }, mockDelay));
@@ -565,9 +575,11 @@ const cssBattles = [];
 
   /* Replicata: this stale page renames alice to beta after another page
      added beta, then immediately edits the optimistic beta row to gamma.
-     Expectata: the unconfirmed target row is inert until alice→beta
-     settles; remote beta is untouched. Resultata pre-fix: beta→gamma
-     ran second and successfully renamed the other page's beta seat. */
+     Expectata: the name stays live and advances optimistically, while
+     star/bid/× stay inert and beta→gamma waits on alice→beta; when the
+     first leg refuses, alice and her exact memory return and remote beta
+     is untouched. Resultata pre-fix: beta→gamma could run second and
+     rename the other page's beta seat. */
   gas.handle({ action: 'add', aname: 'pendingrename', uname: 'alice' });
   gas.handle({ action: 'add', aname: 'pendingrename', uname: 'carol' });
   gas.handle({ action: 'bid', aname: 'pendingrename', uname: 'alice',
@@ -584,11 +596,20 @@ const cssBattles = [];
   mockDelay = 400;
   renameTo(dPendingRename, 'alice', 'beta');
   const pendingBeta = row(dPendingRename.window.document, 'beta');
-  const betaWasInert = [pendingBeta.querySelector('.tu'),
-    pendingBeta.querySelector('.rename input'),
+  const betaActionsWereInert = [pendingBeta.querySelector('.tu'),
     pendingBeta.querySelector('.rebid input'),
     pendingBeta.querySelector('.x')].every((control) => control.disabled);
+  const betaNameStayedLive =
+    !pendingBeta.querySelector('.rename input').disabled;
   renameTo(dPendingRename, 'beta', 'gamma');
+  const pendingGamma = row(dPendingRename.window.document, 'gamma');
+  const gammaWasOptimistic = pendingGamma && !row(
+    dPendingRename.window.document, 'beta')
+    && dPendingRename.window.localStorage.getItem('tauction-uname')
+         === 'gamma';
+  await sleep(20);
+  const pendingCalls = apiCalls.filter((c) =>
+    c.action === 'rename' && c.aname === 'pendingrename');
   await until(() => {
     const s = gas.handle({ action: 'state', aname: 'pendingrename' });
     return s.roster.includes('gamma')
@@ -598,11 +619,103 @@ const cssBattles = [];
   mockDelay = 0;
   const pendingState = gas.handle(
     { action: 'state', aname: 'pendingrename' });
-  ok(betaWasInert && pendingState.roster.includes('alice')
+  ok(betaActionsWereInert && betaNameStayedLive && gammaWasOptimistic
+     && pendingCalls.length === 1
+     && pendingCalls[0].from === 'alice' && pendingCalls[0].to === 'beta'
+     && pendingState.roster.includes('alice')
      && pendingState.roster.includes('beta')
-     && !pendingState.roster.includes('gamma'),
-     'an optimistic rename target is wholly inert; a refused stale'
-     + ' rename cannot mutate the remote seat it collided with');
+     && !pendingState.roster.includes('gamma')
+     && dPendingRename.window.localStorage.getItem('tauction-uname')
+          === 'alice'
+     && dPendingRename.window.localStorage.getItem(
+       'tauction-mybids:pendingrename') === '{"alice":"alice bid"}',
+     'dependent name edits stay live and optimistic but unsent; refusal'
+     + ' restores alice exactly and cannot mutate the remote beta seat');
+
+  /* Replicata: alice→bravo is in flight when the same live field advances
+     to charlie. The first leg commits; before the dependent leg lands,
+     another page seats charlie. Expectata: the second refusal restores
+     bravo, the last confirmed identity, and bravo's exact raw-memory
+     snapshot. Resultata pre-fix: rollback jumped all the way to alice or
+     retained the refused charlie identity. */
+  gas.handle({ action: 'add', aname: 'renamecoalesce', uname: 'alice' });
+  gas.handle({ action: 'add', aname: 'renamecoalesce', uname: 'bob' });
+  gas.handle({ action: 'bid', aname: 'renamecoalesce', uname: 'alice',
+    bid: 'alice bid', deviceID: 'coalesce-device',
+    deviceBlurb: 'Coalesce rig' });
+  const coalescedBids =
+    '{"alice":"alice draft","bravo":"old bravo draft",'
+    + '"charlie":"old charlie draft"}';
+  const confirmedBravoBids =
+    '{"bravo":"alice draft","charlie":"old charlie draft"}';
+  const dRenameCoalesce = await makePage(
+    '/renamecoalesce?api=' + API_URL, (w) => {
+      w.localStorage.setItem('tauction-device', 'coalesce-device');
+      w.localStorage.setItem('tauction-uname', 'alice');
+      w.localStorage.setItem('tauction-mybids:renamecoalesce',
+        coalescedBids);
+    });
+  const coalesceFetch = dRenameCoalesce.window.fetch;
+  let seatCharlieAfterFirst = true;
+  dRenameCoalesce.window.fetch = (url, opts) => {
+    const req = opts && opts.method === 'POST' ? JSON.parse(opts.body) : null;
+    if (seatCharlieAfterFirst && req && req.action === 'rename'
+        && req.aname === 'renamecoalesce') {
+      seatCharlieAfterFirst = false;
+      return coalesceFetch(url, opts).then((response) => {
+        gas.handle({ action: 'add', aname: 'renamecoalesce',
+          uname: 'charlie' });
+        return response;
+      });
+    }
+    return coalesceFetch(url, opts);
+  };
+  mockDelay = 300;
+  renameTo(dRenameCoalesce, 'alice', 'bravo');
+  renameTo(dRenameCoalesce, 'bravo', 'charlie');
+  const optimisticCharlie = row(
+    dRenameCoalesce.window.document, 'charlie');
+  const coalescedActionsWereInert = [
+    optimisticCharlie.querySelector('.tu'),
+    optimisticCharlie.querySelector('.rebid input'),
+    optimisticCharlie.querySelector('.x'),
+  ].every((control) => control.disabled);
+  ok(optimisticCharlie.classList.contains('mine')
+     && !optimisticCharlie.querySelector('.rename input').disabled
+     && coalescedActionsWereInert
+     && dRenameCoalesce.window.localStorage.getItem('tauction-uname')
+          === 'charlie'
+     && dRenameCoalesce.window.localStorage.getItem(
+       'tauction-mybids:renamecoalesce') === '{"charlie":"alice draft"}',
+     'a dependent edit advances the live name and identity immediately'
+     + ' while every other row action stays inert');
+  await until(() => !dRenameCoalesce.window.document
+    .getElementById('banner').hidden);
+  await until(() => !dRenameCoalesce.window.document
+    .getElementById('status').classList.contains('stale'));
+  mockDelay = 0;
+  const coalescedState = gas.handle(
+    { action: 'state', aname: 'renamecoalesce' });
+  const coalescedCalls = apiCalls.filter((c) =>
+    c.action === 'rename' && c.aname === 'renamecoalesce');
+  const restoredBravo = row(dRenameCoalesce.window.document, 'bravo');
+  ok(coalescedCalls.length === 2
+     && coalescedCalls[0].from === 'alice'
+     && coalescedCalls[0].to === 'bravo'
+     && coalescedCalls[1].from === 'bravo'
+     && coalescedCalls[1].to === 'charlie'
+     && coalescedState.roster.includes('bravo')
+     && coalescedState.roster.includes('charlie')
+     && !coalescedState.roster.includes('alice')
+     && dRenameCoalesce.window.localStorage.getItem('tauction-uname')
+          === 'bravo'
+     && dRenameCoalesce.window.localStorage.getItem(
+       'tauction-mybids:renamecoalesce') === confirmedBravoBids
+     && restoredBravo && restoredBravo.classList.contains('mine')
+     && restoredBravo.querySelector('.rename input')
+          .classList.contains('error'),
+     'first-leg success plus second-leg refusal restores confirmed bravo'
+     + ' and its exact raw-memory snapshot, never alice or charlie');
 
   /* Replicata: soft-claimed alice optimistically renames to beta, but
      that one POST loses its transport response and the authoritative
@@ -629,6 +742,7 @@ const cssBattles = [];
     return transportFetch(url, opts);
   };
   renameTo(dRenameTransport, 'alice', 'beta');
+  renameTo(dRenameTransport, 'beta', 'gamma');
   await until(() => !dRenameTransport.window.document
     .getElementById('status').classList.contains('stale'));
   const recoveredTransport = row(
@@ -639,19 +753,25 @@ const cssBattles = [];
        'tauction-mybids:renametransport') === transportBids
      && recoveredTransport && recoveredTransport.classList.contains('mine')
      && !recoveredTransport.querySelector('.rename input').disabled,
-     'authoritative transport recovery restores soft identity, exact bid'
-     + ' memory, and the live alice row');
+     'authoritative uncommitted transport recovery restores soft identity,'
+     + ' exact bid memory, and the live alice row while discarding its'
+     + ' unsent dependent edit');
 
   /* Replicata: the rename commits, but its response is lost. Expectata:
      the authoritative recovery state proves beta replaced alice, so the
      optimistic beta identity and re-keyed bid memory remain intact. */
   gas.handle({ action: 'add', aname: 'renamecommitted', uname: 'alice' });
   gas.handle({ action: 'add', aname: 'renamecommitted', uname: 'bob' });
+  const committedRaw =
+    '{"alice":"alice draft","beta":"old beta draft",'
+    + '"gamma":"old gamma draft"}';
+  const committedBetaRaw =
+    '{"beta":"alice draft","gamma":"old gamma draft"}';
   const dRenameCommitted = await makePage(
     '/renamecommitted?api=' + API_URL, (w) => {
       w.localStorage.setItem('tauction-uname', 'alice');
       w.localStorage.setItem('tauction-mybids:renamecommitted',
-        '{"alice":"alice draft"}');
+        committedRaw);
     });
   const committedFetch = dRenameCommitted.window.fetch;
   let loseRenameResponse = true;
@@ -665,6 +785,7 @@ const cssBattles = [];
     return committedFetch(url, opts);
   };
   renameTo(dRenameCommitted, 'alice', 'beta');
+  renameTo(dRenameCommitted, 'beta', 'gamma');
   await until(() => !dRenameCommitted.window.document
     .getElementById('status').classList.contains('stale'));
   const committedState = gas.handle(
@@ -675,10 +796,64 @@ const cssBattles = [];
      && dRenameCommitted.window.localStorage.getItem('tauction-uname')
           === 'beta'
      && dRenameCommitted.window.localStorage.getItem(
-       'tauction-mybids:renamecommitted') === '{"beta":"alice draft"}'
+       'tauction-mybids:renamecommitted') === committedBetaRaw
      && committedBeta && committedBeta.classList.contains('mine')
      && !committedBeta.querySelector('.rename input').disabled,
-     'authoritative transport recovery keeps a rename that did commit');
+     'authoritative committed transport recovery keeps the leg that did'
+     + ' commit and discards its later unsent dependent edit');
+
+  /* Replicata: alice→beta is in flight when second thoughts type the
+     same live field back to alice. Resultata pre-fix: "That name is
+     taken" — a collision with its own ghost (alice's bid row walks on
+     until the wire catches up). Expectata: the undo is accepted
+     quietly, and once the first leg confirms, a second leg walks the
+     server back — alice end to end, memory intact, no objection. */
+  gas.handle({ action: 'add', aname: 'renameundo', uname: 'alice' });
+  gas.handle({ action: 'add', aname: 'renameundo', uname: 'bob' });
+  gas.handle({ action: 'bid', aname: 'renameundo', uname: 'alice',
+    bid: 'alice bid', deviceID: 'undo-device', deviceBlurb: 'Undo rig' });
+  const dRenameUndo = await makePage('/renameundo?api=' + API_URL,
+    (w) => {
+      w.localStorage.setItem('tauction-device', 'undo-device');
+      w.localStorage.setItem('tauction-uname', 'alice');
+      w.localStorage.setItem('tauction-mybids:renameundo',
+        '{"alice":"alice bid"}');
+    });
+  mockDelay = 300;
+  renameTo(dRenameUndo, 'alice', 'beta');
+  renameTo(dRenameUndo, 'beta', 'alice');  // never mind!
+  const undoDoc = dRenameUndo.window.document;
+  ok(undoDoc.getElementById('banner').hidden
+     && row(undoDoc, 'alice') && !row(undoDoc, 'beta')
+     && !row(undoDoc, 'alice').querySelector('.rename input')
+          .classList.contains('error')
+     && tiles(undoDoc).length === 2
+     && dRenameUndo.window.localStorage.getItem('tauction-uname')
+          === 'alice',
+     "typing the pending edit's original name back is an undo, not a"
+     + ' collision with its own ghost: no banner, no red, no ghost row');
+  await until(() => apiCalls.filter((c) => c.action === 'rename'
+      && c.aname === 'renameundo').length === 2
+    && !undoDoc.getElementById('status').classList.contains('stale'));
+  mockDelay = 0;
+  const undoCalls = apiCalls.filter((c) => c.action === 'rename'
+    && c.aname === 'renameundo');
+  const undoState = gas.handle({ action: 'state', aname: 'renameundo' });
+  ok(undoCalls.length === 2
+     && undoCalls[0].from === 'alice' && undoCalls[0].to === 'beta'
+     && undoCalls[1].from === 'beta' && undoCalls[1].to === 'alice'
+     && undoState.roster.join(',') === 'alice,bob'
+     && undoState.bidders.some((b) => b.uname === 'alice'
+          && b.bcount === 1)
+     && undoState.claims.alice === 'undo-device'
+     && dRenameUndo.window.localStorage.getItem('tauction-uname')
+          === 'alice'
+     && dRenameUndo.window.localStorage.getItem(
+       'tauction-mybids:renameundo') === '{"alice":"alice bid"}'
+     && row(undoDoc, 'alice').classList.contains('mine')
+     && !row(undoDoc, 'alice').querySelector('.rename input').disabled,
+     'the wire walks it back too: two legs out and home — seat, claim,'
+     + ' bid, and memory all intact');
 
   /* --- 1. bare visit: no server-invented name — the user picks ---------- */
   let dom = await makePage('/?api=' + API_URL);
@@ -808,6 +983,44 @@ const cssBattles = [];
           .includes('bad state shape'),
      'an old-server payload banners loudly, naming the skew');
   stripTini = false;
+
+  /* --- 1c2. the WHOLE stamp shape is the contract, not "has a T" --------
+     (anti-Postel, dreev-ratified 2026-07-18.) Replicata: a stamp cell
+     that loses its plain-text format gets coerced by Sheets and reads
+     back as "Fri Jul 17 2026 18:23:45 GMT-0700 (...)" — whose GMT
+     smuggled a 'T' past the old includes-check while silently breaking
+     the lexicographic stamp ordering; and a hand-written blank tbid
+     rendered a "NaNd ago" tooltip. Expectata: every stamp is full-ISO
+     or the ingest refuses loudly. */
+  const COERCED = String(new Date('2026-07-18T01:23:45.678Z'));
+  stampSwap = COERCED;
+  gas.handle({ action: 'add', aname: 'coerced', uname: 'old' });
+  gas.handle({ action: 'bid', aname: 'coerced', uname: 'old', bid: 'x' });
+  const domCo = await makePage('/coerced?api=' + API_URL);
+  ok(!domCo.window.document.getElementById('banner').hidden
+     && domCo.window.document.getElementById('banner').textContent
+          .includes('bad state shape'),
+     'a Sheets-coerced bidder stamp refuses loudly: GMT can no longer'
+     + ' smuggle a T past the shape check');
+  stampSwap = '';
+  const domNan = await makePage('/coerced?api=' + API_URL);
+  ok(!domNan.window.document.getElementById('banner').hidden
+     && domNan.window.document.getElementById('banner').textContent
+          .includes('bad state shape'),
+     'a blank stamp (the old "NaNd ago" tooltip) refuses loudly too');
+  gas.handle({ action: 'add', aname: 'coercedtfin', uname: 'a1' });
+  gas.handle({ action: 'add', aname: 'coercedtfin', uname: 'b2' });
+  gas.handle({ action: 'bid', aname: 'coercedtfin', uname: 'a1', bid: 'x' });
+  gas.handle({ action: 'bid', aname: 'coercedtfin', uname: 'b2', bid: 'y' });
+  gas.handle({ action: 'reveal', aname: 'coercedtfin' });
+  stampSwap = COERCED;
+  const domCt = await makePage('/coercedtfin?api=' + API_URL);
+  ok(!domCt.window.document.getElementById('banner').hidden
+     && domCt.window.document.getElementById('banner').textContent
+          .includes('bad state shape'),
+     'a coerced tfin refuses loudly instead of stamping a wrong'
+     + ' Closed line');
+  stampSwap = null;
 
   // A no-change poll must not rebuild the rows: a rebuild destroys
   // buttons mid-click (mousedown and mouseup need the same node), so a
