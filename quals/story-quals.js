@@ -85,9 +85,13 @@ async function makePage(browser, viewport) {
   });
   const page = await context.newPage();
   await page.setViewport(viewport);
+  // the zero-page-errors NET: any uncaught exception in any story
+  // flow — even one no assert happens to notice — fails the suite
+  page.on('pageerror', (e) => pageErrors.push(e.message));
   await bridge(page);
   return page;
 }
+const pageErrors = [];
 
 const text = (page, sel) =>
   page.$eval(sel, (e) => e.textContent).catch(() => null);
@@ -120,27 +124,6 @@ async function bid(page, bidText) {
   await page.keyboard.press('Enter');
 }
 
-// The tooltip is a ::before pseudo-element; compute its box from used
-// styles. Right-anchored tooltips hang left from their element's right
-// edge, so anchor the math accordingly.
-async function tipBox(page, i) {
-  return page.evaluate((idx) => {
-    const tip = document.querySelectorAll('[data-tip]')[idx];
-    tip.focus();
-    const r = tip.getBoundingClientRect();
-    const cs = getComputedStyle(tip, '::before');
-    const left = cs.left === 'auto'
-      ? r.right - parseFloat(cs.right) - parseFloat(cs.width)
-      : r.left + parseFloat(cs.left);
-    return {
-      tip: tip.className,
-      top: r.top + parseFloat(cs.top),
-      left: left,
-      w: parseFloat(cs.width), h: parseFloat(cs.height),
-      vw: window.innerWidth, vh: window.innerHeight,
-    };
-  }, i);
-}
 
 (async () => {
   ok(CHROME, 'found a Chrome/Chromium binary');
@@ -414,7 +397,7 @@ async function tipBox(page, i) {
     //    'the submission count rides the checkmark as a superscript');
     ok(await alice.evaluate(() => {
       const cell = document.querySelector('#tiles .tile.has-bid .tile-bid');
-      cell.dispatchEvent(new Event('mouseenter'));
+      cell.dispatchEvent(new Event('mouseover', { bubbles: true }));
       return /^your bid submitted \d+s ago$/.test(cell.dataset.tip);
     }), 'hovering her bid cell tells her when she submitted');
     ok(await alice.evaluate(() => {
@@ -433,13 +416,15 @@ async function tipBox(page, i) {
         && getComputedStyle(star).textShadow !== 'none';
     }), 'her star glows gold — the exact hollow shape, filled: same'
        + ' stroke width, gold stroke plus gold fill');
+    await alice.hover('.tile.mine .tu');
+    await alice.waitForFunction(() =>
+      !document.getElementById('tip').hidden);
     ok(await alice.evaluate(() => {
-      const cs = getComputedStyle(
-        document.querySelector('.tile.mine .tu'), '::before');
+      const cs = getComputedStyle(document.getElementById('tip'));
       return cs.textShadow === 'none'
-        && parseFloat(cs.webkitTextStrokeWidth) === 0;
-    }), "the star's glow stays OUT of its tooltip: inherited"
-       + ' text-shadow and stroke are reset like the other text styles');
+        && parseFloat(cs.webkitTextStrokeWidth || '0') === 0;
+    }), "the star's glow stays OUT of its tooltip: the singleton"
+       + ' lives at body level and inherits nothing from any host');
     ok(await alice.evaluate(() => {
       const probe = document.createElement('span');
       probe.style.color = 'var(--star)';
@@ -460,9 +445,8 @@ async function tipBox(page, i) {
           && cs.transform === 'none';
       })), 'grayed controls stay full-strength tooltip hosts');
     await alice.hover('#tiles .tile.has-bid .x');
-    await alice.waitForFunction(() =>  // 0.15s fade: wait, don't sample
-      getComputedStyle(document.querySelector('#tiles .tile.has-bid .x'),
-        '::before').opacity === '1');
+    await alice.waitForFunction(() =>
+      !document.getElementById('tip').hidden);
     ok(true, "the disabled ×'s tooltip shows at full strength");
     ok(await alice.evaluate(() => {
       const edges = [...document.querySelectorAll('#tiles .tile')].map((t) =>
@@ -478,23 +462,56 @@ async function tipBox(page, i) {
 
     // phone ergonomics: every tooltip in the app fits on screen, nothing
     // scrolls sideways
-    const tips = await alice.$$('[data-tip]');
-    ok(tips.length >= 5, 'tooltips present on tips, buttons, and rows');
-    for (let i = 0; i < tips.length; i++) {
-      const b = await tipBox(alice, i);
-      ok(b.top >= 0 && b.left >= 0 && b.left + b.w <= b.vw && b.top + b.h <= b.vh,
-         'tooltip ' + i + ' fits the phone viewport: ' + JSON.stringify(b));
+    const tipCount = await alice.$$eval('[data-tip]',
+      (l) => l.length);
+    ok(tipCount >= 5, 'tooltips present on tips, buttons, and rows');
+    for (let i = 0; i < tipCount; i++) {
+      const b = await alice.evaluate(async (idx) => {
+        const host = document.querySelectorAll('[data-tip]')[idx];
+        host.scrollIntoView({ block: 'center' });
+        const r0 = host.getBoundingClientRect();
+        document.dispatchEvent(new MouseEvent('mousemove',
+          { clientX: r0.left + 3, clientY: r0.top + 3 }));
+        await new Promise((r) => setTimeout(r, 80));  // async positioning
+        const t = document.getElementById('tip').getBoundingClientRect();
+        return { host: host.className || host.tagName, top: t.top,
+                 left: t.left, w: t.width, h: t.height,
+                 vw: innerWidth, vh: innerHeight,
+                 hid: document.getElementById('tip').hidden };
+      }, i);
+      ok(!b.hid && b.top >= 0 && b.left >= 0 && b.left + b.w <= b.vw
+         && b.top + b.h <= b.vh,
+         'tooltip ' + i + " fits the phone viewport (Floating UI's"
+         + ' flip+shift): ' + JSON.stringify(b));
     }
-    // the tooltip invariant: only one visible at a time — a focus-parked
-    // tip must stand down when another is hovered
-    await alice.evaluate(() => document.getElementById('help').focus());
+    // only one tooltip EXISTS now (the singleton): hover wins it
     await alice.hover('.field label[data-tip]');
-    await alice.waitForFunction(() =>  // fades: wait, don't sample
-      [...document.querySelectorAll('[data-tip]')].filter((e) => {
-        const cs = getComputedStyle(e, '::before');
-        return cs.visibility === 'visible' && cs.opacity === '1';
-      }).length === 1);
-    ok(true, 'only one tooltip visible at a time: hover trumps parked focus');
+    await alice.waitForFunction(() =>
+      !document.getElementById('tip').hidden
+      && document.getElementById('tip').textContent ===
+         document.querySelector('.field label[data-tip]')
+           .getAttribute('data-tip'));
+    ok(true, 'one tooltip at a time, by construction: the singleton'
+       + ' shows whatever is summoned last');
+    // ...and when the hover leaves, a focus-PARKED tip resumes (the
+    // old CSS behaved this way; the singleton must too)
+    await alice.evaluate(() =>
+      document.querySelector('label[for="aname"]').focus());
+    await alice.hover('.tile:not(.mine) .tu');  // hover wins...
+    await alice.waitForFunction(() =>
+      !document.getElementById('tip').hidden
+      && document.getElementById('tip').textContent
+         !== document.querySelector('label[for="aname"]')
+              .getAttribute('data-tip'));
+    await alice.mouse.move(5, 700);  // ...and leaves
+    await alice.waitForFunction(() =>
+      !document.getElementById('tip').hidden
+      && document.getElementById('tip').textContent
+         === document.querySelector('label[for="aname"]')
+              .getAttribute('data-tip'));
+    ok(true, 'hover gone: the focus-parked tip takes the stage back');
+    await alice.evaluate(() =>
+      document.querySelector('label[for="aname"]').blur());
     await alice.mouse.move(5, 400);  // park the pointer away from any tip
     await alice.keyboard.press('Tab');  // blur the last tooltip
     const overflow = await alice.evaluate(() =>
@@ -579,33 +596,11 @@ async function tipBox(page, i) {
     await bob.goto(BASE + '/' + slug, { waitUntil: 'networkidle0' });
     await bob.waitForSelector('#tiles .tile.has-bid');
     const bobSees = await text(bob, '#status');
-    /* ---- universal tooltip-host hygiene (the whole CLASS, not just
-       the hosts that bit us in the original behind-the-rows bug): no
-       [data-tip] host nor any ancestor may create a stacking context
-       — swept live on a page holding every row state (bid-in row,
-       breathing bidless row, header hosts). --------------------- */
-    await bob.waitForFunction(() => !document.getElementById('status')
-      .classList.contains('stale'));
-    ok(await bob.evaluate(() => {
-      const makers = [];
-      document.querySelectorAll('[data-tip]').forEach((host) => {
-        for (let el = host; el && el !== document.body;
-             el = el.parentElement) {
-          const s = getComputedStyle(el);
-          const why = [];
-          if (s.opacity !== '1') why.push('opacity');
-          if (s.transform !== 'none') why.push('transform');
-          if (s.filter !== 'none') why.push('filter');
-          if (s.willChange !== 'auto') why.push('will-change');
-          if (s.zIndex !== 'auto' && s.position !== 'static'
-              && el !== host) why.push('z-index');
-          if (why.length) makers.push((host.className || host.id)
-            + ' under ' + (el.className || el.id) + ': ' + why);
-        }
-      });
-      return makers.length ? makers.join('; ') : true;
-    }) === true,
-       'no tooltip host sits inside a stacking context, anywhere');
+    /* ---- (the universal tooltip-host hygiene sweep RETIRED
+       2026-07-18: the singleton #tip lives at body level and is not
+       a descendant of any host — ancestor stacking contexts can no
+       longer bury tips, by construction. dreev-directed via the
+       switch to Floating UI.) ---------------------------------- */
     ok(!bobSees.includes('three tacos') && await bob.$('#status .tile-bid .masked'),
        "bob can't see alice's bid, only a masked decoy");
     ok(await bob.evaluate(() => getComputedStyle(
@@ -650,9 +645,7 @@ async function tipBox(page, i) {
     ok(await bob.evaluate(() =>
          document.activeElement === document.querySelector(
            '.tile.mine .rebid input')
-         && getComputedStyle(document.querySelector(
-              '.tile.mine .tile-bid'), '::before')
-              .visibility === 'hidden'),
+         && document.getElementById('tip').hidden),
        'no tooltip under your own typing: a bid cell holding your'
        + ' focused editor shows no tip even hovered');
     await bid(bob, 'my entire kingdom');
@@ -1112,9 +1105,9 @@ async function tipBox(page, i) {
        (activation blurs their focus leg). Expectata: tapping a star
        still shows its tip; only the cell you are TYPING in stays
        quiet. */
-    ok(await thumb2.evaluate(() => getComputedStyle(
-         document.querySelector('.tile.mine .tu'), '::before')
-         .visibility === 'visible'),
+    ok(await thumb2.evaluate(() =>
+         !document.getElementById('tip').hidden
+         && document.getElementById('tip').textContent.length > 0),
        'tooltips LIVE on touch: the star she just tapped wears its'
        + " tip via the tap's sticky hover");
     await thumb2.tap('.tile.mine .rebid input');
@@ -1123,9 +1116,8 @@ async function tipBox(page, i) {
        bid. A tap sticks :hover to the bid cell and the tap's
        synthetic mouseenter stocks data-tip. Expectata: a tap is not
        a hover; touch shows no hover-tooltips at all. */
-    ok(await thumb2.evaluate(() => getComputedStyle(
-         document.querySelector('.tile.mine .tile-bid'), '::before')
-         .visibility === 'hidden'),
+    ok(await thumb2.evaluate(() =>
+         document.getElementById('tip').hidden),
        "no tooltip under a thumb's typing: tapping your bid cell is"
        + ' not hovering it');
     await thumb2.keyboard.type('the other thumb');
@@ -1237,14 +1229,26 @@ async function tipBox(page, i) {
     await zpage.waitForFunction(() =>
       !document.getElementById('banner').hidden
       && document.querySelector('#banner a'));
-    await zpage.hover('label[for="aname"]');
+    // The banner overlays the auction card, so the label beneath is
+    // honestly unhoverable (hit-testing; the OLD qual compared
+    // computed z without ever showing a tip — vacuous). Summon from
+    // the seal instead: the tip must show with the banner standing,
+    // at a ladder height above the banner's.
+    await zpage.hover('#seal');
+    await zpage.waitForFunction(() =>
+      !document.getElementById('tip').hidden);
     ok(await zpage.evaluate(() =>
-      parseInt(getComputedStyle(document.querySelector(
-        'label[for="aname"]'), '::before').zIndex, 10)
-      > parseInt(getComputedStyle(
-          document.getElementById('banner')).zIndex, 10)),
-       'a summoned tooltip paints over the standing banner, not'
-       + ' behind it');
+      !document.getElementById('banner').hidden
+      && parseInt(getComputedStyle(document.getElementById('tip'))
+           .zIndex, 10)
+         > parseInt(getComputedStyle(
+             document.getElementById('banner')).zIndex, 10)),
+       'a summoned tooltip outranks the standing banner (heights'
+       + ' pinned in the z-ladder registry too)');
+
+    ok(pageErrors.length === 0,
+       'ZERO page errors across every story flow (the net catches'
+       + ' what asserts miss): ' + pageErrors.join(' | '));
 
     console.log('story-quals: all ' + passed + ' assertions passed');
   } finally {

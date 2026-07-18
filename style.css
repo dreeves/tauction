@@ -139,12 +139,16 @@ button { font: inherit; cursor: pointer; }
 .field label[data-tip] { cursor: help; }
 
 /* tooltips ride on ::before so ::after stays free for glyphs (the padlock) */
-[data-tip] { position: relative; }
-
-[data-tip]::before {
-  content: attr(data-tip);
+/* THE tooltip (#tip in index.html): one element at body level,
+   positioned by Floating UI from app.js — never a descendant of its
+   host, so no ancestor stacking context, overflow clip, or z-index
+   battle can bury it (the class of bug dreev kept catching, closed
+   structurally). Singleton by construction; shown/hidden via
+   [hidden]; typing-suppression and touch semantics live in showTip.
+   z: above everything ours, including the money. */
+#tip {
   position: absolute;
-  top: calc(100% + 0.45rem);  /* below: the top of the page can't clip it */
+  top: 0;
   left: 0;
   background: var(--fg);
   color: var(--bg);
@@ -155,49 +159,12 @@ button { font: inherit; cursor: pointer; }
   line-height: 1.4;
   width: max-content;
   max-width: min(15rem, 80vw);
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.15s;
   pointer-events: none;
-  /* above the banner (4) and the ceremony stamp (5): a tip you are
-     actively summoning outranks ambient overlays — the sticky
-     dead-end banner exposed the old z:3 losing to the banner's 4 */
-  z-index: 6;
-  /* the host's text styling must not leak into the tip (the gold
-     star's glow and stroke famously did) */
-  text-transform: none;
-  letter-spacing: normal;
-  text-shadow: none;
-  -webkit-text-stroke: 0;
+  z-index: 10;
 }
 
-[data-tip]:hover::before, [data-tip]:focus::before {
-  opacity: 1;
-  visibility: visible;
-}
-
-/* No tip sits under your own typing (this also covers dreev's
-   phone: the tap that focused the editor sticks :hover on its cell):
-   the cell holding your focused editor keeps its counsel. Sticky
-   hover on OTHER elements is deliberately kept — it is the only way
-   button tips show on touch at all (activation blurs the focus leg;
-   an over-broad hover-none rule once silenced every mobile tip). */
-.tile-bid:has(input:focus)::before {
-  opacity: 0;
-  visibility: hidden;
-}
-
-/* only one tip at a time: while any tip is hovered, focus-parked tips
-   stand down (tap-to-focus keeps tooltips on touch, but a stuck focus
-   must not shadow the one being hovered) */
-body:has([data-tip]:hover) [data-tip]:focus:not(:hover)::before {
-  opacity: 0;
-  visibility: hidden;
-}
-
-/* right-anchored elements get right-anchored tooltips (else they overflow) */
-.seal::before, .tile .x::before,
-.tile-bid::before { left: auto; right: 0; }
+/* (right-anchoring died with the singleton tooltip: Floating UI's
+   flip and shift keep it on screen from any host) */
 
 
 /* buttons get the same accent focus ring as inputs (the tooltip words

@@ -138,6 +138,37 @@ async function locate() {
   } catch (e) { /* the blurb just goes without */ }
 }
 
+/* ------------------------------ tooltips ------------------------------ */
+
+// ONE tooltip for the whole app (see #tip in index.html), positioned
+// by vendored Floating UI. Two hosts can want it — the one under the
+// pointer and the one holding focus — and hover wins while it lasts,
+// with the focus-parked tip resuming after (word-hosts keep
+// tap-tips; an activated button's blur — the universal rule — drops
+// its focus claim). A host containing the field you are typing in
+// keeps its counsel.
+let hoverHost = null;  // [data-tip] element under the pointer, if any
+let focusHost = null;  // [data-tip] element holding focus, if any
+async function showTip() {
+  const tip = $('tip');
+  const host = hoverHost || focusHost;
+  if (!host || !host.isConnected
+      || host.querySelector('input:focus, textarea:focus')) {
+    tip.hidden = true;
+    return;
+  }
+  tip.textContent = host.getAttribute('data-tip');
+  tip.hidden = false;
+  const pos = await FloatingUIDOM.computePosition(host, tip, {
+    placement: 'bottom-start',
+    middleware: [FloatingUIDOM.offset(7), FloatingUIDOM.flip(),
+                 FloatingUIDOM.shift({ padding: 8 })],
+  });
+  if (host !== (hoverHost || focusHost)) return;  // a newer summons
+  tip.style.left = pos.x + 'px';                  // owns the tip now
+  tip.style.top = pos.y + 'px';
+}
+
 function setPath(a) {
   history.replaceState(null, '', '/' + a + location.search);
 }
@@ -450,6 +481,12 @@ function renderStatus() {
       '.tile.mine:not(.has-bid) .rebid input');
     if (editor && document.activeElement === document.body) editor.focus();
   }
+
+  // a render can retitle (or remove) the very host the open tip
+  // describes — the tip follows the truth without waiting for the
+  // pointer to move (the old attr()-based tip live-updated; the
+  // singleton must too)
+  showTip();
 }
 
 // The reveal ceremony: the gavel returns for one mighty ceremonial
@@ -543,7 +580,10 @@ function buildRow(uname) {
   });
   // the tip is computed on entry, not at render: its "3m ago" ages must
   // be hover-fresh, and render stays idempotent (no clock in the DOM)
-  bidEl.addEventListener('mouseenter', () => {
+  // mouseover, not mouseenter: it must fire BEFORE the document-level
+  // mouseover that shows the singleton tip (target phase precedes the
+  // bubble), so the tip always reads a fresh attribute
+  bidEl.addEventListener('mouseover', () => {
     bidEl.setAttribute('data-tip', bidTip(uname));
   });
   // (green ✅ scrapped 2026-07-16 — it sat confusingly next to the ×,
@@ -1219,6 +1259,29 @@ function wireUp() {
     const f = e.target.closest('input, textarea');
     if (f) { f.value = f.defaultValue; f.blur(); }
   }, true);
+
+  // The singleton tip's reasons: pointer and focus, tracked globally.
+  // Pointer via mousemove + elementFromPoint, NOT mouseover: Chrome
+  // does not dispatch mouse events on disabled form controls, and the
+  // grayed stars/×s wear load-bearing tips ("Too late to..."). Hit-
+  // testing sees disabled elements fine, and it respects
+  // pointer-events:none, so the tip and the confetti canvas never
+  // block the probe.
+  document.addEventListener('mousemove', (e) => {
+    const over = document.elementFromPoint(e.clientX, e.clientY);
+    const host = (over && over.closest('[data-tip]')) || null;
+    if (host === hoverHost) return;
+    hoverHost = host;
+    showTip();
+  });
+  document.addEventListener('focusin', (e) => {
+    focusHost = e.target.closest('[data-tip]');
+    showTip();
+  });
+  document.addEventListener('focusout', () => {
+    focusHost = null;
+    showTip();
+  });
 
   $('seal').addEventListener('click', pressReveal);
   $('desctoggle').addEventListener('click', editDesc);

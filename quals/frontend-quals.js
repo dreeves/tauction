@@ -79,7 +79,7 @@ const STYLE_CSS = fs.readFileSync(path.join(REPO, 'style.css'), 'utf8');
 const STR = new Function(STRINGLES
   + '; return { needTwoTip, needOneMoreTip, waitingTip, youTag,'
   + ' awaitingTip, auctionExistsBanner, simulEditsBanner, stampCopy,'
-  + ' claimedByTip, mysteryDevice, nameTakenBanner,'
+  + ' claimedByTip, claimTip, mysteryDevice, nameTakenBanner,'
   + ' moneyGlyphs, revealTip, needNameTip, removeTip,'
   + ' tooLateRemoveTip, resubmittedTip };')();
 const STAMP = STR.stampCopy;
@@ -117,6 +117,13 @@ async function makePage(pathAndQuery, seed) {
   dom.window.__confettiCalls = bursts;
   dom.window.confetti = Object.assign((opts) => { bursts.push(opts); },
     { shapeFromText: (o) => o });
+  // Floating UI (a vendor script in the real page) positions the
+  // singleton tooltip; jsdom has no layout, so a zero stub suffices —
+  // the attribute and hidden-state are the assertable truths here
+  dom.window.FloatingUIDOM = {
+    computePosition: async () => ({ x: 0, y: 0 }),
+    offset: () => ({}), flip: () => ({}), shift: () => ({}),
+  };
   if (seed) seed(dom.window);  // e.g. pre-populate localStorage
   // one eval: eval-scoped consts aren't visible across separate
   // evals the way script tags share scope, so copy + code go together
@@ -192,7 +199,9 @@ function renameTo(dom, uname, to) {
 // (lazily, so the "3m ago" ages are hover-fresh, not render-time relics)
 function hoverBid(dom, uname) {
   const cell = row(dom.window.document, uname).querySelector('.tile-bid');
-  cell.dispatchEvent(new dom.window.Event('mouseenter'));
+  // mouseover (matching the app's attr-refresh listener), non-bubbling:
+  // the attribute is the assertable truth in jsdom
+  cell.dispatchEvent(new dom.window.Event('mouseover'));
   return cell.getAttribute('data-tip');
 }
 
@@ -212,8 +221,8 @@ function ok(cond, label) {
 // at exactly this height; a new overlay must join the ladder
 // CONSCIOUSLY or the suite fails. Heights: summoned beats ambient.
 const Z_LADDER = {
-  '[data-tip]::before': 6,   // a summoned tip outranks everything ours
-  '.fete': 5,                // ...except it: the SOLD stamp moment
+  '#tip': 10,                // a summoned tip outranks everything ours
+  '.fete': 5,                // the SOLD stamp moment
   '#banner': 4,              // ambient news over content
   '.gavel': 2,               // the busy sign over the grayed ledger
   '.corner': 2,              // share/help float over the aname card
@@ -1387,6 +1396,67 @@ const cssBattles = [];
      && !row(dEsc.window.document, 'oops'),
      'Escape in the + row abandons the typed name: cleared, not'
      + ' committed (the blur that follows finds nothing)');
+
+  /* --- 2t4. the singleton tip's three regression pins ------------------
+     (found by inspection in the Floating UI glue, pinned after the
+     fact: the async race, the live retitle, the dead host) -------- */
+  const dTip = await makePage('/?api=' + API_URL);
+  await sleep(20);
+  {
+    const w = dTip.window;
+    const held = [];
+    w.FloatingUIDOM.computePosition = (host) =>
+      new w.Promise((res) => held.push([host, res]));
+    w.document.querySelector('label[for="aname"]').focus();  // summons 1
+    w.document.getElementById('seal').focus();               // summons 2
+    held[1][1]({ x: 222, y: 22 });   // newest resolves first...
+    await sleep(10);
+    held[0][1]({ x: 111, y: 11 });   // ...stale one limps in late
+    await sleep(10);
+    ok(w.document.getElementById('tip').style.left === '222px'
+       && w.document.getElementById('tip').textContent
+            === w.document.getElementById('seal')
+                 .getAttribute('data-tip'),
+       'a stale async position never lands on a newer tip: the newest'
+       + ' summons owns it');
+  }
+  gas.handle({ action: 'add', aname: 'tipflow', uname: 'ann' });
+  gas.handle({ action: 'add', aname: 'tipflow', uname: 'bo' });
+  const dTip2 = await makePage('/tipflow?api=' + API_URL,
+    (w) => w.localStorage.setItem('tauction-uname', 'bo'));
+  await sleep(20);  // arriving as bo: further adds are facilitator-
+                    // style and steal no focus from the parked tip
+  const annStar = row(dTip2.window.document, 'ann').querySelector('.tu');
+  annStar.focus();
+  annStar.dispatchEvent(new dTip2.window.FocusEvent('focusin',
+    { bubbles: true }));
+  await sleep(10);
+  ok(!dTip2.window.document.getElementById('tip').hidden
+     && dTip2.window.document.getElementById('tip').textContent
+          === STR.claimTip,
+     'a focused star summons its tip (the tap-tip path)');
+  // a rival claims ann elsewhere; OUR next render must retitle the
+  // OPEN tip without the pointer moving (the live-refresh)
+  gas.handle({ action: 'claim', aname: 'tipflow', uname: 'ann',
+               deviceID: 'd-rival', deviceBlurb: 'rival rig' });
+  // (no focus moves: focusing elsewhere would rightly drop the
+  // parked tip — the pin is about the RENDER retitling it)
+  type(dTip2, 'roster-input', 'zed');
+  submitName(dTip2);
+  await settled(dTip2);
+  ok(dTip2.window.document.getElementById('tip').textContent
+       === STR.claimedByTip('rival rig'),
+     "the render retitles the open tip in place: it follows the truth"
+     + ' without waiting for the pointer');
+  // ann's row vanishes entirely; the tip must not haunt a dead host
+  gas.handle({ action: 'remove', aname: 'tipflow', uname: 'ann' });
+  annStar.dispatchEvent(new dTip2.window.FocusEvent('focusin',
+    { bubbles: true }));
+  type(dTip2, 'roster-input', 'yaz');
+  submitName(dTip2);
+  await settled(dTip2);
+  ok(dTip2.window.document.getElementById('tip').hidden,
+     'a removed host takes its tip with it: no haunting');
 
   /* --- 2u. name, TAB, bid (dreev's add-self flow) ----------------------
      Adding YOURSELF should leave the bid field one tab away: type
