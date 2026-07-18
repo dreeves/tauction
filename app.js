@@ -35,6 +35,9 @@ const sanAname = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 40);
 const sanUname = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
                          .replace(/^[0-9]+/, '').slice(0, 30);
 
+// A umap is a prototype-less dictionary keyed by uname
+const umap = (src = {}) => Object.assign(Object.create(null), src);
+
 async function apiGet(params) {
   const r = await fetch(api + '?' + new URLSearchParams(params));
   return r.json();
@@ -74,7 +77,8 @@ function stickyBanner(html) {
 let aname = '';
 let state = null;         // latest server snapshot of the current auction
 let roster = [];          // local working copy of the roster
-let seen = {};            // uname -> updated stamp at last render (shimmer)
+let seen = umap();        // uname -> updated stamp at last render (shimmer)
+let pendingRenames = new Map();
 let wasRevealed = null;   // reveal state at last render (null = unknown)
 let lastWriteAt = 0;      // when this client last STARTED a write (bid,
                           // add/remove, claim, reveal); of concurrent
@@ -180,17 +184,45 @@ function setPath(a) {
   history.replaceState(null, '', '/' + a + location.search);
 }
 
+function assertState(res) {
+  assert(res !== null && typeof res === 'object'
+    && typeof res.aname === 'string'
+    && typeof res.exists === 'boolean'
+    && Array.isArray(res.roster)
+    && res.roster.every((u) => typeof u === 'string')
+    && Array.isArray(res.bidders) && res.bidders.every(
+      (b) => typeof b.uname === 'string' && typeof b.tini === 'string'
+          && typeof b.tmod === 'string' && typeof b.bcount === 'number')
+    && typeof res.revealed === 'boolean'
+    && typeof res.tfin === 'string'
+    && (res.tfin === '' || res.tfin.includes('T'))
+    && typeof res.blurb === 'string' && typeof res.tblurb === 'string'
+    && res.claims !== null && typeof res.claims === 'object'
+    && !Array.isArray(res.claims)
+    && Object.values(res.claims).every((v) => typeof v === 'string')
+    && res.blurbs !== null && typeof res.blurbs === 'object'
+    && !Array.isArray(res.blurbs)
+    && Object.values(res.blurbs).every((v) => typeof v === 'string')
+    && (res.bids === null || (Array.isArray(res.bids)
+      && res.bids.every((b) => typeof b.uname === 'string'
+        && typeof b.bid === 'string'))),
+  'bad state shape — is the deployed Code.gs current?');
+}
+
 // Validate + adopt a state snapshot from the server; remember it so the
 // next page load can paint instantly instead of flashing a blank roster
 function ingest(res) {
-  assert(Array.isArray(res.bidders) && res.bidders.every(
-    (b) => typeof b.uname === 'string' && typeof b.tini === 'string'
-        && typeof b.tmod === 'string' && typeof b.bcount === 'number')
-    && res.claims !== null && typeof res.claims === 'object'
-    && res.blurbs !== null && typeof res.blurbs === 'object'
-    && typeof res.tfin === 'string'
-    && (res.tfin === '' || res.tfin.includes('T')),
-    'bad state shape — is the deployed Code.gs current?');
+  assertState(res);
+  const serverUnames = new Set(res.roster.concat(
+    res.bidders.map((b) => b.uname)));
+  pendingRenames.forEach((pending) => {
+    if (!serverUnames.has(pending.to) || serverUnames.has(pending.from)) {
+      pending.restoreIdentity();
+    }
+  });
+  res.claims = umap(res.claims);
+  res.blurbs = umap(res.blurbs);
+  pendingRenames.clear();
   state = res;
   localStorage.setItem('tauction-state:' + res.aname, JSON.stringify(res));
   // Your device's registered claim is authoritative for who you are: if
@@ -297,8 +329,9 @@ function commitDesc() {
   if (edit.value !== edit.defaultValue) {
     const draft = edit.value;
     const cleanBase = edit.defaultValue;  // pre-edit server truth
-    queueOp({ action: 'describe', aname: aname, blurb: draft,
-              base: edit.dataset.base }, () => {
+    queueLazyOp(() => ({ action: 'describe', aname: aname, blurb: draft,
+                         base: edit.dataset.base }), () => {
+      if (edit.value !== draft || edit.defaultValue !== draft) return;
       // The commit bounced (someone's edit beat ours): back into the
       // editor, your words intact and the field red — the recovery
       // snapshot re-bases the (again-dirty) draft, so saving again,
@@ -313,7 +346,7 @@ function commitDesc() {
       // is idle (the arrival-caret law) — if you've moved on to
       // another field, the red editor waits its turn
       if (document.activeElement === document.body) edit.focus();
-    });
+    }, (res) => { edit.dataset.base = res.tblurb; });
     edit.defaultValue = draft;  // ours is the working base now
     edit.classList.remove('error');
     // paint the draft NOW — rendering is pure client work; the write
@@ -343,15 +376,16 @@ function me() {
 // Every bid this browser has placed on this auction, keyed by uname —
 // so bids stay readable to you even if you switch rows and bid again
 function myBids() {
-  return JSON.parse(localStorage.getItem('tauction-mybids:' + aname) || '{}');
+  return umap(JSON.parse(
+    localStorage.getItem('tauction-mybids:' + aname) || '{}'));
 }
 
 // Re-key this browser's bid memory when an identity changes name:
 // your own rename, or one made elsewhere that followed your device home
 function rekeyMyBids(a, from, to) {
   assert(from !== to, 'rekeyMyBids to the same name');
-  const bids = JSON.parse(
-    localStorage.getItem('tauction-mybids:' + a) || '{}');
+  const bids = umap(JSON.parse(
+    localStorage.getItem('tauction-mybids:' + a) || '{}'));
   if (bids[from] === undefined) return;
   bids[to] = bids[from];
   delete bids[from];
@@ -387,7 +421,7 @@ function slotUnames() {
 // the roster, offered only while it has no bid to protect. Reveal lights
 // the 🎉 and glows the card, once.
 let lastPrint = '';  // fingerprint of the last-rendered rows
-let rowNodes = {};   // uname -> its living row node (keyed reuse)
+let rowNodes = umap();   // uname -> its living row node (keyed reuse)
 
 function renderStatus() {
   // Skip no-op rebuilds: replacing the nodes destroys any button mid-
@@ -395,7 +429,8 @@ function renderStatus() {
   // that changes nothing can silently eat a click. wasRevealed and seen
   // are in the fingerprint because the render right after a reveal or a
   // shimmer must still run: it retires those one-shot effects.
-  const print = JSON.stringify([aname, wasRevealed, seen, slotUnames(),
+  const print = JSON.stringify([aname, wasRevealed, seen,
+    [...pendingRenames.keys()], slotUnames(),
     state.bidders, state.roster, state.revealed, state.tfin,
     state.claims, state.blurbs, me(), knownBids()]);
   if (print === lastPrint) return;
@@ -416,12 +451,12 @@ function renderStatus() {
   // NAMES them (you tagged as you, Oxford comma at three); a roster
   // below two is a separate, dominating blocker (no amount of bidding
   // unlocks a solo auction), so the tip names THAT then instead.
-  const missing = state.roster.filter(
+  const missing = roster.filter(
     (u) => !state.bidders.some((b) => b.uname === u));
   const roll = missing.map((u) => u + (u === mine ? youTag : ''));
   const listed = roll.length <= 2 ? roll.join(' and ')
     : roll.slice(0, -1).join(', ') + ', and ' + roll[roll.length - 1];
-  const ready = !state.revealed && state.roster.length >= 2
+  const ready = !state.revealed && roster.length >= 2
     && missing.length === 0;
   // the revealed 🎉 stays ENABLED: reveal is idempotent server-side,
   // so a pointless press is harmless — and a button that is never
@@ -435,8 +470,8 @@ function renderStatus() {
   else {
     $('seal').setAttribute('data-tip',
       ready ? revealTip
-      : state.roster.length === 0 ? needTwoTip
-      : state.roster.length === 1 ? needOneMoreTip
+      : roster.length === 0 ? needTwoTip
+      : roster.length === 1 ? needOneMoreTip
       : waitingTip(listed));
   }
 
@@ -451,13 +486,13 @@ function renderStatus() {
     ? closedLine(closedStamp(state.tfin)) : '';
   const known = knownBids();
   const placed = myBids();  // bids THIS browser placed (the dibs exception)
-  const byName = {};
+  const byName = umap();
   state.bidders.forEach((b) => { byName[b.uname] = b; });
   // Placing a bid locks the who-you-are radio: no switching rows, no
   // releasing — permanently, since your bid never unlists (trying
   // this per dreev)
   const locked = mine !== '' && byName[mine] !== undefined;
-  const nextSeen = {};
+  const nextSeen = umap();
 
   // Keyed reconcile: every uname keeps its living row node for its whole
   // life, so a mid-gesture click (mousedown and mouseup need the same
@@ -466,7 +501,7 @@ function renderStatus() {
   // synced; vanished rows are removed; survivors move only if the order
   // really changed (essentially never — insertion order is stable).
   const tiles = $('tiles');
-  const keep = {};
+  const keep = umap();
   let cursor = null;  // the previous row in the desired order
   slotUnames().forEach((uname) => {
     const b = byName[uname];
@@ -669,8 +704,9 @@ function buildBidContent(kind, uname) {
     // submit) must not fire twice.
     input.addEventListener('blur', () => {
       const v = input.value.trim();
-      if (v !== '' && v !== input.defaultValue
-          && v !== input.dataset.sent) placeBid(uname, form);
+      if (v === '') input.value = input.defaultValue;
+      else if (v !== input.defaultValue
+               && v !== input.dataset.sent) placeBid(uname, form);
     });
     form.append(input);
     // the row-local busy sign: a mini gavel, shown by .rebid.busy
@@ -703,6 +739,7 @@ function buildBidContent(kind, uname) {
 function updateRow(t, uname, b, mine, known, placed, locked) {
   const stamp = b === undefined ? undefined : b.tmod;
   const bcount = b === undefined ? 0 : b.bcount;
+  const pending = pendingRenames.has(uname);
   // Every row leads with its star, a radio for who-you-are: hollow =
   // claimable, dimmed hollow = dibsed, gold fill = you. A row is dibsed by
   // a rival device's registered claim, or (for claim-less legacy rows)
@@ -716,7 +753,7 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
         || (stamp !== undefined && placed[uname] === undefined));
   const star = t.querySelector('.tu');
   // revealed: identity is part of the frozen record, like the names
-  star.disabled = dibsed || locked || state.revealed;
+  star.disabled = dibsed || locked || state.revealed || pending;
   star.classList.toggle('selected', uname === mine);
   // a rival's REGISTERED claim fills the star in (hollow = open,
   // filled = claimed by someone else, gold = you)...
@@ -736,7 +773,7 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
   t.classList.toggle('mine', uname === mine);
   // names freeze at the gavel, like bids (dreev: a post-close rename
   // could swap around who bid what) — grayed, never suppressed
-  t.querySelector('.rename input').disabled = state.revealed;
+  t.querySelector('.rename input').disabled = state.revealed || pending;
   t.classList.toggle('cut',
     stamp !== undefined && !roster.includes(uname));
   // one-shot shimmer; a reused node needs the remove-reflow-add dance
@@ -783,7 +820,7 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
     const input = content.querySelector('input');
     // the gavel drop is a bright line: your bid stays readable in
     // your own editor, but the field goes dead at the reveal
-    input.disabled = state.revealed;
+    input.disabled = state.revealed || pending;
     input.className = stamp === undefined ? 'bid-slot' : 'bid-card';
     input.style.boxShadow = stamp === undefined ? '' : stackShadow;
     // never clobber what the user is typing: leave a focused or dirty
@@ -812,7 +849,7 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
   const seated = stamp !== undefined && roster.includes(uname);
   // the record freezes at the gavel: every × grays once revealed —
   // even the cut-row zombie purge, which would delete a REVEALED bid
-  const frozen = seated || state.revealed;
+  const frozen = seated || state.revealed || pending;
   const x = t.querySelector('.x');
   x.disabled = frozen;
   x.setAttribute('data-tip',
@@ -947,7 +984,7 @@ function buildNameField(uname) {
 // already seated.
 function commitRename(from, raw, field) {
   const to = sanUname(raw);
-  if (!to || to === from) return;
+  if (!to || to === from) { field.value = field.defaultValue; return; }
   // A commit for a row the local roster no longer knows is a STALE
   // EVENT, not a request: the enter-then-blur pair fires this twice,
   // and the second run arrives after the first already remapped
@@ -955,23 +992,50 @@ function commitRename(from, raw, field) {
   // falsely cried "taken" (dreev's bug). Also quiets a row removed
   // mid-edit, and cut rows (rosterless by definition), which used to
   // error server-side instead of declining.
-  if (!roster.includes(from)) return;
-  if (roster.includes(to)) {
+  if (!roster.includes(from) || pendingRenames.has(from)) return;
+  if (slotUnames().includes(to)) {
     banner(nameTakenBanner);
     field.classList.add('error');  // the problem is THIS field
     return;
   }
+  const renamedAt = roster.indexOf(from);
+  let restoreIdentity = () => {};
   if (from === me()) {
     // your own rename must not unseat you while the op flies: local
     // identity and bid memory follow immediately
+    const bidKey = 'tauction-mybids:' + aname;
+    const savedBids = localStorage.getItem(bidKey);
+    const restoreBids = savedBids === null
+      ? () => localStorage.removeItem(bidKey)
+      : () => localStorage.setItem(bidKey, savedBids);
+    restoreIdentity = () => {
+      if (localStorage.getItem('tauction-uname') !== to) return;
+      localStorage.setItem('tauction-uname', from);
+      restoreBids();
+    };
     localStorage.setItem('tauction-uname', to);
     rekeyMyBids(aname, from, to);
   }
+  pendingRenames.set(to, { from: from, to: to,
+                           restoreIdentity: restoreIdentity });
   roster = roster.map((u) => (u === from ? to : u));
   // a server-side refusal (a stale-roster race the local guard can't
   // see) reddens the field too, same as the local objection
   queueOp({ action: 'rename', aname: aname, from: from, to: to },
-          () => field.classList.add('error'));
+          () => {
+            pendingRenames.delete(to);
+            restoreIdentity();
+            roster = roster.map((u, i) =>
+              i === renamedAt && u === to ? from : u);
+            renderStatus();
+            const recovered = rowNodes[from];
+            assert(recovered, 'rename rollback lost its source row');
+            recovered.querySelector('.rename input')
+              .classList.add('error');
+          }, () => {
+            pendingRenames.delete(to);
+            renderStatus();
+          });
 }
 
 // Claim a row as yourself, or release it if it's already yours
@@ -1037,8 +1101,8 @@ async function placeBid(uname, form) {
       banner(e2153(e.message));
     }
     if (res && !res.error) {
-      const mine = JSON.parse(
-        localStorage.getItem('tauction-mybids:' + a) || '{}');
+      const mine = umap(JSON.parse(
+        localStorage.getItem('tauction-mybids:' + a) || '{}'));
       mine[uname] = bid;
       localStorage.setItem('tauction-mybids:' + a, JSON.stringify(mine));
       input.defaultValue = bid;  // the submitted text is the new
@@ -1107,7 +1171,11 @@ async function copyUrl() {
 // the server confirms. Only the NEWEST op's snapshot is adopted —
 // earlier ones predate later local edits.
 let opChain = Promise.resolve();
-function queueOp(body, onRefusal) {
+function queueOp(body, onRefusal, onSuccess) {
+  queueLazyOp(() => body, onRefusal, onSuccess);
+}
+
+function queueLazyOp(request, onRefusal, onSuccess = () => {}) {
   $('status').classList.add('stale');
   if (state) renderStatus();
   if (!configured) return;
@@ -1115,10 +1183,11 @@ function queueOp(body, onRefusal) {
   opChain = opChain.then(async () => {
     let res = null;
     try {
-      res = await apiPost(body);
+      res = await apiPost(request());
     } catch (e) {
       banner(e2154(e.message));
     }
+    if (res && !res.error) onSuccess(res);
     settleWrite(res, at, onRefusal);  // exactly once, whatever happened
   });
 }
@@ -1252,7 +1321,9 @@ async function switchAuction(a) {
     const res = await apiGet({ action: 'state', aname: a });
     // the user kept typing: a newer probe owns the field now
     if (a !== sanAname($('aname').value)) return;
-    if (res.roster.length > 0 || res.bidders.length > 0) {
+    if (res.error) { banner(res.error); return; }
+    assertState(res);
+    if (res.exists) {
       stickyBanner(auctionExistsBanner('/' + a));
       return;
     }
@@ -1266,7 +1337,7 @@ async function switchAuction(a) {
                                 // dead-end sign still standing
     state = null;
     roster = [];
-    seen = {};
+    seen = umap();
     wasRevealed = null;
     caretPlaced = false;  // the new auction gets its own arrival focus
     descModeSet = false;  // and picks its description mode afresh

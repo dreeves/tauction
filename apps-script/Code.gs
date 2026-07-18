@@ -246,8 +246,8 @@ function getState(aname) {
   // The roster IS the users rows (in insertion order), and the claims
   // map rides along: uname -> deviceID for seats someone holds
   const roster = [];
-  const claims = {};
-  const blurbs = {};  // uname -> the holder's self-reported rig
+  const claims = Object.create(null);
+  const blurbs = Object.create(null);  // uname -> the holder's self-reported rig
   rows(usersTab()).forEach(r => {
     if (r[0] !== aname) return;
     roster.push(r[1]);
@@ -269,7 +269,7 @@ function getState(aname) {
   // The payload keeps its vocabulary, derived per person from the log:
   // tini = first tbid, tmod = latest, bcount = row count. ISO stamps
   // compare lexicographically; rows are in submission order.
-  const agg = {};  // uname -> derived bidder, in first-bid order
+  const agg = Object.create(null);  // uname -> derived bidder, in first-bid order
   rows(bidsTab()).forEach(r => {
     if (r[0] !== aname) return;
     if (revealed && r[3] > tfin) return;  // after the gavel: not in
@@ -294,7 +294,8 @@ function getState(aname) {
   }
 
   return {
-    aname: aname, roster: roster, bidders: bidders, revealed: revealed,
+    aname: aname, exists: arow !== undefined,
+    roster: roster, bidders: bidders, revealed: revealed,
     tfin: tfin, blurb: blurb, tblurb: tblurb,
     claims: claims, blurbs: blurbs,
     bids: revealed ? people.map(a => ({ uname: a.uname, bid: a.bid }))
@@ -365,7 +366,10 @@ function renameParticipant(req) {
   if (getState(aname).revealed) throw auctionClosedCopy;
   const sh = usersTab();
   const prows = rows(sh);
-  if (prows.some(r => r[0] === aname && r[1] === to)) {
+  const bsh = bidsTab();
+  const brows = rows(bsh);
+  if (prows.some(r => r[0] === aname && r[1] === to)
+      || brows.some(r => r[0] === aname && r[1] === to)) {
     throw nameTakenCopy;
   }
   const i = prows.findIndex(r => r[0] === aname && r[1] === from);
@@ -373,8 +377,7 @@ function renameParticipant(req) {
   const now = new Date().toISOString();
   sh.getRange(i + 2, 2).setValue(to);
   sh.getRange(i + 2, 6).setValue(now);  // tmod
-  const bsh = bidsTab();
-  rows(bsh).forEach((r, j) => {  // re-key every log row of theirs
+  brows.forEach((r, j) => {  // re-key every log row of theirs
     if (r[0] === aname && r[1] === from) {
       bsh.getRange(j + 2, 2).setValue(to);
     }
@@ -427,13 +430,14 @@ function saveClaim(req) {
   // identity is part of the frozen record, like names and bids: a
   // post-close claim would dress a revealed bid in a stranger's rig
   if (getState(aname).revealed) throw auctionClosedCopy;
-  touchAuction(aname);
-  ensureSeat(aname, uname);
+  const deviceBlurb = cleanBlurb(req.deviceBlurb);
   const held = deviceOf(aname, uname);
   if (held && held !== deviceID) {
     throw seatHeldCopy(holderBlurb(aname, uname));
   }
-  setDeviceID(aname, uname, deviceID, cleanBlurb(req.deviceBlurb));
+  touchAuction(aname);
+  ensureSeat(aname, uname);
+  setDeviceID(aname, uname, deviceID, deviceBlurb);
   return getState(aname);
 }
 
@@ -495,23 +499,24 @@ function placeBid(req) {
   if (getState(aname).revealed) {
     throw gavelFellCopy;
   }
+  const deviceID = req.deviceID === undefined ? ''
+    : cleanDeviceID(req.deviceID);
+  const deviceBlurb = cleanBlurb(req.deviceBlurb);
+  const held = deviceOf(aname, uname);
 
   // bidding claims a roster seat: your own bid must never read as
   // not-counting (re-bidding takes a removed seat back, too)
-  touchAuction(aname);
-  ensureSeat(aname, uname);
   // Bidding as someone is claiming to be them, and claims are first
   // come, first served: a bid may not touch a seat someone else holds.
   // Old clients carry no deviceID and count as nobody — fine on an
   // open seat, refused on a held one.
-  const deviceID = req.deviceID === undefined ? ''
-    : cleanDeviceID(req.deviceID);
-  const held = deviceOf(aname, uname);
   if (held && held !== deviceID) {
     throw bidSeatHeldCopy(holderBlurb(aname, uname));
   }
+  touchAuction(aname);
+  ensureSeat(aname, uname);
   if (deviceID) {
-    setDeviceID(aname, uname, deviceID, cleanBlurb(req.deviceBlurb));
+    setDeviceID(aname, uname, deviceID, deviceBlurb);
   }
 
   // every submission is its own log row; the read side derives the

@@ -30,7 +30,9 @@ const OPS = ['add', 'remove', 'claim', 'release'];
 let opsInFlight = 0;
 let opsOverlapped = false;
 
-const WRITES = ['add', 'remove', 'claim', 'release', 'bid', 'reveal'];
+const WRITES = [
+  'add', 'remove', 'rename', 'claim', 'release', 'bid', 'describe', 'reveal',
+];
 
 // Simulate an outdated deployed server whose payloads predate the
 // current shape (it was bidders[].created when this bit dreev)
@@ -62,7 +64,7 @@ function mockFetch(url, opts) {
     if (stripTini && res.bidders) {
       res.bidders.forEach((b) => { delete b.tini; });
     }
-    resolve({ json: () => Promise.resolve(res) });
+    resolve({ json: () => Promise.resolve(JSON.parse(JSON.stringify(res))) });
   }, mockDelay));
 }
 
@@ -321,6 +323,362 @@ const cssBattles = [];
      'the favicon is the gavel too — all gavel, no more \u03c4'
      + " (dreev killed the tau 2026-07-17); it shares the app icons'"
      + ' wood');
+
+  /* Replicata: ann and bob have both bid, then carol is added while
+     that write is still optimistic. Expectata: carol immediately
+     blocks reveal and the tip names her. Resultata pre-fix: reveal
+     stayed ready because its computation read the old server roster. */
+  gas.handle({ action: 'add', aname: 'localready', uname: 'ann' });
+  gas.handle({ action: 'add', aname: 'localready', uname: 'bob' });
+  gas.handle({ action: 'bid', aname: 'localready', uname: 'ann',
+    bid: 'ann bid', deviceID: 'ann-device', deviceBlurb: 'Ann rig' });
+  gas.handle({ action: 'bid', aname: 'localready', uname: 'bob',
+    bid: 'bob bid', deviceID: 'bob-device', deviceBlurb: 'Bob rig' });
+  const dLocalReady = await makePage('/localready?api=' + API_URL);
+  const localSeal = dLocalReady.window.document.getElementById('seal');
+  ok(!localSeal.disabled && localSeal.classList.contains('ready'),
+     'the two complete server seats begin reveal-ready');
+  mockDelay = 300;
+  addName(dLocalReady, 'carol');
+  ok(localSeal.disabled && !localSeal.classList.contains('ready')
+     && localSeal.getAttribute('data-tip')
+          === STR.waitingTip('carol' + STR.youTag),
+     'an optimistic local seat immediately blocks reveal and its tip'
+     + ' names the locally missing bidder');
+  await settled(dLocalReady);
+  mockDelay = 0;
+
+  /* Replicata: erase a persisted participant name and leave its field.
+     Expectata: the committed name returns. Resultata pre-fix: the
+     living field stayed blank although the model still said bob. */
+  gas.handle({ action: 'add', aname: 'emptyrename', uname: 'ann' });
+  gas.handle({ action: 'add', aname: 'emptyrename', uname: 'bob' });
+  const dEmptyRename = await makePage('/emptyrename?api=' + API_URL);
+  const emptyName = row(dEmptyRename.window.document, 'bob')
+    .querySelector('.rename input');
+  emptyName.value = '';
+  emptyName.dispatchEvent(new dEmptyRename.window.Event('blur'));
+  ok(emptyName.value === 'bob' && emptyName.defaultValue === 'bob'
+     && !emptyName.classList.contains('error'),
+     'leaving an emptied persisted name restores the committed name'
+     + ' without objecting');
+
+  /* Replicata: erase a standing bid and leave the editor. Expectata:
+     the committed bid returns; a whitespace-only never-saved editor
+     simply returns to blank. Resultata pre-fix: both fields retained
+     their empty draft even though no write happened. */
+  gas.handle({ action: 'add', aname: 'emptybid', uname: 'ann' });
+  gas.handle({ action: 'add', aname: 'emptybid', uname: 'bob' });
+  gas.handle({ action: 'bid', aname: 'emptybid', uname: 'ann',
+    bid: 'standing bid', deviceID: 'empty-device',
+    deviceBlurb: 'Empty rig' });
+  const dEmptyBid = await makePage('/emptybid?api=' + API_URL, (w) => {
+    w.localStorage.setItem('tauction-device', 'empty-device');
+    w.localStorage.setItem('tauction-uname', 'ann');
+    w.localStorage.setItem('tauction-mybids:emptybid',
+      '{"ann":"standing bid"}');
+  });
+  const standingBid = row(dEmptyBid.window.document, 'ann')
+    .querySelector('.rebid input');
+  standingBid.value = '';
+  standingBid.dispatchEvent(new dEmptyBid.window.Event('blur'));
+  ok(standingBid.value === 'standing bid'
+     && standingBid.defaultValue === 'standing bid'
+     && !standingBid.classList.contains('error')
+     && gas.handle({ action: 'state', aname: 'emptybid' })
+          .bidders.find((b) => b.uname === 'ann').bcount === 1,
+     'leaving an emptied standing bid restores server truth and sends'
+     + ' no withdrawal');
+  gas.handle({ action: 'add', aname: 'blankbid', uname: 'ann' });
+  gas.handle({ action: 'add', aname: 'blankbid', uname: 'bob' });
+  const dBlankBid = await makePage('/blankbid?api=' + API_URL, (w) => {
+    w.localStorage.setItem('tauction-uname', 'ann');
+  });
+  const blankBid = row(dBlankBid.window.document, 'ann')
+    .querySelector('.rebid input');
+  blankBid.value = '   ';
+  blankBid.dispatchEvent(new dBlankBid.window.Event('blur'));
+  ok(blankBid.value === '' && blankBid.defaultValue === ''
+     && !blankBid.classList.contains('error')
+     && !gas.handle({ action: 'state', aname: 'blankbid' })
+          .bidders.some((b) => b.uname === 'ann'),
+     'leaving a blank never-saved bid is a normal no-op');
+
+  /* Replicata: save B, then save C before B's response arrives.
+     Expectata: this client's serialized saves both land in order.
+     Resultata pre-fix: C carried A's compare-and-swap stamp and
+     falsely collided with this same client's successful B. */
+  gas.handle({ action: 'describe', aname: 'rapiddesc', base: '',
+    blurb: 'A version' });
+  gas.handle({ action: 'add', aname: 'rapiddesc', uname: 'ann' });
+  const dRapidDesc = await makePage('/rapiddesc?api=' + API_URL);
+  const rapidDoc = dRapidDesc.window.document;
+  mockDelay = 300;
+  rapidDoc.getElementById('desctoggle').click();
+  rapidDoc.getElementById('descedit').value = 'B version';
+  rapidDoc.getElementById('descedit').dispatchEvent(
+    new dRapidDesc.window.Event('blur'));
+  rapidDoc.getElementById('desctoggle').click();
+  rapidDoc.getElementById('descedit').value = 'C version';
+  rapidDoc.getElementById('descedit').dispatchEvent(
+    new dRapidDesc.window.Event('blur'));
+  await until(() => gas.handle({ action: 'state', aname: 'rapiddesc' })
+    .blurb === 'C version'
+    || !rapidDoc.getElementById('banner').hidden);
+  await until(() => !rapidDoc.getElementById('status').classList
+    .contains('stale'));
+  mockDelay = 0;
+  ok(gas.handle({ action: 'state', aname: 'rapiddesc' }).blurb
+       === 'C version'
+     && rapidDoc.getElementById('descedit').value === 'C version'
+     && !rapidDoc.getElementById('descedit').classList.contains('error')
+     && rapidDoc.getElementById('banner').hidden,
+     'rapid same-client descriptions serialize without a false'
+     + ' compare-and-swap conflict; the last draft wins');
+
+  /* Replicata: draft B waits behind another local write; another page
+     saves A2, and this page has already begun newer draft C when B is
+     refused. Expectata: B's old refusal never restores over C.
+     Resultata pre-fix: the refusal closure replaced C with B. */
+  gas.handle({ action: 'describe', aname: 'newerdesc', base: '',
+    blurb: 'A version' });
+  gas.handle({ action: 'add', aname: 'newerdesc', uname: 'ann' });
+  const dNewerDesc = await makePage('/newerdesc?api=' + API_URL);
+  const newerDoc = dNewerDesc.window.document;
+  mockDelay = 400;
+  addName(dNewerDesc, 'bob');
+  newerDoc.getElementById('desctoggle').click();
+  newerDoc.getElementById('descedit').value = 'B version';
+  newerDoc.getElementById('descedit').dispatchEvent(
+    new dNewerDesc.window.Event('blur'));
+  newerDoc.getElementById('desctoggle').click();
+  newerDoc.getElementById('descedit').value = 'C version';
+  newerDoc.getElementById('descedit').focus();
+  const beforeA2 = gas.handle({ action: 'state', aname: 'newerdesc' });
+  gas.handle({ action: 'describe', aname: 'newerdesc',
+    base: beforeA2.tblurb, blurb: 'A2 version' });
+  await until(() => !newerDoc.getElementById('banner').hidden);
+  mockDelay = 0;
+  ok(newerDoc.getElementById('descedit').value === 'C version'
+     && gas.handle({ action: 'state', aname: 'newerdesc' }).blurb
+          === 'A2 version',
+     'an older refused description never overwrites a newer local draft');
+  await until(() => newerDoc.getElementById('descedit').dataset.base
+    === gas.handle({ action: 'state', aname: 'newerdesc' }).tblurb);
+  ok(newerDoc.getElementById('descedit').value === 'C version'
+     && newerDoc.getElementById('descedit').defaultValue === 'A2 version'
+     && newerDoc.getElementById('descedit').classList.contains('error'),
+     'recovery rebases the surviving C draft on the external A2 truth');
+  newerDoc.getElementById('descedit').dispatchEvent(
+    new dNewerDesc.window.Event('blur'));
+  await until(() => gas.handle({ action: 'state', aname: 'newerdesc' })
+    .blurb === 'C version');
+  await until(() => !newerDoc.getElementById('status').classList
+    .contains('stale'));
+  ok(gas.handle({ action: 'state', aname: 'newerdesc' }).blurb
+       === 'C version'
+     && newerDoc.getElementById('descedit').value === 'C version'
+     && !newerDoc.getElementById('descedit').classList.contains('error'),
+     'saving the informed C draft again succeeds');
+
+  /* Replicata: a description write reserved an auction without adding
+     a participant or bid, and a bare page types that name. Expectata:
+     the occupied-name gate offers its URL. Resultata pre-fix: the gate
+     inferred existence from roster/bids and entered the auction. */
+  gas.handle({ action: 'describe', aname: 'desconly', base: '',
+    blurb: '' });
+  const dDescOnly = await makePage('/?api=' + API_URL);
+  type(dDescOnly, 'aname', 'desconly');
+  await until(() => dDescOnly.window.location.pathname !== '/'
+    || !dDescOnly.window.document.getElementById('banner').hidden);
+  const descOnlyLink = dDescOnly.window.document.querySelector('#banner a');
+  ok(dDescOnly.window.location.pathname === '/'
+     && descOnlyLink && descOnlyLink.getAttribute('href') === '/desconly',
+     'a description-only auction is occupied even when its description'
+     + ' is explicitly empty');
+
+  /* Replicata: the active typed-name probe returns a server error.
+     Expectata: the banner repeats those words exactly. Resultata
+     pre-fix: switchAuction dereferenced the error as state and wrapped
+     the resulting TypeError in its own ERROR2157 text. */
+  const dProbeError = await makePage('/?api=' + API_URL);
+  const ordinaryFetch = dProbeError.window.fetch;
+  dProbeError.window.fetch = (url, opts) => String(url).startsWith(API_URL)
+    ? Promise.resolve({ json: () => Promise.resolve(
+      { error: SCOPY.nameTakenCopy }) })
+    : ordinaryFetch(url, opts);
+  type(dProbeError, 'aname', 'probeerror');
+  await until(() => !dProbeError.window.document
+    .getElementById('banner').hidden);
+  ok(dProbeError.window.location.pathname === '/'
+     && dProbeError.window.document.getElementById('banner').textContent
+          === SCOPY.nameTakenCopy,
+     'a typed-name probe displays res.error verbatim and stays put');
+
+  /* Replicata: an active typed-name probe returns a state payload from
+     before the exists field joined the contract. Expectata: reject the
+     malformed state before naming or navigating. Resultata pre-fix:
+     undefined looked false, so the page committed the name and only
+     then crashed when ingest finally checked the shape. */
+  const malformedState = JSON.parse(JSON.stringify(
+    gas.handle({ action: 'state', aname: 'malformedprobe' })));
+  delete malformedState.exists;
+  const dMalformed = await makePage('/?api=' + API_URL);
+  const malformedFetch = dMalformed.window.fetch;
+  dMalformed.window.fetch = (url, opts) => String(url).startsWith(API_URL)
+    ? Promise.resolve({ json: () => Promise.resolve(malformedState) })
+    : malformedFetch(url, opts);
+  type(dMalformed, 'aname', 'malformedprobe');
+  await until(() => dMalformed.window.location.pathname !== '/'
+    || !dMalformed.window.document.getElementById('banner').hidden);
+  ok(dMalformed.window.location.pathname === '/'
+     && !dMalformed.window.document.getElementById('aname').disabled
+     && dMalformed.window.document.getElementById('banner').textContent
+          .includes('assert: bad state shape'),
+     'a malformed probe fails loudly while the page stays unnamed');
+
+  /* Replicata: JSON turns the server's safe dictionaries back into
+     ordinary objects, and an unclaimed, unbid participant is literally
+     named constructor. Expectata: constructor is an ordinary row.
+     Resultata pre-fix: inherited Object members impersonated claim,
+     bid, and row entries, and rendering crashed before building it. */
+  gas.handle({ action: 'add', aname: 'constructormap',
+    uname: 'constructor' });
+  const dConstructor = await makePage('/constructormap?api=' + API_URL,
+    (w) => { w.localStorage.setItem('tauction-uname', 'constructor'); });
+  const constructorRow = row(dConstructor.window.document, 'constructor');
+  ok(constructorRow && constructorRow.classList.contains('mine')
+     && constructorRow.querySelector('.rebid input').value === ''
+     && dConstructor.window.document.getElementById('banner').hidden,
+     'constructor survives real JSON semantics as an ordinary unclaimed'
+     + ' participant, with an ordinary blank bid editor');
+  typeBid(dConstructor, 'constructor bid');
+  submitBid(dConstructor);
+  await settled(dConstructor);
+  const constructorState = gas.handle(
+    { action: 'state', aname: 'constructormap' });
+  ok(myInput(dConstructor.window.document).value === 'constructor bid'
+     && constructorState.bidders.find((b) => b.uname === 'constructor')
+          .bcount === 1,
+     'constructor submits and remembers its bid through the same safe'
+     + ' uname maps');
+
+  /* Replicata: this stale page renames alice to beta after another page
+     added beta, then immediately edits the optimistic beta row to gamma.
+     Expectata: the unconfirmed target row is inert until alice→beta
+     settles; remote beta is untouched. Resultata pre-fix: beta→gamma
+     ran second and successfully renamed the other page's beta seat. */
+  gas.handle({ action: 'add', aname: 'pendingrename', uname: 'alice' });
+  gas.handle({ action: 'add', aname: 'pendingrename', uname: 'carol' });
+  gas.handle({ action: 'bid', aname: 'pendingrename', uname: 'alice',
+    bid: 'alice bid', deviceID: 'pending-device',
+    deviceBlurb: 'Pending rig' });
+  const dPendingRename = await makePage(
+    '/pendingrename?api=' + API_URL, (w) => {
+      w.localStorage.setItem('tauction-device', 'pending-device');
+      w.localStorage.setItem('tauction-uname', 'alice');
+      w.localStorage.setItem('tauction-mybids:pendingrename',
+        '{"alice":"alice bid"}');
+    });
+  gas.handle({ action: 'add', aname: 'pendingrename', uname: 'beta' });
+  mockDelay = 400;
+  renameTo(dPendingRename, 'alice', 'beta');
+  const pendingBeta = row(dPendingRename.window.document, 'beta');
+  const betaWasInert = [pendingBeta.querySelector('.tu'),
+    pendingBeta.querySelector('.rename input'),
+    pendingBeta.querySelector('.rebid input'),
+    pendingBeta.querySelector('.x')].every((control) => control.disabled);
+  renameTo(dPendingRename, 'beta', 'gamma');
+  await until(() => {
+    const s = gas.handle({ action: 'state', aname: 'pendingrename' });
+    return s.roster.includes('gamma')
+      || !dPendingRename.window.document.getElementById('banner').hidden;
+  });
+  await sleep(450);  // outlive the forbidden dependent rename if queued
+  mockDelay = 0;
+  const pendingState = gas.handle(
+    { action: 'state', aname: 'pendingrename' });
+  ok(betaWasInert && pendingState.roster.includes('alice')
+     && pendingState.roster.includes('beta')
+     && !pendingState.roster.includes('gamma'),
+     'an optimistic rename target is wholly inert; a refused stale'
+     + ' rename cannot mutate the remote seat it collided with');
+
+  /* Replicata: soft-claimed alice optimistically renames to beta, but
+     that one POST loses its transport response and the authoritative
+     recovery state still says alice. Expectata: identity and exact raw
+     bid memory return to alice. Resultata pre-fix: ingest only cleared
+     the pending marker, stranding this browser as nonexistent beta. */
+  gas.handle({ action: 'add', aname: 'renametransport', uname: 'alice' });
+  gas.handle({ action: 'add', aname: 'renametransport', uname: 'bob' });
+  const transportBids = '{"alice":"alice draft","beta":"old beta draft"}';
+  const dRenameTransport = await makePage(
+    '/renametransport?api=' + API_URL, (w) => {
+      w.localStorage.setItem('tauction-uname', 'alice');
+      w.localStorage.setItem('tauction-mybids:renametransport',
+        transportBids);
+    });
+  const transportFetch = dRenameTransport.window.fetch;
+  let breakRename = true;
+  dRenameTransport.window.fetch = (url, opts) => {
+    const req = opts && opts.method === 'POST' ? JSON.parse(opts.body) : null;
+    if (breakRename && req && req.action === 'rename') {
+      breakRename = false;
+      return Promise.reject(new Error('rete abruptum'));
+    }
+    return transportFetch(url, opts);
+  };
+  renameTo(dRenameTransport, 'alice', 'beta');
+  await until(() => !dRenameTransport.window.document
+    .getElementById('status').classList.contains('stale'));
+  const recoveredTransport = row(
+    dRenameTransport.window.document, 'alice');
+  ok(dRenameTransport.window.localStorage.getItem('tauction-uname')
+       === 'alice'
+     && dRenameTransport.window.localStorage.getItem(
+       'tauction-mybids:renametransport') === transportBids
+     && recoveredTransport && recoveredTransport.classList.contains('mine')
+     && !recoveredTransport.querySelector('.rename input').disabled,
+     'authoritative transport recovery restores soft identity, exact bid'
+     + ' memory, and the live alice row');
+
+  /* Replicata: the rename commits, but its response is lost. Expectata:
+     the authoritative recovery state proves beta replaced alice, so the
+     optimistic beta identity and re-keyed bid memory remain intact. */
+  gas.handle({ action: 'add', aname: 'renamecommitted', uname: 'alice' });
+  gas.handle({ action: 'add', aname: 'renamecommitted', uname: 'bob' });
+  const dRenameCommitted = await makePage(
+    '/renamecommitted?api=' + API_URL, (w) => {
+      w.localStorage.setItem('tauction-uname', 'alice');
+      w.localStorage.setItem('tauction-mybids:renamecommitted',
+        '{"alice":"alice draft"}');
+    });
+  const committedFetch = dRenameCommitted.window.fetch;
+  let loseRenameResponse = true;
+  dRenameCommitted.window.fetch = (url, opts) => {
+    const req = opts && opts.method === 'POST' ? JSON.parse(opts.body) : null;
+    if (loseRenameResponse && req && req.action === 'rename') {
+      loseRenameResponse = false;
+      return committedFetch(url, opts).then(() =>
+        Promise.reject(new Error('responsum amissum')));
+    }
+    return committedFetch(url, opts);
+  };
+  renameTo(dRenameCommitted, 'alice', 'beta');
+  await until(() => !dRenameCommitted.window.document
+    .getElementById('status').classList.contains('stale'));
+  const committedState = gas.handle(
+    { action: 'state', aname: 'renamecommitted' });
+  const committedBeta = row(dRenameCommitted.window.document, 'beta');
+  ok(committedState.roster.includes('beta')
+     && !committedState.roster.includes('alice')
+     && dRenameCommitted.window.localStorage.getItem('tauction-uname')
+          === 'beta'
+     && dRenameCommitted.window.localStorage.getItem(
+       'tauction-mybids:renamecommitted') === '{"beta":"alice draft"}'
+     && committedBeta && committedBeta.classList.contains('mine')
+     && !committedBeta.querySelector('.rename input').disabled,
+     'authoritative transport recovery keeps a rename that did commit');
 
   /* --- 1. bare visit: no server-invented name — the user picks ---------- */
   let dom = await makePage('/?api=' + API_URL);
@@ -1115,14 +1473,49 @@ const cssBattles = [];
   bobName.form.dispatchEvent(
     new dR.window.Event('submit', { bubbles: true, cancelable: true }));
   await until(() => !dR.window.document.getElementById('banner').hidden);
+  const recoveredBobName = dR.window.document
+    .querySelector('.tile[data-uname="bob"] .rename input');
   ok(dR.window.document.getElementById('banner').textContent
        .includes(SCOPY.nameTakenCopy)
-     && bobName.classList.contains('error'),
+     && recoveredBobName.classList.contains('error')
+     && recoveredBobName.isConnected,
      'the lost rename race: banner in the server\'s words AND the name'
      + ' field itself red — the problem localized');
-  bobName.dispatchEvent(new dR.window.Event('input', { bubbles: true }));
-  ok(!bobName.classList.contains('error'),
+  recoveredBobName.dispatchEvent(
+    new dR.window.Event('input', { bubbles: true }));
+  ok(!recoveredBobName.classList.contains('error'),
      'the red clears at the next keystroke');
+
+  /* --- 2p2a. a refused self-rename restores identity ------------------
+     Replicata: this browser is soft-claimed as alice; before its next
+     poll, someone adds zed and alice renames herself to zed. Expectata:
+     the stale collision refuses loudly and restores alice plus this
+     browser's exact bid memory. Resultata pre-fix: the server kept
+     alice, but the browser moved itself onto the existing zed row. */
+  gas.handle({ action: 'add', aname: 'selfrenrace', uname: 'alice' });
+  gas.handle({ action: 'add', aname: 'selfrenrace', uname: 'bob' });
+  const selfBids = '{"alice":"alice draft","zed":"old zed draft"}';
+  const dSelfRen = await makePage('/selfrenrace?api=' + API_URL, (w) => {
+    w.localStorage.setItem('tauction-uname', 'alice');
+    w.localStorage.setItem('tauction-mybids:selfrenrace', selfBids);
+  });
+  gas.handle({ action: 'add', aname: 'selfrenrace', uname: 'zed' });
+  renameTo(dSelfRen, 'alice', 'zed');
+  await until(() => !dSelfRen.window.document
+    .getElementById('banner').hidden);
+  await until(() => row(dSelfRen.window.document, 'alice')
+    && row(dSelfRen.window.document, 'alice').classList.contains('mine'));
+  const restoredAlice = row(dSelfRen.window.document, 'alice')
+    .querySelector('.rename input');
+  ok(dSelfRen.window.localStorage.getItem('tauction-uname') === 'alice'
+     && dSelfRen.window.localStorage.getItem(
+       'tauction-mybids:selfrenrace') === selfBids
+     && restoredAlice.value === 'alice'
+     && restoredAlice.classList.contains('error')
+     && restoredAlice.isConnected
+     && !row(dSelfRen.window.document, 'zed').classList.contains('mine'),
+     'the refused self-rename restores identity, exact bid memory, and'
+     + ' the visible alice field; it never claims the stale target');
   ok(dB.window.document.getElementById('descedit').value === 'B version'
      && gas.handle({ action: 'state', aname: 'descy' }).blurb
           === 'A version',

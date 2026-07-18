@@ -51,6 +51,8 @@ ok(st.aname === 'tau' && st.roster.length === 0, 'virgin defaults');
 ok(st.revealed === false && st.bids === null && st.bidders.length === 0,
    'virgin unrevealed');
 ok(ss.sheets['auctions'].data.length === 1, 'state read creates no rows');
+ok(st.exists === false,
+   'virgin state reports that no auction record exists');
 
 // 2. doGet / doPost plumbing
 let viaGet = JSON.parse(ctx.doGet({ parameter: { action: 'state', aname: 'tau' } }).body);
@@ -107,6 +109,24 @@ ok(st.bidders[0].bcount === 2, 'derived bcount = the row count');
 ok(st.bidders.length === 1
    && call({ action: 'state', aname: 'tau' }).bidders[0].uname === 'alice',
    'one BIDDER in the payload however many rows: latest-row-wins');
+
+// 4b. Replicata: use the valid uname "constructor" and submit a bid.
+//     Expectata: its bid is aggregated exactly like any other uname.
+//     Resultata pre-fix: Object.prototype.constructor impersonated an
+//     aggregate entry, so the sheet row existed but the bidder vanished.
+call({ action: 'add', aname: 'reserved', uname: 'constructor' });
+call({ action: 'add', aname: 'reserved', uname: 'alice' });
+st = call({ action: 'bid', aname: 'reserved', uname: 'constructor',
+            bid: 'reserved words are people too' });
+ok(st.bidders.some((b) => b.uname === 'constructor'),
+   'valid reserved-key uname is aggregated: its logged bid cannot vanish');
+call({ action: 'bid', aname: 'reserved', uname: 'alice', bid: 'ordinary' });
+ok(!call({ action: 'reveal', aname: 'reserved' }).error,
+   'reserved-key bidder counts toward reveal readiness');
+const reservedState = call({ action: 'state', aname: 'reserved' });
+ok(reservedState.claims.constructor === undefined
+   && reservedState.blurbs.constructor === undefined,
+   'uname-keyed payload maps have no inherited reserved-key entries');
 
 // 5. reveal is a human act: a complete roster only UNLOCKS it.
 //    (The motivating bug: two drive-by bidders who never stated a roster
@@ -285,6 +305,15 @@ ok(!call({ action: 'describe', aname: 'tau', blurb: 'post-close note',
            base: call({ action: 'state', aname: 'tau' }).tblurb }).error,
    'the blurb stays editable after the gavel: tau is revealed');
 
+// 7c. Replicata: save only a description, with no roster or bids.
+//     Expectata: the state says the auction exists, so typed-name
+//     occupancy does not confuse it with a virgin name. Resultata
+//     pre-fix: those two states had no explicit distinguishing field.
+st = call({ action: 'describe', aname: 'desconly',
+            blurb: 'description without participants', base: '' });
+ok(st.exists === true && st.roster.length === 0 && st.bidders.length === 0,
+   'description-only auction reports existing despite an empty ledger');
+
 // 8. seats are rows in the users tab; adds upsert, removes delete
 st = call({ action: 'add', aname: 'muon', uname: 'a' });
 st = call({ action: 'add', aname: 'muon', uname: 'a' });
@@ -410,6 +439,22 @@ ok(call({ action: 'rename', aname: 'strange', from: 'bob', to: '1bad' })
 ok(!call({ action: 'rename', aname: 'strange', from: 'bob', to: 'bob' })
    .error, 'renaming to the same name is a no-op');
 
+// 8d. Replicata: bob bids, is cut from the roster, then alice is
+//     renamed to bob. Expectata: bob's immortal bid history reserves
+//     that identity, so the rename is refused. Resultata pre-fix: only
+//     live seats were checked, so alice inherited bob's standing bid.
+call({ action: 'add', aname: 'cutrename', uname: 'alice' });
+call({ action: 'add', aname: 'cutrename', uname: 'bob' });
+call({ action: 'bid', aname: 'cutrename', uname: 'bob', bid: 'bobs bid' });
+call({ action: 'remove', aname: 'cutrename', uname: 'bob' });
+st = call({ action: 'rename', aname: 'cutrename',
+            from: 'alice', to: 'bob' });
+const cutRenameState = call({ action: 'state', aname: 'cutrename' });
+ok(st.error && cutRenameState.roster.join(',') === 'alice'
+   && cutRenameState.bidders.length === 1
+   && cutRenameState.bidders[0].uname === 'bob',
+   'a cut bidder keeps their uname: rename cannot merge bid histories');
+
 // 9. validation
 ok(call({ action: 'bid', aname: 'ta_u', uname: 'a', bid: 'x' }).error,
    'bad slug rejected');
@@ -423,6 +468,51 @@ ok(call({ action: 'bid', aname: 'tau2', uname: 'abc', bid: 'y'.repeat(81) })
    .error, '81-char bid rejected');
 ok(!call({ action: 'bid', aname: 'tau2', uname: 'abc', bid: 'y'.repeat(80) })
    .error, '80-char bid accepted');
+
+// 9b. Replicata: send a virgin claim/bid whose device decoration or id
+//     is invalid. Expectata: validation refuses before any write.
+//     Resultata pre-fix: touchAuction + ensureSeat ran first, so an error
+//     response left a phantom roster seat with no claim and no bid.
+const atomicValidationCases = [
+  { action: 'claim', aname: 'badclaim', uname: 'alice',
+    deviceID: 'dev-1', deviceBlurb: 'São Paulo' },
+  { action: 'bid', aname: 'badbidblurb', uname: 'alice', bid: 'ten',
+    deviceID: 'dev-1', deviceBlurb: 'São Paulo' },
+  { action: 'bid', aname: 'badbiddevice', uname: 'alice', bid: 'ten',
+    deviceID: 'BAD DEVICE!', deviceBlurb: 'a rig' },
+];
+const atomicValidationResults = atomicValidationCases.map((req) => {
+  const refusal = call(req);
+  const after = call({ action: 'state', aname: req.aname });
+  const noRows = ['auctions', 'users', 'bids'].every((name) =>
+    !ss.sheets[name].data.some((r) => r[0] === req.aname));
+  return refusal.error && after.roster.length === 0
+    && after.bidders.length === 0 && noRows;
+});
+ok(atomicValidationResults.every(Boolean),
+   'claim/bid validation errors are atomic: no auction, seat, or bid row');
+
+// 9c. Replicata: a rival claims or bids on a seat already held by
+//     another device. Expectata: the refusal precedes every write.
+//     Resultata pre-fix: the visible state was unchanged, but the
+//     auction's tmod was silently bumped before the holder check.
+call({ action: 'claim', aname: 'heldatomic', uname: 'alice',
+       deviceID: 'holder', deviceBlurb: 'holder rig' });
+const atomicSheetData = () => JSON.stringify(
+  ['auctions', 'users', 'bids'].map((name) => ss.sheets[name].data));
+let beforeRival = atomicSheetData();
+{ const t = Date.now(); while (Date.now() - t < 3); }
+const rivalClaim = call({ action: 'claim', aname: 'heldatomic',
+  uname: 'alice', deviceID: 'rival', deviceBlurb: 'rival rig' });
+const rivalClaimAtomic = atomicSheetData() === beforeRival;
+beforeRival = atomicSheetData();
+{ const t = Date.now(); while (Date.now() - t < 3); }
+const rivalBid = call({ action: 'bid', aname: 'heldatomic', uname: 'alice',
+  bid: 'hijack', deviceID: 'rival', deviceBlurb: 'rival rig' });
+const rivalBidAtomic = atomicSheetData() === beforeRival;
+ok(rivalClaim.error && rivalBid.error
+   && rivalClaimAtomic && rivalBidAtomic,
+   'held-seat claim/bid refusals leave every sheet cell unchanged');
 ok(call({ action: 'add', aname: 'tau2', uname: '1bad' }).error,
    'bad roster name rejected');
 ok(call({ action: 'settings', aname: 'tau2', roster: ['a'] }).error,
