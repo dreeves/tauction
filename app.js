@@ -134,7 +134,12 @@ async function locate() {
       localStorage.setItem('tauction-geo', geo);
       localStorage.setItem('tauction-geo-at', new Date().toISOString());
     }
-    DEVBLURB += ' in ' + geo;
+    // The server's deviceBlurb contract is printable ASCII, max 64
+    // chars: ASCII-fy the city (São Paulo -> Sao Paulo — NFD splits
+    // off the combining marks, the filter drops them) and clamp, so
+    // decoration can never cost anyone a claim or a bid
+    DEVBLURB = (DEVBLURB + ' in ' + geo).normalize('NFD')
+      .replace(/[^ -~]/g, '').slice(0, 64);
   } catch (e) { /* the blurb just goes without */ }
 }
 
@@ -152,7 +157,9 @@ let focusHost = null;  // [data-tip] element holding focus, if any
 async function showTip() {
   const tip = $('tip');
   const host = hoverHost || focusHost;
-  if (!host || !host.isConnected
+  // a host that lost its data-tip while alive (the seal at reveal)
+  // has nothing to say: hidden, never an empty bubble
+  if (!host || !host.isConnected || !host.getAttribute('data-tip')
       || host.querySelector('input:focus, textarea:focus')) {
     tip.hidden = true;
     return;
@@ -193,14 +200,7 @@ function ingest(res) {
     .find((u) => res.claims[u] === DEVICE);
   const remembered = localStorage.getItem('tauction-uname');
   if (claimed !== undefined && claimed !== remembered) {
-    const bids = JSON.parse(
-      localStorage.getItem('tauction-mybids:' + res.aname) || '{}');
-    if (remembered !== null && bids[remembered] !== undefined) {
-      bids[claimed] = bids[remembered];
-      delete bids[remembered];
-      localStorage.setItem('tauction-mybids:' + res.aname,
-        JSON.stringify(bids));
-    }
+    if (remembered !== null) rekeyMyBids(res.aname, remembered, claimed);
     localStorage.setItem('tauction-uname', claimed);
   }
 }
@@ -342,6 +342,18 @@ function me() {
 // so bids stay readable to you even if you switch rows and bid again
 function myBids() {
   return JSON.parse(localStorage.getItem('tauction-mybids:' + aname) || '{}');
+}
+
+// Re-key this browser's bid memory when an identity changes name:
+// your own rename, or one made elsewhere that followed your device home
+function rekeyMyBids(a, from, to) {
+  assert(from !== to, 'rekeyMyBids to the same name');
+  const bids = JSON.parse(
+    localStorage.getItem('tauction-mybids:' + a) || '{}');
+  if (bids[from] === undefined) return;
+  bids[to] = bids[from];
+  delete bids[from];
+  localStorage.setItem('tauction-mybids:' + a, JSON.stringify(bids));
 }
 
 // Bids whose text this client knows: the ones it placed, plus everyone's
@@ -912,13 +924,7 @@ function commitRename(from, raw, field) {
     // your own rename must not unseat you while the op flies: local
     // identity and bid memory follow immediately
     localStorage.setItem('tauction-uname', to);
-    const bids = myBids();
-    if (bids[from] !== undefined) {
-      bids[to] = bids[from];
-      delete bids[from];
-      localStorage.setItem('tauction-mybids:' + aname,
-        JSON.stringify(bids));
-    }
+    rekeyMyBids(aname, from, to);
   }
   roster = roster.map((u) => (u === from ? to : u));
   // a server-side refusal (a stale-roster race the local guard can't

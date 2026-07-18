@@ -30,7 +30,7 @@ const call = (req) => {
 const COPY = require('vm').runInContext('({ gavelFellCopy,'
   + ' simulEditsCopy, seatHeldCopy, bidSeatHeldCopy, unknownActionCopy,'
   + ' mysteryDeviceCopy, schemaDriftCopy, auctionClosedCopy,'
-  + ' rosterClosedCopy })', ctx);
+  + ' rosterClosedCopy, badDevBlurbCopy })', ctx);
 // Real Apps Script resets globals every execution; one shared vm
 // context hosts the whole qual run, so drift quals empty the
 // header-check memo by hand to simulate a fresh execution
@@ -370,6 +370,20 @@ ok(call({ action: 'claim', aname: 'higgs', uname: 'ann',
 ok(call({ action: 'claim', aname: 'higgs', uname: 'cee',
           deviceID: '' }).error,
    'a claim with no device is a client bug: refused');
+// the deviceBlurb contract the client must meet: printable ASCII,
+// max 64 chars — the frontend ASCII-fies and clamps its decoration
+// to fit (a São Paulo bidder must never lose a bid to an accent)
+st = call({ action: 'claim', aname: 'higgs', uname: 'ann',
+            deviceID: 'dev-1', deviceBlurb: 'Mac in São Paulo' });
+ok(String(st.error) === COPY.badDevBlurbCopy,
+   'a non-ASCII deviceBlurb is refused: the contract is printable'
+   + ' ASCII, and the server never silently fixes inputs');
+ok(call({ action: 'claim', aname: 'higgs', uname: 'ann',
+          deviceID: 'dev-1', deviceBlurb: 'y'.repeat(65) }).error,
+   'a 65-char deviceBlurb is refused');
+ok(!call({ action: 'claim', aname: 'higgs', uname: 'ann',
+           deviceID: 'dev-1', deviceBlurb: 'y'.repeat(64) }).error,
+   'a 64-char deviceBlurb is accepted: the fence sits at exactly 64');
 
 // 8c. renames fix typos, in place: the seat row and any bid row re-key
 //     together; claims (the device column) ride the seat row

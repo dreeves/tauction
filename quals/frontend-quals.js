@@ -21,6 +21,7 @@ const gas = require('./fake-gas')();
 const API_URL = 'https://script.example/exec';
 let apiCalls = [];
 let geoHits = 0;  // ipwho.is fixture servings (the cache quals count)
+let geoFixture = { city: 'Portland', region_code: 'OR' };  // what it serves
 let mockDelay = 0;  // artificial latency, for in-flight race quals
 
 // Overlapping write ops pile onto the server's script lock; track
@@ -40,8 +41,7 @@ function mockFetch(url, opts) {
   // the geo lookup gets a fixture: quals must never touch the network
   if (url.includes('ipwho.is')) {
     geoHits++;
-    return Promise.resolve({ json: () =>
-      Promise.resolve({ city: 'Portland', region_code: 'OR' }) });
+    return Promise.resolve({ json: () => Promise.resolve(geoFixture) });
   }
   if (!url.startsWith(API_URL)) return Promise.reject(new Error('unexpected URL ' + url));
   let req;
@@ -1286,6 +1286,61 @@ const cssBattles = [];
      'a stale stamp (8 days) refetches and re-stamps: cities do'
      + ' occasionally move');
 
+  /* --- 2r2. accented geography must never cost a bid -------------------
+     Replicata: the IP lookup names a city with non-ASCII characters
+     (São Paulo, Zürich, Montréal); claim a seat or place a bid.
+     Resultata pre-fix: DEVBLURB carried the accents into the request
+     and Code.gs's printable-ASCII deviceBlurb contract refused the
+     WHOLE thing — 'bad deviceBlurb', a bid lost to decoration.
+     Expectata: the client ASCII-fies its own decoration (São -> Sao)
+     and clamps it to the contract's 64 chars; the bid always lands. */
+  geoFixture = { city: 'São Paulo', region_code: 'SP' };
+  const gSp = await makePage('/geosp?api=' + API_URL);
+  await until(() => gSp.window.localStorage.getItem('tauction-geo'));
+  addName(gSp, 'ze');
+  typeBid(gSp, 'dez reais');
+  submitBid(gSp);
+  await settled(gSp);
+  ok(gSp.window.document.getElementById('banner').hidden
+     && gas.handle({ action: 'state', aname: 'geosp' }).bidders
+          .length === 1,
+     'a São Paulo bidder bids fine: decoration never blocks the act');
+  ok((gas.handle({ action: 'state', aname: 'geosp' }).blurbs.ze || '')
+       .endsWith(' in Sao Paulo, SP'),
+     'the blurb arrives ASCII-fied (São -> Sao), got '
+       + gas.handle({ action: 'state', aname: 'geosp' }).blurbs.ze);
+  geoFixture = { city: 'Portland', region_code: 'OR' };
+  // a city cached by PRE-FIX code sanitizes at use, not just at
+  // store: the day-long TTL must not keep the bug alive for a day
+  const gZu = await makePage('/geozu?api=' + API_URL, (win) => {
+    win.localStorage.setItem('tauction-geo', 'Zürich, ZH');
+    win.localStorage.setItem('tauction-geo-at', new Date().toISOString());
+  });
+  addName(gZu, 'ueli');
+  typeBid(gZu, 'zehn franken');
+  submitBid(gZu);
+  await settled(gZu);
+  ok((gas.handle({ action: 'state', aname: 'geozu' }).blurbs.ueli || '')
+       .endsWith(' in Zurich, ZH'),
+     'a cached pre-fix city sanitizes on use (Zürich -> Zurich), got '
+       + gas.handle({ action: 'state', aname: 'geozu' }).blurbs.ueli);
+  // the length half of the contract: a Welsh-length city clamps to 64
+  const gLl = await makePage('/geoll?api=' + API_URL, (win) => {
+    win.localStorage.setItem('tauction-geo',
+      'Llanfairpwllgwyngyllgogerychwyrndrobwllllantysiliogogogoch, GW');
+    win.localStorage.setItem('tauction-geo-at', new Date().toISOString());
+  });
+  addName(gLl, 'wyn');
+  typeBid(gLl, 'a leek');
+  submitBid(gLl);
+  await settled(gLl);
+  ok(gas.handle({ action: 'state', aname: 'geoll' }).bidders.length === 1
+     && (gas.handle({ action: 'state', aname: 'geoll' }).blurbs.wyn || '')
+          .length <= 64,
+     "a Welsh-length blurb clamps to the contract's 64 chars and the"
+     + ' bid still lands, got '
+       + gas.handle({ action: 'state', aname: 'geoll' }).blurbs.wyn);
+
   /* --- 2s. flipping to view paints INSTANTLY --------------------------
      Replicata (dreev): type markdown, click the toggle, and the box
      basically disappears for a while — the view pane waited for the
@@ -1457,6 +1512,35 @@ const cssBattles = [];
   await settled(dTip2);
   ok(dTip2.window.document.getElementById('tip').hidden,
      'a removed host takes its tip with it: no haunting');
+  // ...and a host that merely LOSES its data-tip while alive (the
+  // seal is the one that does: the lit 🎉 explains itself, so the
+  // reveal strips its tip) must take the open tip with it too.
+  // Replicata: park on the ready padlock; the reveal lands from
+  // elsewhere. Resultata pre-fix: the tip stayed up as an EMPTY
+  // bubble until the pointer moved. Expectata: it vanishes.
+  gas.handle({ action: 'add', aname: 'tipgone', uname: 'ann' });
+  gas.handle({ action: 'add', aname: 'tipgone', uname: 'bo' });
+  gas.handle({ action: 'bid', aname: 'tipgone', uname: 'ann', bid: 'a' });
+  gas.handle({ action: 'bid', aname: 'tipgone', uname: 'bo', bid: 'b' });
+  const dTip3 = await makePage('/tipgone?api=' + API_URL);
+  await sleep(20);
+  const sealT = dTip3.window.document.getElementById('seal');
+  sealT.focus();
+  sealT.dispatchEvent(new dTip3.window.FocusEvent('focusin',
+    { bubbles: true }));
+  await sleep(10);
+  ok(!dTip3.window.document.getElementById('tip').hidden
+     && dTip3.window.document.getElementById('tip').textContent
+          === STR.revealTip,
+     'parked on the ready padlock: its tip is up');
+  gas.handle({ action: 'reveal', aname: 'tipgone' });  // from elsewhere
+  await until(() => dTip3.window.document.getElementById('status')
+    .classList.contains('revealed'));
+  await sleep(10);
+  ok(!sealT.hasAttribute('data-tip')
+     && dTip3.window.document.getElementById('tip').hidden,
+     "the reveal takes the padlock's tip: the open tip vanishes"
+     + ' instead of lingering as an empty bubble');
 
   /* --- 2u. name, TAB, bid (dreev's add-self flow) ----------------------
      Adding YOURSELF should leave the bid field one tab away: type
