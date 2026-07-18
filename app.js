@@ -514,10 +514,19 @@ function renderStatus() {
 // of falling paper is just litter).
 const FETE_MS = 5000;   // stamp + ceremony class linger this long
 const STRIKE_MS = 850;  // when the mallet lands (63% of gavel-verdict)
+const ECHO_MS = STRIKE_MS + 600;  // when the jackpot answers the strike
 const CONFETTI_TICKS = 2000;  // piece lifetime in frames (calpuz's)
 function celebrate() {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const box = $('status');
+  // THE SCHELLING JACKPOT (disclosed if): the help copy invites
+  // playing Schelling's coordination game, and every-revealed-bid-
+  // identical is that game won — the ceremony says so (the stamp)
+  // and shows it (the convergence, below). Exact string equality,
+  // cut rows included; two bids minimum (which reveal guarantees).
+  const bids = state.bids || [];
+  const consensus = bids.length >= 2
+    && bids.every((b) => b.bid === bids[0].bid);
   // prestrike holds the 🔒 (CSS) until the mallet lands, so the 🎉
   // flip, glow, quake, SOLD, and money all land on the strike's one
   // beat (dreev lined them up) — the bids themselves unmask at the
@@ -525,7 +534,8 @@ function celebrate() {
   box.classList.add('ceremony', 'prestrike');
   const fete = el('div', 'fete');
   fete.setAttribute('aria-hidden', 'true');
-  fete.append(el('span', 'stamp', stampCopy));
+  fete.append(el('span', consensus ? 'stamp consensus' : 'stamp',
+                 consensus ? consensusStamp : stampCopy));
   box.append(fete);
   // The confetti is money (dreev's set: dollars, yen, pounds, coins,
   // the scales of justice) on REAL physics: vendored canvas-confetti
@@ -551,15 +561,31 @@ function celebrate() {
   // away gavel still rains on you.
   const block = box.querySelector(':scope > .gavel .block')
     .getBoundingClientRect();
+  const ox = Math.min(Math.max(
+    (block.left + block.width / 2) / innerWidth, 0), 1);
+  const oy = Math.min(Math.max(
+    (block.top + block.height / 2) / innerHeight, 0), 1);
   setTimeout(() => {  // the strike is the launch, and the beat drop
     box.classList.remove('prestrike');
     fire({ particleCount: 130, spread: 85, startVelocity: 55,
-           gravity: 0.9, origin: {
-      x: Math.min(Math.max(
-           (block.left + block.width / 2) / innerWidth, 0), 1),
-      y: Math.min(Math.max(
-           (block.top + block.height / 2) / innerHeight, 0), 1) } });
+           gravity: 0.9, origin: { x: ox, y: oy } });
   }, STRIKE_MS);
+  // The jackpot's echo: the side cannons dreev pared back RETURN for
+  // this one moment — one per viewport corner, each aimed pixel-true
+  // (aspect-ratio corrected; confetti's 90° is straight up) at the
+  // very point of impact. A Schelling point is a focal point, so the
+  // money literally CONVERGES on one.
+  if (consensus) {
+    setTimeout(() => {
+      [[0, 0], [1, 0], [0, 1], [1, 1]].forEach(([cx, cy]) => {
+        fire({ particleCount: 45, spread: 18, startVelocity: 65,
+               gravity: 0.7, origin: { x: cx, y: cy },
+               angle: Math.atan2((cy - oy) * innerHeight,
+                                 (ox - cx) * innerWidth)
+                 * 180 / Math.PI });
+      });
+    }, ECHO_MS);
+  }
   setTimeout(() => {
     fete.remove();
     box.classList.remove('ceremony');

@@ -45,6 +45,10 @@ const closedLine = (stamp) => 'Closed ' + stamp;
 const stampCopy = 'SOLD';
 const moneyGlyphs = ['$', '¥', '£', '\u{1fa99}', '⚖️'];
 
+// The jackpot stamp, for when every revealed bid turns out IDENTICAL:
+// Schelling's coordination game (see the help copy), won.
+const consensusStamp = 'CONSENSUS';
+
 // The blurb's unknown-device fallback (when user-agent comes up empty)
 const mysteryDevice = 'mystery device';
 

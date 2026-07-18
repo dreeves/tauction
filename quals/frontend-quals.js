@@ -79,6 +79,7 @@ const STYLE_CSS = fs.readFileSync(path.join(REPO, 'style.css'), 'utf8');
 const STR = new Function(STRINGLES
   + '; return { needTwoTip, needOneMoreTip, waitingTip, youTag,'
   + ' awaitingTip, auctionExistsBanner, simulEditsBanner, stampCopy,'
+  + ' consensusStamp,'
   + ' claimedByTip, claimTip, mysteryDevice, nameTakenBanner,'
   + ' moneyGlyphs, revealTip, needNameTip, removeTip,'
   + ' tooLateRemoveTip, resubmittedTip };')();
@@ -2077,6 +2078,57 @@ const cssBattles = [];
   ok(!doc2.querySelector('#status .fete')
      && !doc2.getElementById('status').classList.contains('ceremony'),
      'the ceremony packs up after itself: no confetti litter');
+
+  /* --- 3b0. the Schelling jackpot: every bid identical ------------------
+     The help copy invites playing Schelling's coordination game, and
+     all-identical revealed bids are that game WON. Replicata: two
+     bidders, the same bid, reveal. Expectata: the ceremony knows —
+     the stamp comes down reading the consensus copy (derived from
+     stringles), and an echo after the strike, four corner cannons
+     fire money that CONVERGES on the gavel's point of impact: a
+     Schelling point is a focal point, made literal. The aim is
+     pixel-true (aspect-ratio corrected), pinned here by recomputing
+     every cannon's bearing from its own recorded burst. */
+  gas.handle({ action: 'add', aname: 'jackpot', uname: 'ann' });
+  gas.handle({ action: 'add', aname: 'jackpot', uname: 'bo' });
+  gas.handle({ action: 'bid', aname: 'jackpot', uname: 'bo',
+               bid: 'york', deviceID: 'db' });
+  const domJk = await makePage('/jackpot?api=' + API_URL);
+  claimRow(domJk, 'ann');
+  typeBid(domJk, 'york');   // the minds meet
+  submitBid(domJk);
+  await settled(domJk);
+  domJk.window.document.getElementById('seal').click();
+  await until(() => domJk.window.document.getElementById('status')
+    .classList.contains('revealed'));
+  const jkStamp = domJk.window.document
+    .querySelector('#status .fete .stamp');
+  ok(jkStamp && jkStamp.textContent === STR.consensusStamp
+     && jkStamp.classList.contains('consensus'),
+     'all bids identical: the stamp comes down reading the consensus'
+     + ' copy, not the sale');
+  await until(() => domJk.window.__confettiCalls.length === 5);
+  const jk = domJk.window.__confettiCalls;
+  ok(jk.length === 5 && jk[0].particleCount === 130
+     && jk[0].spread === 85,
+     'the gavel-strike burst still fires first: the jackpot adds an'
+     + ' echo, never replaces the verdict');
+  const jkFocal = jk[0].origin;
+  const jkCorners = jk.slice(1).map((c) => c.origin.x + ',' + c.origin.y)
+    .sort().join(' ');
+  ok(jkCorners === '0,0 0,1 1,0 1,1',
+     'four cannons, one per viewport corner, got ' + jkCorners);
+  ok(jk.slice(1).every((c) => {
+    const want = Math.atan2(
+      (c.origin.y - jkFocal.y) * domJk.window.innerHeight,
+      (jkFocal.x - c.origin.x) * domJk.window.innerWidth)
+      * 180 / Math.PI;
+    return Math.abs(c.angle - want) < 1e-9
+      && c.spread === 18 && c.startVelocity === 65 && c.gravity === 0.7
+      && c.particleCount === 45 && c.ticks === 2000 && c.zIndex === 5
+      && c.shapes.length === STR.moneyGlyphs.length;
+  }), 'every cannon aims pixel-true at the point of impact: the money'
+     + ' CONVERGES on the focal point');
 
   /* --- 3b. shimmer + stacks: re-bids glow anew in every window ---------- */
   gas.handle({ action: 'add', aname: 'wobble', uname: 'ann' });
