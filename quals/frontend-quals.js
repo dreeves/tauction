@@ -218,8 +218,9 @@ const Z_LADDER = {
   '.gavel': 2,               // the busy sign over the grayed ledger
   '.corner': 2,              // share/help float over the aname card
   '.rebid .gavel.mini': 1,   // the row-local busy sign
-};                           // (the confetti canvas rides above all
-                             // at the library's 100, by design)
+};                           // (the confetti canvas is fired at
+                             // zIndex 5: above the page, below the
+                             // summoned tips at 6)
 const zFound = {};
 for (const m of STYLE_CSS.matchAll(/z-index:\s*(\d+)/g)) {
   const start = STYLE_CSS.lastIndexOf('}', m.index) + 1;
@@ -287,6 +288,24 @@ const cssBattles = [];
      + " (dreev's Android install was manifest-less Chrome fallback)");
   ok(INDEX_HTML.includes('rel="manifest"'),
      'index.html links the manifest');
+  /* --- link previews, the static tier (dreev chose (a): crawlers
+     don't run JS, so per-auction blurbs/counts are unreachable from
+     static Pages — same card for every link) --------------------- */
+  const og = (p) => (INDEX_HTML.match(
+    new RegExp('property="og:' + p + '" content="([^"]*)"')) || [])[1];
+  ok(og('title') === 'tauction'
+     && og('image') === 'https://tauction.dreev.es/icons/icon-512.png'
+     && og('url') === 'https://tauction.dreev.es/',
+     'open graph card: title, ABSOLUTE gavel image (crawlers resolve'
+     + ' nothing), canonical url');
+  ok(og('description') && og('description').length > 20
+     && INDEX_HTML.replace(/\s+/g, ' ')
+          .split(og('description').replace(/\s+/g, ' ')).length >= 3,
+     "the preview description is dreev's own words from the help copy"
+     + ' (both places, compared wrapping-insensitively: he rewraps'
+     + ' prose at will)');
+  ok(/name="twitter:card" content="summary"/.test(INDEX_HTML),
+     'twitter falls back to the summary card');
   ok(/rel="icon" href="data:image\/svg\+xml,[^"]*%238a5a2b/
        .test(INDEX_HTML),
      'the favicon is the gavel too — all gavel, no more \u03c4'
@@ -319,6 +338,10 @@ const cssBattles = [];
   ok(dom.window.location.pathname === '/fresh1'
      && dom.window.location.search.includes('api='),
      'naming it navigates, keeping ?api=');
+  ok(doc.getElementById('aname').disabled,
+     'NAMES ARE CHOSEN ONCE (dreev, dissolving the navigator/name'
+     + ' dual meaning): the field disables the moment the name'
+     + ' commits — the URL is the navigation now');
   ok(!doc.getElementById('roster-input').disabled
      && !doc.getElementById('status').classList.contains('stale'),
      'the named ledger wakes: + row live, gray gone');
@@ -429,6 +452,8 @@ const cssBattles = [];
   /* --- 2. alice sets up /tau and bids in place; her bid stays visible --- */
   dom = await makePage('/tau?api=' + API_URL);
   doc = dom.window.document;
+  ok(doc.getElementById('aname').disabled,
+     'arriving by URL: the name is set in stone here too');
   type(dom, 'roster-input', 'Alice!');
   ok(doc.getElementById('roster-input').value === 'alice',
      'name sanitized while typing');
@@ -1307,9 +1332,10 @@ const cssBattles = [];
   /* --- 2t2. dead ends are STICKY and walkable (dreev's PWA report:
      an installed app has no URL bar, so "use the URL" must BE the
      URL, and the sign must not vanish while you read it) --------- */
-  const dPwa = await makePage('/gate2?api=' + API_URL);
+  const dPwa = await makePage('/?api=' + API_URL);
   await sleep(20);
   gas.handle({ action: 'add', aname: 'occupied', uname: 'zoe' });
+  dPwa.window.document.getElementById('aname').focus();
   type(dPwa, 'aname', 'occupied');
   await until(() => !dPwa.window.document.getElementById('banner').hidden);
   const gateLink = dPwa.window.document.querySelector('#banner a');
@@ -1328,24 +1354,29 @@ const cssBattles = [];
     dPwa.window.location.pathname === '/gate3');
   ok(dPwa.window.document.getElementById('banner').hidden,
      'landing somewhere real finally clears it');
+  ok(dPwa.window.document.getElementById('aname').disabled,
+     "...and the chosen name freezes: creating is the field's one"
+     + ' job, done');
 
   /* --- 2t3. Escape means "never mind" in EVERY field -------------------
      One universal rule: Escape reverts a field to its baseline
      (defaultValue, the committed truth everywhere) and leaves. New
      ground covered: the auction-name field — abandoning a half-typed
      switch used to be impossible (the debounce fired regardless). */
+  const dEsc0 = await makePage('/?api=' + API_URL);
+  await sleep(20);
+  dEsc0.window.document.getElementById('aname').focus();
+  type(dEsc0, 'aname', 'somewhereelse');
+  dEsc0.window.document.getElementById('aname').dispatchEvent(
+    new dEsc0.window.KeyboardEvent('keydown',
+      { key: 'Escape', bubbles: true }));
+  await sleep(700);  // outlive the create debounce
+  ok(dEsc0.window.document.getElementById('aname').value === ''
+     && dEsc0.window.location.pathname === '/',
+     'Escape in the auction field abandons the half-typed CREATE:'
+     + ' field cleared, nobody navigates');
   const dEsc = await makePage('/eschome?api=' + API_URL);
   await sleep(20);
-  dEsc.window.document.getElementById('aname').focus();
-  type(dEsc, 'aname', 'somewhereelse');
-  dEsc.window.document.getElementById('aname').dispatchEvent(
-    new dEsc.window.KeyboardEvent('keydown',
-      { key: 'Escape', bubbles: true }));
-  await sleep(700);  // outlive the switch debounce
-  ok(dEsc.window.document.getElementById('aname').value === 'eschome'
-     && dEsc.window.location.pathname === '/eschome',
-     'Escape in the auction field abandons the half-typed switch:'
-     + ' name restored, nobody navigates');
   dEsc.window.document.getElementById('roster-input').focus();
   type(dEsc, 'roster-input', 'oops');
   dEsc.window.document.getElementById('roster-input').dispatchEvent(
@@ -1629,6 +1660,7 @@ const cssBattles = [];
   const burst = dom2.window.__confettiCalls[0];
   ok(burst.particleCount === 130
      && burst.startVelocity === 55 && burst.gravity === 0.9
+     && burst.zIndex === 5  // below the tooltips' 6: tips beat money
      && burst.spread === 85 && burst.ticks === 2000
      && burst.shapes.length === STR.moneyGlyphs.length
      && burst.shapes.every((s, i) => s.text === STR.moneyGlyphs[i]),
@@ -1831,16 +1863,14 @@ const cssBattles = [];
   typeBid(domR, 'zoom zoom');
   mockDelay = 600;  // response lands after the 500ms auction-switch debounce
   submitBid(domR);
-  type(domR, 'aname', 'elsewhere');
-  // wait on the CONDITIONS, not the clock (the old 1800ms sleep left
-  // ~100ms slack over the delayed hops and flaked under load): the
-  // switch must commit and the delayed bid response must land
-  await until(() => domR.window.location.pathname === '/elsewhere');
+  // [REWRITTEN 2026-07-18, names-are-chosen-once: the old hazard —
+  // switching auctions while the bid flew — is unrepresentable now,
+  // and the pin is that it IS]
+  ok(domR.window.document.getElementById('aname').disabled,
+     'no auction-hopping mid-bid or ever: the name field is stone');
   await until(() => domR.window.localStorage
     .getItem('tauction-mybids:race') !== null);
   mockDelay = 0;
-  ok(domR.window.localStorage.getItem('tauction-mybids:elsewhere') === null,
-     'no bid attributed to the auction you switched to');
   ok(JSON.parse(domR.window.localStorage.getItem('tauction-mybids:race') || '{}')
        .carl === 'zoom zoom',
      'bid remembered under the auction it was placed on');
@@ -1961,7 +1991,7 @@ const cssBattles = [];
      (a fresh page: its first 5s poll can't be mid-flight during the
      switch, which would defer the reload to the next poll) ------------- */
   apiCalls = [];
-  const dom4 = await makePage('/switchme?api=' + API_URL);
+  const dom4 = await makePage('/?api=' + API_URL);
   const doc4 = dom4.window.document;
   mockDelay = 150;
   type(dom4, 'aname', 'Pie-Split');
@@ -2032,20 +2062,11 @@ const cssBattles = [];
   ok(!row(domC2.window.document, 'pat').classList.contains('cut'),
      're-bidding rejoins the roster and uncrosses');
 
-  /* --- 4c. switching while a poll is in flight must not strand the box --
-     Replicata: let a 5s poll fire and, while its response is in flight,
-     switch auctions (the refreshing guard makes the switch's own refresh
-     a no-op). Expectata: the box unstales as soon as the stale response
-     lands, not a full poll cycle later. */
-  const domW = await makePage('/inflight?api=' + API_URL);
-  mockDelay = 800;                     // widen the in-flight window
-  await sleep(4750);                   // first poll fires at ~5000ms
-  type(domW, 'aname', 'poleposition'); // 500ms debounce -> switch lands
-                                       // ~5250, inside the poll's flight
-  await sleep(2400);                   // stale response + one refetch
-  mockDelay = 0;
-  ok(!domW.window.document.getElementById('status').classList.contains('stale'),
-     'switching mid-poll: box unstales without waiting out another poll');
+  /* --- 4c. RETIRED 2026-07-18 (names-are-chosen-once): its replicata
+     — switching auctions while a poll's response was in flight — is
+     unrepresentable now. Polls run only on named pages; the name
+     field is stone there. The refresh() mid-flight refire it pinned
+     is deleted as dead code. ------------------------------------- */
 
   /* --- 5. XSS: a bid with markup renders inert; walk-ons show cut ------- */
   gas.handle({ action: 'bid', aname: 'piesplit', uname: 'rando', bid: 'me too!' });
@@ -2082,11 +2103,11 @@ const cssBattles = [];
      URL, so nobody stumbles into a stranger's auction by picking
      "pizza". Following a link always joins. */
   gas.handle({ action: 'add', aname: 'occupied', uname: 'stranger' });
-  const domG = await makePage('/mineown?api=' + API_URL);
+  const domG = await makePage('/?api=' + API_URL);
   type(domG, 'aname', 'occupied');
   await until(() =>  // the refusal banner is the positive signal
     !domG.window.document.getElementById('banner').hidden);
-  ok(domG.window.location.pathname === '/mineown',
+  ok(domG.window.location.pathname === '/',
      'typing an occupied name does not navigate');
   ok(!domG.window.document.getElementById('banner').hidden
      && domG.window.document.getElementById('banner').textContent
@@ -2102,7 +2123,7 @@ const cssBattles = [];
   await until(() =>
     !domG.window.document.getElementById('banner').hidden);
   ok(!domG.window.document.getElementById('banner').hidden
-     && domG.window.location.pathname === '/mineown',
+     && domG.window.location.pathname === '/',
      'retyping the taken name banners again: refusal is never silent');
   const domG2 = await makePage('/occupied?api=' + API_URL);
   await sleep(20);

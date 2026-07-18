@@ -100,7 +100,7 @@ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
    -webkit-text-fill-color plus opacity (fill beats color — dreev's
    grayed final bid), so all three axes get pinned. The grayed-🎉
    class of bug: when text looks washed, check every ink channel. */
-.rebid input:disabled, .rename input:disabled {
+.rebid input:disabled, .rename input:disabled, #aname:disabled {
   color: var(--fg);
   -webkit-text-fill-color: var(--fg);
   opacity: 1;

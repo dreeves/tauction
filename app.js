@@ -196,9 +196,8 @@ async function refresh() {
     banner(e2152(e.message));
   } finally {
     refreshing = false;
-    // the auction switched mid-flight, and the refreshing guard swallowed
-    // that switch's own refresh: fetch the current auction now
-    if (a !== aname) refresh();
+    // (the old mid-flight-switch refire died with names-are-chosen-
+    // once: polls run only on named pages, where aname is immutable)
   }
 }
 
@@ -485,8 +484,13 @@ function celebrate() {
     .getPropertyValue('--ok-fg').trim();
   const money = moneyGlyphs.map((g) =>
     confetti.shapeFromText({ text: g, scalar: 2, color: green }));
+  // zIndex 5: above the page, BELOW the tooltips' 6 — a summoned tip
+  // outranks even the party (the canvas lingers ~30s while stray
+  // pieces time out, and money falling across a tooltip read as the
+  // tips-behind-things bug to dreev)
   const fire = (opts) => confetti(Object.assign(
-    { shapes: money, scalar: 2, ticks: CONFETTI_TICKS }, opts));
+    { shapes: money, scalar: 2, ticks: CONFETTI_TICKS, zIndex: 5 },
+    opts));
   // one burst, straight off the gavel's sound block — the point of
   // impact (dreev pared back calpuz's side cannons and topper; the
   // SPEED stays calpuz's). Clamped viewport fractions: a scrolled-
@@ -1162,7 +1166,10 @@ async function switchAuction(a) {
     }
     aname = a;
     setPath(aname);
-    $('aname').defaultValue = a;  // the new committed baseline
+    $('aname').defaultValue = a;  // the committed baseline...
+    $('aname').disabled = true;   // ...and NAMES ARE CHOSEN ONCE
+                                  // (dreev): the field's one job is
+                                  // done; the URL is the navigation
     $('banner').hidden = true;  // landing somewhere real clears any
                                 // dead-end sign still standing
     state = null;
@@ -1304,6 +1311,7 @@ async function init() {
     $('aname').focus();
   } else {
     setPath(aname);
+    $('aname').disabled = true;  // arrived named: the name is stone
     paintCached();
     await refresh();
   }

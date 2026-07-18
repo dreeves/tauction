@@ -10,6 +10,16 @@
 <!-- installable as a proper app (the icon is the gavel); without
      this, Android's "install" is only Chrome's fallback shortcut -->
 <link rel="manifest" href="/manifest.json">
+<!-- link previews, static tier (dreev's call: crawlers don't run
+     JS, so every link shares this one card; the description is
+     dreev's help copy, verbatim) -->
+<meta property="og:title" content="tauction">
+<meta property="og:description" content="We often use this for auctions but the idea is fairly general: getting responses from a group of people without them influencing each other.">
+<meta property="og:image" content="https://tauction.dreev.es/icons/icon-512.png">
+<meta property="og:url" content="https://tauction.dreev.es/">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+
 <!-- ==================== GITHUB PAGES 404 HACK ====================
      index.html and 404.html are EXACT COPIES of each other, enforced
      by a qual. GitHub Pages serves 404.html for every path that isn't
@@ -99,7 +109,7 @@
     <!-- tabindex: tab is for editable fields; the link stays clickable -->
     <a href="/sourcery.html" tabindex="-1">sourcery</a>
     <span class="sep">·</span>
-    <span class="version">v2026.07.17-o</span>
+    <span class="version">v2026.07.17-p</span>
   </footer>
 </main>
 

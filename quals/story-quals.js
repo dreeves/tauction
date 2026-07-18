@@ -809,9 +809,9 @@ async function tipBox(page, i) {
        re-latches her automatically. Bob (as dee) bids. Evy never shows,
        so alice ×es her off the ledger, force-revealing. */
     await alice.evaluate(() => { document.getElementById('aname').value = ''; });
-    await alice.type('#aname', 'chores');
-    await alice.waitForFunction(() => location.pathname === '/chores');
-    ok(true, 'editing the auction field navigates: /chores');
+    // [names-are-chosen-once 2026-07-18: alice travels by URL now]
+    await alice.goto(BASE + '/chores', { waitUntil: 'networkidle0' });
+    ok(true, 'the URL is the navigation: /chores');
     await addName(alice, 'dee');
     await addName(alice, 'evy');
     await alice.waitForFunction(() =>
@@ -1230,13 +1230,15 @@ async function tipBox(page, i) {
        dead-end banner made the latent ordering observable.
        Expectata: a tip you are actively summoning outranks the
        ambient banner. ---------------------------------------------- */
-    await wire.$eval('#aname', (e) => { e.value = ''; });
-    await wire.type('#aname', 'chores');  // occupied: sticky banner
-    await wire.waitForFunction(() =>
+    // (from a BARE page: typing names is the create flow now)
+    const zpage = await makePage(browser, DESKTOP);
+    await zpage.goto(BASE + '/', { waitUntil: 'networkidle0' });
+    await zpage.type('#aname', 'chores');  // occupied: sticky banner
+    await zpage.waitForFunction(() =>
       !document.getElementById('banner').hidden
       && document.querySelector('#banner a'));
-    await wire.hover('label[for="aname"]');
-    ok(await wire.evaluate(() =>
+    await zpage.hover('label[for="aname"]');
+    ok(await zpage.evaluate(() =>
       parseInt(getComputedStyle(document.querySelector(
         'label[for="aname"]'), '::before').zIndex, 10)
       > parseInt(getComputedStyle(
