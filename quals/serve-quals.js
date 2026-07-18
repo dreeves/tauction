@@ -34,6 +34,10 @@ function ok(cond, label) {
   } catch (e) { /* connection refused = port free, good */ }
   const server = spawn('python3', [path.join(REPO, 'serve.py'), String(PORT)],
                        { stdio: 'ignore' });
+  // a FAILING run exits via process.exit, which skips finally — the
+  // orphaned server then squats the port for every later run (the
+  // pre-flight guard catches it; this prevents it)
+  process.on('exit', () => { try { server.kill(); } catch (e) {} });
   try {
     let up = false;
     for (let i = 0; i < 50 && !up; i++) {

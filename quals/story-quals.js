@@ -155,6 +155,10 @@ async function tipBox(page, i) {
   } catch (e) { /* connection refused = port free, good */ }
   const server = spawn('python3', [path.join(REPO, 'serve.py'), String(PORT)],
                        { stdio: 'ignore' });
+  // a FAILING run exits via process.exit, which skips finally — the
+  // orphaned server then squats the port for every later run (the
+  // pre-flight guard catches it; this prevents it)
+  process.on('exit', () => { try { server.kill(); } catch (e) {} });
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   try {
     /* ================= Story 1: Alice starts an auction ================
@@ -705,15 +709,18 @@ async function tipBox(page, i) {
       document.body.append(probe);
       const ink = getComputedStyle(probe).color;
       probe.remove();
-      return getComputedStyle(document.querySelector(
-        '.tile.mine .rebid input')).color === ink;
-    }), 'your own revealed bid reads in FULL ink, same as every card');
+      const s = getComputedStyle(document.querySelector(
+        '.tile.mine .rebid input'));
+      return s.color === ink && s.opacity === '1';
+    }), 'your own revealed bid reads in FULL ink — color AND opacity'
+       + ' (the 0.6 relic dimmed what color alone could not reveal)');
     ok(await bob.evaluate(() => {
       const washed = [];
       document.querySelectorAll(':disabled').forEach((el) => {
         if (!(el.value || el.textContent || '').trim()) return;
-        if (getComputedStyle(el).color === 'rgba(16, 16, 16, 0.3)') {
-          washed.push(el.className || el.id);
+        const s = getComputedStyle(el);
+        if (s.color === 'rgba(16, 16, 16, 0.3)' || s.opacity !== '1') {
+          washed.push((el.className || el.id) + ' opacity:' + s.opacity);
         }
       });
       return washed.length ? washed.join(';') : true;
