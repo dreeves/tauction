@@ -145,6 +145,14 @@ async function tipBox(page, i) {
 (async () => {
   ok(CHROME, 'found a Chrome/Chromium binary');
   fs.mkdirSync(SHOTS, { recursive: true });
+  // fail LOUD if a stale server squats the port (see serve-quals:
+  // a silent EADDRINUSE means testing a zombie's stale bytes)
+  try {
+    await fetch(BASE + '/');
+    console.error('FAIL: port ' + PORT + ' is already serving —'
+      + ' kill the stale server (lsof -i :' + PORT + ') and rerun');
+    process.exit(1);
+  } catch (e) { /* connection refused = port free, good */ }
   const server = spawn('python3', [path.join(REPO, 'serve.py'), String(PORT)],
                        { stdio: 'ignore' });
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true });

@@ -80,7 +80,8 @@ const STR = new Function(STRINGLES
   + '; return { needTwoTip, needOneMoreTip, waitingTip, youTag,'
   + ' awaitingTip, auctionExistsBanner, simulEditsBanner, stampCopy,'
   + ' claimedByTip, mysteryDevice, nameTakenBanner,'
-  + ' moneyGlyphs, revealTip };')();
+  + ' moneyGlyphs, revealTip, needNameTip, removeTip,'
+  + ' tooLateRemoveTip, resubmittedTip };')();
 const STAMP = STR.stampCopy;
 
 // ...and the server's half, out of the vm context hosting Code.gs
@@ -258,10 +259,10 @@ for (const m of STYLE_CSS.matchAll(/z-index:\s*(\d+)/g)) {
   ok(dom.window.location.pathname === '/', 'a bare visit stays at /');
   ok(doc.getElementById('seal').disabled
      && doc.getElementById('seal').getAttribute('data-tip')
-          === STR.needTwoTip,
-     "the unnamed page's padlock is gray with the standard"
-     + ' need-two-bidders tip (dreev caught it resting on "Reveal'
-     + ' bids!" — the truth of an empty page needs no branch)');
+          === STR.needNameTip,
+     "the unnamed page's padlock is gray with dreev's"
+     + ' name-first tip (it once rested on the HTML\'s "Reveal'
+     + ' bids!" — the resting stamp needs no branch)');
   ok(!apiCalls.some((c) => c.action === 'fresh'),
      'no fresh-name round trip: particle names are gone');
   ok(doc.activeElement === doc.getElementById('aname')
@@ -524,10 +525,11 @@ for (const m of STYLE_CSS.matchAll(/z-index:\s*(\d+)/g)) {
   ok(row(doc, 'alice').querySelector('.x').disabled,
      'the × grays out once a bid is in (a sealed bid is never deletable)');
   ok(row(doc, 'alice').querySelector('.x').getAttribute('data-tip')
-       === 'too late to remove @alice'
+       === STR.tooLateRemoveTip('alice')
      && row(doc, 'bob').querySelector('.x').getAttribute('data-tip')
-       === 'remove @bob',
-     "the grayed ×'s tip says why: too late to remove");
+       === STR.removeTip('bob'),
+     "the grayed ×'s tip says why: too late to remove (copy derived —"
+     + ' dreev recapitalized it mid-flight, the literal broke)');
   ok(!row(doc, 'bob').querySelector('.x').disabled,
      'the bidless row keeps its live ×');
   ok(row(doc, 'alice').querySelector('.x').parentElement
@@ -1698,9 +1700,15 @@ for (const m of STYLE_CSS.matchAll(/z-index:\s*(\d+)/g)) {
   // (subs superscript shelved 2026-07-15)
   // ok(own[0].querySelector('.tile-subs').textContent === '2',
   //    'counter ticks on re-submission');
-  ok(/^first submitted \d+[sm] ago, resubmitted \d+s ago$/
-       .test(hoverBid(domA, 'ann')),
-     "re-submission tooltip: 'first submitted ..., resubmitted ...', got "
+  // the shape is DERIVED from stringles (dreev recapitalizes copy at
+  // will): the template with the ago-slots as patterns
+  const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const resubRe = new RegExp('^'
+    + escRe(STR.resubmittedTip('@A@', '@B@'))
+        .replace('@A@', '\\d+[smhd]').replace('@B@', '\\d+[smhd]')
+    + '$');
+  ok(resubRe.test(hoverBid(domA, 'ann')),
+     're-submission tooltip matches the stringles template, got '
      + hoverBid(domA, 'ann'));
   ok(own[0].querySelector('.rebid input').style.boxShadow
        .includes('2px 2px'),
@@ -1969,7 +1977,7 @@ for (const m of STYLE_CSS.matchAll(/z-index:\s*(\d+)/g)) {
   // clicking it purges the zombie bid outright
   ok(!patRow.querySelector('.x').disabled
      && patRow.querySelector('.x').getAttribute('data-tip')
-          === 'remove @pat',
+          === STR.removeTip('pat'),
      "a cut row's × works: the one way back from a tampered/raced"
      + ' state');
   patRow.querySelector('.x').click();

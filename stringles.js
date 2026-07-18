@@ -14,14 +14,16 @@ const claimTip = 'Claim as you';
 const claimedByTip = (blurb) => 'Claimed by someone (' + blurb + ')';
 
 // The ×'s tooltips: live and grayed
-const removeTip = (uname) => 'remove @' + uname;
-const tooLateRemoveTip = (uname) => 'too late to remove @' + uname;
+const removeTip = (uname) => 'Remove @' + uname;
+const tooLateRemoveTip = (uname) => 'Too late to remove @' + uname;
 
 // The padlock's tooltips (the revealed 🎉 wears none — dreev:
 // obvious is obvious). revealTip moved here verbatim from
 // index.html 2026-07-18, retiring the SEAL_TIP cache hack; the
 // resting page wears needTwoTip (the truth of an empty roster).
-const revealTip = 'Reveal bids!';
+const revealTip = 'Reveal bids';
+// the resting (unnamed-page) padlock: name first, then bidders
+const needNameTip = 'Auction needs a name, then at least two bidders';
 const needTwoTip = 'Need at least two bidders';
 const needOneMoreTip = 'Need at least one more bidder';
 const waitingTip = (roll) => 'Waiting for ' + roll + ' to bid...';
@@ -29,12 +31,12 @@ const youTag = ' (you)';
 
 // The bid cell's tooltips: nothing yet, submitted once (yours/theirs),
 // and resubmitted
-const awaitingTip = 'awaiting bid...';
+const awaitingTip = 'Awaiting bid...';
 const submittedTip = (whose, ago) => whose + ' submitted ' + ago + ' ago';
 const yourBidWord = 'your bid';
 const bidWord = 'bid';
 const resubmittedTip = (tini, tmod) =>
-  'first submitted ' + tini + ' ago, resubmitted ' + tmod + ' ago';
+  'First submitted ' + tini + ' ago, resubmitted ' + tmod + ' ago';
 
 // The Closed line under a finished auction
 const closedLine = (stamp) => 'Closed ' + stamp;
@@ -71,4 +73,4 @@ const e2154 = (msg) => 'ERROR2154: ' + msg;  // roster op POST failed
 const e2155 = (msg) => 'ERROR2155: ' + msg;  // reveal POST failed
 const e2156 = 'ERROR2156: Missing API constant in app.js';
 const e2157 = (msg) => 'ERROR2157: ' + msg;  // auction-name probe failed
-const copyFailBanner = (msg) => 'could not copy: ' + msg;
+const copyFailBanner = (msg) => 'Could not copy: ' + msg;

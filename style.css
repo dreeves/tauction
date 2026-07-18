@@ -94,6 +94,18 @@ input[type="text"], input:not([type]) {
 
 input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 
+/* The gavel disables the bid editor and the name fields, but their
+   text is the RECORD, not gray history. Chrome already honors the
+   author color above; SAFARI washes disabled inputs via
+   -webkit-text-fill-color plus opacity (fill beats color — dreev's
+   grayed final bid), so all three axes get pinned. The grayed-🎉
+   class of bug: when text looks washed, check every ink channel. */
+.rebid input:disabled, .rename input:disabled {
+  color: var(--fg);
+  -webkit-text-fill-color: var(--fg);
+  opacity: 1;
+}
+
 input::placeholder { color: var(--muted); opacity: 0.8; }
 
 .at-wrap {

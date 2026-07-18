@@ -1185,10 +1185,11 @@ async function switchAuction(a) {
 /* ------------------------------- wiring ------------------------------- */
 
 function wireUp() {
-  // The resting truth of an empty page, stamped unconditionally: zero
-  // bidders need two more (dreev caught the padlock resting on the
-  // HTML's old "Reveal bids!"). Any real render paints over it.
-  $('seal').setAttribute('data-tip', needTwoTip);
+  // The resting truth of an empty page, stamped unconditionally
+  // (dreev caught the padlock resting on the HTML's old "Reveal
+  // bids!"): first a name, then bidders. Any real render paints
+  // over it.
+  $('seal').setAttribute('data-tip', needNameTip);
 
   // Universal button hygiene: an activated button doesn't keep
   // focus — you pressed it, you know what it is (none is a tab stop,

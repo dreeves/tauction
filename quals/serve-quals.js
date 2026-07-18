@@ -23,6 +23,15 @@ function ok(cond, label) {
 }
 
 (async () => {
+  // fail LOUD if a stale server squats the port: the spawn below
+  // would die silently on EADDRINUSE and we'd interrogate a zombie
+  // (it happened: a crashed run's leftover served pre-fix bytes)
+  try {
+    await fetch(BASE + '/');
+    console.error('FAIL: port ' + PORT + ' is already serving —'
+      + ' kill the stale server (lsof -i :' + PORT + ') and rerun');
+    process.exit(1);
+  } catch (e) { /* connection refused = port free, good */ }
   const server = spawn('python3', [path.join(REPO, 'serve.py'), String(PORT)],
                        { stdio: 'ignore' });
   try {
@@ -39,6 +48,10 @@ function ok(cond, label) {
 
     r = await fetch(BASE + '/style.css');
     ok(r.status === 200, 'real files still served');
+    ok(r.headers.get('cache-control') === 'no-store',
+       'a dev server never lies about freshness: no-store on every'
+       + " response (Chrome's heuristic caching served dreev"
+       + ' hour-stale CSS)');
 
     r = await fetch(BASE + '/tau');
     ok(r.status === 404, 'GET /tau is 404 (same status as GitHub Pages)');
