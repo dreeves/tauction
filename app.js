@@ -127,13 +127,21 @@ let DEVBLURB = (() => {
 // dev live-reload loads on every file save, and that burned the free
 // rate limit into 429s (~30 lookups/month vs the 10k/month tier).
 const GEO_TTL_MS = 24 * 3600 * 1000;
+const GEO_RETRY_MS = 3600 * 1000;  // a FAILED lookup backs off this long
 async function locate() {
   try {
     let geo = localStorage.getItem('tauction-geo');
     const at = localStorage.getItem('tauction-geo-at');
     if (!(geo && Date.now() - Date.parse(at) < GEO_TTL_MS)) {
+      // The attempt is stamped BEFORE it flies (dreev's persisting-
+      // 429 report, 2026-07-18): a throttled or down service gets one
+      // probe per backoff window, never a console-spamming retry per
+      // load — which itself fed the burst limit under dev live-reload
+      const tried = localStorage.getItem('tauction-geo-try');
+      if (Date.now() - Date.parse(tried) < GEO_RETRY_MS) return;
+      localStorage.setItem('tauction-geo-try', new Date().toISOString());
       const r = await (await fetch('https://ipwho.is/')).json();
-      if (!(r.city && r.region_code)) return;  // next load retries
+      if (!(r.city && r.region_code)) return;  // retry after the backoff
       geo = r.city + ', ' + r.region_code;
       localStorage.setItem('tauction-geo', geo);
       localStorage.setItem('tauction-geo-at', new Date().toISOString());

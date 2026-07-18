@@ -2032,6 +2032,40 @@ const cssBattles = [];
      'a stale stamp (8 days) refetches and re-stamps: cities do'
      + ' occasionally move');
 
+  /* --- 2r3. a FAILED lookup backs off, never retries per load ----------
+     Replicata (dreev's persisting-429 report, 2026-07-18): the geo
+     service throttles (or is down); reload the page — dev live-reload
+     means a load per file save. Resultata pre-fix: only success wrote
+     the cache stamp, so every load re-probed and console-logged a
+     fresh 429, itself feeding the burst limit. Expectata: the ATTEMPT
+     is stamped, so a throttled service gets one probe per backoff
+     window; once the window lapses, the next load probes again. */
+  geoFixture = { success: false };  // the 429 body: no city in it
+  const geoBefore2 = geoHits;
+  const gF1 = await makePage('/geofail?api=' + API_URL);
+  await until(() => geoHits === geoBefore2 + 1);
+  ok(geoHits === geoBefore2 + 1
+     && gF1.window.localStorage.getItem('tauction-geo') === null
+     && !Number.isNaN(Date.parse(
+          gF1.window.localStorage.getItem('tauction-geo-try'))),
+     'a failed lookup caches no city but stamps the attempt');
+  const gF2 = await makePage('/geofail2?api=' + API_URL, (w) =>
+    w.localStorage.setItem('tauction-geo-try', new Date().toISOString()));
+  await sleep(100);
+  ok(geoHits === geoBefore2 + 1,
+     'a reload inside the backoff window does not probe at all: no'
+     + ' 429 spam, no burst-limit feedback loop');
+  geoFixture = { city: 'Portland', region_code: 'OR' };
+  const gF3 = await makePage('/geofail3?api=' + API_URL, (w) =>
+    w.localStorage.setItem('tauction-geo-try',
+      new Date(Date.now() - 2 * 3600 * 1000).toISOString()));
+  await until(() => gF3.window.localStorage.getItem('tauction-geo'));
+  ok(geoHits === geoBefore2 + 2
+     && gF3.window.localStorage.getItem('tauction-geo')
+          === 'Portland, OR',
+     'a lapsed backoff probes again on the next load and primes the'
+     + ' cache');
+
   /* --- 2r2. accented geography must never cost a bid -------------------
      Replicata: the IP lookup names a city with non-ASCII characters
      (São Paulo, Zürich, Montréal); claim a seat or place a bid.
