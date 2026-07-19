@@ -76,9 +76,11 @@ function stickyBanner(html) {
 
 let aname = '';
 let state = null;         // latest server snapshot of the current auction
-let roster = [];          // local working copy of the roster
-let seen = umap();        // uname -> updated stamp at last render (shimmer)
-let pendingRenames = new Map();
+let seats = [];           // local working copy of the seats: one
+                          // {pid, uname} per person, insertion order
+                          // — the pid is the IDENTITY (2026-07-19,
+                          // dreev's spec), the uname just its label
+let seen = umap();        // pid -> updated stamp at last render (shimmer)
 let wasRevealed = null;   // reveal state at last render (null = unknown)
 let lastWriteAt = 0;      // when this client last STARTED a write (bid,
                           // add/remove, claim, reveal); of concurrent
@@ -206,10 +208,10 @@ function assertState(res) {
   assert(res !== null && typeof res === 'object'
     && typeof res.aname === 'string'
     && typeof res.exists === 'boolean'
-    && Array.isArray(res.roster)
-    && res.roster.every((u) => typeof u === 'string')
+    && Array.isArray(res.seats) && res.seats.every(
+      (s) => typeof s.pid === 'string' && typeof s.uname === 'string')
     && Array.isArray(res.bidders) && res.bidders.every(
-      (b) => typeof b.uname === 'string' && STAMP_RE.test(b.tini)
+      (b) => typeof b.pid === 'string' && STAMP_RE.test(b.tini)
           && STAMP_RE.test(b.tmod) && typeof b.bcount === 'number')
     && typeof res.revealed === 'boolean'
     && typeof res.tfin === 'string'
@@ -222,7 +224,7 @@ function assertState(res) {
     && !Array.isArray(res.blurbs)
     && Object.values(res.blurbs).every((v) => typeof v === 'string')
     && (res.bids === null || (Array.isArray(res.bids)
-      && res.bids.every((b) => typeof b.uname === 'string'
+      && res.bids.every((b) => typeof b.pid === 'string'
         && typeof b.bid === 'string'))),
   'bad state shape — is the deployed Code.gs current?');
 }
@@ -231,20 +233,17 @@ function assertState(res) {
 // next page load can paint instantly instead of flashing a blank roster
 function ingest(res) {
   assertState(res);
-  reconcileTransportRenames(res);
   res.claims = umap(res.claims);
   res.blurbs = umap(res.blurbs);
   state = res;
   localStorage.setItem('tauction-state:' + res.aname, JSON.stringify(res));
-  // Your device's registered claim is authoritative for who you are: if
-  // the name it holds changed (someone else fixed your typo), the local
-  // identity and bid memory follow it home
+  // Your device's registered claim is authoritative for who you are.
+  // (In the uname era this dragged bid memory along to the new name;
+  // pids never change, so following the claim home is the whole job.)
   const claimed = Object.keys(res.claims)
-    .find((u) => res.claims[u] === DEVICE);
-  const remembered = localStorage.getItem('tauction-uname');
-  if (claimed !== undefined && claimed !== remembered) {
-    if (remembered !== null) rekeyMyBids(res.aname, remembered, claimed);
-    localStorage.setItem('tauction-uname', claimed);
+    .find((p) => res.claims[p] === DEVICE);
+  if (claimed !== undefined && claimed !== myPidStored()) {
+    storeMyPid(claimed);
   }
 }
 
@@ -279,10 +278,10 @@ async function refresh() {
 
 function render() {
   if (!state) return;
-  // adopt the server's roster: every adopted snapshot is gated on being
+  // adopt the server's seats: every adopted snapshot is gated on being
   // newer than this client's newest write, so it contains every local
-  // edit — no shielding needed
-  roster = state.roster.slice();
+  // edit — no shielding needed (cloned: local edits mutate labels)
+  seats = state.seats.map((s) => ({ pid: s.pid, uname: s.uname }));
   renderStatus();
   renderDesc();
   $('status').classList.remove('stale');  // server truth is on screen
@@ -370,37 +369,41 @@ function commitDesc() {
   $('desc').classList.toggle('viewing', edit.value !== '');
 }
 
-// You are whoever this browser last bid (or claimed a row) as — but only
-// while that name has a row in this auction AND the server's claim for
-// it (if any) is this device's. Unclaimed-on-the-server plus remembered
-// locally counts as yours (the optimistic moment before your claim
-// lands); a rival device's registered claim unseats you.
-function me() {
-  const u = localStorage.getItem('tauction-uname') || '';
-  if (!slotUnames().includes(u)) return '';
-  // no snapshot yet = no claims are known: optimistically yours (the
-  // same optimistic moment as an unclaimed-on-the-server seat)
-  const holder = state === null ? undefined : state.claims[u];
-  return holder === undefined || holder === DEVICE ? u : '';
+// This browser's identity ledger: aname -> pid (which seat is YOU,
+// per auction). The pid never changes, so nothing downstream — bid
+// memory, claims, row keys — ever needs re-keying. tauction-uname
+// lives on only as a display-name HINT for the add-yourself flow.
+function myPidStored() {
+  return umap(JSON.parse(
+    localStorage.getItem('tauction-pids') || '{}'))[aname] || '';
+}
+function storeMyPid(p) {
+  const m = umap(JSON.parse(
+    localStorage.getItem('tauction-pids') || '{}'));
+  if (p === '') delete m[aname];
+  else m[aname] = p;
+  localStorage.setItem('tauction-pids', JSON.stringify(m));
 }
 
-// Every bid this browser has placed on this auction, keyed by uname —
-// so bids stay readable to you even if you switch rows and bid again
+// You are whoever this browser holds the pid of — but only while that
+// pid has a rendered seat here AND the server's claim for it (if any)
+// is this device's. Unclaimed-on-the-server plus remembered locally
+// counts as yours (the optimistic moment before your claim lands); a
+// rival device's registered claim unseats you.
+function mypid() {
+  const p = myPidStored();
+  if (!p || !seats.some((s) => s.pid === p)) return '';
+  // no snapshot yet = no claims are known: optimistically yours (the
+  // same optimistic moment as an unclaimed-on-the-server seat)
+  const holder = state === null ? undefined : state.claims[p];
+  return holder === undefined || holder === DEVICE ? p : '';
+}
+
+// Every bid this browser has placed on this auction, keyed by pid —
+// pids never change, so this memory never needs migrating
 function myBids() {
   return umap(JSON.parse(
     localStorage.getItem('tauction-mybids:' + aname) || '{}'));
-}
-
-// Re-key this browser's bid memory when an identity changes name:
-// your own rename, or one made elsewhere that followed your device home
-function rekeyMyBids(a, from, to) {
-  assert(from !== to, 'rekeyMyBids to the same name');
-  const bids = umap(JSON.parse(
-    localStorage.getItem('tauction-mybids:' + a) || '{}'));
-  if (bids[from] === undefined) return;
-  bids[to] = bids[from];
-  delete bids[from];
-  localStorage.setItem('tauction-mybids:' + a, JSON.stringify(bids));
 }
 
 // Bids whose text this client knows: the ones it placed, plus everyone's
@@ -408,19 +411,8 @@ function rekeyMyBids(a, from, to) {
 // same rule makes your bids visible to you and sealed for everyone else.
 function knownBids() {
   const known = myBids();
-  (state.bids || []).forEach((b) => { known[b.uname] = b.bid; });
+  (state.bids || []).forEach((b) => { known[b.pid] = b.bid; });
   return known;
-}
-
-// One row per expected bidder: the roster, plus any walk-on bidders.
-// Uses the LOCAL roster so your chip edits show up instantly (the box
-// stays grayed via .stale until the server confirms them).
-function slotUnames() {
-  // pre-snapshot (a cold page's first seconds, names already typed)
-  // the local roster is the whole story: no walk-ons are known yet
-  const unames = state === null ? []
-    : state.bidders.map((b) => b.uname);
-  return roster.concat(unames.filter((u) => !roster.includes(u)));
 }
 
 // The BIDS box IS the app: one ledger line per roster member. Dashed,
@@ -432,12 +424,9 @@ function slotUnames() {
 // the roster, offered only while it has no bid to protect. Reveal lights
 // the 🎉 and glows the card, once.
 let lastPrint = '';  // fingerprint of the last-rendered rows
-let rowNodes = umap();   // uname -> its living row node (keyed reuse)
-
-function pendingRename(uname) {
-  return pendingRenames.get(uname) || [...pendingRenames.values()]
-    .find((tx) => tx.confirmed === uname);
-}
+let rowNodes = umap();   // pid -> its living row node (keyed reuse;
+                         // the pid never changes, so a rename never
+                         // re-keys a living node)
 
 function renderStatus() {
   // Skip no-op rebuilds: replacing the nodes destroys any button mid-
@@ -445,13 +434,9 @@ function renderStatus() {
   // that changes nothing can silently eat a click. wasRevealed and seen
   // are in the fingerprint because the render right after a reveal or a
   // shimmer must still run: it retires those one-shot effects.
-  const print = JSON.stringify([aname, wasRevealed, seen,
-    [...pendingRenames.values()].map((tx) => [
-      tx.confirmed, tx.desired,
-      tx.flight === null ? null : [tx.flight.from, tx.flight.to],
-    ]), slotUnames(),
-    state.bidders, state.roster, state.revealed, state.tfin,
-    state.claims, state.blurbs, me(), knownBids()]);
+  const print = JSON.stringify([aname, wasRevealed, seen, seats,
+    state.bidders, state.seats, state.revealed, state.tfin,
+    state.claims, state.blurbs, mypid(), knownBids()]);
   if (print === lastPrint) return;
   lastPrint = print;
 
@@ -462,7 +447,7 @@ function renderStatus() {
   if (wasRevealed === false && state.revealed) celebrate();
   wasRevealed = state.revealed;
 
-  const mine = me();
+  const mine = mypid();
 
   // The padlock is the reveal button: pressable (and pulsing) only
   // once everyone on the roster — at least two people — has bid.
@@ -470,12 +455,13 @@ function renderStatus() {
   // NAMES them (you tagged as you, Oxford comma at three); a roster
   // below two is a separate, dominating blocker (no amount of bidding
   // unlocks a solo auction), so the tip names THAT then instead.
-  const missing = roster.filter(
-    (u) => !state.bidders.some((b) => b.uname === u));
-  const roll = missing.map((u) => u + (u === mine ? youTag : ''));
+  const missing = seats.filter(
+    (s) => !state.bidders.some((b) => b.pid === s.pid));
+  const roll = missing.map((s) =>
+    s.uname + (s.pid === mine ? youTag : ''));
   const listed = roll.length <= 2 ? roll.join(' and ')
     : roll.slice(0, -1).join(', ') + ', and ' + roll[roll.length - 1];
-  const ready = !state.revealed && roster.length >= 2
+  const ready = !state.revealed && seats.length >= 2
     && missing.length === 0;
   // the revealed 🎉 stays ENABLED: reveal is idempotent server-side,
   // so a pointless press is harmless — and a button that is never
@@ -489,8 +475,8 @@ function renderStatus() {
   else {
     $('seal').setAttribute('data-tip',
       ready ? revealTip
-      : roster.length === 0 ? needTwoTip
-      : roster.length === 1 ? needOneMoreTip
+      : seats.length === 0 ? needTwoTip
+      : seats.length === 1 ? needOneMoreTip
       : waitingTip(listed));
   }
 
@@ -505,15 +491,15 @@ function renderStatus() {
     ? closedLine(closedStamp(state.tfin)) : '';
   const known = knownBids();
   const placed = myBids();  // bids THIS browser placed (the dibs exception)
-  const byName = umap();
-  state.bidders.forEach((b) => { byName[b.uname] = b; });
+  const byPid = umap();
+  state.bidders.forEach((b) => { byPid[b.pid] = b; });
   // Placing a bid locks the who-you-are radio: no switching rows, no
   // releasing — permanently, since your bid never unlists (trying
   // this per dreev)
-  const locked = mine !== '' && byName[mine] !== undefined;
+  const locked = mine !== '' && byPid[mine] !== undefined;
   const nextSeen = umap();
 
-  // Keyed reconcile: every uname keeps its living row node for its whole
+  // Keyed reconcile: every pid keeps its living row node for its whole
   // life, so a mid-gesture click (mousedown and mouseup need the same
   // node) or a focused editor can never be destroyed by a render. New
   // rows are built once (structure + listeners), then idempotently
@@ -522,21 +508,21 @@ function renderStatus() {
   const tiles = $('tiles');
   const keep = umap();
   let cursor = null;  // the previous row in the desired order
-  slotUnames().forEach((uname) => {
-    const b = byName[uname];
-    let t = rowNodes[uname] || buildRow(uname);
-    keep[uname] = t;
-    updateRow(t, uname, b, mine, known, placed, locked);
+  seats.forEach((seat) => {
+    const b = byPid[seat.pid];
+    let t = rowNodes[seat.pid] || buildRow(seat.pid);
+    keep[seat.pid] = t;
+    updateRow(t, seat, b, mine, known, placed, locked);
     if (t.parentElement !== tiles || t.previousElementSibling !== cursor) {
       tiles.insertBefore(t, cursor ? cursor.nextElementSibling
                                    : tiles.firstElementChild);
     }
     cursor = t;
-    nextSeen[uname] = b === undefined ? undefined : b.tmod;
+    nextSeen[seat.pid] = b === undefined ? undefined : b.tmod;
   });
   // sweep strays: vanished rows, other auctions' rows
   [...tiles.children].forEach((c) => {
-    if (keep[c.dataset.uname] !== c) c.remove();
+    if (keep[c.dataset.pid] !== c) c.remove();
   });
   rowNodes = keep;
   seen = nextSeen;
@@ -646,21 +632,22 @@ function celebrate() {
   }, FETE_MS);
 }
 
-// One-time structure + listeners for a row. The uname IS the key: it
-// never changes for a living node, so these closures stay valid for the
-// node's whole life. Everything mutable is synced in updateRow.
-function buildRow(uname) {
+// One-time structure + listeners for a row. The PID is the key: it
+// never changes for a living node — not even across renames — so
+// these closures stay valid for the node's whole life. Everything
+// mutable (the label included) is synced in updateRow.
+function buildRow(pid) {
   const t = el('div', 'tile');
-  t.dataset.uname = uname;
+  t.dataset.pid = pid;
   // one solid glyph for every star: CSS draws it hollow (outline)
   // until .selected fills it gold — a real radio button
   // buttons act on click or tap; tab is for editable fields (dreev)
   const star = el('button', 'tu', '★');
   star.tabIndex = -1;
   star.type = 'button';
-  star.addEventListener('click', () => toggleTu(uname));
+  star.addEventListener('click', () => toggleTu(pid));
   const nameEl = el('div', 'tile-name');
-  nameEl.append(star, buildNameField(uname));
+  nameEl.append(star, buildNameField(pid));
   const bidEl = el('div', 'tile-bid');
   // The empty bid box of a takeable row is where dreev's hallway
   // tester kept tapping ("clicking on this box doesn't work"), so it
@@ -670,9 +657,9 @@ function buildRow(uname) {
   // (misclicks must not switch a claimed identity), only on takeable
   // (star-enabled) rows, only while bidless (a slot, not a card).
   bidEl.addEventListener('click', () => {
-    if (me() === '' && !t.querySelector('.tu').disabled
+    if (mypid() === '' && !t.querySelector('.tu').disabled
         && !t.classList.contains('has-bid')) {
-      toggleTu(uname);
+      toggleTu(pid);
     }
   });
   // the tip is computed on entry, not at render: its "3m ago" ages must
@@ -681,7 +668,7 @@ function buildRow(uname) {
   // mouseover that shows the singleton tip (target phase precedes the
   // bubble), so the tip always reads a fresh attribute
   bidEl.addEventListener('mouseover', () => {
-    bidEl.setAttribute('data-tip', bidTip(uname));
+    bidEl.setAttribute('data-tip', bidTip(pid));
   });
   // (green ✅ scrapped 2026-07-16 — it sat confusingly next to the ×,
   // and the card's green styling already says "bid in"; its subs
@@ -697,8 +684,11 @@ function buildRow(uname) {
   x.tabIndex = -1;
   x.type = 'button';
   x.addEventListener('click', () => {
-    roster = roster.filter((u) => u !== uname);
-    queueOp({ action: 'remove', aname: aname, uname: uname });
+    // the × only lives on bidless rows (a bid protects its seat, and
+    // the server refuses removing a bidder outright), so removal is
+    // a plain optimistic delete
+    seats = seats.filter((z) => z.pid !== pid);
+    queueOp({ action: 'remove', aname: aname, pid: pid });
   });
   t.append(nameEl, bidEl, x);
   return t;
@@ -706,7 +696,7 @@ function buildRow(uname) {
 
 // The bid cell's content comes in three kinds; swapped wholesale when
 // the kind changes, synced in place otherwise
-function buildBidContent(kind, uname) {
+function buildBidContent(kind, pid) {
   if (kind === 'editor') {
     const form = el('form', 'rebid');
     const input = el('input');
@@ -725,7 +715,7 @@ function buildBidContent(kind, uname) {
       const v = input.value.trim();
       if (v === '') input.value = input.defaultValue;
       else if (v !== input.defaultValue
-               && v !== input.dataset.sent) placeBid(uname, form);
+               && v !== input.dataset.sent) placeBid(pid, form);
     });
     form.append(input);
     // the row-local busy sign: a mini gavel, shown by .rebid.busy
@@ -738,7 +728,7 @@ function buildBidContent(kind, uname) {
     form.append(g);
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      placeBid(uname, form);
+      placeBid(pid, form);
     });
     return form;
   }
@@ -755,11 +745,13 @@ function buildBidContent(kind, uname) {
 // Idempotently sync a row node to the current state: same state in,
 // same DOM out, whatever the node rendered before (a property qual
 // holds this to a fresh build, byte for byte).
-function updateRow(t, uname, b, mine, known, placed, locked) {
+function updateRow(t, seat, b, mine, known, placed, locked) {
+  const pid = seat.pid;
   const stamp = b === undefined ? undefined : b.tmod;
   const bcount = b === undefined ? 0 : b.bcount;
-  const rename = pendingRename(uname);
-  const pending = rename !== undefined;
+  // the label is data, not a key: it syncs like any other mutable
+  // (dataset.uname rides along for humans reading the DOM and quals)
+  t.dataset.uname = seat.uname;
   // Every row leads with its star, a radio for who-you-are: hollow =
   // claimable, dimmed hollow = dibsed, gold fill = you. A row is dibsed by
   // a rival device's registered claim, or (for claim-less legacy rows)
@@ -767,14 +759,14 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
   // releases you to nobody. A bid placed by THIS browser never dibses
   // you out of the row (that keeps re-attach working if localStorage
   // forgot who you are). Once YOUR bid is in, the whole radio locks.
-  const holder = state.claims[uname];
-  const dibsed = uname !== mine
+  const holder = state.claims[pid];
+  const dibsed = pid !== mine
     && ((holder !== undefined && holder !== DEVICE)
-        || (stamp !== undefined && placed[uname] === undefined));
+        || (stamp !== undefined && placed[pid] === undefined));
   const star = t.querySelector('.tu');
   // revealed: identity is part of the frozen record, like the names
-  star.disabled = dibsed || locked || state.revealed || pending;
-  star.classList.toggle('selected', uname === mine);
+  star.disabled = dibsed || locked || state.revealed;
+  star.classList.toggle('selected', pid === mine);
   // a rival's REGISTERED claim fills the star in (hollow = open,
   // filled = claimed by someone else, gold = you)...
   const rival = holder !== undefined && holder !== DEVICE;
@@ -783,23 +775,28 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
   // (dreev's ask — the one cause-flavored branch in the tip logic);
   // everything else stays a pure function of (pressable, whose)
   star.setAttribute('data-tip',
-    uname === mine
+    pid === mine
       ? (star.disabled ? lockedTip : disclaimTip)
-      : rival && state.blurbs[uname]
-      ? claimedByTip(state.blurbs[uname])
+      : rival && state.blurbs[pid]
+      ? claimedByTip(state.blurbs[pid])
       : (star.disabled ? tooLateTip : claimTip));
 
   t.classList.toggle('has-bid', stamp !== undefined);
-  t.classList.toggle('mine', uname === mine);
+  t.classList.toggle('mine', pid === mine);
   // names freeze at the gavel, like bids (dreev: a post-close rename
   // could swap around who bid what) — grayed, never suppressed
-  t.querySelector('.rename input').disabled = state.revealed
-    || (pending && uname !== rename.desired);
-  t.classList.toggle('cut',
-    stamp !== undefined && !roster.includes(uname));
+  const nameInput = t.querySelector('.rename input');
+  nameInput.disabled = state.revealed;
+  // the label under never-clobber: sync unless mid-edit (a rename is
+  // a plain optimistic op now — no transactions, nothing to lock)
+  if (nameInput !== document.activeElement
+      && nameInput.value === nameInput.defaultValue) {
+    nameInput.value = seat.uname;
+    nameInput.defaultValue = seat.uname;
+  }
   // one-shot shimmer; a reused node needs the remove-reflow-add dance
   // so back-to-back re-bids restart the animation
-  const shimmer = seen[uname] !== undefined && seen[uname] !== stamp;
+  const shimmer = seen[pid] !== undefined && seen[pid] !== stamp;
   if (shimmer && t.classList.contains('updated')) {
     t.classList.remove('updated');
     void t.offsetWidth;
@@ -814,14 +811,14 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
   }
 
   const bidEl = t.querySelector('.tile-bid');
-  const kind = uname === mine ? 'editor'
+  const kind = pid === mine ? 'editor'
     : stamp !== undefined ? 'card' : 'slot';
   let content = bidEl.firstElementChild;  // null on a fresh row
   // (when the shelved ✅ returns, it rides after the content, so a
   // firstElementChild that IS the check means "no content yet":
   // if (content && content.classList.contains('check')) content = null;)
   if (!content || content.dataset.kind !== kind) {
-    const fresh = buildBidContent(kind, uname);
+    const fresh = buildBidContent(kind, pid);
     fresh.dataset.kind = kind;
     if (content) content.replaceWith(fresh);
     else bidEl.prepend(fresh);
@@ -841,40 +838,37 @@ function updateRow(t, uname, b, mine, known, placed, locked) {
     const input = content.querySelector('input');
     // the gavel drop is a bright line: your bid stays readable in
     // your own editor, but the field goes dead at the reveal
-    input.disabled = state.revealed || pending;
+    input.disabled = state.revealed;
     input.className = stamp === undefined ? 'bid-slot' : 'bid-card';
     input.style.boxShadow = stamp === undefined ? '' : stackShadow;
     // never clobber what the user is typing: leave a focused or dirty
     // input alone (a draft = live value differs from defaultValue)
     if (input !== document.activeElement
         && input.value === input.defaultValue) {
-      const baseline = known[uname] === undefined ? '' : known[uname];
+      const baseline = known[pid] === undefined ? '' : known[pid];
       input.value = baseline;
       input.defaultValue = baseline;
     }
   } else if (kind === 'card') {
     // a received bid is a card; each re-submission stacks a sheet
     // behind it (visual depth caps at 3; the counter stays exact)
-    const sealed = known[uname] === undefined;
+    const sealed = known[pid] === undefined;
     content.className = 'bid-card';
     content.style.boxShadow = stackShadow;
     const text = content.firstElementChild;
     text.className = sealed ? 'bid-text masked' : 'bid-text';
-    text.textContent = sealed ? MASK : known[uname];
+    text.textContent = sealed ? MASK : known[pid];
   }
   // (subs superscript shelved 2026-07-15)
   // t.querySelector('.tile-subs').textContent = String(subs);
-  // the × guards SEATED bids only; a cut row (bid, no seat — races or
-  // tampering) keeps a live × as the recovery path: clicking it purges
-  // the zombie bid outright (server-side second-remove semantics)
-  const seated = stamp !== undefined && roster.includes(uname);
-  // the record freezes at the gavel: every × grays once revealed —
-  // even the cut-row zombie purge, which would delete a REVEALED bid
-  const frozen = seated || state.revealed || pending;
+  // a bid protects its seat: the × grays the moment a bid is in
+  // (and the server refuses the removal outright if a race slips
+  // one past), and the whole record freezes at the gavel
+  const frozen = stamp !== undefined || state.revealed;
   const x = t.querySelector('.x');
   x.disabled = frozen;
   x.setAttribute('data-tip',
-    frozen ? tooLateRemoveTip(uname) : removeTip(uname));
+    frozen ? tooLateRemoveTip(seat.uname) : removeTip(seat.uname));
 }
 
 // Render a small, safe markdown subset to HTML. Escape-first: the
@@ -956,27 +950,24 @@ function ago(iso) {
 // The bid cell's tooltip: whether a bid is in, and when. Three cases:
 // no bid yet; submitted once ("your" on your own row); resubmitted
 // (first vs latest submission times, same wording for every row).
-function bidTip(uname) {
-  const b = state.bidders.find((x) => x.uname === uname);
+function bidTip(pid) {
+  const b = state.bidders.find((x) => x.pid === pid);
   if (b === undefined) return awaitingTip;
   if (b.bcount === 1) {
-    return submittedTip(uname === me() ? yourBidWord : bidWord,
+    return submittedTip(pid === mypid() ? yourBidWord : bidWord,
                         ago(b.tini));
   }
   return resubmittedTip(ago(b.tini), ago(b.tmod));
 }
 
 // The name is a live text field, like the + row's: click in and type.
-// Enter commits the rename; Escape or clicking away restores the name
-// (never commit-on-blur: that class of bug is dead and buried). The
-// uname is the row's key, so the field's resting value never changes
-// for a living node — a successful rename re-keys into a fresh row.
-function buildNameField(uname) {
+// Enter or clicking away commits the rename; Escape restores it. The
+// pid is the row's key, so a rename never re-keys a living node —
+// updateRow syncs the label under never-clobber like any field.
+function buildNameField(pid) {
   const form = el('form', 'rename');
   form.append('@');
   const input = el('input');
-  input.value = uname;
-  input.defaultValue = uname;
   input.maxLength = 30;
   input.autocomplete = 'off';
   // the mobile return key names the deed
@@ -989,170 +980,68 @@ function buildNameField(uname) {
   // Clicking/tapping away SAVES (dreev, 2026-07-17, reversing the
   // old restore-on-blur: on a phone nobody expects the return key to
   // be load-bearing). Escape above still reverts first, so its blur
-  // arrives with to === from and commits nothing. The old blur-
-  // rebuild click-swallow is gone with keyed node reuse; the one
-  // remaining edge is clicking a control on the SAME row you are
-  // renaming (the re-key replaces that node mid-click).
+  // arrives clean and commits nothing.
   input.addEventListener('blur', () => {
-    commitRename(uname, input.value, input);
+    commitRename(pid, input.value, input);
   });
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    commitRename(uname, input.value, input);
+    commitRename(pid, input.value, input);
   });
   form.append(input);
   return form;
 }
 
-// Snapshot this browser's identity pair (uname + the raw bid-memory
-// string) as it stands RIGHT NOW; the returned restorer reapplies it
-// byte for byte — but only if the identity still rides the given tx
-// (the user may have moved to another row via a star meanwhile:
-// never clobber that)
-function identitySnap(tx) {
-  const key = 'tauction-mybids:' + aname;
-  const uname = localStorage.getItem('tauction-uname');
-  const bids = localStorage.getItem(key);
-  return () => {
-    if (localStorage.getItem('tauction-uname') !== tx.desired) return;
-    if (uname === null) localStorage.removeItem('tauction-uname');
-    else localStorage.setItem('tauction-uname', uname);
-    if (bids === null) localStorage.removeItem(key);
-    else localStorage.setItem(key, bids);
-  };
-}
-
-// Fix a typo'd name — anyone may, honor system, like all roster edits.
-// The server re-keys the seat and any bid together and refuses names
-// already seated.
-//
-// A rename is a TRANSACTION: confirmed = the name the server last
-// acknowledged for this seat, desired = the name on screen, flight =
-// the one leg on the wire. Edits to a settling row stay LIVE: they
-// advance the screen and identity instantly but ride the wire only
-// as the NEXT leg, launched after the current one confirms — so a
-// chain can never send a from-name the server never granted us (the
-// stale alice→beta→gamma edit that renamed someone else's remote
-// beta). rollback restores identity to the confirmed point when a
-// leg is refused; nextRollback remembers the newest point consistent
-// with the flight, for chained edits.
-function commitRename(from, raw, field) {
+// Fix a typo'd name — anyone may, honor system, like all roster
+// edits. A rename is a LABEL EDIT on a fixed identity (the pid), so
+// it is just an optimistic op like any other: no transactions, no
+// rollback snapshots, no re-keying of bids or memory. (That whole
+// machinery — confirmed/desired/flight, the alice→beta→gamma hazard,
+// the transport-loss sweep — died with the pid migration, 2026-07-19:
+// the server can no longer be asked to rename a name it never
+// granted, because it is asked about pids.) Renaming onto a live
+// label is refused, locally and server-side, in the same words.
+function commitRename(pid, raw, field) {
   const to = sanUname(raw);
-  if (!to || to === from) { field.value = field.defaultValue; return; }
-  // A commit for a row the local roster no longer knows is a STALE
-  // EVENT, not a request: the enter-then-blur pair fires this twice,
-  // and the second run arrives after the first already remapped
-  // 'from' away — its pre-check then found its own success and
-  // falsely cried "taken" (dreev's bug). Also quiets a row removed
-  // mid-edit, and cut rows (rosterless by definition), which used to
-  // error server-side instead of declining.
-  if (!roster.includes(from)) return;
-  let tx = pendingRename(from);
-  assert(tx === undefined || tx.desired === from,
-    'rename edit on a name that is not the on-screen one');
-  // Typing the pending edit's ORIGINAL name back is the undo of that
-  // edit, never a collision with its own ghost (the old name's bid
-  // row walks on until the wire catches up), so the tx's own
-  // confirmed name is always a legal destination — the leg machinery
-  // below then walks the server back of its own accord.
-  if (slotUnames().includes(to)
-      && !(tx !== undefined && to === tx.confirmed)) {
+  const seat = seats.find((s) => s.pid === pid);
+  // nothing usable, or nothing changed: the field just snaps back
+  // (also quiets the enter-then-blur double fire: by the blur, the
+  // label already IS the committed value)
+  if (seat === undefined || !to || to === seat.uname) {
+    field.value = field.defaultValue;
+    return;
+  }
+  if (seats.some((s) => s.uname === to && s.pid !== pid)) {
     banner(nameTakenBanner);
     field.classList.add('error');  // the problem is THIS field
     return;
   }
-  let fresh = false;
-  if (tx === undefined) {
-    fresh = true;
-    tx = { confirmed: from, desired: to, flight: null,
-           rollback: null, nextRollback: null };
-    tx.rollback = identitySnap(tx);  // the pre-rename state
-  } else {
-    // a dependent edit: remember the newest flight-consistent state
-    // once per leg (later edits before the next leg keep the first)
-    if (tx.nextRollback === null) tx.nextRollback = identitySnap(tx);
-    pendingRenames.delete(tx.desired);
-    tx.desired = to;
-  }
-  if (from === me()) {
-    // your own rename must not unseat you while the op flies: local
-    // identity and bid memory follow immediately
-    localStorage.setItem('tauction-uname', to);
-    rekeyMyBids(aname, from, to);
-  }
-  roster = roster.map((u) => (u === from ? to : u));
-  pendingRenames.set(to, tx);
-  if (fresh) launchRename(tx);
-  if (state) renderStatus();  // a dependent edit repaints without a queue
-}
-
-// Put a rename transaction's next leg on the op chain: always from
-// the CONFIRMED name, so the server is only ever asked about names
-// it granted us.
-function launchRename(tx) {
-  // the leg is fixed NOW, not at send: an edit made while it waits
-  // in the queue must ride as the next leg, never rewrite this one
-  const leg = { from: tx.confirmed, to: tx.desired };
-  queueLazyOp(() => {
-    tx.flight = leg;
-    return { action: 'rename', aname: aname,
-             from: leg.from, to: leg.to };
-  }, () => {
-    // refused (a stale-roster race the local guard can't see): the
-    // whole tx rolls back to its confirmed point — identity, memory,
-    // roster — and the field reddens there, same as a local objection
-    pendingRenames.delete(tx.desired);
-    tx.rollback();
-    roster = roster.map((u) => (u === tx.desired ? tx.confirmed : u));
-    renderStatus();
-    const recovered = rowNodes[tx.confirmed];
-    assert(recovered, 'rename rollback lost its source row');
-    recovered.querySelector('.rename input').classList.add('error');
-  }, () => {
-    // this leg is the confirmed truth now; a dependent edit made
-    // meanwhile launches as the next leg, re-based on it
-    tx.confirmed = tx.flight.to;
-    tx.flight = null;
-    if (tx.desired === tx.confirmed) {
-      pendingRenames.delete(tx.desired);
-      renderStatus();  // the row's controls come back to life
-    } else {
-      tx.rollback = tx.nextRollback;
-      tx.nextRollback = null;
-      launchRename(tx);
-    }
-  });
-}
-
-// The transport-loss sweep, run on every adopted snapshot: adoption
-// is gated on all writes having settled, so any transaction still
-// pending here lost its response in transport — the server's roster
-// is the verdict on whether its flight committed. Committed: keep
-// the leg that landed (walking a dependent edit back onto it); lost:
-// the whole tx rolls back. Either way the tx retires — the adopted
-// snapshot repaints the roster itself.
-function reconcileTransportRenames(res) {
-  const serverUnames = new Set(res.roster.concat(
-    res.bidders.map((b) => b.uname)));
-  pendingRenames.forEach((tx, key) => {
-    assert(tx.flight !== null, 'a settled rename left its tx behind');
-    const committed = serverUnames.has(tx.flight.to)
-      && !serverUnames.has(tx.flight.from);
-    if (!committed) tx.rollback();
-    else if (tx.nextRollback !== null) tx.nextRollback();
-    pendingRenames.delete(key);
-  });
+  seat.uname = to;  // the optimistic label; server truth re-adopts
+  // a server-side refusal (a stale-roster race the local guard can't
+  // see) reddens the field too; the recovery snapshot restores the
+  // label itself
+  queueOp({ action: 'rename', aname: aname, pid: pid, to: to },
+          () => {
+            const node = rowNodes[pid];
+            if (node) {
+              node.querySelector('.rename input').classList.add('error');
+            }
+          });
 }
 
 // Claim a row as yourself, or release it if it's already yours
-function toggleTu(uname) {
-  if (me() === uname) {
-    localStorage.removeItem('tauction-uname');
-    queueOp({ action: 'release', aname: aname, uname: uname,
+function toggleTu(pid) {
+  if (mypid() === pid) {
+    storeMyPid('');
+    queueOp({ action: 'release', aname: aname, pid: pid,
               deviceID: DEVICE }); // only the holder can vacate the seat
   } else {
-    localStorage.setItem('tauction-uname', uname);
-    queueOp({ action: 'claim', aname: aname, uname: uname,
+    storeMyPid(pid);
+    const seat = seats.find((s) => s.pid === pid);
+    if (seat !== undefined) {  // remember the label as the name HINT
+      localStorage.setItem('tauction-uname', seat.uname);
+    }
+    queueOp({ action: 'claim', aname: aname, pid: pid,
               deviceID: DEVICE,     // stake it: rival pages show dibs
               deviceBlurb: DEVBLURB }); // ...and who by, humanely
   }
@@ -1166,16 +1055,20 @@ function toggleTu(uname) {
 
 let bidsAloft = 0;  // submissions still flying; busy shows till zero
 
-async function placeBid(uname, form) {
+async function placeBid(pid, form) {
   const a = aname;  // pin the auction this bid belongs to; the user might
                     // switch auctions while the POST is in flight
   const input = form.querySelector('input');
   const bid = input.value.trim();
-  assert(uname, 'placeBid without an identity');
-  // your editor only exists while me() === uname, and me() can only
-  // ever echo localStorage — so this holds or the model is broken
-  assert(localStorage.getItem('tauction-uname') === uname,
+  assert(pid, 'placeBid without an identity');
+  // your editor only exists while mypid() === pid, and mypid() can
+  // only ever echo localStorage — so this holds or the model is broken
+  assert(myPidStored() === pid,
     'editor identity out of sync with localStorage');
+  // the seat's label rides along so a walk-on bid (re-bid after a
+  // purge, mostly) can rebuild its seat server-side
+  const seat = seats.find((s) => s.pid === pid);
+  assert(seat !== undefined, 'placeBid without a seat');
   // a local slip gets a local objection: the field itself reddens
   // (cleared on the next keystroke); banners are for the server's news
   if (!bid) { input.classList.add('error'); return; }
@@ -1200,8 +1093,9 @@ async function placeBid(uname, form) {
     // assert caught exactly that)
     let res = null;
     try {
-      res = await apiPost({ action: 'bid', aname: a, uname: uname,
-                            bid: bid, deviceID: DEVICE,
+      res = await apiPost({ action: 'bid', aname: a, pid: pid,
+                            uname: seat.uname, bid: bid,
+                            deviceID: DEVICE,
                             deviceBlurb: DEVBLURB });
     } catch (e) {
       banner(e2153(e.message));
@@ -1209,7 +1103,7 @@ async function placeBid(uname, form) {
     if (res && !res.error) {
       const mine = umap(JSON.parse(
         localStorage.getItem('tauction-mybids:' + a) || '{}'));
-      mine[uname] = bid;
+      mine[pid] = bid;
       localStorage.setItem('tauction-mybids:' + a, JSON.stringify(mine));
       input.defaultValue = bid;  // the submitted text is the new
                                  // baseline, not a draft to shield
@@ -1358,48 +1252,56 @@ function pressReveal() {
 }
 
 
-function addName() {  // returns the added uname ('' if refused)
+function addName() {  // returns the added seat's pid ('' if refused)
   const uname = sanUname($('roster-input').value);
   if (!uname) {
     $('roster-input').classList.add('error');
     return '';
   }
-  if (roster.includes(uname)) {
+  const live = seats.find((s) => s.uname === uname);
+  if (live !== undefined) {
     // Typing an existing name is POINTING at that row (the hallway
     // test: "maybe i type in the name i want to make a bid for?" —
     // yes): a takeable seat is taken, with the editor readied.
     // Already you = nothing to do, quietly. A held/dibsed/locked
     // seat objects: red ring, text kept for fixing — never silently
     // swallowing what you typed.
-    const trow = rowNodes[uname];
-    if (uname === me()) {
+    const trow = rowNodes[live.pid];
+    if (live.pid === mypid()) {
       $('roster-input').value = '';
       return '';
     }
     if (trow && !trow.querySelector('.tu').disabled) {
       $('roster-input').value = '';
-      toggleTu(uname);  // claims the seat and focuses the editor
-      return uname;
+      toggleTu(live.pid);  // claims the seat and focuses the editor
+      return live.pid;
     }
     $('roster-input').classList.add('error');
     return '';
   }
   $('roster-input').value = '';
-  // Disclosed if: on a browser with NO remembered identity at all,
-  // the first name typed into the (you-starred) + row is YOURS —
-  // dreev's expectata: "load a new auction, add a name = i've added
-  // myself". Locally only: no server claim is registered, so a real
-  // person claiming this name from their own device unseats the
-  // assumption cleanly; your first bid stakes it for real. A browser
-  // that already knows who you are (dreev seeding a roster for
-  // others) adds plain rows — your own name re-latches by the row
-  // gate when it appears.
-  if (localStorage.getItem('tauction-uname') === null) {
-    localStorage.setItem('tauction-uname', uname);
+  const pid = crypto.randomUUID();
+  seats.push({ pid: pid, uname: uname });
+  // Disclosed if: a FRESH add is yours when you are nobody here yet
+  // and either this browser has no name hint at all (dreev's
+  // expectata: "load a new auction, add a name = i've added myself")
+  // or the typed name IS your remembered name (alice, nobody yet on
+  // a fresh ledger, puts her own name down — that's her; dee and evy
+  // are guests). This is the pid spec's option (b): auto-claim only
+  // rows you just added yourself — a matching LABEL on a row someone
+  // else created proves nothing and claims nothing. Locally only: no
+  // server claim is registered, so a real person claiming this seat
+  // from their own device unseats the assumption cleanly; your first
+  // bid stakes it for real.
+  const hint = localStorage.getItem('tauction-uname');
+  // mypid(), not the raw ledger: a pid whose seat you ×ed away means
+  // you are nobody here again, and re-adding your name re-latches
+  if (mypid() === '' && (hint === null || hint === uname)) {
+    if (hint === null) localStorage.setItem('tauction-uname', uname);
+    storeMyPid(pid);
   }
-  roster.push(uname);
-  queueOp({ action: 'add', aname: aname, uname: uname });
-  return uname;
+  queueOp({ action: 'add', aname: aname, uname: uname, pid: pid });
+  return pid;
 }
 
 // Instant paint from the last-known state of this auction, grayed until
@@ -1448,7 +1350,7 @@ async function switchAuction(a) {
     $('banner').hidden = true;  // landing somewhere real clears any
                                 // dead-end sign still standing
     state = null;
-    roster = [];
+    seats = [];
     seen = umap();
     wasRevealed = null;
     caretPlaced = false;  // the new auction gets its own arrival focus

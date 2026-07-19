@@ -14,17 +14,27 @@ const SHEET_ID = '1hclphAZ3zQIq14Nip1ZxTDSoE9ygXqAv27RwP1hiMA8';
 // time-modified, tfin = time-final (the reveal moment), tbid = a
 // submission's moment, deviceID = the claiming browser's anonymous
 // uuid, deviceBlurb = its self-description ("a Mac (Chrome)").
+//
+// THE PID (2026-07-19, dreev's spec in AGENTS.md, finishing the
+// migration): a person id, a uuid minted client-side at add-time.
+// The pid IS the identity — seats, bids, claims, and the client's
+// memory all key on it — and the uname is just its display label, so
+// renames are one-cell label edits: no bid re-keying, no client
+// rename transactions, no orphaned identities.
 const AUCTIONS_HEAD = ['aname', 'tini', 'tmod', 'tfin', 'blurb',
                        'tblurb'];
 // The bids tab is an append-only LOG (dreev's 2026-07-17
 // rearchitecture): every submission is its own row, nothing is ever
 // overwritten, and the payload's tini/tmod/bcount are DERIVED
-const BIDS_HEAD     = ['aname', 'uname', 'bid', 'tbid'];
-// A users row IS a roster seat; future per-person attributes
-// (weights/shares) append as columns to the right, which positional
-// reads tolerate.
-const USERS_HEAD    = ['aname', 'uname', 'deviceID', 'deviceBlurb',
-                       'tini', 'tmod'];
+const BIDS_HEAD     = ['aname', 'pid', 'bid', 'tbid'];
+// A users row IS a roster seat, and every seat is live: removing a
+// bidless person deletes their row outright, and a person who HAS
+// bid cannot be removed at all (dreev, 2026-07-19 — a sealed bid is
+// never deletable, so it can never be orphaned; the straggler you ex
+// to end early is bidless by definition). Future per-person
+// attributes (weights/shares) append as columns to the right.
+const USERS_HEAD    = ['aname', 'pid', 'uname', 'deviceID',
+                       'deviceBlurb', 'tini', 'tmod'];
 
 // Every cell that will ever hold data is armored plain-text at tab
 // creation: Sheets otherwise reinterprets writes ("007" -> 7, "3/4"
@@ -59,7 +69,8 @@ const nameTakenCopy = 'That name is taken';
 // the frozen-record refusal (dreev's copy): renames, claims, and
 // releases all bounce off it once the auction closes
 const auctionClosedCopy = 'Auction closed, no editing';
-const noSuchOneCopy = (from) => 'No such participant: ' + from;
+const noSuchOneCopy = (pid) => 'No such participant: ' + pid;
+const badPidCopy = 'bad pid';
 const claimNeedsDeviceCopy = 'ERROR1303: claim requires a deviceID';
 const seatHeldCopy = (blurb) =>
   'ERROR1304: Claimed by someone (' + blurb + ')';
@@ -88,6 +99,9 @@ const schemaDriftCopy = (name, got, want) =>
 // a holder whose claim carried no self-description (must match
 // stringles.js mysteryDevice: it's the same rig-naming fallback)
 const mysteryDeviceCopy = 'mystery device';
+// removing someone who has already bid is refused (reachable only by
+// losing a race: the UI grays that × up front).
+const removeBidderCopy = 'Too late to remove, bid sealed';
 // operator-facing, like schemaDriftCopy: an append one row past the
 // pre-armored grid refuses rather than let Sheets silently
 // reinterpret what lands there
@@ -161,6 +175,13 @@ function cleanUname(s) {
 function cleanDeviceID(s) {
   s = String(s == null ? '' : s);
   if (!/^[a-z0-9-]{0,64}$/.test(s)) throw badDeviceCopy;
+  return s;
+}
+
+// A pid is a client-minted uuid: the person's identity, forever
+function cleanPid(s) {
+  s = String(s == null ? '' : s);
+  if (!/^[a-z0-9-]{8,64}$/.test(s)) throw badPidCopy;
   return s;
 }
 
@@ -398,17 +419,21 @@ function gridScience2() {
 function getState(aname) {
   const arow = load('auctions').find(r => r.aname === aname);
 
-  // The roster IS the users rows (in insertion order), and the claims
-  // map rides along: uname -> deviceID for seats someone holds
-  const roster = [];
+  // The SEATS are the users rows (in insertion order): pid + display
+  // label. The claims map rides along: pid -> deviceID for seats
+  // someone holds. Every seat is live — removal deletes, and bidders
+  // cannot be removed — so the seats ARE the roster that gates the
+  // reveal.
+  const seats = [];
   const claims = Object.create(null);
-  const blurbs = Object.create(null);  // uname -> the holder's self-reported rig
+  const blurbs = Object.create(null);  // pid -> the holder's self-reported rig
   load('users').forEach(r => {
     if (r.aname !== aname) return;
-    roster.push(r.uname);
-    if (r.deviceID) claims[r.uname] = r.deviceID;
-    if (r.deviceID && r.deviceBlurb) blurbs[r.uname] = r.deviceBlurb;
+    seats.push({ pid: r.pid, uname: r.uname });
+    if (r.deviceID) claims[r.pid] = r.deviceID;
+    if (r.deviceID && r.deviceBlurb) blurbs[r.pid] = r.deviceBlurb;
   });
+  const roster = seats;
 
   // Reveal is a human act (the 'reveal' action) and a one-way latch: it
   // never happens automatically, and once bids have been seen, nothing can
@@ -424,38 +449,50 @@ function getState(aname) {
   // The payload keeps its vocabulary, derived per person from the log:
   // tini = first tbid, tmod = latest, bcount = row count. ISO stamps
   // compare lexicographically; rows are in submission order.
-  const agg = Object.create(null);  // uname -> derived bidder, in first-bid order
+  const agg = Object.create(null);  // pid -> derived bidder, in first-bid order
   load('bids').forEach(r => {
     if (r.aname !== aname) return;
     if (revealed && r.tbid > tfin) return;  // after the gavel: not in
-    const a = agg[r.uname] || (agg[r.uname] =
-      { uname: r.uname, bcount: 0, tini: r.tbid });
+    const a = agg[r.pid] || (agg[r.pid] =
+      { pid: r.pid, bcount: 0, tini: r.tbid });
     a.bcount++;
     a.tmod = r.tbid;
     a.bid = r.bid;
   });
-  const people = Object.keys(agg).map(u => agg[u]);
+  const people = Object.keys(agg).map(p => agg[p]);
   const bidders = people.map(a =>
-    ({ uname: a.uname, bcount: a.bcount, tini: a.tini, tmod: a.tmod }));
+    ({ pid: a.pid, bcount: a.bcount, tini: a.tini, tmod: a.tmod }));
 
   // the closed-state covenant, asserted on every read: a revealed
-  // auction has two-plus roster members, every one of them with a
-  // bid — forever (the post-close freezes make it eternal)
+  // auction has two-plus (uncut) roster seats, every one of them with
+  // a bid — forever (the post-close freezes make it eternal)
   if (revealed && !(roster.length >= 2
-      && roster.every(u => bidders.some(b => b.uname === u)))) {
-    throw covenantCopy(aname, 'roster [' + roster.join(', ')
-      + '] but bids only from ['
-      + bidders.map(b => b.uname).join(', ') + ']');
+      && roster.every(s => bidders.some(b => b.pid === s.pid)))) {
+    throw covenantCopy(aname, 'roster ['
+      + roster.map(s => s.uname).join(', ') + '] but bids only from ['
+      + bidders.map(b => b.pid).join(', ') + ']');
   }
 
   return {
     aname: aname, exists: arow !== undefined,
-    roster: roster, bidders: bidders, revealed: revealed,
+    seats: seats, bidders: bidders, revealed: revealed,
     tfin: tfin, blurb: blurb, tblurb: tblurb,
     claims: claims, blurbs: blurbs,
-    bids: revealed ? people.map(a => ({ uname: a.uname, bid: a.bid }))
+    bids: revealed ? people.map(a => ({ pid: a.pid, bid: a.bid }))
                    : null,
   };
+}
+
+// This auction's seat record index for a pid (-1 if none)
+function seatIndex(aname, pid) {
+  return load('users').findIndex(
+    r => r.aname === aname && r.pid === pid);
+}
+
+// The seat carrying a display label (labels are unique per auction)
+function seatByName(aname, uname) {
+  return load('users').find(r => r.aname === aname
+    && r.uname === uname);
 }
 
 // The reveal button. Anyone may press it once the roster is complete —
@@ -464,9 +501,9 @@ function reveal(req) {
   const aname = cleanAname(req.aname);
   const st = getState(aname);
   if (st.revealed) return st;  // racing presses: both succeed
-  const unames = st.bidders.map(b => b.uname);
-  if (!(st.roster.length >= 2
-        && st.roster.every(u => unames.indexOf(u) !== -1))) {
+  const bidPids = st.bidders.map(b => b.pid);
+  if (!(st.seats.length >= 2
+        && st.seats.every(s => bidPids.indexOf(s.pid) !== -1))) {
     throw notReadyCopy;
   }
   const i = load('auctions').findIndex(r => r.aname === aname);
@@ -494,15 +531,15 @@ function touchAuction(aname) {
   else patch('auctions', i, { tmod: now });
 }
 
-// Make sure a seat row exists; adding is idempotent
-function ensureSeat(aname, uname) {
+// Make sure a seat exists for this pid+label; adding is idempotent
+// (labels change only via rename, so an existing pid's seat is left
+// exactly as found)
+function ensureSeat(aname, pid, uname) {
   const now = new Date().toISOString();
-  const i = load('users').findIndex(
-    r => r.aname === aname && r.uname === uname);
-  if (i === -1) {
-    insert('users', { aname: aname, uname: uname, deviceID: '',
-                      deviceBlurb: '', tini: now, tmod: now });
-  }
+  if (seatIndex(aname, pid) !== -1) return;
+  insert('users', { aname: aname, pid: pid, uname: uname,
+                    deviceID: '', deviceBlurb: '', tini: now,
+                    tmod: now });
 }
 
 // The auction blurb: freeform markdown, editable by anyone at any
@@ -527,69 +564,62 @@ function describe(req) {
 
 // The roster is CLOSED once revealed: the game is over, and a fresh
 // participant could neither bid meaningfully nor be waited on.
+// Adding an already-live label is an idempotent no-op (one seat per
+// person), matching the old one-seat-per-name behavior.
 function addParticipant(req) {
   const aname = cleanAname(req.aname);
   const uname = cleanUname(req.uname);
+  const pid = cleanPid(req.pid);
   if (getState(aname).revealed) throw rosterClosedCopy;
   touchAuction(aname);
-  ensureSeat(aname, uname);
+  if (seatIndex(aname, pid) === -1 && seatByName(aname, uname)) {
+    return getState(aname);  // that label is already seated: no-op
+  }
+  ensureSeat(aname, pid, uname);
   return getState(aname);
 }
 
-// Renaming fixes a typo in place: the seat row re-keys (its claim
-// device rides along) and any bid row re-keys with it, stamps and count
-// intact. Renaming onto a name that's already seated is refused.
+// Renaming is a LABEL EDIT, nothing more: the pid is the identity,
+// so bids, claims, memory, and reveal-gating don't even notice. One
+// cell changes. (This one-liner replaced a re-key of the seat AND
+// every bid log row AND the client's rename-transaction machinery —
+// the whole reason pids exist.) Renaming onto a live label is
+// refused.
 function renameParticipant(req) {
   const aname = cleanAname(req.aname);
-  const from = cleanUname(req.from);
+  const pid = cleanPid(req.pid);
   const to = cleanUname(req.to);
-  if (to === from) return getState(aname);
   // names freeze at the gavel: a post-close rename could swap
   // around who bid what (dreev, reversing always-editable)
   if (getState(aname).revealed) throw auctionClosedCopy;
-  const seats = load('users');
-  const logs = load('bids');
-  if (seats.some(r => r.aname === aname && r.uname === to)
-      || logs.some(r => r.aname === aname && r.uname === to)) {
-    throw nameTakenCopy;
-  }
-  const i = seats.findIndex(r => r.aname === aname && r.uname === from);
-  if (i === -1) throw noSuchOneCopy(from);
+  const i = seatIndex(aname, pid);
+  if (i === -1) throw noSuchOneCopy(pid);
+  if (load('users')[i].uname === to) return getState(aname);
+  const twin = seatByName(aname, to);
+  if (twin && twin.pid !== pid) throw nameTakenCopy;
   patch('users', i, { uname: to, tmod: new Date().toISOString() });
-  logs.forEach((r, j) => {  // re-key every log row of theirs
-    if (r.aname === aname && r.uname === from) {
-      patch('bids', j, { uname: to });
-    }
-  });
   touchAuction(aname);
   return getState(aname);
 }
 
-// Removing deletes the seat row; any bid row stays (a sealed bid is
-// never deletable), which is what renders as a crossed-out line
+// Removing DELETES the seat — and is allowed only while they have
+// not bid (dreev, 2026-07-19, deleting the cut-flag model: a sealed
+// bid is never deletable, so it must never be orphaned either; the
+// straggler you ex to end early is bidless by definition, and the UI
+// grays the × on every bid-bearing row, so this refusal is only ever
+// reached by losing a race). Absent seat: harmless no-op.
 function removeParticipant(req) {
   const aname = cleanAname(req.aname);
-  const uname = cleanUname(req.uname);
-  // the record freezes at the gavel — seats AND the cut-row zombie
-  // purge (which would delete a REVEALED bid; dreev caught it live)
+  const pid = cleanPid(req.pid);
+  // the record freezes at the gavel
   if (getState(aname).revealed) throw auctionClosedCopy;
-  touchAuction(aname);
-  const i = load('users').findIndex(
-    r => r.aname === aname && r.uname === uname);
-  if (i !== -1) {
-    // first remove: the seat goes, any bid stays (re-bidding rejoins)
-    erase('users', i);
-  } else {
-    // no seat = the row was ALREADY cut (a race or sheet tampering
-    // left a zombie bid): removing it again is the recovery path —
-    // purge the bid outright
-    const logs = load('bids');
-    for (let j = logs.length - 1; j >= 0; j--) {  // bottom-up: record
-      if (logs[j].aname === aname && logs[j].uname === uname) {  // indices
-        erase('bids', j);                              // stay honest
-      }
-    }
+  const i = seatIndex(aname, pid);
+  if (i === -1) return getState(aname);  // absent: a harmless no-op
+  if (load('bids').some(r => r.aname === aname && r.pid === pid)) {
+    throw removeBidderCopy;
   }
+  touchAuction(aname);
+  erase('users', i);
   return getState(aname);
 }
 
@@ -602,20 +632,20 @@ function removeParticipant(req) {
 // taken.
 function saveClaim(req) {
   const aname = cleanAname(req.aname);
-  const uname = cleanUname(req.uname);
+  const pid = cleanPid(req.pid);
   const deviceID = cleanDeviceID(req.deviceID);
   if (!deviceID) throw claimNeedsDeviceCopy;
   // identity is part of the frozen record, like names and bids: a
   // post-close claim would dress a revealed bid in a stranger's rig
   if (getState(aname).revealed) throw auctionClosedCopy;
   const deviceBlurb = cleanBlurb(req.deviceBlurb);
-  const held = deviceOf(aname, uname);
+  if (seatIndex(aname, pid) === -1) throw noSuchOneCopy(pid);
+  const held = deviceOf(aname, pid);
   if (held && held !== deviceID) {
-    throw seatHeldCopy(holderBlurb(aname, uname));
+    throw seatHeldCopy(holderBlurb(aname, pid));
   }
   touchAuction(aname);
-  ensureSeat(aname, uname);
-  setDeviceID(aname, uname, deviceID, deviceBlurb);
+  setDeviceID(aname, pid, deviceID, deviceBlurb);
   return getState(aname);
 }
 
@@ -623,31 +653,30 @@ function saveClaim(req) {
 // no-op: a merely-local soft claim must release without drama.
 function releaseClaim(req) {
   const aname = cleanAname(req.aname);
-  const uname = cleanUname(req.uname);
+  const pid = cleanPid(req.pid);
   const deviceID = cleanDeviceID(req.deviceID);
   if (!deviceID) throw releaseNeedsDeviceCopy;
   if (getState(aname).revealed) throw auctionClosedCopy;  // frozen too
   touchAuction(aname);
-  const held = deviceOf(aname, uname);
+  const held = deviceOf(aname, pid);
   if (held && held !== deviceID) {
     throw notYourSeatCopy;
   }
-  if (held) setDeviceID(aname, uname, '');
+  if (held) setDeviceID(aname, pid, '');
   return getState(aname);
 }
 
 // The deviceID currently holding a seat ('' if open or no such seat)
-function deviceOf(aname, uname) {
-  const r = load('users').find(
-    (rec) => rec.aname === aname && rec.uname === uname);
-  return r ? r.deviceID : '';
+function deviceOf(aname, pid) {
+  const i = seatIndex(aname, pid);
+  return i === -1 ? '' : load('users')[i].deviceID;
 }
 
-function setDeviceID(aname, uname, deviceID, blurb) {
+function setDeviceID(aname, pid, deviceID, blurb) {
   const now = new Date().toISOString();
   load('users').forEach((r, i) => {
     if (r.aname !== aname) return;
-    if (r.uname === uname) {
+    if (r.pid === pid) {
       patch('users', i, { deviceID: deviceID,
                           deviceBlurb: blurb || '', tmod: now });
     } else if (deviceID && r.deviceID === deviceID) {
@@ -658,15 +687,16 @@ function setDeviceID(aname, uname, deviceID, blurb) {
 
 // The holder's rig, for refusal messages: every seat-taken error names
 // who beat you to it
-function holderBlurb(aname, uname) {
-  const r = load('users').find(
-    (rec) => rec.aname === aname && rec.uname === uname);
-  return (r && r.deviceBlurb) || mysteryDeviceCopy;
+function holderBlurb(aname, pid) {
+  const i = seatIndex(aname, pid);
+  const blurb = i === -1 ? '' : load('users')[i].deviceBlurb;
+  return blurb || mysteryDeviceCopy;
 }
 
 function placeBid(req) {
   const aname = cleanAname(req.aname);
-  const uname = cleanUname(req.uname);
+  const pid = cleanPid(req.pid);
+  const uname = cleanUname(req.uname);  // the label, for walk-on seats
   const bid = String(req.bid == null ? '' : req.bid).trim();
   if (!bid) throw emptyBidCopy;
   if (bid.length > 80) throw bidTooLongCopy;
@@ -679,26 +709,33 @@ function placeBid(req) {
   const deviceID = req.deviceID === undefined ? ''
     : cleanDeviceID(req.deviceID);
   const deviceBlurb = cleanBlurb(req.deviceBlurb);
-  const held = deviceOf(aname, uname);
+  const held = deviceOf(aname, pid);
 
   // bidding claims a roster seat: your own bid must never read as
-  // not-counting (re-bidding takes a removed seat back, too)
+  // not-counting (a bid rebuilds its seat if a raced removal took
+  // it). A WALK-ON bid (no seat for this pid yet) whose label is
+  // already seated under someone else's pid is a doppelganger,
+  // refused.
   // Bidding as someone is claiming to be them, and claims are first
   // come, first served: a bid may not touch a seat someone else holds.
   // Old clients carry no deviceID and count as nobody — fine on an
   // open seat, refused on a held one.
   if (held && held !== deviceID) {
-    throw bidSeatHeldCopy(holderBlurb(aname, uname));
+    throw bidSeatHeldCopy(holderBlurb(aname, pid));
+  }
+  const twin = seatByName(aname, uname);
+  if (seatIndex(aname, pid) === -1 && twin && twin.pid !== pid) {
+    throw nameTakenCopy;
   }
   touchAuction(aname);
-  ensureSeat(aname, uname);
+  ensureSeat(aname, pid, uname);
   if (deviceID) {
-    setDeviceID(aname, uname, deviceID, deviceBlurb);
+    setDeviceID(aname, pid, deviceID, deviceBlurb);
   }
 
   // every submission is its own log row; the read side derives the
   // rest (latest wins, first stamps tini, count counts)
-  const at = insert('bids', { aname: aname, uname: uname, bid: bid,
+  const at = insert('bids', { aname: aname, pid: pid, bid: bid,
                               tbid: new Date().toISOString() });
   // seal THIS submission white-on-white as it lands — one write, not
   // a repaint of the whole pile (its elders were sealed at their own

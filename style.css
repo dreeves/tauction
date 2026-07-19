@@ -142,7 +142,8 @@ button { font: inherit; cursor: pointer; }
    PARTICIPANTS explains itself in the help popup); tabindex="-1"
    makes tap-to-focus show it on touchscreens without a tab stop */
 
-.field label[data-tip] { cursor: help; }
+/* (the label's cursor: help was removed 2026-07-18 — dreev vetoed
+   question-mark cursors app-wide; do not restore it) */
 
 /* tooltips ride on ::before so ::after stays free for glyphs (the padlock) */
 /* THE tooltip (#tip in index.html): one element at body level,
@@ -740,24 +741,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   min-width: calc(15ch + 3rem);  /* 15ch of name + marker, gap, padding */
 }
 
-/* Removed from the roster after bidding: one confident stroke through
-   the whole entry, like a pen cancelling a ledger line — in
-   cancellation ink (the stamp red), full strength. The row beneath
-   stays fully legible: the stroke alone carries the meaning, and no
-   element opacity (the × inside hosts a tooltip). */
-.tile.cut { position: relative; }
-
-.tile.cut::after {
-  content: '';
-  position: absolute;
-  left: 0.45rem;
-  right: 0.45rem;
-  top: 50%;
-  height: 2.5px;
-  background: var(--err-fg);
-  transform: translateY(-50%);
-  pointer-events: none;
-}
+/* (the .tile.cut cancellation stroke lived here until 2026-07-19,
+   when dreev deleted the removed-after-bidding state itself: a bid
+   protects its seat, so no row can ever be crossed out) */
 
 /* the bid rides unboxed: its card (or your input) is box enough.
    animation-delay passes the tile's inline phase-lock through to the

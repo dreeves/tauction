@@ -10,7 +10,7 @@
 8. Beeminder's [Anti-Magic Principle](https://blog.beeminder.com/magic). "If-statements considered harmful." Minimize cyclomatic complexity. If you're fixing a bug like "when X happens the app does Y instead of Z", resist the urge to add "if X then Z" to the code. Fastidiously mention every if-statement you think you need. Constant vigilance to minimize code paths! When we do add an if-statement (again, don't assume we should) we want to change the program's behavior as little as possible. Like add an error banner if there's an error, don't render a different page. And always prefer to conditionally gray something out rather than conditionally suppress it. We can't overemphasize anti-magic enough. We've yet to find the limit beyond which being more dogmatic about it stops bearing fruit.
 9. Beeminder's [Anti-Settings Principle](https://blog.beeminder.com/choices). Not that a coding agent would add settings without asking, but it's a good principle to have in mind in planning mode.
 10. Beeminder's [Anti-Robustness Principle](https://blog.beeminder.com/postel) aka Anti-Postel. Fail loudly and immediately. Never silently fix inputs. Instead of "fallback handling", do asserts that force a crash. In fact, use asserts everywhere you can think to. See also the branch of defensive programming known as offensive programming. Anti-robustness is huge, on par with anti-magic.
-11. Naming as language design. Decades ago programmers became infamous for opaque variable names and they've been overcompensating almost as long. As a silly example of the two extremes:
+11. Nominology. Decades ago programmers became infamous for opaque variable names and they've been overcompensating almost as long. As a silly example of the two extremes:
   c = sqrt(a^2 + b^2)
   vs
   hypotenuse = squareInverse(square(verticalLeg) + square(horizontalLeg))
@@ -18,7 +18,7 @@ If a symbol (variable, constant, field name, function) is localized to a few lin
 12. Replicata/Expectata/Resultata. Those are the three parts of a [proper bug report](https://blog.beeminder.com/bugreports): (1) steps to replicate the bug ex nihilo, (2) what you expected to happen, and (3) what happened instead. A failing qual should also be framed that way.
 13. Git off my lawn. My workflow is to always stay on the main/master branch, let the AI make edits, review those in my IDE, and then manually, as the human, type a commit message and push and sync to master. So you, the AI, can use git diff and git log as needed but don't do other things with git that might mess up my workflow. [This should be enforced directly in settings.json too.]
 
-Recap: Epistemic humility, anti-sycophancy, QDD, prose persnicketiness, latin microcopy, PDP, code smells, anti-magic, anti-settings, anti-postel, onomastics, proper bug reports, and git workflow.
+Recap: Epistemic humility, anti-sycophancy, QDD, prose persnicketiness, latin microcopy, PDP, code smells, anti-magic, anti-settings, anti-postel, nominology, proper bug reports, and git workflow.
 
 ## Cutting Room Floor
 
@@ -31,7 +31,6 @@ I'm tentatively retiring the following rules that seem unncessary for Fable and 
 1. We like the anti-magic extreme of [worse-is-better](https://en.wikipedia.org/wiki/Worse_is_better) aka New Jersey style, but knowing when to deviate from the MIT approach is something of an art and requires discussion.
 1. Anti-magic covers this but it's not getting through so let's try it again. AI coding agents (pre-Fable?) seem to have an overwhelming instinct to be like "oh, thing X happens that shouldn't? or thing Y should happen? let me slap on some code to handle those cases". Instead, I beg you, think: "let me get my head around this and try to solve it by rethinking and simplifying so we don't have to reason about separate cases".
 1. In case it helps, here's how Claude put it after yet another case where we found a bug, Claude tried to add a condition, and then eventually we realized the right answer was to remove an existing if-statement altogether: "When fixing a bug, first ask 'what code is causing this?' not 'what code should I add?' ... If you're about to add a condition to an existing if-statement, ask whether that if-statement should exist at all."
-
 
 [MASTER COPY CONFUSION WARNING: master copy of above lives in the Beebrain repo]
 
@@ -304,7 +303,24 @@ are generous but real. For anonymous append-only writes, a linked Google
 Form's `formResponse` endpoint needs no script at all. Outgrowing this means
 a real backend with a service account.
 
-## Spec (proposal, partially implemented): renameable people via person ids
+## Spec (SHIPPED 2026-07-19): renameable people via person ids
+
+**Update 2026-07-19:** fully shipped, on dreev's "go". The pid is the
+identity everywhere — seats, bids, claims, the client's per-auction
+`tauction-pids` ledger and pid-keyed bid memory — and unames are
+display labels, so a rename is a one-cell label edit (the client's
+rename-transaction machinery was deleted outright). Open questions
+resolved: removed-after-bidding is now IMPOSSIBLE (dreev 2026-07-19:
+"just say no removing someone if they've bid") — a bid protects its
+seat, removal of the bidless deletes outright, and the whole
+crossed-out-row state ceased to exist; auto-relatch is option (b) — a
+fresh add is yours only when you're nobody here and the name matches
+your remembered hint (or you have no hint); tokens stay unbuilt
+(honor system, as leaned). Current schemas: users = aname, pid,
+uname, deviceID, deviceBlurb, tini, tmod; bids = aname, pid, bid,
+tbid. Deploying a schema change means deleting the affected tabs
+(schema drift refuses them with marching orders; recreated tabs are
+born pre-armored).
 
 **Update 2026-07-15:** the participants table shipped (subsuming the
 earlier claims tab): a row per seat with the claiming device's uuid as a

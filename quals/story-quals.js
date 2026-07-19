@@ -858,44 +858,25 @@ async function bid(page, bidText) {
     ok(cols.every((c) => c.bid === cols[0].bid),
        'bid column aligns across rows: ' + JSON.stringify(cols));
 
-    // Another machine's zed bids and gets cut BEFORE the gavel (bid
-    // kept, seat gone — post-close removes are frozen now, so the cut
-    // must precede the reveal); then alice ends early: × the
+    // Another machine's zed walks on with a bid (his × grays at once:
+    // a bid protects its seat — removal of a bidder no longer exists,
+    // dreev 2026-07-19); then alice ends early: × the bidless
     // straggler right off the ledger.
-    gas.handle({ action: 'bid', aname: 'chores', uname: 'zed',
+    gas.handle({ action: 'bid', aname: 'chores',
+      uname: 'zed', pid: 'pid-chores-zed',
                  bid: 'zed was here' });
-    gas.handle({ action: 'remove', aname: 'chores', uname: 'zed' });
-    await alice.click('.tile[data-uname="evy"] .x');
     await alice.waitForFunction(() =>
-      document.querySelector('.tile[data-uname="zed"].cut'));
+      document.querySelector('.tile[data-uname="zed"]'));
+    ok(await alice.evaluate(() =>
+      document.querySelector('.tile[data-uname="zed"] .x').disabled),
+       "the walk-on's bid grays his × on arrival: a bid protects its"
+       + ' seat');
+    await alice.click('.tile[data-uname="evy"] .x');
     await alice.waitForFunction(() => !document.getElementById('seal').disabled);
     await alice.click('#seal');
     await alice.waitForFunction(() =>
       document.getElementById('status').textContent.includes('i bid 2 dishes'));
     ok(true, '× the straggler, press the padlock: end-early');
-    // the strike-through must read as a confident pen stroke, not a
-    // grayed-out row (and no element opacity: the × inside hosts a tip)
-    ok(await alice.evaluate(() => {
-      const probe = document.createElement('span');
-      probe.style.color = 'var(--err-fg)';
-      document.body.append(probe);
-      const ink = getComputedStyle(probe).color;
-      probe.remove();
-      const t = document.querySelector('.tile[data-uname="zed"].cut');
-      const stroke = getComputedStyle(t, '::after');
-      return getComputedStyle(t).opacity === '1'
-        && stroke.opacity === '1'
-        && stroke.backgroundColor === ink;
-    }), 'the cut stroke is full-strength cancellation ink; the row'
-       + ' beneath stays legible');
-    // [FLIPPED 2026-07-18: the cut row's × used to stay alive as the
-    // zombie-purge recovery — but post-close it would delete a
-    // REVEALED bid from the record (dreev caught it live), so at the
-    // gavel even that freezes]
-    ok(await alice.evaluate(() =>
-      document.querySelector('.tile[data-uname="zed"] .x').disabled),
-       "the cut row's × grays at the gavel: a revealed bid never"
-       + ' leaves the record');
     await shoot(alice, 'story3-roster-reveal');
 
     /* ================= Story 4: clicks survive op-ack renders ==========
@@ -1146,8 +1127,10 @@ async function bid(page, bidText) {
        stealing, no two-alices), watches the star go dibsed as the
        recovery snapshot lands, takes bea instead, and the game plays
        out normally. */
-    gas.handle({ action: 'add', aname: 'squabble', uname: 'alice' });
-    gas.handle({ action: 'add', aname: 'squabble', uname: 'bea' });
+    gas.handle({ action: 'add', aname: 'squabble',
+      uname: 'alice', pid: 'pid-squabble-alice' });
+    gas.handle({ action: 'add', aname: 'squabble',
+      uname: 'bea', pid: 'pid-squabble-bea' });
     const p1 = await makePage(browser, mobileViewport);
     const p2 = await makePage(browser, mobileViewport);
     await p1.goto(BASE + '/squabble', { waitUntil: 'networkidle0' });
@@ -1195,9 +1178,12 @@ async function bid(page, bidText) {
        EXPLICITLY (Womp Womp), and the sheet keeps the pre-gavel
        bid. */
     const wire = await makePage(browser, DESKTOP);
-    gas.handle({ action: 'add', aname: 'wirestory', uname: 'ann' });
-    gas.handle({ action: 'add', aname: 'wirestory', uname: 'bee' });
-    gas.handle({ action: 'bid', aname: 'wirestory', uname: 'bee',
+    gas.handle({ action: 'add', aname: 'wirestory',
+      uname: 'ann', pid: 'pid-wirestory-ann' });
+    gas.handle({ action: 'add', aname: 'wirestory',
+      uname: 'bee', pid: 'pid-wirestory-bee' });
+    gas.handle({ action: 'bid', aname: 'wirestory',
+      uname: 'bee', pid: 'pid-wirestory-bee',
                  bid: 'bee bid' });
     await wire.goto(BASE + '/wirestory', { waitUntil: 'networkidle0' });
     await claimRow(wire, 'ann');
@@ -1212,7 +1198,7 @@ async function bid(page, bidText) {
       && document.getElementById('banner').textContent.includes(womp),
       {}, SCOPY.gavelFellCopy);
     ok(gas.handle({ action: 'state', aname: 'wirestory' }).bids
-         .find((b) => b.uname === 'ann').bid === 'first word',
+         .find((b) => b.pid === 'pid-wirestory-ann').bid === 'first word',
        'a half-typed revision races the gavel on its own and loses'
        + ' out loud; the sheet keeps the pre-gavel bid');
 

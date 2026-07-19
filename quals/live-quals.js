@@ -29,8 +29,11 @@ function ok(cond, label) {
       + ' any other outdated ones, then rerun: node quals/live-quals.js');
     process.exit(1);
   }
-  ok(r.aname === 'tau' && Array.isArray(r.bidders)
-     && r.bidders.every((b) => typeof b.uname === 'string'
+  ok(r.aname === 'tau' && Array.isArray(r.seats)
+     && r.seats.every((se) => typeof se.pid === 'string'
+                           && typeof se.uname === 'string')
+     && Array.isArray(r.bidders)
+     && r.bidders.every((b) => typeof b.pid === 'string'
                             && typeof b.tini === 'string'
                             && typeof b.tmod === 'string')
      && r.claims !== null && typeof r.claims === 'object'
@@ -44,14 +47,16 @@ function ok(cond, label) {
   // is a documented no-op, so this is safe in every state.
   await fetch(API, { method: 'POST',
     body: JSON.stringify({ action: 'release', aname: 'smoketest',
-      uname: 'smokey', deviceID: 'smoke-dev' }) });
+      pid: 'pid-smoketest-smokey', deviceID: 'smoke-dev' }) });
   // end-to-end write+read: place a smoke bid, read it back from the
   // returned post-write state (self-seeding: no fixture data needed)
   r = await (await fetch(API, { method: 'POST',
     body: JSON.stringify({ action: 'bid', aname: 'smoketest',
-      uname: 'smokey', bid: 'smoke ' + Date.now() }) })).json();
+      uname: 'smokey', pid: 'pid-smoketest-smokey',
+      bid: 'smoke ' + Date.now() }) })).json();
   ok(!r.error, 'live bid accepted: ' + JSON.stringify(r).slice(0, 120));
-  const smokey = (r.bidders || []).find((b) => b.uname === 'smokey');
+  const smokey = (r.bidders || []).find(
+    (b) => b.pid === 'pid-smoketest-smokey');
   ok(smokey !== undefined && smokey.bcount >= 1,
      'live bid readable with bcount >= 1: '
        + JSON.stringify(r.bidders).slice(0, 120));
@@ -60,21 +65,22 @@ function ok(cond, label) {
   // action: release", the hard way)
   r = await (await fetch(API, { method: 'POST',
     body: JSON.stringify({ action: 'claim', aname: 'smoketest',
-      uname: 'smokey', deviceID: 'smoke-dev',
+      pid: 'pid-smoketest-smokey', deviceID: 'smoke-dev',
       deviceBlurb: 'a smoke test' }) })).json();
-  ok(!r.error && r.claims.smokey === 'smoke-dev'
-     && r.blurbs.smokey === 'a smoke test',
+  ok(!r.error && r.claims['pid-smoketest-smokey'] === 'smoke-dev'
+     && r.blurbs['pid-smoketest-smokey'] === 'a smoke test',
      'live claim registers deviceID + blurb: '
        + JSON.stringify(r.claims) + JSON.stringify(r.blurbs));
   r = await (await fetch(API, { method: 'POST',
     body: JSON.stringify({ action: 'release', aname: 'smoketest',
-      uname: 'smokey', deviceID: 'not-the-holder' }) })).json();
+      pid: 'pid-smoketest-smokey',
+      deviceID: 'not-the-holder' }) })).json();
   ok(String(r.error).includes('ERROR1306'),
      'live release by a non-holder refused: ' + JSON.stringify(r).slice(0, 80));
   r = await (await fetch(API, { method: 'POST',
     body: JSON.stringify({ action: 'release', aname: 'smoketest',
-      uname: 'smokey', deviceID: 'smoke-dev' }) })).json();
-  ok(!r.error && r.claims.smokey === undefined,
+      pid: 'pid-smoketest-smokey', deviceID: 'smoke-dev' }) })).json();
+  ok(!r.error && r.claims['pid-smoketest-smokey'] === undefined,
      'live release vacates the seat (self-cleaning: the next run\'s'
      + ' device-less smoke bid needs it open)');
   console.log('live-quals: all ' + passed

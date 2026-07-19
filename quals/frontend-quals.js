@@ -19,6 +19,16 @@ const gas = require('./fake-gas')();
 /* ------------------------- the fetch bridge --------------------------- */
 
 const API_URL = 'https://script.example/exec';
+// pid-era payloads carry seats [{pid, uname}]; names() flattens the
+// labels for roster-shaped asserts (mirrors gas-quals)
+const names = (st) => st.seats.map((s) => s.uname).join(',');
+// a seat's pid, looked up by its label (UI-minted pids are random)
+const pidOf = (st, uname) =>
+  (st.seats.find((s) => s.uname === uname) || {}).pid;
+const bidderNamed = (st, uname) =>
+  st.bidders.find((b) => b.pid === pidOf(st, uname));
+const bidNamed = (st, uname) =>
+  (st.bids || []).find((b) => b.pid === pidOf(st, uname));
 let apiCalls = [];
 let geoHits = 0;  // ipwho.is fixture servings (the cache quals count)
 let geoFixture = { city: 'Portland', region_code: 'OR' };  // what it serves
@@ -100,7 +110,7 @@ const STAMP = STR.stampCopy;
 // ...and the server's half, out of the vm context hosting Code.gs
 const SCOPY = require('vm')
   .runInContext('({ gavelFellCopy, simulEditsCopy, mysteryDeviceCopy,'
-    + ' nameTakenCopy })', gas);
+    + ' nameTakenCopy, removeBidderCopy })', gas);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -348,11 +358,15 @@ const cssBattles = [];
      that write is still optimistic. Expectata: carol immediately
      blocks reveal and the tip names her. Resultata pre-fix: reveal
      stayed ready because its computation read the old server roster. */
-  gas.handle({ action: 'add', aname: 'localready', uname: 'ann' });
-  gas.handle({ action: 'add', aname: 'localready', uname: 'bob' });
-  gas.handle({ action: 'bid', aname: 'localready', uname: 'ann',
+  gas.handle({ action: 'add', aname: 'localready',
+    uname: 'ann', pid: 'pid-localready-ann' });
+  gas.handle({ action: 'add', aname: 'localready',
+    uname: 'bob', pid: 'pid-localready-bob' });
+  gas.handle({ action: 'bid', aname: 'localready',
+    uname: 'ann', pid: 'pid-localready-ann',
     bid: 'ann bid', deviceID: 'ann-device', deviceBlurb: 'Ann rig' });
-  gas.handle({ action: 'bid', aname: 'localready', uname: 'bob',
+  gas.handle({ action: 'bid', aname: 'localready',
+    uname: 'bob', pid: 'pid-localready-bob',
     bid: 'bob bid', deviceID: 'bob-device', deviceBlurb: 'Bob rig' });
   const dLocalReady = await makePage('/localready?api=' + API_URL);
   const localSeal = dLocalReady.window.document.getElementById('seal');
@@ -371,8 +385,10 @@ const cssBattles = [];
   /* Replicata: erase a persisted participant name and leave its field.
      Expectata: the committed name returns. Resultata pre-fix: the
      living field stayed blank although the model still said bob. */
-  gas.handle({ action: 'add', aname: 'emptyrename', uname: 'ann' });
-  gas.handle({ action: 'add', aname: 'emptyrename', uname: 'bob' });
+  gas.handle({ action: 'add', aname: 'emptyrename',
+    uname: 'ann', pid: 'pid-emptyrename-ann' });
+  gas.handle({ action: 'add', aname: 'emptyrename',
+    uname: 'bob', pid: 'pid-emptyrename-bob' });
   const dEmptyRename = await makePage('/emptyrename?api=' + API_URL);
   const emptyName = row(dEmptyRename.window.document, 'bob')
     .querySelector('.rename input');
@@ -387,16 +403,20 @@ const cssBattles = [];
      the committed bid returns; a whitespace-only never-saved editor
      simply returns to blank. Resultata pre-fix: both fields retained
      their empty draft even though no write happened. */
-  gas.handle({ action: 'add', aname: 'emptybid', uname: 'ann' });
-  gas.handle({ action: 'add', aname: 'emptybid', uname: 'bob' });
-  gas.handle({ action: 'bid', aname: 'emptybid', uname: 'ann',
+  gas.handle({ action: 'add', aname: 'emptybid',
+    uname: 'ann', pid: 'pid-emptybid-ann' });
+  gas.handle({ action: 'add', aname: 'emptybid',
+    uname: 'bob', pid: 'pid-emptybid-bob' });
+  gas.handle({ action: 'bid', aname: 'emptybid',
+    uname: 'ann', pid: 'pid-emptybid-ann',
     bid: 'standing bid', deviceID: 'empty-device',
     deviceBlurb: 'Empty rig' });
   const dEmptyBid = await makePage('/emptybid?api=' + API_URL, (w) => {
     w.localStorage.setItem('tauction-device', 'empty-device');
-    w.localStorage.setItem('tauction-uname', 'ann');
+    w.localStorage.setItem('tauction-pids',
+      '{"emptybid":"pid-emptybid-ann"}');
     w.localStorage.setItem('tauction-mybids:emptybid',
-      '{"ann":"standing bid"}');
+      '{"pid-emptybid-ann":"standing bid"}');
   });
   const standingBid = row(dEmptyBid.window.document, 'ann')
     .querySelector('.rebid input');
@@ -406,13 +426,16 @@ const cssBattles = [];
      && standingBid.defaultValue === 'standing bid'
      && !standingBid.classList.contains('error')
      && gas.handle({ action: 'state', aname: 'emptybid' })
-          .bidders.find((b) => b.uname === 'ann').bcount === 1,
+          .bidders.find((b) => b.pid === 'pid-emptybid-ann').bcount === 1,
      'leaving an emptied standing bid restores server truth and sends'
      + ' no withdrawal');
-  gas.handle({ action: 'add', aname: 'blankbid', uname: 'ann' });
-  gas.handle({ action: 'add', aname: 'blankbid', uname: 'bob' });
+  gas.handle({ action: 'add', aname: 'blankbid',
+    uname: 'ann', pid: 'pid-blankbid-ann' });
+  gas.handle({ action: 'add', aname: 'blankbid',
+    uname: 'bob', pid: 'pid-blankbid-bob' });
   const dBlankBid = await makePage('/blankbid?api=' + API_URL, (w) => {
-    w.localStorage.setItem('tauction-uname', 'ann');
+    w.localStorage.setItem('tauction-pids',
+      '{"blankbid":"pid-blankbid-ann"}');
   });
   const blankBid = row(dBlankBid.window.document, 'ann')
     .querySelector('.rebid input');
@@ -420,8 +443,8 @@ const cssBattles = [];
   blankBid.dispatchEvent(new dBlankBid.window.Event('blur'));
   ok(blankBid.value === '' && blankBid.defaultValue === ''
      && !blankBid.classList.contains('error')
-     && !gas.handle({ action: 'state', aname: 'blankbid' })
-          .bidders.some((b) => b.uname === 'ann'),
+     && bidderNamed(gas.handle(
+          { action: 'state', aname: 'blankbid' }), 'ann') === undefined,
      'leaving a blank never-saved bid is a normal no-op');
 
   /* Replicata: save B, then save C before B's response arrives.
@@ -430,7 +453,8 @@ const cssBattles = [];
      falsely collided with this same client's successful B. */
   gas.handle({ action: 'describe', aname: 'rapiddesc', base: '',
     blurb: 'A version' });
-  gas.handle({ action: 'add', aname: 'rapiddesc', uname: 'ann' });
+  gas.handle({ action: 'add', aname: 'rapiddesc',
+    uname: 'ann', pid: 'pid-rapiddesc-ann' });
   const dRapidDesc = await makePage('/rapiddesc?api=' + API_URL);
   const rapidDoc = dRapidDesc.window.document;
   mockDelay = 300;
@@ -462,7 +486,8 @@ const cssBattles = [];
      Resultata pre-fix: the refusal closure replaced C with B. */
   gas.handle({ action: 'describe', aname: 'newerdesc', base: '',
     blurb: 'A version' });
-  gas.handle({ action: 'add', aname: 'newerdesc', uname: 'ann' });
+  gas.handle({ action: 'add', aname: 'newerdesc',
+    uname: 'ann', pid: 'pid-newerdesc-ann' });
   const dNewerDesc = await makePage('/newerdesc?api=' + API_URL);
   const newerDoc = dNewerDesc.window.document;
   mockDelay = 400;
@@ -566,9 +591,10 @@ const cssBattles = [];
      Resultata pre-fix: inherited Object members impersonated claim,
      bid, and row entries, and rendering crashed before building it. */
   gas.handle({ action: 'add', aname: 'constructormap',
-    uname: 'constructor' });
+    uname: 'constructor', pid: 'constructor' });
   const dConstructor = await makePage('/constructormap?api=' + API_URL,
-    (w) => { w.localStorage.setItem('tauction-uname', 'constructor'); });
+    (w) => { w.localStorage.setItem('tauction-pids',
+      '{"constructormap":"constructor"}'); });
   const constructorRow = row(dConstructor.window.document, 'constructor');
   ok(constructorRow && constructorRow.classList.contains('mine')
      && constructorRow.querySelector('.rebid input').value === ''
@@ -581,292 +607,80 @@ const cssBattles = [];
   const constructorState = gas.handle(
     { action: 'state', aname: 'constructormap' });
   ok(myInput(dConstructor.window.document).value === 'constructor bid'
-     && constructorState.bidders.find((b) => b.uname === 'constructor')
+     && constructorState.bidders.find((b) => b.pid === 'constructor')
           .bcount === 1,
      'constructor submits and remembers its bid through the same safe'
-     + ' uname maps');
+     + ' pid maps');
 
-  /* Replicata: this stale page renames alice to beta after another page
-     added beta, then immediately edits the optimistic beta row to gamma.
-     Expectata: the name stays live and advances optimistically, while
-     star/bid/× stay inert and beta→gamma waits on alice→beta; when the
-     first leg refuses, alice and her exact memory return and remote beta
-     is untouched. Resultata pre-fix: beta→gamma could run second and
-     rename the other page's beta seat. */
-  gas.handle({ action: 'add', aname: 'pendingrename', uname: 'alice' });
-  gas.handle({ action: 'add', aname: 'pendingrename', uname: 'carol' });
-  gas.handle({ action: 'bid', aname: 'pendingrename', uname: 'alice',
-    bid: 'alice bid', deviceID: 'pending-device',
-    deviceBlurb: 'Pending rig' });
-  const dPendingRename = await makePage(
-    '/pendingrename?api=' + API_URL, (w) => {
-      w.localStorage.setItem('tauction-device', 'pending-device');
-      w.localStorage.setItem('tauction-uname', 'alice');
-      w.localStorage.setItem('tauction-mybids:pendingrename',
-        '{"alice":"alice bid"}');
-    });
-  gas.handle({ action: 'add', aname: 'pendingrename', uname: 'beta' });
-  mockDelay = 400;
-  renameTo(dPendingRename, 'alice', 'beta');
-  const pendingBeta = row(dPendingRename.window.document, 'beta');
-  const betaActionsWereInert = [pendingBeta.querySelector('.tu'),
-    pendingBeta.querySelector('.rebid input'),
-    pendingBeta.querySelector('.x')].every((control) => control.disabled);
-  const betaNameStayedLive =
-    !pendingBeta.querySelector('.rename input').disabled;
-  renameTo(dPendingRename, 'beta', 'gamma');
-  const pendingGamma = row(dPendingRename.window.document, 'gamma');
-  const gammaWasOptimistic = pendingGamma && !row(
-    dPendingRename.window.document, 'beta')
-    && dPendingRename.window.localStorage.getItem('tauction-uname')
-         === 'gamma';
-  await sleep(20);
-  const pendingCalls = apiCalls.filter((c) =>
-    c.action === 'rename' && c.aname === 'pendingrename');
-  await until(() => {
-    const s = gas.handle({ action: 'state', aname: 'pendingrename' });
-    return s.roster.includes('gamma')
-      || !dPendingRename.window.document.getElementById('banner').hidden;
+  /* --- renames in the pid era: plain ops on a fixed identity -----------
+     (2026-07-19, the migration that DELETED the client's rename-
+     transaction machinery: a rename is a label edit keyed by pid, so
+     the old stale-chain hazard — alice→beta→gamma grabbing someone
+     else's remote beta — is unrepresentable: the wire never carries
+     a from-name at all. These quals replace the four transaction-era
+     pins whose machinery no longer exists.) */
+  gas.handle({ action: 'add', aname: 'renops',
+    uname: 'alice', pid: 'pid-renops-alice' });
+  gas.handle({ action: 'add', aname: 'renops',
+    uname: 'carol', pid: 'pid-renops-carol' });
+  gas.handle({ action: 'bid', aname: 'renops',
+    uname: 'alice', pid: 'pid-renops-alice', bid: 'alice bid',
+    deviceID: 'ren-device', deviceBlurb: 'Ren rig' });
+  const dRen = await makePage('/renops?api=' + API_URL, (w) => {
+    w.localStorage.setItem('tauction-device', 'ren-device');
+    w.localStorage.setItem('tauction-pids',
+      '{"renops":"pid-renops-alice"}');
+    w.localStorage.setItem('tauction-mybids:renops',
+      '{"pid-renops-alice":"alice bid"}');
   });
-  await sleep(450);  // outlive the forbidden dependent rename if queued
-  mockDelay = 0;
-  const pendingState = gas.handle(
-    { action: 'state', aname: 'pendingrename' });
-  ok(betaActionsWereInert && betaNameStayedLive && gammaWasOptimistic
-     && pendingCalls.length === 1
-     && pendingCalls[0].from === 'alice' && pendingCalls[0].to === 'beta'
-     && pendingState.roster.includes('alice')
-     && pendingState.roster.includes('beta')
-     && !pendingState.roster.includes('gamma')
-     && dPendingRename.window.localStorage.getItem('tauction-uname')
-          === 'alice'
-     && dPendingRename.window.localStorage.getItem(
-       'tauction-mybids:pendingrename') === '{"alice":"alice bid"}',
-     'dependent name edits stay live and optimistic but unsent; refusal'
-     + ' restores alice exactly and cannot mutate the remote beta seat');
-
-  /* Replicata: alice→bravo is in flight when the same live field advances
-     to charlie. The first leg commits; before the dependent leg lands,
-     another page seats charlie. Expectata: the second refusal restores
-     bravo, the last confirmed identity, and bravo's exact raw-memory
-     snapshot. Resultata pre-fix: rollback jumped all the way to alice or
-     retained the refused charlie identity. */
-  gas.handle({ action: 'add', aname: 'renamecoalesce', uname: 'alice' });
-  gas.handle({ action: 'add', aname: 'renamecoalesce', uname: 'bob' });
-  gas.handle({ action: 'bid', aname: 'renamecoalesce', uname: 'alice',
-    bid: 'alice bid', deviceID: 'coalesce-device',
-    deviceBlurb: 'Coalesce rig' });
-  const coalescedBids =
-    '{"alice":"alice draft","bravo":"old bravo draft",'
-    + '"charlie":"old charlie draft"}';
-  const confirmedBravoBids =
-    '{"bravo":"alice draft","charlie":"old charlie draft"}';
-  const dRenameCoalesce = await makePage(
-    '/renamecoalesce?api=' + API_URL, (w) => {
-      w.localStorage.setItem('tauction-device', 'coalesce-device');
-      w.localStorage.setItem('tauction-uname', 'alice');
-      w.localStorage.setItem('tauction-mybids:renamecoalesce',
-        coalescedBids);
-    });
-  const coalesceFetch = dRenameCoalesce.window.fetch;
-  let seatCharlieAfterFirst = true;
-  dRenameCoalesce.window.fetch = (url, opts) => {
-    const req = opts && opts.method === 'POST' ? JSON.parse(opts.body) : null;
-    if (seatCharlieAfterFirst && req && req.action === 'rename'
-        && req.aname === 'renamecoalesce') {
-      seatCharlieAfterFirst = false;
-      return coalesceFetch(url, opts).then((response) => {
-        gas.handle({ action: 'add', aname: 'renamecoalesce',
-          uname: 'charlie' });
-        return response;
-      });
-    }
-    return coalesceFetch(url, opts);
-  };
+  // chained edits, mid-flight: two plain serialized ops, both keyed
+  // by the pid — no dependency, no transaction, nothing to roll back
   mockDelay = 300;
-  renameTo(dRenameCoalesce, 'alice', 'bravo');
-  renameTo(dRenameCoalesce, 'bravo', 'charlie');
-  const optimisticCharlie = row(
-    dRenameCoalesce.window.document, 'charlie');
-  const coalescedActionsWereInert = [
-    optimisticCharlie.querySelector('.tu'),
-    optimisticCharlie.querySelector('.rebid input'),
-    optimisticCharlie.querySelector('.x'),
-  ].every((control) => control.disabled);
-  ok(optimisticCharlie.classList.contains('mine')
-     && !optimisticCharlie.querySelector('.rename input').disabled
-     && coalescedActionsWereInert
-     && dRenameCoalesce.window.localStorage.getItem('tauction-uname')
-          === 'charlie'
-     && dRenameCoalesce.window.localStorage.getItem(
-       'tauction-mybids:renamecoalesce') === '{"charlie":"alice draft"}',
-     'a dependent edit advances the live name and identity immediately'
-     + ' while every other row action stays inert');
-  await until(() => !dRenameCoalesce.window.document
+  renameTo(dRen, 'alice', 'beta');
+  renameTo(dRen, 'beta', 'gamma');
+  ok(row(dRen.window.document, 'gamma') !== undefined
+     && row(dRen.window.document, 'gamma').classList.contains('mine')
+     && dRen.window.localStorage.getItem('tauction-mybids:renops')
+          === '{"pid-renops-alice":"alice bid"}'
+     && dRen.window.localStorage.getItem('tauction-pids')
+          === '{"renops":"pid-renops-alice"}',
+     'chained renames advance the label instantly; identity and bid'
+     + ' memory never move — the pid IS the identity');
+  await until(() => gas.handle({ action: 'state', aname: 'renops' })
+    .seats.some((s) => s.uname === 'gamma'));
+  mockDelay = 0;
+  const renCalls = apiCalls.filter((c) => c.action === 'rename'
+    && c.aname === 'renops');
+  ok(renCalls.length === 2
+     && renCalls.every((c) => c.pid === 'pid-renops-alice')
+     && renCalls[1].to === 'gamma',
+     'both legs went out as pid-keyed ops: no from-name exists to go'
+     + ' stale');
+  await settled(dRen);
+  ok(row(dRen.window.document, 'gamma').classList.contains('mine')
+     && myInput(dRen.window.document).value === 'alice bid',
+     'after the dust: same seat, same you, same bid — only the label'
+     + ' changed');
+  // the server-side label race (a collision the local guard cannot
+  // see): the refusal reddens the field, keeps the typed text for
+  // fixing, and the recovery snapshot restores the committed label
+  gas.handle({ action: 'add', aname: 'renops',
+    uname: 'zeta', pid: 'pid-renops-zeta' });  // unseen: no poll yet
+  renameTo(dRen, 'gamma', 'zeta');
+  await until(() => !dRen.window.document
     .getElementById('banner').hidden);
-  await until(() => !dRenameCoalesce.window.document
-    .getElementById('status').classList.contains('stale'));
-  mockDelay = 0;
-  const coalescedState = gas.handle(
-    { action: 'state', aname: 'renamecoalesce' });
-  const coalescedCalls = apiCalls.filter((c) =>
-    c.action === 'rename' && c.aname === 'renamecoalesce');
-  const restoredBravo = row(dRenameCoalesce.window.document, 'bravo');
-  ok(coalescedCalls.length === 2
-     && coalescedCalls[0].from === 'alice'
-     && coalescedCalls[0].to === 'bravo'
-     && coalescedCalls[1].from === 'bravo'
-     && coalescedCalls[1].to === 'charlie'
-     && coalescedState.roster.includes('bravo')
-     && coalescedState.roster.includes('charlie')
-     && !coalescedState.roster.includes('alice')
-     && dRenameCoalesce.window.localStorage.getItem('tauction-uname')
-          === 'bravo'
-     && dRenameCoalesce.window.localStorage.getItem(
-       'tauction-mybids:renamecoalesce') === confirmedBravoBids
-     && restoredBravo && restoredBravo.classList.contains('mine')
-     && restoredBravo.querySelector('.rename input')
-          .classList.contains('error'),
-     'first-leg success plus second-leg refusal restores confirmed bravo'
-     + ' and its exact raw-memory snapshot, never alice or charlie');
-
-  /* Replicata: soft-claimed alice optimistically renames to beta, but
-     that one POST loses its transport response and the authoritative
-     recovery state still says alice. Expectata: identity and exact raw
-     bid memory return to alice. Resultata pre-fix: ingest only cleared
-     the pending marker, stranding this browser as nonexistent beta. */
-  gas.handle({ action: 'add', aname: 'renametransport', uname: 'alice' });
-  gas.handle({ action: 'add', aname: 'renametransport', uname: 'bob' });
-  const transportBids = '{"alice":"alice draft","beta":"old beta draft"}';
-  const dRenameTransport = await makePage(
-    '/renametransport?api=' + API_URL, (w) => {
-      w.localStorage.setItem('tauction-uname', 'alice');
-      w.localStorage.setItem('tauction-mybids:renametransport',
-        transportBids);
-    });
-  const transportFetch = dRenameTransport.window.fetch;
-  let breakRename = true;
-  dRenameTransport.window.fetch = (url, opts) => {
-    const req = opts && opts.method === 'POST' ? JSON.parse(opts.body) : null;
-    if (breakRename && req && req.action === 'rename') {
-      breakRename = false;
-      return Promise.reject(new Error('rete abruptum'));
-    }
-    return transportFetch(url, opts);
-  };
-  renameTo(dRenameTransport, 'alice', 'beta');
-  renameTo(dRenameTransport, 'beta', 'gamma');
-  await until(() => !dRenameTransport.window.document
-    .getElementById('status').classList.contains('stale'));
-  const recoveredTransport = row(
-    dRenameTransport.window.document, 'alice');
-  ok(dRenameTransport.window.localStorage.getItem('tauction-uname')
-       === 'alice'
-     && dRenameTransport.window.localStorage.getItem(
-       'tauction-mybids:renametransport') === transportBids
-     && recoveredTransport && recoveredTransport.classList.contains('mine')
-     && !recoveredTransport.querySelector('.rename input').disabled,
-     'authoritative uncommitted transport recovery restores soft identity,'
-     + ' exact bid memory, and the live alice row while discarding its'
-     + ' unsent dependent edit');
-
-  /* Replicata: the rename commits, but its response is lost. Expectata:
-     the authoritative recovery state proves beta replaced alice, so the
-     optimistic beta identity and re-keyed bid memory remain intact. */
-  gas.handle({ action: 'add', aname: 'renamecommitted', uname: 'alice' });
-  gas.handle({ action: 'add', aname: 'renamecommitted', uname: 'bob' });
-  const committedRaw =
-    '{"alice":"alice draft","beta":"old beta draft",'
-    + '"gamma":"old gamma draft"}';
-  const committedBetaRaw =
-    '{"beta":"alice draft","gamma":"old gamma draft"}';
-  const dRenameCommitted = await makePage(
-    '/renamecommitted?api=' + API_URL, (w) => {
-      w.localStorage.setItem('tauction-uname', 'alice');
-      w.localStorage.setItem('tauction-mybids:renamecommitted',
-        committedRaw);
-    });
-  const committedFetch = dRenameCommitted.window.fetch;
-  let loseRenameResponse = true;
-  dRenameCommitted.window.fetch = (url, opts) => {
-    const req = opts && opts.method === 'POST' ? JSON.parse(opts.body) : null;
-    if (loseRenameResponse && req && req.action === 'rename') {
-      loseRenameResponse = false;
-      return committedFetch(url, opts).then(() =>
-        Promise.reject(new Error('responsum amissum')));
-    }
-    return committedFetch(url, opts);
-  };
-  renameTo(dRenameCommitted, 'alice', 'beta');
-  renameTo(dRenameCommitted, 'beta', 'gamma');
-  await until(() => !dRenameCommitted.window.document
-    .getElementById('status').classList.contains('stale'));
-  const committedState = gas.handle(
-    { action: 'state', aname: 'renamecommitted' });
-  const committedBeta = row(dRenameCommitted.window.document, 'beta');
-  ok(committedState.roster.includes('beta')
-     && !committedState.roster.includes('alice')
-     && dRenameCommitted.window.localStorage.getItem('tauction-uname')
-          === 'beta'
-     && dRenameCommitted.window.localStorage.getItem(
-       'tauction-mybids:renamecommitted') === committedBetaRaw
-     && committedBeta && committedBeta.classList.contains('mine')
-     && !committedBeta.querySelector('.rename input').disabled,
-     'authoritative committed transport recovery keeps the leg that did'
-     + ' commit and discards its later unsent dependent edit');
-
-  /* Replicata: alice→beta is in flight when second thoughts type the
-     same live field back to alice. Resultata pre-fix: "That name is
-     taken" — a collision with its own ghost (alice's bid row walks on
-     until the wire catches up). Expectata: the undo is accepted
-     quietly, and once the first leg confirms, a second leg walks the
-     server back — alice end to end, memory intact, no objection. */
-  gas.handle({ action: 'add', aname: 'renameundo', uname: 'alice' });
-  gas.handle({ action: 'add', aname: 'renameundo', uname: 'bob' });
-  gas.handle({ action: 'bid', aname: 'renameundo', uname: 'alice',
-    bid: 'alice bid', deviceID: 'undo-device', deviceBlurb: 'Undo rig' });
-  const dRenameUndo = await makePage('/renameundo?api=' + API_URL,
-    (w) => {
-      w.localStorage.setItem('tauction-device', 'undo-device');
-      w.localStorage.setItem('tauction-uname', 'alice');
-      w.localStorage.setItem('tauction-mybids:renameundo',
-        '{"alice":"alice bid"}');
-    });
-  mockDelay = 300;
-  renameTo(dRenameUndo, 'alice', 'beta');
-  renameTo(dRenameUndo, 'beta', 'alice');  // never mind!
-  const undoDoc = dRenameUndo.window.document;
-  ok(undoDoc.getElementById('banner').hidden
-     && row(undoDoc, 'alice') && !row(undoDoc, 'beta')
-     && !row(undoDoc, 'alice').querySelector('.rename input')
-          .classList.contains('error')
-     && tiles(undoDoc).length === 2
-     && dRenameUndo.window.localStorage.getItem('tauction-uname')
-          === 'alice',
-     "typing the pending edit's original name back is an undo, not a"
-     + ' collision with its own ghost: no banner, no red, no ghost row');
-  await until(() => apiCalls.filter((c) => c.action === 'rename'
-      && c.aname === 'renameundo').length === 2
-    && !undoDoc.getElementById('status').classList.contains('stale'));
-  mockDelay = 0;
-  const undoCalls = apiCalls.filter((c) => c.action === 'rename'
-    && c.aname === 'renameundo');
-  const undoState = gas.handle({ action: 'state', aname: 'renameundo' });
-  ok(undoCalls.length === 2
-     && undoCalls[0].from === 'alice' && undoCalls[0].to === 'beta'
-     && undoCalls[1].from === 'beta' && undoCalls[1].to === 'alice'
-     && undoState.roster.join(',') === 'alice,bob'
-     && undoState.bidders.some((b) => b.uname === 'alice'
-          && b.bcount === 1)
-     && undoState.claims.alice === 'undo-device'
-     && dRenameUndo.window.localStorage.getItem('tauction-uname')
-          === 'alice'
-     && dRenameUndo.window.localStorage.getItem(
-       'tauction-mybids:renameundo') === '{"alice":"alice bid"}'
-     && row(undoDoc, 'alice').classList.contains('mine')
-     && !row(undoDoc, 'alice').querySelector('.rename input').disabled,
-     'the wire walks it back too: two legs out and home — seat, claim,'
-     + ' bid, and memory all intact');
+  await settled(dRen);
+  ok(dRen.window.document.getElementById('banner').textContent
+       .includes(SCOPY.nameTakenCopy)
+     && row(dRen.window.document, 'gamma') !== undefined
+     && row(dRen.window.document, 'gamma')
+          .querySelector('.rename input').classList.contains('error')
+     && row(dRen.window.document, 'gamma')
+          .querySelector('.rename input').value === 'zeta'
+     && row(dRen.window.document, 'gamma').classList.contains('mine'),
+     'a lost label race: banner in the server\'s words, the field red'
+     + ' with your text kept, the committed label restored — and you'
+     + ' are still you (nothing to roll back: identity never moved)');
 
   /* --- 1. bare visit: no server-invented name — the user picks ---------- */
   let dom = await makePage('/?api=' + API_URL);
@@ -969,8 +783,10 @@ const cssBattles = [];
      paints its cached rows instantly (grayed till the live fetch), and
      a first-time browser sees just the grayed box and the gavel (the
      old ⋯ pulse sat as a phantom blank line above the + row). */
-  gas.handle({ action: 'add', aname: 'warm', uname: 'ann' });
-  gas.handle({ action: 'add', aname: 'warm', uname: 'ben' });
+  gas.handle({ action: 'add', aname: 'warm',
+    uname: 'ann', pid: 'pid-warm-ann' });
+  gas.handle({ action: 'add', aname: 'warm',
+    uname: 'ben', pid: 'pid-warm-ben' });
   const seeded = gas.handle({ action: 'state', aname: 'warm' });
   mockDelay = 800;
   const domWarm = await makePage('/warm?api=' + API_URL, (win) =>
@@ -993,8 +809,9 @@ const cssBattles = [];
   ok(!domCold.window.document.getElementById('status').classList
        .contains('stale'),
      'the cold page ungrays once the state lands');
-  ok(JSON.parse(domWarm.window.localStorage.getItem('tauction-state:warm'))
-       .roster.join(',') === 'ann,ben',
+  ok(names(JSON.parse(
+       domWarm.window.localStorage.getItem('tauction-state:warm')))
+       === 'ann,ben',
      'every ingested state refreshes the cache');
   ok(domCold.window.document.getElementById('banner').hidden
      && domWarm.window.document.getElementById('banner').hidden,
@@ -1006,8 +823,10 @@ const cssBattles = [];
      Expectata: a loud, honest banner naming the state-shape problem —
      the fix is deploying @17, never softening the assert. */
   stripTini = true;
-  gas.handle({ action: 'add', aname: 'skew', uname: 'old' });
-  gas.handle({ action: 'bid', aname: 'skew', uname: 'old', bid: 'relic' });
+  gas.handle({ action: 'add', aname: 'skew',
+    uname: 'old', pid: 'pid-skew-old' });
+  gas.handle({ action: 'bid', aname: 'skew',
+    uname: 'old', pid: 'pid-skew-old', bid: 'relic' });
   const domSkew = await makePage('/skew?api=' + API_URL);
   ok(!domSkew.window.document.getElementById('banner').hidden
      && domSkew.window.document.getElementById('banner').textContent
@@ -1026,8 +845,10 @@ const cssBattles = [];
      stamp is full-ISO or the ingest refuses loudly. */
   const COERCED = String(new Date('2026-07-18T01:23:45.678Z'));
   stampSwap = COERCED;
-  gas.handle({ action: 'add', aname: 'coerced', uname: 'old' });
-  gas.handle({ action: 'bid', aname: 'coerced', uname: 'old', bid: 'x' });
+  gas.handle({ action: 'add', aname: 'coerced',
+    uname: 'old', pid: 'pid-coerced-old' });
+  gas.handle({ action: 'bid', aname: 'coerced',
+    uname: 'old', pid: 'pid-coerced-old', bid: 'x' });
   const domCo = await makePage('/coerced?api=' + API_URL);
   ok(!domCo.window.document.getElementById('banner').hidden
      && domCo.window.document.getElementById('banner').textContent
@@ -1040,10 +861,14 @@ const cssBattles = [];
      && domNan.window.document.getElementById('banner').textContent
           .includes('bad state shape'),
      'a blank stamp (the old "NaNd ago" tooltip) refuses loudly too');
-  gas.handle({ action: 'add', aname: 'coercedtfin', uname: 'a1' });
-  gas.handle({ action: 'add', aname: 'coercedtfin', uname: 'b2' });
-  gas.handle({ action: 'bid', aname: 'coercedtfin', uname: 'a1', bid: 'x' });
-  gas.handle({ action: 'bid', aname: 'coercedtfin', uname: 'b2', bid: 'y' });
+  gas.handle({ action: 'add', aname: 'coercedtfin',
+    uname: 'a1', pid: 'pid-coercedtfin-a1' });
+  gas.handle({ action: 'add', aname: 'coercedtfin',
+    uname: 'b2', pid: 'pid-coercedtfin-b2' });
+  gas.handle({ action: 'bid', aname: 'coercedtfin',
+    uname: 'a1', pid: 'pid-coercedtfin-a1', bid: 'x' });
+  gas.handle({ action: 'bid', aname: 'coercedtfin',
+    uname: 'b2', pid: 'pid-coercedtfin-b2', bid: 'y' });
   gas.handle({ action: 'reveal', aname: 'coercedtfin' });
   stampSwap = COERCED;
   const domCt = await makePage('/coercedtfin?api=' + API_URL);
@@ -1084,7 +909,8 @@ const cssBattles = [];
      + ' the description: name, tab, describe');
   // the refusal side: tab on an OCCUPIED name shows the gate banner
   // and plants no caret in a description that isn't yours to write
-  gas.handle({ action: 'add', aname: 'tabtaken', uname: 'z' });
+  gas.handle({ action: 'add', aname: 'tabtaken',
+    uname: 'z', pid: 'pid-tabtaken-z' });
   const dTabTaken = await makePage('/?api=' + API_URL);
   type(dTabTaken, 'aname', 'tabtaken');
   dTabTaken.window.document.getElementById('aname').dispatchEvent(
@@ -1190,14 +1016,12 @@ const cssBattles = [];
        === STR.waitingTip('alice' + STR.youTag + ' and bob'),
      'padlock tip NAMES the stragglers, tagging you as you');
   addName(dom, 'carol');
-  await until(() => gas.handle({ action: 'state', aname: 'tau' })
-    .roster.join(',') === 'alice,bob,carol');
+  await until(() => names(gas.handle({ action: 'state', aname: 'tau' })) === 'alice,bob,carol');
   ok(doc.getElementById('seal').getAttribute('data-tip')
        === STR.waitingTip('alice' + STR.youTag + ', bob, and carol'),
      'three stragglers: Oxford comma and all');
   row(doc, 'carol').querySelector('.x').click();
-  await until(() => gas.handle({ action: 'state', aname: 'tau' })
-    .roster.join(',') === 'alice,bob');
+  await until(() => names(gas.handle({ action: 'state', aname: 'tau' })) === 'alice,bob');
   ok(doc.getElementById('share') && doc.getElementById('help'),
      'share and help buttons present');
   ok(doc.getElementById('share-dlg') && doc.getElementById('help-dlg'),
@@ -1262,8 +1086,9 @@ const cssBattles = [];
      + hoverBid(dom, 'alice'));
   ok(tiles(doc, '.has-bid')[0].style.animationDelay === '',
      'green rows carry no animation delay (shimmer unaffected)');
-  ok(JSON.parse(dom.window.localStorage.getItem('tauction-mybids:tau')).alice
-     === 'three tacos', 'own bid persisted');
+  ok(Object.values(JSON.parse(
+       dom.window.localStorage.getItem('tauction-mybids:tau')))
+       .includes('three tacos'), 'own bid persisted (pid-keyed)');
   ok(doc.getElementById('banner').hidden,
      'no banner for a placed bid: the green card already says it');
   ok(!doc.querySelector('#tiles .check'),
@@ -1366,11 +1191,11 @@ const cssBattles = [];
   addName(domQ, 'quicktwo');   // enqueued while op 1 is in flight
   addName(domQ, 'quickthree');
   await until(() =>  // three serialized ops drain (~2.1s at 700ms each)
-    gas.handle({ action: 'state', aname: 'coalesce' }).roster.join(',')
+    names(gas.handle({ action: 'state', aname: 'coalesce' }))
     === 'quickone,quicktwo,quickthree');
   mockDelay = 0;
   ok(!opsOverlapped, 'write ops serialize: never two in flight');
-  ok(gas.handle({ action: 'state', aname: 'coalesce' }).roster.join(',')
+  ok(names(gas.handle({ action: 'state', aname: 'coalesce' }))
      === 'quickone,quicktwo,quickthree', 'every added name arrives');
   ok(!domQ.window.document.getElementById('status').classList.contains('stale'),
      'box settles unstale after the queued ops');
@@ -1394,7 +1219,7 @@ const cssBattles = [];
   ok(row(domV.window.document, 'dos'),
      'a freshly added name survives a stale poll landing');
   await sleep(6000);           // pushes and a fresh poll settle
-  ok(gas.handle({ action: 'state', aname: 'keepname' }).roster.join(',')
+  ok(names(gas.handle({ action: 'state', aname: 'keepname' }))
      === 'uno,dos', 'both names reach the server');
 
   /* --- 2w. the cold-page double-add must not dead-key --------------------
@@ -1415,9 +1240,8 @@ const cssBattles = [];
      'retyping your own cold-pending name clears quietly: no dead key,'
      + ' no objection');
   mockDelay = 0;
-  await until(() => gas.handle({ action: 'state', aname: 'coldadd' })
-    .roster.join(',') === 'ann');
-  ok(gas.handle({ action: 'state', aname: 'coldadd' }).roster.join(',')
+  await until(() => names(gas.handle({ action: 'state', aname: 'coldadd' })) === 'ann');
+  ok(names(gas.handle({ action: 'state', aname: 'coldadd' }))
        === 'ann'
      && dCold2.window.localStorage.getItem('tauction-uname') === 'ann',
      'one seat, once, when the dust settles — and it is yours');
@@ -1428,8 +1252,10 @@ const cssBattles = [];
      its claim, and any bid re-key together; a rename made on another
      machine follows your device id home: you stay latched, your bid
      memory migrates. */
-  gas.handle({ action: 'add', aname: 'typo', uname: 'alicw' });
-  gas.handle({ action: 'add', aname: 'typo', uname: 'bob' });
+  gas.handle({ action: 'add', aname: 'typo',
+    uname: 'alicw', pid: 'pid-typo-alicw' });
+  gas.handle({ action: 'add', aname: 'typo',
+    uname: 'bob', pid: 'pid-typo-bob' });
   const domT2 = await makePage('/typo?api=' + API_URL);
   const docT2 = domT2.window.document;
   ok([...tiles(docT2)].every((t) => t.querySelector('.rename input')
@@ -1455,9 +1281,8 @@ const cssBattles = [];
   ok(row(docT2, 'alice') && !row(docT2, 'alicw')
      && tiles(docT2)[0].dataset.uname === 'alice',
      'the typo is fixed in place immediately, order kept');
-  await until(() => gas.handle({ action: 'state', aname: 'typo' })
-    .roster.join(',') === 'alice,bob');
-  ok(gas.handle({ action: 'state', aname: 'typo' }).roster.join(',')
+  await until(() => names(gas.handle({ action: 'state', aname: 'typo' })) === 'alice,bob');
+  ok(names(gas.handle({ action: 'state', aname: 'typo' }))
      === 'alice,bob', 'the rename reached the server');
   renameTo(domT2, 'alice', 'bob');
   ok(row(docT2, 'alice') && docT2.getElementById('banner').textContent
@@ -1472,14 +1297,16 @@ const cssBattles = [];
   renameTo(domT2, 'alice', 'alicia');
   await sleep(100);
   ok(row(docT2, 'alicia').classList.contains('mine')
-     && myInput(docT2).value === 'first dibs'
-     && domT2.window.localStorage.getItem('tauction-uname') === 'alicia',
-     'renaming yourself keeps you latched, bid and editor intact');
+     && myInput(docT2).value === 'first dibs',
+     'renaming yourself keeps you latched, bid and editor intact'
+     + ' (nothing to migrate: the pid never moved)');
 
   // cross-device: machine 2 fixes machine 1's typo; machine 1's identity
   // follows its device id home on the next poll
-  gas.handle({ action: 'add', aname: 'xdev', uname: 'carow' });
-  gas.handle({ action: 'add', aname: 'xdev', uname: 'dan' });
+  gas.handle({ action: 'add', aname: 'xdev',
+    uname: 'carow', pid: 'pid-xdev-carow' });
+  gas.handle({ action: 'add', aname: 'xdev',
+    uname: 'dan', pid: 'pid-xdev-dan' });
   const mA = await makePage('/xdev?api=' + API_URL);
   claimRow(mA, 'carow');
   typeBid(mA, 'a carrot');
@@ -1490,22 +1317,25 @@ const cssBattles = [];
   await sleep(100);
   await sleep(5100);  // machine 1 polls
   ok(row(mA.window.document, 'carol').classList.contains('mine')
-     && myInput(mA.window.document).value === 'a carrot'
-     && mA.window.localStorage.getItem('tauction-uname') === 'carol',
-     "a rename from another machine follows machine 1's device home");
+     && myInput(mA.window.document).value === 'a carrot',
+     "a rename from another machine changes machine 1's LABEL only:"
+     + ' the pid held firm, so identity and bid rode along untouched');
 
   /* --- 2i. arriving claimed and bidless: the caret waits in your editor
      (Replicata of dreev's pulse bug: load — don't click — a page where
      you're claimed with no bid. Expectata: your editor is a normal
      field with the caret in it, and only not-you rows ever pulse.
      Resultata pre-fix: the editor sat unfocused, pulsing.) ----------- */
-  gas.handle({ action: 'add', aname: 'caret', uname: 'ann' });
-  gas.handle({ action: 'add', aname: 'caret', uname: 'bee' });
-  gas.handle({ action: 'claim', aname: 'caret', uname: 'ann',
+  gas.handle({ action: 'add', aname: 'caret',
+    uname: 'ann', pid: 'pid-caret-ann' });
+  gas.handle({ action: 'add', aname: 'caret',
+    uname: 'bee', pid: 'pid-caret-bee' });
+  gas.handle({ action: 'claim', aname: 'caret',
+    uname: 'ann', pid: 'pid-caret-ann',
                deviceID: 'dev-caret' });
   const seedK = (w) => {
     w.localStorage.setItem('tauction-device', 'dev-caret');
-    w.localStorage.setItem('tauction-uname', 'ann');
+    w.localStorage.setItem('tauction-pids', '{"caret":"pid-caret-ann"}');
   };
   const domK = await makePage('/caret?api=' + API_URL, seedK);
   const docK = domK.window.document;
@@ -1548,8 +1378,7 @@ const cssBattles = [];
   ok(!row(domJ2.window.document, 'pal').classList.contains('mine')
      && row(domJ2.window.document, 'dree').classList.contains('mine'),
      'later adds are other people: the star stays on your row');
-  await until(() => gas.handle({ action: 'state', aname: 'mefirst' })
-    .roster.join(',') === 'dree,pal');
+  await until(() => names(gas.handle({ action: 'state', aname: 'mefirst' })) === 'dree,pal');
   ok(Object.keys(gas.handle({ action: 'state', aname: 'mefirst' })
        .claims).length === 0,
      'the self-add registers no server claim: a real dree on another'
@@ -1558,7 +1387,8 @@ const cssBattles = [];
   /* --- 2p. the auction description: markdown, a corner toggle, and
      compare-and-swap against clobbers (the compact eat-the-richtext:
      one field, source and rendered modes) ------------------------------ */
-  gas.handle({ action: 'add', aname: 'descy', uname: 'ann' });
+  gas.handle({ action: 'add', aname: 'descy',
+    uname: 'ann', pid: 'pid-descy-ann' });
   const domDs = await makePage('/descy?api=' + API_URL);
   const dsDoc = domDs.window.document;
   ok(dsDoc.getElementById('descedit')
@@ -1626,7 +1456,8 @@ const cssBattles = [];
      emphasis outside code still works. */
   gas.handle({ action: 'describe', aname: 'codespan', base: '',
     blurb: 'ecce `a*b*c` et `**x**` et [`y`](https://e.com) et *z*' });
-  gas.handle({ action: 'add', aname: 'codespan', uname: 'c' });
+  gas.handle({ action: 'add', aname: 'codespan',
+    uname: 'c', pid: 'pid-codespan-c' });
   const domCs = await makePage('/codespan?api=' + API_URL);
   const csDoc = domCs.window.document;
   const codeEls = [...csDoc.querySelectorAll('#descview code')];
@@ -1648,7 +1479,8 @@ const cssBattles = [];
   gas.handle({ action: 'describe', aname: 'evil', base: '',
     blurb: '<script>window.pwned=1</script>\n\n'
       + '[x](javascript:alert(1)) <img src=x onerror=alert(1)>' });
-  gas.handle({ action: 'add', aname: 'evil', uname: 'e' });
+  gas.handle({ action: 'add', aname: 'evil',
+    uname: 'e', pid: 'pid-evil-e' });
   const domEv = await makePage('/evil?api=' + API_URL);
   const evDoc = domEv.window.document;
   ok(evDoc.getElementById('desc').classList.contains('viewing'),
@@ -1787,11 +1619,14 @@ const cssBattles = [];
      can't know, the server refuses. Expectata: the banner plus the
      name field itself turning red (cleared on input), same recipe as
      every other field objection. --------------------------------- */
-  gas.handle({ action: 'add', aname: 'renrace', uname: 'alice' });
-  gas.handle({ action: 'add', aname: 'renrace', uname: 'bob' });
+  gas.handle({ action: 'add', aname: 'renrace',
+    uname: 'alice', pid: 'pid-renrace-alice' });
+  gas.handle({ action: 'add', aname: 'renrace',
+    uname: 'bob', pid: 'pid-renrace-bob' });
   const dR = await makePage('/renrace?api=' + API_URL);
   await sleep(20);
-  gas.handle({ action: 'add', aname: 'renrace', uname: 'zed' });
+  gas.handle({ action: 'add', aname: 'renrace',
+    uname: 'zed', pid: 'pid-renrace-zed' });
   const bobName = dR.window.document
     .querySelector('.tile[data-uname="bob"] .rename input');
   bobName.value = 'zed';
@@ -1811,20 +1646,25 @@ const cssBattles = [];
   ok(!recoveredBobName.classList.contains('error'),
      'the red clears at the next keystroke');
 
-  /* --- 2p2a. a refused self-rename restores identity ------------------
-     Replicata: this browser is soft-claimed as alice; before its next
-     poll, someone adds zed and alice renames herself to zed. Expectata:
-     the stale collision refuses loudly and restores alice plus this
-     browser's exact bid memory. Resultata pre-fix: the server kept
-     alice, but the browser moved itself onto the existing zed row. */
-  gas.handle({ action: 'add', aname: 'selfrenrace', uname: 'alice' });
-  gas.handle({ action: 'add', aname: 'selfrenrace', uname: 'bob' });
-  const selfBids = '{"alice":"alice draft","zed":"old zed draft"}';
+  /* --- 2p2a. a refused self-rename cannot move identity ---------------
+     Replicata: this browser is alice; before its next poll, someone
+     adds zed and alice renames herself to zed. Expectata: the stale
+     collision refuses loudly; identity and bid memory are untouched
+     BY CONSTRUCTION (they key on the pid, which no rename request
+     ever changes) — the field reddens with the text kept, and zed's
+     row is never claimed. */
+  gas.handle({ action: 'add', aname: 'selfrenrace',
+    uname: 'alice', pid: 'pid-selfrenrace-alice' });
+  gas.handle({ action: 'add', aname: 'selfrenrace',
+    uname: 'bob', pid: 'pid-selfrenrace-bob' });
+  const selfBids = '{"pid-selfrenrace-alice":"alice draft"}';
   const dSelfRen = await makePage('/selfrenrace?api=' + API_URL, (w) => {
-    w.localStorage.setItem('tauction-uname', 'alice');
+    w.localStorage.setItem('tauction-pids',
+      '{"selfrenrace":"pid-selfrenrace-alice"}');
     w.localStorage.setItem('tauction-mybids:selfrenrace', selfBids);
   });
-  gas.handle({ action: 'add', aname: 'selfrenrace', uname: 'zed' });
+  gas.handle({ action: 'add', aname: 'selfrenrace',
+    uname: 'zed', pid: 'pid-selfrenrace-zed' });
   renameTo(dSelfRen, 'alice', 'zed');
   await until(() => !dSelfRen.window.document
     .getElementById('banner').hidden);
@@ -1832,15 +1672,15 @@ const cssBattles = [];
     && row(dSelfRen.window.document, 'alice').classList.contains('mine'));
   const restoredAlice = row(dSelfRen.window.document, 'alice')
     .querySelector('.rename input');
-  ok(dSelfRen.window.localStorage.getItem('tauction-uname') === 'alice'
+  ok(dSelfRen.window.localStorage.getItem('tauction-pids')
+       === '{"selfrenrace":"pid-selfrenrace-alice"}'
      && dSelfRen.window.localStorage.getItem(
        'tauction-mybids:selfrenrace') === selfBids
-     && restoredAlice.value === 'alice'
      && restoredAlice.classList.contains('error')
      && restoredAlice.isConnected
      && !row(dSelfRen.window.document, 'zed').classList.contains('mine'),
-     'the refused self-rename restores identity, exact bid memory, and'
-     + ' the visible alice field; it never claims the stale target');
+     'the refused self-rename leaves identity and bid memory untouched'
+     + ' by construction; the field objects, zed is never claimed');
   ok(dB.window.document.getElementById('descedit').value === 'B version'
      && gas.handle({ action: 'state', aname: 'descy' }).blurb
           === 'A version',
@@ -1889,13 +1729,15 @@ const cssBattles = [];
      machines believed they were alice. Expectata: first come, first
      served; the loser is told loudly and recovers to the dibsed
      truth; the winner is untouched. */
-  gas.handle({ action: 'add', aname: 'race2', uname: 'alice' });
-  gas.handle({ action: 'add', aname: 'race2', uname: 'bea' });
+  gas.handle({ action: 'add', aname: 'race2',
+    uname: 'alice', pid: 'pid-race2-alice' });
+  gas.handle({ action: 'add', aname: 'race2',
+    uname: 'bea', pid: 'pid-race2-bea' });
   const r1 = await makePage('/race2?api=' + API_URL);
   const r2 = await makePage('/race2?api=' + API_URL);
   claimRow(r1, 'alice');
   await until(() => gas.handle({ action: 'state', aname: 'race2' })
-    .claims.alice !== undefined);
+    .claims['pid-race2-alice'] !== undefined);
   ok(!row(r2.window.document, 'alice').querySelector('.tu').disabled,
      "machine 2 hasn't polled yet: its stale screen still offers alice");
   claimRow(r2, 'alice');  // the race click
@@ -1912,7 +1754,8 @@ const cssBattles = [];
           .startsWith(STR.claimedByTip('').slice(0, -1))
      && !r2.window.document.querySelector('#tiles .rebid'),
      'instead: the filled star and its tooltip explain who beat you');
-  ok(gas.handle({ action: 'state', aname: 'race2' }).claims.alice
+  ok(gas.handle({ action: 'state', aname: 'race2' })
+    .claims['pid-race2-alice']
        === r1.window.localStorage.getItem('tauction-device'),
      "machine 1's claim survived: first come, first served");
   ok(row(r1.window.document, 'alice').classList.contains('mine'),
@@ -1920,14 +1763,15 @@ const cssBattles = [];
   // machine 2's consolation: bea is open, and life goes on
   claimRow(r2, 'bea');
   await until(() => gas.handle({ action: 'state', aname: 'race2' })
-    .claims.bea !== undefined);
+    .claims['pid-race2-bea'] !== undefined);
   ok(row(r2.window.document, 'bea').classList.contains('mine'),
      'machine 2 claims the open seat instead and lives happily');
 
   /* --- 2k2. seat-race stress battery (dreev: "stress-qual it") ----------
      Every way two machines can want the same seat in a NEW auction. */
   // (i) truly simultaneous clicks: both ops in flight at once
-  gas.handle({ action: 'add', aname: 'race4', uname: 'alice' });
+  gas.handle({ action: 'add', aname: 'race4',
+    uname: 'alice', pid: 'pid-race4-alice' });
   const s1 = await makePage('/race4?api=' + API_URL);
   const s2 = await makePage('/race4?api=' + API_URL);
   mockDelay = 250;  // both claims fly together
@@ -1939,7 +1783,7 @@ const cssBattles = [];
   await sleep(900);
   mockDelay = 0;
   const claim4 = gas.handle({ action: 'state', aname: 'race4' })
-    .claims.alice;
+    .claims['pid-race4-alice'];
   const dev1 = s1.window.localStorage.getItem('tauction-device');
   const dev2 = s2.window.localStorage.getItem('tauction-device');
   ok(claim4 === dev1 || claim4 === dev2,
@@ -1958,13 +1802,14 @@ const cssBattles = [];
   claimRow(loser, 'alice');
   await sleep(200);
   ok(loser.window.document.getElementById('banner').hidden
-     && gas.handle({ action: 'state', aname: 'race4' }).claims.alice
+     && gas.handle({ action: 'state', aname: 'race4' })
+    .claims['pid-race4-alice']
           === claim4,
      'spamming a lost seat: still quiet, still theirs');
   // (iii) the winner releases; the seat reopens everywhere by poll
   claimRow(winner, 'alice');  // own lit star: release
   await until(() => gas.handle({ action: 'state', aname: 'race4' })
-    .claims.alice === undefined);
+    .claims['pid-race4-alice'] === undefined);
   await until(() =>
     row(loser.window.document, 'alice').classList.contains('mine'));
   ok(!row(loser.window.document, 'alice').querySelector('.tu').classList
@@ -1980,12 +1825,13 @@ const cssBattles = [];
      flight (the optimistic editor appears at once). Expectata: the
      claim is refused AND the bid is refused — a bid must never hijack
      a held seat — and machine 1's world is intact. */
-  gas.handle({ action: 'add', aname: 'race3', uname: 'alice' });
+  gas.handle({ action: 'add', aname: 'race3',
+    uname: 'alice', pid: 'pid-race3-alice' });
   const r3 = await makePage('/race3?api=' + API_URL);
   const r4 = await makePage('/race3?api=' + API_URL);
   claimRow(r3, 'alice');
   await until(() => gas.handle({ action: 'state', aname: 'race3' })
-    .claims.alice !== undefined);
+    .claims['pid-race3-alice'] !== undefined);
   mockDelay = 300;        // r4's ops fly slowly: the window for typing
   claimRow(r4, 'alice');  // stale screen, optimistic editor appears
   typeBid(r4, 'stolen goods');
@@ -1994,7 +1840,8 @@ const cssBattles = [];
   mockDelay = 0;
   ok(gas.handle({ action: 'state', aname: 'race3' }).bidders.length === 0,
      "the hijack bid never reached the sheet: alice's seat held firm");
-  ok(gas.handle({ action: 'state', aname: 'race3' }).claims.alice
+  ok(gas.handle({ action: 'state', aname: 'race3' })
+    .claims['pid-race3-alice']
        === r3.window.localStorage.getItem('tauction-device'),
      "and machine 1 still holds the seat");
   await until(() =>  // the RENDERED truth, not the submit-time lock
@@ -2010,12 +1857,14 @@ const cssBattles = [];
      Resultata pre-fix: the switch went through — the bid landed under
      alice while you faced bob's blank editor. Expectata: the stars
      lock the instant you commit. */
-  gas.handle({ action: 'add', aname: 'flightlock', uname: 'alice' });
-  gas.handle({ action: 'add', aname: 'flightlock', uname: 'bob' });
+  gas.handle({ action: 'add', aname: 'flightlock',
+    uname: 'alice', pid: 'pid-flightlock-alice' });
+  gas.handle({ action: 'add', aname: 'flightlock',
+    uname: 'bob', pid: 'pid-flightlock-bob' });
   const domFL = await makePage('/flightlock?api=' + API_URL);
   claimRow(domFL, 'alice');
   await until(() => gas.handle({ action: 'state', aname: 'flightlock' })
-    .claims.alice !== undefined);
+    .claims['pid-flightlock-alice'] !== undefined);
   mockDelay = 400;
   typeBid(domFL, 'my treasure');
   submitBid(domFL);
@@ -2055,7 +1904,7 @@ const cssBattles = [];
   await until(() => {
     if (!['aa', 'bb', 'cc', 'dd', 'ee'].every((u) =>
           row(domB2.window.document, u))) vanished = true;
-    return gas.handle({ action: 'state', aname: 'burst' }).roster.join(',')
+    return names(gas.handle({ action: 'state', aname: 'burst' }))
       === 'aa,bb,cc,dd,ee';
   }, 15000);
   mockDelay = 0;
@@ -2063,7 +1912,7 @@ const cssBattles = [];
        row(domB2.window.document, u)),
      'every rapidly-typed name stayed on the ledger throughout'
      + ' (no flash-vanish)');
-  ok(gas.handle({ action: 'state', aname: 'burst' }).roster.join(',')
+  ok(names(gas.handle({ action: 'state', aname: 'burst' }))
      === 'aa,bb,cc,dd,ee', 'and they all reached the server');
 
   /* --- 2f. two machines can't both be alice ------------------------------
@@ -2128,7 +1977,8 @@ const cssBattles = [];
   ok(geoHits === geoBefore + 1,
      'a fresh cache means NO lookup: reload-heavy dev must not burn'
      + ' the rate limit');
-  ok(gas.handle({ action: 'state', aname: 'geocache2' }).blurbs.gina
+  ok(gas.handle({ action: 'state', aname: 'geocache2' })
+       .blurbs[pidOf(gas.handle({ action: 'state', aname: 'geocache2' }), 'gina')]
        === STR.mysteryDevice + ' ' + g2.window.navigator.language
          + ' in Rainbow City, AL',
      "...and the cached geography actually decorates the blurb (the"
@@ -2197,10 +2047,12 @@ const cssBattles = [];
      && gas.handle({ action: 'state', aname: 'geosp' }).bidders
           .length === 1,
      'a São Paulo bidder bids fine: decoration never blocks the act');
-  ok((gas.handle({ action: 'state', aname: 'geosp' }).blurbs.ze || '')
+  ok((gas.handle({ action: 'state', aname: 'geosp' })
+       .blurbs[pidOf(gas.handle({ action: 'state', aname: 'geosp' }), 'ze')] || '')
        .endsWith(' in Sao Paulo, SP'),
      'the blurb arrives ASCII-fied (São -> Sao), got '
-       + gas.handle({ action: 'state', aname: 'geosp' }).blurbs.ze);
+       + gas.handle({ action: 'state', aname: 'geosp' })
+       .blurbs[pidOf(gas.handle({ action: 'state', aname: 'geosp' }), 'ze')]);
   geoFixture = { city: 'Portland', region_code: 'OR' };
   // a city cached by PRE-FIX code sanitizes at use, not just at
   // store: the day-long TTL must not keep the bug alive for a day
@@ -2212,10 +2064,12 @@ const cssBattles = [];
   typeBid(gZu, 'zehn franken');
   submitBid(gZu);
   await settled(gZu);
-  ok((gas.handle({ action: 'state', aname: 'geozu' }).blurbs.ueli || '')
+  ok((gas.handle({ action: 'state', aname: 'geozu' })
+       .blurbs[pidOf(gas.handle({ action: 'state', aname: 'geozu' }), 'ueli')] || '')
        .endsWith(' in Zurich, ZH'),
      'a cached pre-fix city sanitizes on use (Zürich -> Zurich), got '
-       + gas.handle({ action: 'state', aname: 'geozu' }).blurbs.ueli);
+       + gas.handle({ action: 'state', aname: 'geozu' })
+       .blurbs[pidOf(gas.handle({ action: 'state', aname: 'geozu' }), 'ueli')]);
   // the length half of the contract: a Welsh-length city clamps to 64
   const gLl = await makePage('/geoll?api=' + API_URL, (win) => {
     win.localStorage.setItem('tauction-geo',
@@ -2227,11 +2081,13 @@ const cssBattles = [];
   submitBid(gLl);
   await settled(gLl);
   ok(gas.handle({ action: 'state', aname: 'geoll' }).bidders.length === 1
-     && (gas.handle({ action: 'state', aname: 'geoll' }).blurbs.wyn || '')
+     && (gas.handle({ action: 'state', aname: 'geoll' })
+       .blurbs[pidOf(gas.handle({ action: 'state', aname: 'geoll' }), 'wyn')] || '')
           .length <= 64,
      "a Welsh-length blurb clamps to the contract's 64 chars and the"
      + ' bid still lands, got '
-       + gas.handle({ action: 'state', aname: 'geoll' }).blurbs.wyn);
+       + gas.handle({ action: 'state', aname: 'geoll' })
+       .blurbs[pidOf(gas.handle({ action: 'state', aname: 'geoll' }), 'wyn')]);
 
   /* --- 2s. flipping to view paints INSTANTLY --------------------------
      Replicata (dreev): type markdown, click the toggle, and the box
@@ -2290,7 +2146,8 @@ const cssBattles = [];
      URL, and the sign must not vanish while you read it) --------- */
   const dPwa = await makePage('/?api=' + API_URL);
   await sleep(20);
-  gas.handle({ action: 'add', aname: 'occupied', uname: 'zoe' });
+  gas.handle({ action: 'add', aname: 'occupied',
+    uname: 'zoe', pid: 'pid-occupied-zoe' });
   dPwa.window.document.getElementById('aname').focus();
   type(dPwa, 'aname', 'occupied');
   commitName(dPwa);
@@ -2369,8 +2226,10 @@ const cssBattles = [];
        'a stale async position never lands on a newer tip: the newest'
        + ' summons owns it');
   }
-  gas.handle({ action: 'add', aname: 'tipflow', uname: 'ann' });
-  gas.handle({ action: 'add', aname: 'tipflow', uname: 'bo' });
+  gas.handle({ action: 'add', aname: 'tipflow',
+    uname: 'ann', pid: 'pid-tipflow-ann' });
+  gas.handle({ action: 'add', aname: 'tipflow',
+    uname: 'bo', pid: 'pid-tipflow-bo' });
   const dTip2 = await makePage('/tipflow?api=' + API_URL,
     (w) => w.localStorage.setItem('tauction-uname', 'bo'));
   await sleep(20);  // arriving as bo: further adds are facilitator-
@@ -2386,7 +2245,8 @@ const cssBattles = [];
      'a focused star summons its tip (the tap-tip path)');
   // a rival claims ann elsewhere; OUR next render must retitle the
   // OPEN tip without the pointer moving (the live-refresh)
-  gas.handle({ action: 'claim', aname: 'tipflow', uname: 'ann',
+  gas.handle({ action: 'claim', aname: 'tipflow',
+    uname: 'ann', pid: 'pid-tipflow-ann',
                deviceID: 'd-rival', deviceBlurb: 'rival rig' });
   // (no focus moves: focusing elsewhere would rightly drop the
   // parked tip — the pin is about the RENDER retitling it)
@@ -2398,7 +2258,7 @@ const cssBattles = [];
      "the render retitles the open tip in place: it follows the truth"
      + ' without waiting for the pointer');
   // ann's row vanishes entirely; the tip must not haunt a dead host
-  gas.handle({ action: 'remove', aname: 'tipflow', uname: 'ann' });
+  gas.handle({ action: 'remove', aname: 'tipflow', pid: 'pid-tipflow-ann' });
   annStar.dispatchEvent(new dTip2.window.FocusEvent('focusin',
     { bubbles: true }));
   type(dTip2, 'roster-input', 'yaz');
@@ -2412,10 +2272,14 @@ const cssBattles = [];
   // Replicata: park on the ready padlock; the reveal lands from
   // elsewhere. Resultata pre-fix: the tip stayed up as an EMPTY
   // bubble until the pointer moved. Expectata: it vanishes.
-  gas.handle({ action: 'add', aname: 'tipgone', uname: 'ann' });
-  gas.handle({ action: 'add', aname: 'tipgone', uname: 'bo' });
-  gas.handle({ action: 'bid', aname: 'tipgone', uname: 'ann', bid: 'a' });
-  gas.handle({ action: 'bid', aname: 'tipgone', uname: 'bo', bid: 'b' });
+  gas.handle({ action: 'add', aname: 'tipgone',
+    uname: 'ann', pid: 'pid-tipgone-ann' });
+  gas.handle({ action: 'add', aname: 'tipgone',
+    uname: 'bo', pid: 'pid-tipgone-bo' });
+  gas.handle({ action: 'bid', aname: 'tipgone',
+    uname: 'ann', pid: 'pid-tipgone-ann', bid: 'a' });
+  gas.handle({ action: 'bid', aname: 'tipgone',
+    uname: 'bo', pid: 'pid-tipgone-bo', bid: 'b' });
   const dTip3 = await makePage('/tipgone?api=' + API_URL);
   await sleep(20);
   const sealT = dTip3.window.document.getElementById('seal');
@@ -2490,33 +2354,51 @@ const cssBattles = [];
   await settled(dRn);
   ok(dRn.window.document.getElementById('banner').hidden
      && row(dRn.window.document, 'bob123') !== undefined
-     && gas.handle({ action: 'state', aname: 'freshren' })
-          .roster.includes('bob123'),
+     && names(gas.handle({ action: 'state', aname: 'freshren' })).includes('bob123'),
      'enter-then-blur renames ONCE: no false "taken" (the trailing'
      + ' commit of a row already renamed away is a stale event, not'
      + ' a request)');
 
-  /* --- 2q2. the record freezes at the gavel, × included ----------------
-     Replicata (dreev): "it just let me remove someone from a closed
-     auction" — and a cut row's zombie-purge × could even delete a
-     REVEALED bid (whose seatless remains then tooltip'd 'awaiting
-     bid...', his other sighting). Expectata: every × grays at the
-     gavel. -------------------------------------------------------- */
-  gas.handle({ action: 'add', aname: 'frozencut', uname: 'pam' });
-  gas.handle({ action: 'add', aname: 'frozencut', uname: 'quinn' });
-  gas.handle({ action: 'add', aname: 'frozencut', uname: 'rex' });
-  gas.handle({ action: 'bid', aname: 'frozencut', uname: 'pam', bid: 'p' });
-  gas.handle({ action: 'bid', aname: 'frozencut', uname: 'quinn', bid: 'q' });
-  gas.handle({ action: 'bid', aname: 'frozencut', uname: 'rex', bid: 'r' });
-  gas.handle({ action: 'remove', aname: 'frozencut', uname: 'rex' });
-  gas.handle({ action: 'reveal', aname: 'frozencut' });
+  /* --- 2q2. a bid protects its seat, before and after the gavel -------
+     [REWRITTEN 2026-07-19, dreev deleting the cut-flag model: a
+     bidder simply cannot be removed, so the crossed-out-row state no
+     longer exists to defend.] Every bid-bearing row's × is gray from
+     the moment the bid lands; the gavel grays the rest. */
+  gas.handle({ action: 'add', aname: 'frozencut',
+    uname: 'pam', pid: 'pid-frozencut-pam' });
+  gas.handle({ action: 'add', aname: 'frozencut',
+    uname: 'quinn', pid: 'pid-frozencut-quinn' });
+  gas.handle({ action: 'add', aname: 'frozencut',
+    uname: 'rex', pid: 'pid-frozencut-rex' });
+  gas.handle({ action: 'bid', aname: 'frozencut',
+    uname: 'pam', pid: 'pid-frozencut-pam', bid: 'p' });
+  gas.handle({ action: 'bid', aname: 'frozencut',
+    uname: 'quinn', pid: 'pid-frozencut-quinn', bid: 'q' });
   const dFz = await makePage('/frozencut?api=' + API_URL);
   await sleep(20);
-  ok(row(dFz.window.document, 'rex').classList.contains('cut')
-     && [...dFz.window.document.querySelectorAll('#tiles .x')]
-          .every((x) => x.disabled),
-     "every × grays at the gavel — even the cut row's zombie-purge ×:"
-     + ' a revealed bid never leaves the record');
+  ok(row(dFz.window.document, 'pam').querySelector('.x').disabled
+     && row(dFz.window.document, 'quinn').querySelector('.x').disabled
+     && !row(dFz.window.document, 'rex').querySelector('.x').disabled,
+     "a bid grays its row's × the moment it lands; the bidless"
+     + ' straggler stays removable (the end-early flow)');
+  // the raced removal the UI can't produce: the server refuses it,
+  // atomically, in the Latin
+  const rmRes = gas.handle({ action: 'remove', aname: 'frozencut',
+    pid: 'pid-frozencut-pam' });
+  ok(String(rmRes.error) === SCOPY.removeBidderCopy
+     && names(gas.handle({ action: 'state', aname: 'frozencut' }))
+          === 'pam,quinn,rex',
+     'a raced remove of a bidder bounces off the server: nothing'
+     + ' changes');
+  gas.handle({ action: 'remove', aname: 'frozencut',
+    pid: 'pid-frozencut-rex' });
+  gas.handle({ action: 'reveal', aname: 'frozencut' });
+  await until(() => dFz.window.document.getElementById('status')
+    .classList.contains('revealed'));
+  ok([...dFz.window.document.querySelectorAll('#tiles .x')]
+       .every((x) => x.disabled),
+     'every × grays at the gavel: a revealed record never loses'
+     + ' anything');
 
   /* --- 2u2. the hallway test (dreev + bee, verbatim fumbles) -----------
      Scene: bee's row exists, unclaimed and bidless. A fresh visitor
@@ -2524,7 +2406,8 @@ const cssBattles = [];
      work"; (b) types "bee" into the + row — "maybe i type in the
      name i want to make a bid for?". Both intents are OBVIOUS, so
      both now work: they claim bee's seat and ready the editor. --- */
-  gas.handle({ action: 'add', aname: 'hallway', uname: 'bee' });
+  gas.handle({ action: 'add', aname: 'hallway',
+    uname: 'bee', pid: 'pid-hallway-bee' });
   const dHall = await makePage('/hallway?api=' + API_URL);
   await sleep(20);
   row(dHall.window.document, 'bee').querySelector('.tile-bid').click();
@@ -2553,8 +2436,8 @@ const cssBattles = [];
   typeBid(dHall2, 'bee bids at last');
   submitBid(dHall2);
   await settled(dHall2);
-  ok(gas.handle({ action: 'state', aname: 'hallway' }).bidders
-       .some((b) => b.uname === 'bee'),
+  ok(bidderNamed(gas.handle(
+       { action: 'state', aname: 'hallway' }), 'bee') !== undefined,
      '...and the bid lands: the whole hallway flow, frictionless');
   const dHall3 = await makePage('/hallway?api=' + API_URL);
   await sleep(20);
@@ -2607,8 +2490,8 @@ const cssBattles = [];
   typeBid(dBlur, 'saved by blur');
   myInput(dBlur.window.document).dispatchEvent(
     new dBlur.window.Event('blur'));
-  await until(() => (gas.handle({ action: 'state', aname: 'blursave' })
-    .bidders.find((b) => b.uname === 'bea') || {}).bcount === 1);
+  await until(() => (bidderNamed(gas.handle(
+    { action: 'state', aname: 'blursave' }), 'bea') || {}).bcount === 1);
   ok(true, 'clicking away places the bid: no enter required');
   await settled(dBlur);
   typeBid(dBlur, 'enter then blur');
@@ -2616,8 +2499,8 @@ const cssBattles = [];
   myInput(dBlur.window.document).dispatchEvent(
     new dBlur.window.Event('blur'));  // the keyboard closes
   await settled(dBlur);
-  ok(gas.handle({ action: 'state', aname: 'blursave' })
-       .bidders.find((b) => b.uname === 'bea').bcount === 2,
+  ok(bidderNamed(gas.handle(
+       { action: 'state', aname: 'blursave' }), 'bea').bcount === 2,
      'enter then blur is ONE submission, not two (the closing mobile'
      + ' keyboard must not double-fire)');
   ok(myInput(dBlur.window.document).value === 'enter then blur'
@@ -2629,8 +2512,8 @@ const cssBattles = [];
       { key: 'Escape', bubbles: true }));
   await settled(dBlur);
   ok(myInput(dBlur.window.document).value === 'enter then blur'
-     && gas.handle({ action: 'state', aname: 'blursave' })
-          .bidders.find((b) => b.uname === 'bea').bcount === 2,
+     && bidderNamed(gas.handle(
+          { action: 'state', aname: 'blursave' }), 'bea').bcount === 2,
      'Escape abandons a bid edit (the only way out now that clicking'
      + ' away saves): reverted, nothing submitted');
 
@@ -2738,9 +2621,12 @@ const cssBattles = [];
      Replicata: submit a revision while the last straggler's bid — and
      the reveal — land first. Expectata: the revision bounces with the
      gavel-fell error; the sheet keeps the pre-reveal bid. */
-  gas.handle({ action: 'add', aname: 'wire', uname: 'ann' });
-  gas.handle({ action: 'add', aname: 'wire', uname: 'zed' });
-  gas.handle({ action: 'bid', aname: 'wire', uname: 'zed', bid: 'safe',
+  gas.handle({ action: 'add', aname: 'wire',
+    uname: 'ann', pid: 'pid-wire-ann' });
+  gas.handle({ action: 'add', aname: 'wire',
+    uname: 'zed', pid: 'pid-wire-zed' });
+  gas.handle({ action: 'bid', aname: 'wire',
+    uname: 'zed', pid: 'pid-wire-zed', bid: 'safe',
                deviceID: 'dz' });
   const domWire = await makePage('/wire?api=' + API_URL);
   claimRow(domWire, 'ann');
@@ -2758,8 +2644,7 @@ const cssBattles = [];
           .includes(SCOPY.gavelFellCopy),
      'losing the under-the-wire race is announced explicitly, in'
      + " dreev's words");
-  ok(gas.handle({ action: 'state', aname: 'wire' }).bids
-       .find((b) => b.uname === 'ann').bid === 'first thoughts',
+  ok(bidNamed(gas.handle({ action: 'state', aname: 'wire' }), 'ann').bid === 'first thoughts',
      'the sheet keeps the bid that beat the gavel');
 
   /* --- the under-the-wire race you can't lose AGAINST YOURSELF ----------
@@ -2771,9 +2656,12 @@ const cssBattles = [];
      Expectata: writes land in the order you made them — the reveal
      rides the same chain as every other write, so the revision
      stands. */
-  gas.handle({ action: 'add', aname: 'selfwire', uname: 'ann' });
-  gas.handle({ action: 'add', aname: 'selfwire', uname: 'zed' });
-  gas.handle({ action: 'bid', aname: 'selfwire', uname: 'zed', bid: 'z',
+  gas.handle({ action: 'add', aname: 'selfwire',
+    uname: 'ann', pid: 'pid-selfwire-ann' });
+  gas.handle({ action: 'add', aname: 'selfwire',
+    uname: 'zed', pid: 'pid-selfwire-zed' });
+  gas.handle({ action: 'bid', aname: 'selfwire',
+    uname: 'zed', pid: 'pid-selfwire-zed', bid: 'z',
                deviceID: 'dz' });
   const domSW = await makePage('/selfwire?api=' + API_URL);
   claimRow(domSW, 'ann');
@@ -2791,8 +2679,7 @@ const cssBattles = [];
   ok(domSW.window.document.getElementById('banner').hidden,
      'no Womp Womp by your own hand: your reveal press never overtakes'
      + ' your still-flying revision');
-  ok(gas.handle({ action: 'state', aname: 'selfwire' }).bids
-       .find((b) => b.uname === 'ann').bid === 'final answer',
+  ok(bidNamed(gas.handle({ action: 'state', aname: 'selfwire' }), 'ann').bid === 'final answer',
      'the revision beat the gavel: writes land in click order');
   ok(myInput(domSW.window.document).value === 'final answer'
      && myInput(domSW.window.document).disabled,
@@ -2843,9 +2730,12 @@ const cssBattles = [];
      Schelling point is a focal point, made literal. The aim is
      pixel-true (aspect-ratio corrected), pinned here by recomputing
      every cannon's bearing from its own recorded burst. */
-  gas.handle({ action: 'add', aname: 'jackpot', uname: 'ann' });
-  gas.handle({ action: 'add', aname: 'jackpot', uname: 'bo' });
-  gas.handle({ action: 'bid', aname: 'jackpot', uname: 'bo',
+  gas.handle({ action: 'add', aname: 'jackpot',
+    uname: 'ann', pid: 'pid-jackpot-ann' });
+  gas.handle({ action: 'add', aname: 'jackpot',
+    uname: 'bo', pid: 'pid-jackpot-bo' });
+  gas.handle({ action: 'bid', aname: 'jackpot',
+    uname: 'bo', pid: 'pid-jackpot-bo',
                bid: 'york', deviceID: 'db' });
   const domJk = await makePage('/jackpot?api=' + API_URL);
   claimRow(domJk, 'ann');
@@ -2885,8 +2775,10 @@ const cssBattles = [];
      + ' CONVERGES on the focal point');
 
   /* --- 3b. shimmer + stacks: re-bids glow anew in every window ---------- */
-  gas.handle({ action: 'add', aname: 'wobble', uname: 'ann' });
-  gas.handle({ action: 'add', aname: 'wobble', uname: 'zed' });
+  gas.handle({ action: 'add', aname: 'wobble',
+    uname: 'ann', pid: 'pid-wobble-ann' });
+  gas.handle({ action: 'add', aname: 'wobble',
+    uname: 'zed', pid: 'pid-wobble-zed' });
   const domA = await makePage('/wobble?api=' + API_URL);
   claimRow(domA, 'ann');
   typeBid(domA, 'first');
@@ -2952,9 +2844,12 @@ const cssBattles = [];
      star locks, yours included (trying this per dreev; the old
      switch-after-bidding flow, with its multi-identity bid memory,
      died here with his blessing). */
-  gas.handle({ action: 'add', aname: 'switcheroo', uname: 'alice' });
-  gas.handle({ action: 'add', aname: 'switcheroo', uname: 'bob' });
-  gas.handle({ action: 'add', aname: 'switcheroo', uname: 'cam' });
+  gas.handle({ action: 'add', aname: 'switcheroo',
+    uname: 'alice', pid: 'pid-switcheroo-alice' });
+  gas.handle({ action: 'add', aname: 'switcheroo',
+    uname: 'bob', pid: 'pid-switcheroo-bob' });
+  gas.handle({ action: 'add', aname: 'switcheroo',
+    uname: 'cam', pid: 'pid-switcheroo-cam' });
   const domS = await makePage('/switcheroo?api=' + API_URL);
   const docS = domS.window.document;
   claimRow(domS, 'alice');
@@ -3006,9 +2901,10 @@ const cssBattles = [];
   await until(() => domR.window.localStorage
     .getItem('tauction-mybids:race') !== null);
   mockDelay = 0;
-  ok(JSON.parse(domR.window.localStorage.getItem('tauction-mybids:race') || '{}')
-       .carl === 'zoom zoom',
-     'bid remembered under the auction it was placed on');
+  ok(Object.values(JSON.parse(
+       domR.window.localStorage.getItem('tauction-mybids:race') || '{}'))
+       .includes('zoom zoom'),
+     'bid remembered under the auction it was placed on (pid-keyed)');
 
   /* --- 3g. submitting shows progress; the editor stays HOT --------------
      (dreev: down to the wire you might change your mind while your
@@ -3079,11 +2975,14 @@ const cssBattles = [];
   /* --- 3i. keyed node reuse: rows keep their DOM nodes across CHANGE-ful
      renders too, so a mid-gesture click or focused editor can never be
      destroyed by someone else's update arriving. */
-  gas.handle({ action: 'add', aname: 'reuse', uname: 'ann' });
-  gas.handle({ action: 'add', aname: 'reuse', uname: 'zed' });
+  gas.handle({ action: 'add', aname: 'reuse',
+    uname: 'ann', pid: 'pid-reuse-ann' });
+  gas.handle({ action: 'add', aname: 'reuse',
+    uname: 'zed', pid: 'pid-reuse-zed' });
   const domN = await makePage('/reuse?api=' + API_URL);
   const annBefore = row(domN.window.document, 'ann');
-  gas.handle({ action: 'bid', aname: 'reuse', uname: 'zed', bid: 'zzz' });
+  gas.handle({ action: 'bid', aname: 'reuse',
+    uname: 'zed', pid: 'pid-reuse-zed', bid: 'zzz' });
   await until(() =>  // a poll brings a genuinely CHANGED state
     row(domN.window.document, 'zed').classList.contains('has-bid'));
   ok(row(domN.window.document, 'zed').classList.contains('has-bid'),
@@ -3095,8 +2994,10 @@ const cssBattles = [];
   // must render identical to a fresh page's row at A (modulo the
   // wall-clock breathe phase)
   const strip = (h) => h.replace(/animation-delay:[^;"]*;?/g, '');
-  gas.handle({ action: 'add', aname: 'idem', uname: 'pip' });
-  gas.handle({ action: 'add', aname: 'idem', uname: 'quo' });
+  gas.handle({ action: 'add', aname: 'idem',
+    uname: 'pip', pid: 'pid-idem-pip' });
+  gas.handle({ action: 'add', aname: 'idem',
+    uname: 'quo', pid: 'pid-idem-quo' });
   const domI = await makePage('/idem?api=' + API_URL);
   claimRow(domI, 'pip');   // A -> B: pip becomes mine (editor appears)
   claimRow(domI, 'pip');   // B -> A: released again
@@ -3111,8 +3012,11 @@ const cssBattles = [];
      [reworked for the 2026-07-17 append-only log: the old fixture
      seeded a blank-bcount legacy row; bcount is derived now, so a
      bare (aname, uname, bid, tbid) row IS the whole story] ------- */
-  gas.__ss.sheets['bids'].appendRow(['legacy', 'oldtimer', 'ancient bid',
-    '2026-01-01T00:00:00.000Z']);
+  gas.__ss.sheets['users'].appendRow(['legacy', 'pid-legacy-oldtimer',
+    'oldtimer', '', '', '2026-01-01T00:00:00.000Z',
+    '2026-01-01T00:00:00.000Z', '']);
+  gas.__ss.sheets['bids'].appendRow(['legacy', 'pid-legacy-oldtimer',
+    'ancient bid', '2026-01-01T00:00:00.000Z']);
   const domL = await makePage('/legacy?api=' + API_URL);
   const rowL = tiles(domL.window.document, '.has-bid')[0];
   ok(rowL && /^bid submitted \d+d ago$/
@@ -3163,39 +3067,40 @@ const cssBattles = [];
      && !row(doc4, 'evy').querySelector('.rebid'),
      "evy's row holds an empty card, awaiting her bid");
 
-  /* --- 4b. bidders cut from the roster stay visible, crossed out --------
-     No UI produces this state anymore (rows with bids have no ×), but
-     concurrent roster edits from another device still can. */
-  gas.handle({ action: 'add', aname: 'cutcheck', uname: 'pat' });
-  gas.handle({ action: 'add', aname: 'cutcheck', uname: 'quinn' });
-  gas.handle({ action: 'bid', aname: 'cutcheck', uname: 'pat', bid: 'stays' });
-  gas.handle({ action: 'remove', aname: 'cutcheck',
-               uname: 'pat' });  // pat removed after bidding
+  /* --- 4b. bid-then-removed no longer EXISTS as a state ----------------
+     [REWRITTEN 2026-07-19, dreev: "just say no removing someone if
+     they've bid" — the whole crossed-out-row state died with that
+     rule.] A concurrent remove that races a bid bounces off the
+     server; the other order self-heals because a bid rebuilds its
+     seat. Either way every rendered row is a full member. */
+  gas.handle({ action: 'add', aname: 'cutcheck',
+    uname: 'pat', pid: 'pid-cutcheck-pat' });
+  gas.handle({ action: 'add', aname: 'cutcheck',
+    uname: 'quinn', pid: 'pid-cutcheck-quinn' });
+  gas.handle({ action: 'bid', aname: 'cutcheck',
+    uname: 'pat', pid: 'pid-cutcheck-pat', bid: 'stays' });
+  const cutRefusal = gas.handle({ action: 'remove', aname: 'cutcheck',
+    pid: 'pid-cutcheck-pat' });  // the raced removal, refused
   const domC = await makePage('/cutcheck?api=' + API_URL);
   const patRow = row(domC.window.document, 'pat');
-  ok(patRow && patRow.classList.contains('has-bid')
-     && patRow.classList.contains('cut'),
-     'bid-then-removed bidder stays in the box, crossed out');
-  ok(!row(domC.window.document, 'quinn').classList.contains('cut'),
-     'roster members are not crossed out');
-  // the recovery path (dreev): a cut row's × comes back to life —
-  // clicking it purges the zombie bid outright
-  ok(!patRow.querySelector('.x').disabled
+  ok(String(cutRefusal.error) === SCOPY.removeBidderCopy
+     && patRow && patRow.classList.contains('has-bid')
+     && !patRow.classList.contains('cut')
+     && patRow.querySelector('.x').disabled
      && patRow.querySelector('.x').getAttribute('data-tip')
-          === STR.removeTip('pat'),
-     "a cut row's × works: the one way back from a tampered/raced"
-     + ' state');
-  patRow.querySelector('.x').click();
-  await until(() => gas.handle({ action: 'state', aname: 'cutcheck' })
-    .bidders.length === 0);
-  await until(() => !row(domC.window.document, 'pat'));
-  ok(!row(domC.window.document, 'pat'),
-     'clicking it purges the zombie bid: the row is gone for good');
-  gas.handle({ action: 'add', aname: 'cutcheck', uname: 'pat' });
-  gas.handle({ action: 'bid', aname: 'cutcheck', uname: 'pat', bid: 'back in' });
+          === STR.tooLateRemoveTip('pat'),
+     'a raced remove of a bidder is refused: the row stands, whole,'
+     + " its × gray with dreev's too-late tip");
+  // the other race order: quinn's seat is removed while her first
+  // bid flies; the bid rebuilds the seat — same pid, self-healed
+  gas.handle({ action: 'remove', aname: 'cutcheck',
+    pid: 'pid-cutcheck-quinn' });
+  gas.handle({ action: 'bid', aname: 'cutcheck',
+    uname: 'quinn', pid: 'pid-cutcheck-quinn', bid: 'back in' });
   const domC2 = await makePage('/cutcheck?api=' + API_URL);
-  ok(!row(domC2.window.document, 'pat').classList.contains('cut'),
-     're-bidding rejoins the roster and uncrosses');
+  ok(row(domC2.window.document, 'quinn') !== null
+     && row(domC2.window.document, 'quinn').classList.contains('has-bid'),
+     "quinn's in-flight bid rebuilt her removed seat: the race heals");
 
   /* --- 4c. RETIRED 2026-07-18 (names-are-chosen-once): its replicata
      — switching auctions while a poll's response was in flight — is
@@ -3204,8 +3109,11 @@ const cssBattles = [];
      is deleted as dead code. ------------------------------------- */
 
   /* --- 5. XSS: a bid with markup renders inert; walk-ons show cut ------- */
-  gas.handle({ action: 'bid', aname: 'piesplit', uname: 'rando', bid: 'me too!' });
-  const gasRes = gas.handle({ action: 'bid', aname: 'piesplit', uname: 'evy',
+  gas.handle({ action: 'bid', aname: 'piesplit',
+    uname: 'rando', pid: 'pid-piesplit-rando', bid: 'me too!' });
+  const gasRes = gas.handle({ action: 'bid', aname: 'piesplit',
+    uname: 'evy',
+    pid: pidOf(gas.handle({ action: 'state', aname: 'piesplit' }), 'evy'),
     bid: '<img src=x onerror=alert(1)>' });
   ok(gasRes.revealed === false, 'roster complete -> still sealed');
   ok(gas.handle({ action: 'reveal', aname: 'piesplit' }).revealed,
@@ -3237,7 +3145,8 @@ const cssBattles = [];
      Typing a name that already has data refuses with a pointer to the
      URL, so nobody stumbles into a stranger's auction by picking
      "pizza". Following a link always joins. */
-  gas.handle({ action: 'add', aname: 'occupied', uname: 'stranger' });
+  gas.handle({ action: 'add', aname: 'occupied',
+    uname: 'stranger', pid: 'pid-occupied-stranger' });
   const domG = await makePage('/?api=' + API_URL);
   type(domG, 'aname', 'occupied');
   commitName(domG);
