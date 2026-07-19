@@ -35,7 +35,9 @@ const COPY = require('vm').runInContext('({ gavelFellCopy,'
 // context hosts the whole qual run, so drift quals empty the
 // header-check memo by hand to simulate a fresh execution
 const resetTabMemo = () => require('vm').runInContext(
-  'Object.keys(tabsChecked).forEach((k) => delete tabsChecked[k])', ctx);
+  'ssMemo = null;'
+  + ' Object.keys(sheetMemo).forEach((k) => delete sheetMemo[k]);'
+  + ' Object.keys(rowsMemo).forEach((k) => delete rowsMemo[k]);', ctx);
 
 /* ------------------------------ quals --------------------------------- */
 
@@ -629,5 +631,38 @@ const ghostRow = ss.sheets['users'].data
 ss.sheets['users'].deleteRow(ghostRow + 1);
 ok(!call({ action: 'state', aname: 'tau' }).error,
    'rows fixed: the auction speaks again');
+
+// 14. THE CALL BUDGET: every Sheets service call costs ~50-150ms and
+//     the script lock holds for the whole parade, so the per-action
+//     call count IS the latency — and the how-many-people-can-bid-
+//     at-once story. (Measured live 2026-07-18: a bare state GET ran
+//     1.6-3.0s.) Pinned so a future convenience read can't quietly
+//     double the round trips. Budgets include the per-execution
+//     header checks: one read per tab touched, every request.
+call({ action: 'add', aname: 'thrift', uname: 'ann' });
+call({ action: 'add', aname: 'thrift', uname: 'ben' });
+call({ action: 'bid', aname: 'thrift', uname: 'ann', bid: 'a1',
+       deviceID: 'dev-thrift' });
+call({ action: 'bid', aname: 'thrift', uname: 'ann', bid: 'a2',
+       deviceID: 'dev-thrift' });
+call({ action: 'bid', aname: 'thrift', uname: 'ann', bid: 'a3',
+       deviceID: 'dev-thrift' });  // a pile: a repaint-all would show
+const budget = (req, reads, writes, label) => {
+  const t = ctx.__tally;
+  const r0 = t.reads, w0 = t.writes, o0 = t.opens;
+  const res = call(req);
+  ok(!res.error, 'budget probe succeeds: ' + label + ' — ' + res.error);
+  ok(t.reads - r0 <= reads && t.writes - w0 <= writes
+     && t.opens - o0 <= 1,
+     label + ' within budget: ' + (t.reads - r0) + '/' + reads
+       + ' reads, ' + (t.writes - w0) + '/' + writes + ' writes, '
+       + (t.opens - o0) + '/1 opens');
+};
+budget({ action: 'state', aname: 'thrift' }, 6, 0, 'a state read');
+budget({ action: 'add', aname: 'thrift', uname: 'cee' }, 8, 2,
+  'seating a participant');
+budget({ action: 'bid', aname: 'thrift', uname: 'ann', bid: 'a4',
+         deviceID: 'dev-thrift' }, 10, 5,
+  're-bidding (the hot path, a pile of three behind it)');
 
 console.log('gas-quals: all ' + passed + ' assertions passed');
