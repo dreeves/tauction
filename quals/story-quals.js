@@ -163,6 +163,8 @@ async function bid(page, bidText) {
        'the unnamed ledger IDLES — no eternal gavel (the busy sign'
        + ' means busy, and nothing is happening)');
     await alice.type('#aname', 'brunch');
+    await alice.keyboard.press('Enter');  // names commit on deliberate
+                                          // gestures only, never a timer
     await alice.waitForFunction(() => location.pathname === '/brunch');
     ok(true, 'naming the auction navigates: /brunch');
     const slug = 'brunch';
@@ -1226,6 +1228,7 @@ async function bid(page, bidText) {
     const zpage = await makePage(browser, DESKTOP);
     await zpage.goto(BASE + '/', { waitUntil: 'networkidle0' });
     await zpage.type('#aname', 'chores');  // occupied: sticky banner
+    await zpage.keyboard.press('Enter');   // (commit is a gesture now)
     await zpage.waitForFunction(() =>
       !document.getElementById('banner').hidden
       && document.querySelector('#banner a'));

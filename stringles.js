@@ -5,8 +5,12 @@
 // from here, so edits here never break them.
 'use strict';
 
-// Alea iacta est
-const nameStoneTip = '';
+// The auction-name LABEL's frozen-state tooltip (dreev's copy; its
+// editable-state sibling lives on the label in index.html). Once the
+// name commits, the field is the page's title and its URL — no
+// longer a place to type — and the label's tip flips to say so
+// rather than cluttering the UI with a second tip. Alea iacta est.
+const nameStoneTip = 'Name of this auction; also its URL';
 
 // The star radio's tooltips: yours, locked yours, someone else's
 // (with their self-reported rig), too-late, and claimable

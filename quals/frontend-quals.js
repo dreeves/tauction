@@ -151,6 +151,14 @@ function type(dom, id, text) {
   input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
 }
 
+// Commit whatever is typed in the auction-name field (the enter
+// path: names commit only on deliberate gestures, never a timer)
+function commitName(dom) {
+  dom.window.document.getElementById('aname').dispatchEvent(
+    new dom.window.KeyboardEvent('keydown',
+      { key: 'Enter', bubbles: true, cancelable: true }));
+}
+
 // Commit whatever is typed in the + row (the enter path)
 function submitName(dom) {
   dom.window.document.getElementById('roster-input').dispatchEvent(
@@ -501,6 +509,7 @@ const cssBattles = [];
     blurb: '' });
   const dDescOnly = await makePage('/?api=' + API_URL);
   type(dDescOnly, 'aname', 'desconly');
+  commitName(dDescOnly);
   await until(() => dDescOnly.window.location.pathname !== '/'
     || !dDescOnly.window.document.getElementById('banner').hidden);
   const descOnlyLink = dDescOnly.window.document.querySelector('#banner a');
@@ -520,6 +529,7 @@ const cssBattles = [];
       { error: SCOPY.nameTakenCopy }) })
     : ordinaryFetch(url, opts);
   type(dProbeError, 'aname', 'probeerror');
+  commitName(dProbeError);
   await until(() => !dProbeError.window.document
     .getElementById('banner').hidden);
   ok(dProbeError.window.location.pathname === '/'
@@ -541,6 +551,7 @@ const cssBattles = [];
     ? Promise.resolve({ json: () => Promise.resolve(malformedState) })
     : malformedFetch(url, opts);
   type(dMalformed, 'aname', 'malformedprobe');
+  commitName(dMalformed);
   await until(() => dMalformed.window.location.pathname !== '/'
     || !dMalformed.window.document.getElementById('banner').hidden);
   ok(dMalformed.window.location.pathname === '/'
@@ -872,13 +883,17 @@ const cssBattles = [];
   ok(doc.activeElement === doc.getElementById('aname')
      && doc.getElementById('aname').value === '',
      'the empty auction field holds the caret: naming it is your move');
-  ok(!doc.getElementById('aname').hasAttribute('data-tip'),
-     'the LIVE name field needs no tooltip: it works like it looks');
+  ok(!doc.getElementById('aname').hasAttribute('data-tip')
+     && doc.querySelector('label[for="aname"]').getAttribute('data-tip')
+          !== STR.nameStoneTip,
+     'the LIVE name field needs no tooltip of its own, and its label'
+     + ' wears the editable-state copy');
   ok(!doc.getElementById('status').classList.contains('stale')
      && doc.getElementById('roster-input').disabled,
      'the unnamed ledger IDLES (+ row disabled) — never BUSY: stale'
      + ' here meant a gavel hammering forever');
   type(dom, 'aname', 'Fresh-1!');
+  commitName(dom);
   ok(doc.getElementById('aname').value === 'fresh1', 'slug sanitized');
   await until(() =>  // debounce + the gate's lookup: wait, don't sample
     dom.window.location.pathname === '/fresh1');
@@ -892,16 +907,15 @@ const cssBattles = [];
   /* Replicata (dreev, 2026-07-18): name the auction, start on the
      blurb, then click the name to edit it. Nothing happens — correct,
      but it read as a GLITCH. Expectata: the dead field explains
-     itself. The unnamed page's live field carries no tip; the moment
-     the name commits, the field sheds its box (CSS) and — when the
-     nameStoneTip copy has words — wears them, hit-testable though
-     disabled (the machinery was built for exactly this; EMPTY copy
-     means no tip host at all, so the phone-ergonomics sweep never
-     hovers a tip with nothing to say). */
-  ok((doc.getElementById('aname').getAttribute('data-tip') || '')
-       === STR.nameStoneTip,
-     'the frozen name field wears exactly the nameStoneTip copy:'
-     + ' words as a tip, empty as no tip host at all');
+     itself without cluttering the UI with a NEW tooltip (dreev's
+     call, retiring the input's own alea-iacta-est tip): the field
+     sheds its box (CSS) and the LABEL's existing tip flips to the
+     committed-name copy — the name is the URL now, not a field. */
+  ok(!doc.getElementById('aname').hasAttribute('data-tip')
+     && doc.querySelector('label[for="aname"]').getAttribute('data-tip')
+          === STR.nameStoneTip,
+     "the committed name's label flips to the frozen-state copy; the"
+     + ' input itself hosts no tip');
   ok(!doc.getElementById('roster-input').disabled
      && !doc.getElementById('status').classList.contains('stale'),
      'the named ledger wakes: + row live, gray gone');
@@ -1084,14 +1098,55 @@ const cssBattles = [];
      'tab on an occupied name: the sticky gate banner, and the caret'
      + ' stays put');
 
+  /* --- 1e. a thinking pause mid-name commits NOTHING -------------------
+     Replicata (dreev, 2026-07-18, mid-whack-a-mole): start typing
+     the auction name, pause to think longer than any debounce, keep
+     typing. Resultata pre-fix: a 500ms timer committed the half-
+     typed name and froze the field — locked out of your own auction
+     name mid-word, irreversibly (names are chosen once). Expectata:
+     an IRREVERSIBLE commit rides deliberate gestures only — Enter
+     or Tab — never a clock, and deliberately not even blur: a stray
+     tap elsewhere must not commit half a name either. Typed text
+     just waits in the live field. */
+  const dPause = await makePage('/?api=' + API_URL);
+  const pauseDoc = dPause.window.document;
+  // other pages keep polling their own auctions; only probes for the
+  // names typed HERE would betray a timer
+  const pizProbes = () => apiCalls.filter((c) => c.action === 'state'
+    && (c.aname === 'piz' || c.aname === 'pizzanight')).length;
+  type(dPause, 'aname', 'piz');
+  await sleep(900);  // the fatal thinking pause, well past 500ms
+  ok(dPause.window.location.pathname === '/'
+     && !pauseDoc.getElementById('aname').disabled
+     && pizProbes() === 0,
+     'a mid-name pause commits nothing, freezes nothing, and sends'
+     + ' NOTHING: no timer, not even a speculative probe');
+  type(dPause, 'aname', 'pizzanight');  // the thought completes
+  pauseDoc.getElementById('aname').dispatchEvent(
+    new dPause.window.Event('blur'));
+  await sleep(100);
+  ok(dPause.window.location.pathname === '/'
+     && !pauseDoc.getElementById('aname').disabled
+     && pauseDoc.getElementById('aname').value === 'pizzanight'
+     && pizProbes() === 0,
+     'even BLUR commits nothing here, unlike every other field:'
+     + ' wandering off must not irreversibly name the auction');
+  commitName(dPause);
+  await until(() => dPause.window.location.pathname === '/pizzanight');
+  ok(pauseDoc.getElementById('aname').disabled
+     && pauseDoc.querySelector('label[for="aname"]')
+          .getAttribute('data-tip') === STR.nameStoneTip,
+     'Enter commits deliberately: the name takes, the field freezes,'
+     + ' the label tip flips');
+
   /* --- 2. alice sets up /tau and bids in place; her bid stays visible --- */
   dom = await makePage('/tau?api=' + API_URL);
   doc = dom.window.document;
   ok(doc.getElementById('aname').disabled
-     && (doc.getElementById('aname').getAttribute('data-tip') || '')
+     && doc.querySelector('label[for="aname"]').getAttribute('data-tip')
           === STR.nameStoneTip,
-     'arriving by URL: the name is set in stone here too, tip'
-     + ' matching the copy');
+     'arriving by URL: the name is set in stone here too, the label'
+     + ' tip flipped to match');
   type(dom, 'roster-input', 'Alice!');
   ok(doc.getElementById('roster-input').value === 'alice',
      'name sanitized while typing');
@@ -2238,6 +2293,7 @@ const cssBattles = [];
   gas.handle({ action: 'add', aname: 'occupied', uname: 'zoe' });
   dPwa.window.document.getElementById('aname').focus();
   type(dPwa, 'aname', 'occupied');
+  commitName(dPwa);
   await until(() => !dPwa.window.document.getElementById('banner').hidden);
   const gateLink = dPwa.window.document.querySelector('#banner a');
   ok(gateLink && gateLink.getAttribute('href') === '/occupied'
@@ -2251,6 +2307,7 @@ const cssBattles = [];
      'and the dead-end sign does NOT dismiss itself (dreev: you are'
      + ' stuck until you act on it)');
   type(dPwa, 'aname', 'gate3');
+  commitName(dPwa);
   await until(() =>
     dPwa.window.location.pathname === '/gate3');
   ok(dPwa.window.document.getElementById('banner').hidden,
@@ -3074,7 +3131,7 @@ const cssBattles = [];
   mockDelay = 150;
   type(dom4, 'aname', 'Pie-Split');
   ok(doc4.getElementById('aname').value === 'piesplit', 'slug sanitized');
-  await sleep(550);  // past the switch debounce; response still in flight
+  commitName(dom4);  // the deliberate gesture; the probe is in flight
   ok(!doc4.getElementById('status').hidden
      && doc4.getElementById('status').classList.contains('stale'),
      'bids box stays visible while loading, just grayed');
@@ -3183,6 +3240,7 @@ const cssBattles = [];
   gas.handle({ action: 'add', aname: 'occupied', uname: 'stranger' });
   const domG = await makePage('/?api=' + API_URL);
   type(domG, 'aname', 'occupied');
+  commitName(domG);
   await until(() =>  // the refusal banner is the positive signal
     !domG.window.document.getElementById('banner').hidden);
   ok(domG.window.location.pathname === '/',
@@ -3198,6 +3256,7 @@ const cssBattles = [];
   // repeat attempt after the banner auto-hides banners again
   domG.window.document.getElementById('banner').hidden = true;
   type(domG, 'aname', 'occupied');
+  commitName(domG);
   await until(() =>
     !domG.window.document.getElementById('banner').hidden);
   ok(!domG.window.document.getElementById('banner').hidden

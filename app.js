@@ -88,7 +88,6 @@ let writeSettledAt = 0;   // when the last write's response arrived: a
                           // read snapshot is trustworthy only if it was
                           // requested after that (the server may not
                           // have committed a write before then)
-let anameTimer = null;
 let refreshing = false;
 let caretPlaced = false;  // the on-arrival focus into your editor fired
 
@@ -1442,12 +1441,10 @@ async function switchAuction(a) {
                                   // done; the URL is the navigation
     // the dead field explains itself (dreev's glitch report: mid-
     // blurb he clicked the name and nothing happened) — the CSS
-    // sheds its box and, when the copy has words, the tip says the
-    // die is cast (empty copy = no tip host: the phone-ergonomics
-    // sweep hovers every host and rightly expects a visible tip)
-    if (nameStoneTip !== '') {
-      $('aname').setAttribute('data-tip', nameStoneTip);
-    }
+    // sheds its box and the LABEL's tip flips to the committed-name
+    // copy (no new tooltip: dreev's anti-clutter call)
+    document.querySelector('label[for="aname"]')
+      .setAttribute('data-tip', nameStoneTip);
     $('banner').hidden = true;  // landing somewhere real clears any
                                 // dead-end sign still standing
     state = null;
@@ -1541,24 +1538,26 @@ function wireUp() {
   $('aname').addEventListener('input', () => {
     const v = sanAname($('aname').value);
     if (v !== $('aname').value) $('aname').value = v;
-    clearTimeout(anameTimer);
-    anameTimer = setTimeout(() => switchAuction(v), 500);
   });
-  // Tab out of a freshly typed name commits it NOW and carries the
-  // caret to the description (dreev's replicata: type name, hit tab,
-  // land in the browser chrome — the description and + row stayed
-  // disabled until the debounce fired, so tab had no enabled target
-  // left in the page). Same commit-on-Tab precedent as the + row;
-  // shift-tab still means backwards, away. Disclosed ifs: only a
-  // nonempty name commits, and the caret moves only if the name
-  // actually took — a refusal keeps you in the field, beside the
-  // sticky gate banner.
+  // NAMES COMMIT ON DELIBERATE GESTURES ONLY — Enter or Tab — never
+  // on a timer, and deliberately not even on blur (dreev's mid-typing
+  // lockout, 2026-07-18: the old 500ms debounce committed his half-
+  // typed name and froze the field; blur-commit would let a stray tap
+  // elsewhere do the same). Committing a name is IRREVERSIBLE (names
+  // are chosen once), so a thinking pause or a wandering click costs
+  // nothing: the typed text just waits in the live field. Tab (the
+  // + row's commit-on-Tab precedent) also carries the caret on to
+  // the description; shift-tab still means backwards, away.
+  // Disclosed ifs: only a nonempty name commits, and the caret moves
+  // only if the name actually took — a refusal keeps you in the
+  // field, beside the sticky gate banner.
   $('aname').addEventListener('keydown', async (e) => {
-    if (e.key !== 'Tab' || e.shiftKey || $('aname').value === '') return;
+    if ((e.key !== 'Enter' && (e.key !== 'Tab' || e.shiftKey))
+        || $('aname').value === '') return;
+    const wasTab = e.key === 'Tab';
     e.preventDefault();
-    clearTimeout(anameTimer);
     await switchAuction(sanAname($('aname').value));
-    if (aname !== '') $('descedit').focus();
+    if (aname !== '' && wasTab) $('descedit').focus();
   });
 
   // Enter/comma/space commit; deliberately NO commit-on-blur — the blur
@@ -1629,9 +1628,8 @@ async function init() {
   } else {
     setPath(aname);
     $('aname').disabled = true;  // arrived named: the name is stone
-    if (nameStoneTip !== '') {   // ...and says so, given words
-      $('aname').setAttribute('data-tip', nameStoneTip);
-    }
+    document.querySelector('label[for="aname"]')  // ...and the label's
+      .setAttribute('data-tip', nameStoneTip);    // tip says so
     paintCached();
     await refresh();
   }
