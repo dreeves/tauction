@@ -5,6 +5,9 @@
 // from here, so edits here never break them.
 'use strict';
 
+// Alea iacta est
+const nameStoneTip = '';
+
 // The star radio's tooltips: yours, locked yours, someone else's
 // (with their self-reported rig), too-late, and claimable
 const disclaimTip = 'Disclaim as you';

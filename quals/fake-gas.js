@@ -39,7 +39,14 @@ class FakeRange {
     return out;
   }
   setValue(v) { return this.setValues([[v]]); }
-  setNumberFormat() { this.sheet.tally.writes++; return this; }
+  setNumberFormat(f) {
+    this.sheet.tally.writes++;
+    if (f === '@') {  // record armor depth for the armor quals
+      this.sheet.plainTextRows = Math.max(
+        this.sheet.plainTextRows, this.row + this.numRows - 1);
+    }
+    return this;
+  }
   setFontWeight() { this.sheet.tally.writes++; return this; }
   setFontSize() { this.sheet.tally.writes++; return this; }
   setFontColor(c) {  // recorded so quals can check white-on-white sealing
@@ -67,8 +74,10 @@ class FakeSheet {
     this.colors = {};
     this.fonts = {};
     this.backgrounds = {};
+    this.plainTextRows = 0;  // deepest row armored '@' (armor quals)
   }
   getName() { return this.name; }
+  insertRowsAfter() { this.tally.writes++; }
   getRange(row, col, numRows = 1, numCols = 1) {
     return new FakeRange(this, row, col, numRows, numCols);
   }

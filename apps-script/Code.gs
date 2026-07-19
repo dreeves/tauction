@@ -26,6 +26,15 @@ const BIDS_HEAD     = ['aname', 'uname', 'bid', 'tbid'];
 const USERS_HEAD    = ['aname', 'uname', 'deviceID', 'deviceBlurb',
                        'tini', 'tmod'];
 
+// Every cell that will ever hold data is armored plain-text at tab
+// creation: Sheets otherwise reinterprets writes ("007" -> 7, "3/4"
+// -> March 4th — silent sealed-bid corruption), and gridScience
+// (2026-07-18) proved rows born when appendRow grows the grid DON'T
+// inherit the armor, bounded or whole-column. So the grid is
+// pre-grown and armored ARMOR_ROWS deep up front, and insert()
+// refuses loudly past that.
+const ARMOR_ROWS = 10000;
+
 // Microcopy (the server half of stringles.js): everything user-visible
 // that this file generates. Throw strings land verbatim in the client's
 // error banner. stringles.js can't be shared across the deployment
@@ -79,6 +88,12 @@ const schemaDriftCopy = (name, got, want) =>
 // a holder whose claim carried no self-description (must match
 // stringles.js mysteryDevice: it's the same rig-naming fallback)
 const mysteryDeviceCopy = 'mystery device';
+// operator-facing, like schemaDriftCopy: an append one row past the
+// pre-armored grid refuses rather than let Sheets silently
+// reinterpret what lands there
+const armorFullCopy = (name) =>
+  'the "' + name + '" tab outgrew its plain-text armor (' + ARMOR_ROWS
+  + ' rows): raise ARMOR_ROWS, deploy, and run armThePit()';
 
 function doGet(e) {
   return respond(handle((e && e.parameter) || {}));
@@ -117,6 +132,9 @@ function handle(req) {
   }
 }
 
+// Platform mutual exclusion (LockService is Apps Script's; a real
+// database would bring its own transactions — this is the storage
+// layer's one out-of-section sibling)
 function withLock(fn) {
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
@@ -156,7 +174,22 @@ function cleanBlurb(s) {
   return s;
 }
 
-/* ---------------------------- sheet access ---------------------------- */
+/* ======================= the sheets storage layer ======================
+   Everything Google-Sheets-specific lives in this section, behind the
+   fence line at its end — the business logic below the fence speaks
+   only in RECORDS (rows zipped with their tab's header: {aname: ...,
+   uname: ..., all strings}) and 0-based record indexes. Switching to
+   a real database later means rewriting this section (plus withLock,
+   its platform sibling above): load / insert / patch / erase per
+   table, and the two sheet-cosmetic seal calls, which a database
+   would simply no-op. A qual holds the fence.
+   ===================================================================== */
+
+const TABS = { auctions: AUCTIONS_HEAD, bids: BIDS_HEAD,
+               users: USERS_HEAD };
+// the bids tab is where peeking would spoil the sealing; warn there only
+const TAB_WARNINGS =
+  { bids: "IT'S CHEATING TO LOOK HERE DURING AN AUCTION" };
 
 // Per-execution memos (globals reset each Apps Script execution).
 // Every Sheets service call costs ~50-150ms and the script lock is
@@ -164,16 +197,17 @@ function cleanBlurb(s) {
 // spreadsheet handle, one header-checked Sheet per tab, one data
 // read per tab per request. Within a locked execution nothing else
 // can write the sheet, so a first read is good for the whole
-// request; wrote() drops a tab's rows after a value write. The
+// request; wrote() drops a tab's records after a value write. The
 // budget quals pin the per-action call counts.
 let ssMemo = null;
 const sheetMemo = {};
 const rowsMemo = {};
 
-function tab(name, headers, warning) {
-  if (sheetMemo[name] !== undefined) return sheetMemo[name];
+function tab(kind) {
+  if (sheetMemo[kind] !== undefined) return sheetMemo[kind];
   if (ssMemo === null) ssMemo = SpreadsheetApp.openById(SHEET_ID);
-  let sh = ssMemo.getSheetByName(name);
+  const headers = TABS[kind];
+  let sh = ssMemo.getSheetByName(kind);
   if (sh) {
     // The header row IS the schema. Everything reads positionally, so
     // a drifted tab would misread every row — refuse loudly
@@ -182,104 +216,207 @@ function tab(name, headers, warning) {
     const got = sh.getRange(1, 1, 1, headers.length).getValues()[0]
       .map(String);
     if (!headers.every((h, i) => got[i] === h)) {
-      throw schemaDriftCopy(name, got.join(', '), headers.join(', '));
+      throw schemaDriftCopy(kind, got.join(', '), headers.join(', '));
     }
   } else {
-    sh = ssMemo.insertSheet(name);
-    // Format as plain text so bids like "007" don't get mangled into numbers
-    sh.getRange(1, 1, sh.getMaxRows(), headers.length).setNumberFormat('@');
+    sh = ssMemo.insertSheet(kind);
+    // Pre-grow the grid and lay the plain-text armor down whole (see
+    // ARMOR_ROWS): newborn grid rows don't inherit it, so it must be
+    // there before the data ever arrives
+    if (sh.getMaxRows() < ARMOR_ROWS) {
+      sh.insertRowsAfter(sh.getMaxRows(), ARMOR_ROWS - sh.getMaxRows());
+    }
+    sh.getRange(1, 1, ARMOR_ROWS, headers.length).setNumberFormat('@');
     // headers: bold monospace on a quiet tinted band, frozen in place
     sh.getRange(1, 1, 1, headers.length).setValues([headers])
       .setFontWeight('bold').setFontFamily('Roboto Mono')
       .setBackground('#f1f3f4');
     sh.setFrozenRows(1);
-    if (warning) {
-      sh.getRange(1, headers.length + 1).setValue(warning)
+    if (TAB_WARNINGS[kind]) {
+      sh.getRange(1, headers.length + 1).setValue(TAB_WARNINGS[kind])
         .setFontSize(24).setFontWeight('bold').setFontColor('#b3261e');
     }
   }
-  sheetMemo[name] = sh;
+  sheetMemo[kind] = sh;
   return sh;
 }
 
-// The reveal button. Anyone may press it once the roster is complete —
-// at least two people, all with bids in. Idempotent, and permanent.
-function reveal(req) {
-  const aname = cleanAname(req.aname);
-  const st = getState(aname);
-  if (st.revealed) return st;  // racing presses: both succeed
-  const unames = st.bidders.map(b => b.uname);
-  if (!(st.roster.length >= 2
-        && st.roster.every(u => unames.indexOf(u) !== -1))) {
-    throw notReadyCopy;
+// A tab's data rows as records — each row zipped with the schema,
+// every value a string; columns appended past the schema are legal
+// and simply invisible here. One Sheets read per tab per execution.
+function load(kind) {
+  if (rowsMemo[kind] === undefined) {
+    const head = TABS[kind];
+    rowsMemo[kind] = tab(kind).getDataRange().getValues().slice(1)
+      .map(r => {
+        const rec = {};
+        head.forEach((h, c) => { rec[h] = String(r[c]); });
+        return rec;
+      });
   }
-  const sh = auctionsTab();
-  const i = rows(sh).findIndex(r => r[0] === aname);
-  // the revealed column holds the moment itself (legacy rows hold '1')
-  sh.getRange(i + 2, 4).setValue(new Date().toISOString());
-  wrote(sh);
-  unmaskBids(aname);
-  return getState(aname);
+  return rowsMemo[kind];
 }
 
-// Reveal's unmasking sweep: sealed bids are painted white-on-white as
-// they land (see placeBid); the reveal gives every one of this
-// auction's its color back. Purely cosmetic — the honor system's
-// honor system.
-function unmaskBids(aname) {
-  const sh = bidsTab();
-  rows(sh).forEach((r, i) => {
-    if (r[0] === aname) sh.getRange(i + 2, 3).setFontColor(null);
+// Call after any VALUE write to a tab: the next load() re-reads it.
+// (Format-only writes — the seal paint — change nothing load() sees.)
+function wrote(kind) { delete rowsMemo[kind]; }
+
+// Append a record inside the armor or refuse LOUDLY: a row born past
+// the plain-text armor gets silently reinterpreted by Sheets
+// ("007" -> 7), and for sealed bids silent is the worst kind. Fields
+// left out land as ''. Returns the new record's index. Costs no
+// extra service calls: the row count comes from the memoized read.
+function insert(kind, rec) {
+  const i = load(kind).length;
+  if (i + 2 > ARMOR_ROWS) throw armorFullCopy(kind);
+  tab(kind).appendRow(TABS[kind].map(
+    h => rec[h] === undefined ? '' : rec[h]));
+  wrote(kind);
+  return i;
+}
+
+// Overwrite named fields of record i, as ONE ranged write: untouched
+// columns inside the span are rewritten with their current values
+// (safe under the lock), so a patch never costs more than a cell poke
+function patch(kind, i, changes) {
+  const head = TABS[kind];
+  const cols = Object.keys(changes).map(f => head.indexOf(f));
+  if (cols.some(c => c === -1)) throw 'patch: field not in ' + kind;
+  const lo = Math.min(...cols);
+  const hi = Math.max(...cols);
+  const rec = hi > lo ? load(kind)[i] : null;
+  const slab = [];
+  for (let c = lo; c <= hi; c++) {
+    slab.push(changes[head[c]] === undefined
+      ? rec[head[c]] : changes[head[c]]);
+  }
+  tab(kind).getRange(i + 2, lo + 1, 1, slab.length).setValues([slab]);
+  wrote(kind);
+}
+
+// Delete record i outright
+function erase(kind, i) {
+  tab(kind).deleteRow(i + 2);
+  wrote(kind);
+}
+
+// Sheet-only decoration — a real database would no-op both: sealed
+// bid text is white-on-white for anyone peeking at the spreadsheet,
+// and the reveal hands the color back
+const BID_COL = BIDS_HEAD.indexOf('bid') + 1;
+function sealBid(i) {
+  tab('bids').getRange(i + 2, BID_COL).setFontColor('#ffffff');
+}
+function unsealBid(i) {
+  tab('bids').getRange(i + 2, BID_COL).setFontColor(null);
+}
+
+// Run this once from the Apps Script editor to trigger the permissions
+// prompt if you ever set this project up manually (clasp handles it
+// otherwise).
+function authorize() {
+  Logger.log(JSON.stringify(handle({ action: 'state', aname: 'tau' })));
+}
+
+// Run ONCE from the editor after deploying the ARMOR_ROWS scheme
+// (verdict 2026-07-18: COLUMN ARMOR ALSO FALLS, so pre-grown armor
+// it is): grows each live tab's grid to ARMOR_ROWS and re-armors it
+// in place, data intact. Tabs born under the new tab() never need
+// this; it migrates the ones armored under the old 1000-row scheme.
+function armThePit() {
+  Object.keys(TABS).forEach(function (kind) {
+    const sh = tab(kind);
+    if (sh.getMaxRows() < ARMOR_ROWS) {
+      sh.insertRowsAfter(sh.getMaxRows(), ARMOR_ROWS - sh.getMaxRows());
+    }
+    sh.getRange(1, 1, ARMOR_ROWS, TABS[kind].length).setNumberFormat('@');
+    Logger.log(kind + ': grid grown and armored ' + ARMOR_ROWS
+      + ' rows deep');
   });
 }
 
-function auctionsTab() { return tab('auctions', AUCTIONS_HEAD); }
-function bidsTab() {
-  // the bids tab is where peeking would spoil the sealing; warn there only
-  return tab('bids', BIDS_HEAD,
-    "IT'S CHEATING TO LOOK HERE DURING AN AUCTION");
+// THE GRID-GROWTH EXPERIMENT (run once from the editor toolbar, read
+// the execution log): does a row that appendRow births PAST the
+// armored grid inherit the plain-text format, or arrive interpreting
+// — the row-1001 "format cliff"? Faithful miniature: a scratch tab
+// trimmed to a fully armored 5-row grid, so the 6th append forces
+// the same grid growth row 1001 would. Self-cleaning; touches no
+// real tab. Verdict prints as NO CLIFF or CLIFF CONFIRMED.
+function gridScience() {
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  const old = ss.getSheetByName('gridscience');
+  if (old) ss.deleteSheet(old);
+  const sh = ss.insertSheet('gridscience');
+  sh.deleteRows(6, sh.getMaxRows() - 5);         // a 5-row universe...
+  sh.getRange(1, 1, 5, 2).setNumberFormat('@');  // ...fully armored
+  for (let i = 1; i <= 5; i++) sh.appendRow(['00' + i, 'filler']);
+  sh.appendRow(['007', '2026-07-18T22:01:33.510Z']);  // row 6: growth
+  const formats = sh.getRange(6, 1, 1, 2).getNumberFormats()[0];
+  const got = sh.getRange(6, 1, 1, 2).getValues()[0].map(String);
+  Logger.log('row 6 formats: ' + JSON.stringify(formats));
+  Logger.log('row 6 values:  ' + JSON.stringify(got));
+  Logger.log(got[0] === '007'
+      && got[1] === '2026-07-18T22:01:33.510Z'
+    ? 'NO CLIFF: newborn grid rows inherit the armor'
+    : 'CLIFF CONFIRMED: newborn grid rows interpret — "007" came back'
+      + ' as ' + got[0] + ' and the stamp as ' + got[1]);
+  ss.deleteSheet(sh);  // leave no trace
 }
-function usersTab() { return tab('users', USERS_HEAD); }
 
-// Data rows (sans header) as arrays of strings, one read per tab per
-// execution
-function rows(sh) {
-  const name = sh.getName();
-  if (rowsMemo[name] === undefined) {
-    rowsMemo[name] = sh.getDataRange().getValues().slice(1)
-      .map(r => r.map(String));
-  }
-  return rowsMemo[name];
+// SCIENCE, ROUND 2. (Round 1 verdict, 2026-07-18: CLIFF CONFIRMED —
+// bounded-range armor does not survive grid growth; "007" came back
+// as 7. Notably the ISO stamp SURVIVED: Sheets' write-parser doesn't
+// recognize the T...Z shape, so the cliff's victims are bid text and
+// digit-led anames, and silently.) The new question: does UNBOUNDED
+// whole-column armor survive grid growth? HOLDS makes the belt a
+// one-line creation change plus one manual column-format of the live
+// tabs; FALLS means pre-grown armor plus a loud guard.
+function gridScience2() {
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  const old = ss.getSheetByName('gridscience');
+  if (old) ss.deleteSheet(old);
+  const sh = ss.insertSheet('gridscience');
+  sh.deleteRows(6, sh.getMaxRows() - 5);      // a 5-row universe...
+  sh.getRange('A:B').setNumberFormat('@');    // ...whole-COLUMN armor
+  for (let i = 1; i <= 5; i++) sh.appendRow(['00' + i, 'filler']);
+  sh.appendRow(['007', '2026-07-18T22:01:33.510Z']);  // row 6: growth
+  const got = sh.getRange(6, 1, 1, 2).getValues()[0].map(String);
+  Logger.log('row 6 values: ' + JSON.stringify(got));
+  Logger.log(got[0] === '007'
+    ? 'COLUMN ARMOR HOLDS: unbounded-column format survives growth'
+    : 'COLUMN ARMOR ALSO FALLS: "007" came back as ' + got[0]);
+  ss.deleteSheet(sh);  // leave no trace
 }
 
-// Call after any VALUE write to a tab: the next rows() re-reads it.
-// (Format-only writes — the seal paint — change nothing rows() sees.)
-function wrote(sh) { delete rowsMemo[sh.getName()]; }
+/* ============= END OF THE SHEETS LAYER (the storage fence) =============
+   Below this line: business logic only — records in, records out.
+   A qual mechanically refuses any Sheets vocabulary past this point.
+   ===================================================================== */
 
 /* ------------------------------ actions ------------------------------- */
 
 function getState(aname) {
-  const arow = rows(auctionsTab()).find(r => r[0] === aname);
+  const arow = load('auctions').find(r => r.aname === aname);
 
   // The roster IS the users rows (in insertion order), and the claims
   // map rides along: uname -> deviceID for seats someone holds
   const roster = [];
   const claims = Object.create(null);
   const blurbs = Object.create(null);  // uname -> the holder's self-reported rig
-  rows(usersTab()).forEach(r => {
-    if (r[0] !== aname) return;
-    roster.push(r[1]);
-    if (r[2]) claims[r[1]] = r[2];
-    if (r[2] && r[3]) blurbs[r[1]] = r[3];
+  load('users').forEach(r => {
+    if (r.aname !== aname) return;
+    roster.push(r.uname);
+    if (r.deviceID) claims[r.uname] = r.deviceID;
+    if (r.deviceID && r.deviceBlurb) blurbs[r.uname] = r.deviceBlurb;
   });
 
   // Reveal is a human act (the 'reveal' action) and a one-way latch: it
   // never happens automatically, and once bids have been seen, nothing can
   // reseal them. A complete roster merely makes the reveal button pressable.
-  const tfin = arow ? arow[3] : '';  // the reveal moment, ISO
+  const tfin = arow ? arow.tfin : '';  // the reveal moment, ISO
   const revealed = tfin !== '';
-  const blurb = arow ? arow[4] || '' : '';   // freeform markdown
-  const tblurb = arow ? arow[5] || '' : '';  // its own edit stamp (CAS)
+  const blurb = arow ? arow.blurb : '';    // freeform markdown
+  const tblurb = arow ? arow.tblurb : '';  // its own edit stamp (CAS)
 
   // A person's standing bid is their LATEST log row at or before tfin
   // (<=, dreev's call: a bid stamped the gavel's own millisecond made
@@ -288,14 +425,14 @@ function getState(aname) {
   // tini = first tbid, tmod = latest, bcount = row count. ISO stamps
   // compare lexicographically; rows are in submission order.
   const agg = Object.create(null);  // uname -> derived bidder, in first-bid order
-  rows(bidsTab()).forEach(r => {
-    if (r[0] !== aname) return;
-    if (revealed && r[3] > tfin) return;  // after the gavel: not in
-    const a = agg[r[1]] || (agg[r[1]] =
-      { uname: r[1], bcount: 0, tini: r[3] });
+  load('bids').forEach(r => {
+    if (r.aname !== aname) return;
+    if (revealed && r.tbid > tfin) return;  // after the gavel: not in
+    const a = agg[r.uname] || (agg[r.uname] =
+      { uname: r.uname, bcount: 0, tini: r.tbid });
     a.bcount++;
-    a.tmod = r[3];
-    a.bid = r[2];
+    a.tmod = r.tbid;
+    a.bid = r.bid;
   });
   const people = Object.keys(agg).map(u => agg[u]);
   const bidders = people.map(a =>
@@ -321,23 +458,51 @@ function getState(aname) {
   };
 }
 
+// The reveal button. Anyone may press it once the roster is complete —
+// at least two people, all with bids in. Idempotent, and permanent.
+function reveal(req) {
+  const aname = cleanAname(req.aname);
+  const st = getState(aname);
+  if (st.revealed) return st;  // racing presses: both succeed
+  const unames = st.bidders.map(b => b.uname);
+  if (!(st.roster.length >= 2
+        && st.roster.every(u => unames.indexOf(u) !== -1))) {
+    throw notReadyCopy;
+  }
+  const i = load('auctions').findIndex(r => r.aname === aname);
+  // the revealed column holds the moment itself (legacy rows hold '1')
+  patch('auctions', i, { tfin: new Date().toISOString() });
+  unmaskBids(aname);
+  return getState(aname);
+}
+
+// Reveal's unmasking sweep: sealed bids are painted white-on-white as
+// they land (see placeBid); the reveal gives every one of this
+// auction's its color back. Purely cosmetic — the honor system's
+// honor system.
+function unmaskBids(aname) {
+  load('bids').forEach((r, i) => {
+    if (r.aname === aname) unsealBid(i);
+  });
+}
+
 // Make sure the auction has its row (tini/tmod stamped; tfin empty)
 function touchAuction(aname) {
-  const sh = auctionsTab();
-  const arows = rows(sh);
   const now = new Date().toISOString();
-  const i = arows.findIndex(r => r[0] === aname);
-  if (i === -1) sh.appendRow([aname, now, now, '']);
-  else sh.getRange(i + 2, 3).setValue(now);
-  wrote(sh);
+  const i = load('auctions').findIndex(r => r.aname === aname);
+  if (i === -1) insert('auctions', { aname: aname, tini: now, tmod: now });
+  else patch('auctions', i, { tmod: now });
 }
 
 // Make sure a seat row exists; adding is idempotent
 function ensureSeat(aname, uname) {
-  const sh = usersTab();
   const now = new Date().toISOString();
-  const i = rows(sh).findIndex(r => r[0] === aname && r[1] === uname);
-  if (i === -1) { sh.appendRow([aname, uname, '', '', now, now]); wrote(sh); }
+  const i = load('users').findIndex(
+    r => r.aname === aname && r.uname === uname);
+  if (i === -1) {
+    insert('users', { aname: aname, uname: uname, deviceID: '',
+                      deviceBlurb: '', tini: now, tmod: now });
+  }
 }
 
 // The auction blurb: freeform markdown, editable by anyone at any
@@ -350,15 +515,13 @@ function describe(req) {
   const blurb = String(req.blurb == null ? '' : req.blurb);
   if (blurb.length > 2000) throw blurbTooLongCopy;
   touchAuction(aname);
-  const sh = auctionsTab();
-  const i = rows(sh).findIndex(r => r[0] === aname);
-  const current = rows(sh)[i][5] || '';
+  const i = load('auctions').findIndex(r => r.aname === aname);
+  const current = load('auctions')[i].tblurb;
   if (String(req.base == null ? '' : req.base) !== current) {
     throw simulEditsCopy;
   }
-  sh.getRange(i + 2, 5, 1, 2)
-    .setValues([[blurb, new Date().toISOString()]]);
-  wrote(sh);
+  patch('auctions', i, { blurb: blurb,
+                         tblurb: new Date().toISOString() });
   return getState(aname);
 }
 
@@ -384,26 +547,20 @@ function renameParticipant(req) {
   // names freeze at the gavel: a post-close rename could swap
   // around who bid what (dreev, reversing always-editable)
   if (getState(aname).revealed) throw auctionClosedCopy;
-  const sh = usersTab();
-  const prows = rows(sh);
-  const bsh = bidsTab();
-  const brows = rows(bsh);
-  if (prows.some(r => r[0] === aname && r[1] === to)
-      || brows.some(r => r[0] === aname && r[1] === to)) {
+  const seats = load('users');
+  const logs = load('bids');
+  if (seats.some(r => r.aname === aname && r.uname === to)
+      || logs.some(r => r.aname === aname && r.uname === to)) {
     throw nameTakenCopy;
   }
-  const i = prows.findIndex(r => r[0] === aname && r[1] === from);
+  const i = seats.findIndex(r => r.aname === aname && r.uname === from);
   if (i === -1) throw noSuchOneCopy(from);
-  const now = new Date().toISOString();
-  sh.getRange(i + 2, 2).setValue(to);
-  sh.getRange(i + 2, 6).setValue(now);  // tmod
-  wrote(sh);
-  brows.forEach((r, j) => {  // re-key every log row of theirs
-    if (r[0] === aname && r[1] === from) {
-      bsh.getRange(j + 2, 2).setValue(to);
+  patch('users', i, { uname: to, tmod: new Date().toISOString() });
+  logs.forEach((r, j) => {  // re-key every log row of theirs
+    if (r.aname === aname && r.uname === from) {
+      patch('bids', j, { uname: to });
     }
   });
-  wrote(bsh);
   touchAuction(aname);
   return getState(aname);
 }
@@ -417,24 +574,21 @@ function removeParticipant(req) {
   // purge (which would delete a REVEALED bid; dreev caught it live)
   if (getState(aname).revealed) throw auctionClosedCopy;
   touchAuction(aname);
-  const sh = usersTab();
-  const i = rows(sh).findIndex(r => r[0] === aname && r[1] === uname);
+  const i = load('users').findIndex(
+    r => r.aname === aname && r.uname === uname);
   if (i !== -1) {
     // first remove: the seat goes, any bid stays (re-bidding rejoins)
-    sh.deleteRow(i + 2);
-    wrote(sh);
+    erase('users', i);
   } else {
     // no seat = the row was ALREADY cut (a race or sheet tampering
     // left a zombie bid): removing it again is the recovery path —
     // purge the bid outright
-    const bsh = bidsTab();
-    const brows = rows(bsh);
-    for (let j = brows.length - 1; j >= 0; j--) {  // bottom-up: row
-      if (brows[j][0] === aname && brows[j][1] === uname) {  // indices
-        bsh.deleteRow(j + 2);                          // stay honest
+    const logs = load('bids');
+    for (let j = logs.length - 1; j >= 0; j--) {  // bottom-up: record
+      if (logs[j].aname === aname && logs[j].uname === uname) {  // indices
+        erase('bids', j);                              // stay honest
       }
     }
-    wrote(bsh);
   }
   return getState(aname);
 }
@@ -484,32 +638,30 @@ function releaseClaim(req) {
 
 // The deviceID currently holding a seat ('' if open or no such seat)
 function deviceOf(aname, uname) {
-  const r = rows(usersTab()).find(
-    (row) => row[0] === aname && row[1] === uname);
-  return r ? r[2] : '';
+  const r = load('users').find(
+    (rec) => rec.aname === aname && rec.uname === uname);
+  return r ? r.deviceID : '';
 }
 
 function setDeviceID(aname, uname, deviceID, blurb) {
-  const sh = usersTab();
   const now = new Date().toISOString();
-  rows(sh).forEach((r, i) => {
-    if (r[0] !== aname) return;
-    if (r[1] === uname) {
-      sh.getRange(i + 2, 3, 1, 4)
-        .setValues([[deviceID, blurb || '', r[4], now]]);
-    } else if (deviceID && r[2] === deviceID) {
-      sh.getRange(i + 2, 3, 1, 4).setValues([['', '', r[4], now]]);
+  load('users').forEach((r, i) => {
+    if (r.aname !== aname) return;
+    if (r.uname === uname) {
+      patch('users', i, { deviceID: deviceID,
+                          deviceBlurb: blurb || '', tmod: now });
+    } else if (deviceID && r.deviceID === deviceID) {
+      patch('users', i, { deviceID: '', deviceBlurb: '', tmod: now });
     }
   });
-  wrote(sh);
 }
 
 // The holder's rig, for refusal messages: every seat-taken error names
 // who beat you to it
 function holderBlurb(aname, uname) {
-  const r = rows(usersTab()).find(
-    (row) => row[0] === aname && row[1] === uname);
-  return (r && r[3]) || mysteryDeviceCopy;
+  const r = load('users').find(
+    (rec) => rec.aname === aname && rec.uname === uname);
+  return (r && r.deviceBlurb) || mysteryDeviceCopy;
 }
 
 function placeBid(req) {
@@ -546,50 +698,11 @@ function placeBid(req) {
 
   // every submission is its own log row; the read side derives the
   // rest (latest wins, first stamps tini, count counts)
-  const bsh = bidsTab();
-  const at = rows(bsh).length + 2;  // header + 1-based + the new row
-  bsh.appendRow([aname, uname, bid, new Date().toISOString()]);
-  wrote(bsh);
+  const at = insert('bids', { aname: aname, uname: uname, bid: bid,
+                              tbid: new Date().toISOString() });
   // seal THIS submission white-on-white as it lands — one write, not
   // a repaint of the whole pile (its elders were sealed at their own
   // appends; reveal() unmasks the lot)
-  bsh.getRange(at, 3).setFontColor('#ffffff');
+  sealBid(at);
   return getState(aname);
-}
-
-
-
-// Run this once from the Apps Script editor to trigger the permissions
-// prompt if you ever set this project up manually (clasp handles it
-// otherwise).
-function authorize() {
-  Logger.log(JSON.stringify(handle({ action: 'state', aname: 'tau' })));
-}
-
-// THE GRID-GROWTH EXPERIMENT (run once from the editor toolbar, read
-// the execution log): does a row that appendRow births PAST the
-// armored grid inherit the plain-text format, or arrive interpreting
-// — the row-1001 "format cliff"? Faithful miniature: a scratch tab
-// trimmed to a fully armored 5-row grid, so the 6th append forces
-// the same grid growth row 1001 would. Self-cleaning; touches no
-// real tab. Verdict prints as NO CLIFF or CLIFF CONFIRMED.
-function gridScience() {
-  const ss = SpreadsheetApp.openById(SHEET_ID);
-  const old = ss.getSheetByName('gridscience');
-  if (old) ss.deleteSheet(old);
-  const sh = ss.insertSheet('gridscience');
-  sh.deleteRows(6, sh.getMaxRows() - 5);         // a 5-row universe...
-  sh.getRange(1, 1, 5, 2).setNumberFormat('@');  // ...fully armored
-  for (let i = 1; i <= 5; i++) sh.appendRow(['00' + i, 'filler']);
-  sh.appendRow(['007', '2026-07-18T22:01:33.510Z']);  // row 6: growth
-  const formats = sh.getRange(6, 1, 1, 2).getNumberFormats()[0];
-  const got = sh.getRange(6, 1, 1, 2).getValues()[0].map(String);
-  Logger.log('row 6 formats: ' + JSON.stringify(formats));
-  Logger.log('row 6 values:  ' + JSON.stringify(got));
-  Logger.log(got[0] === '007'
-      && got[1] === '2026-07-18T22:01:33.510Z'
-    ? 'NO CLIFF: newborn grid rows inherit the armor'
-    : 'CLIFF CONFIRMED: newborn grid rows interpret — "007" came back'
-      + ' as ' + got[0] + ' and the stamp as ' + got[1]);
-  ss.deleteSheet(sh);  // leave no trace
 }

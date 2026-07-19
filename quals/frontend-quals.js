@@ -94,7 +94,7 @@ const STR = new Function(STRINGLES
   + ' consensusStamp,'
   + ' claimedByTip, claimTip, mysteryDevice, nameTakenBanner,'
   + ' moneyGlyphs, revealTip, needNameTip, removeTip,'
-  + ' tooLateRemoveTip, resubmittedTip };')();
+  + ' tooLateRemoveTip, resubmittedTip, nameStoneTip };')();
 const STAMP = STR.stampCopy;
 
 // ...and the server's half, out of the vm context hosting Code.gs
@@ -328,11 +328,13 @@ const cssBattles = [];
      + ' prose at will)');
   ok(/name="twitter:card" content="summary"/.test(INDEX_HTML),
      'twitter falls back to the summary card');
-  ok(/rel="icon" href="data:image\/svg\+xml,[^"]*%238a5a2b/
-       .test(INDEX_HTML),
-     'the favicon is the gavel too — all gavel, no more \u03c4'
-     + " (dreev killed the tau 2026-07-17); it shares the app icons'"
-     + ' wood');
+  ok(/rel="icon" type="image\/png" href="\/icons\/favicon\.png"/
+       .test(INDEX_HTML)
+     && fs.existsSync(path.join(REPO, 'icons', 'favicon.png'))
+     && fs.existsSync(path.join(REPO, 'icons', 'gavelbox-512.png')),
+     "the favicon is dreev's boxed-gavel art (2026-07-18, retiring"
+     + ' the inline-SVG gavel), favicon and full-size source both'
+     + ' on disk');
 
   /* Replicata: ann and bob have both bid, then carol is added while
      that write is still optimistic. Expectata: carol immediately
@@ -870,6 +872,8 @@ const cssBattles = [];
   ok(doc.activeElement === doc.getElementById('aname')
      && doc.getElementById('aname').value === '',
      'the empty auction field holds the caret: naming it is your move');
+  ok(!doc.getElementById('aname').hasAttribute('data-tip'),
+     'the LIVE name field needs no tooltip: it works like it looks');
   ok(!doc.getElementById('status').classList.contains('stale')
      && doc.getElementById('roster-input').disabled,
      'the unnamed ledger IDLES (+ row disabled) — never BUSY: stale'
@@ -885,6 +889,19 @@ const cssBattles = [];
      'NAMES ARE CHOSEN ONCE (dreev, dissolving the navigator/name'
      + ' dual meaning): the field disables the moment the name'
      + ' commits — the URL is the navigation now');
+  /* Replicata (dreev, 2026-07-18): name the auction, start on the
+     blurb, then click the name to edit it. Nothing happens — correct,
+     but it read as a GLITCH. Expectata: the dead field explains
+     itself. The unnamed page's live field carries no tip; the moment
+     the name commits, the field sheds its box (CSS) and — when the
+     nameStoneTip copy has words — wears them, hit-testable though
+     disabled (the machinery was built for exactly this; EMPTY copy
+     means no tip host at all, so the phone-ergonomics sweep never
+     hovers a tip with nothing to say). */
+  ok((doc.getElementById('aname').getAttribute('data-tip') || '')
+       === STR.nameStoneTip,
+     'the frozen name field wears exactly the nameStoneTip copy:'
+     + ' words as a tip, empty as no tip host at all');
   ok(!doc.getElementById('roster-input').disabled
      && !doc.getElementById('status').classList.contains('stale'),
      'the named ledger wakes: + row live, gray gone');
@@ -985,13 +1002,14 @@ const cssBattles = [];
   stripTini = false;
 
   /* --- 1c2. the WHOLE stamp shape is the contract, not "has a T" --------
-     (anti-Postel, dreev-ratified 2026-07-18.) Replicata: a stamp cell
-     that loses its plain-text format gets coerced by Sheets and reads
-     back as "Fri Jul 17 2026 18:23:45 GMT-0700 (...)" — whose GMT
-     smuggled a 'T' past the old includes-check while silently breaking
-     the lexicographic stamp ordering; and a hand-written blank tbid
-     rendered a "NaNd ago" tooltip. Expectata: every stamp is full-ISO
-     or the ingest refuses loudly. */
+     (anti-Postel, dreev-ratified 2026-07-18.) Replicata: a stamp a
+     human hand-edits or date-formats reads back as "Fri Jul 17 2026
+     18:23:45 GMT-0700 (...)" — whose GMT smuggled a 'T' past the old
+     includes-check while silently breaking the lexicographic stamp
+     ordering; and a hand-written blank tbid rendered a "NaNd ago"
+     tooltip. (gridScience 2026-07-18: growth alone doesn't coerce
+     the T...Z shape — this is the human-edit belt.) Expectata: every
+     stamp is full-ISO or the ingest refuses loudly. */
   const COERCED = String(new Date('2026-07-18T01:23:45.678Z'));
   stampSwap = COERCED;
   gas.handle({ action: 'add', aname: 'coerced', uname: 'old' });
@@ -1030,11 +1048,50 @@ const cssBattles = [];
   ok(row(domWarm.window.document, 'ann') === nodeBefore,
      'a no-change poll leaves the DOM alone (no swallowed clicks)');
 
+  /* --- 1d. tab out of the typed name lands in the DESCRIPTION ----------
+     Replicata (dreev, 2026-07-18): type the auction name, hit tab.
+     Resultata pre-fix: the description and + row were still DISABLED
+     (the commit rode a 500ms debounce), so tab had no enabled target
+     left in the page and threw focus into the browser chrome.
+     Expectata: tab commits the name NOW and carries the caret to the
+     description box — name, tab, describe (the + row's own
+     commit-on-Tab precedent). */
+  const dTabName = await makePage('/?api=' + API_URL);
+  const tabDoc = dTabName.window.document;
+  type(dTabName, 'aname', 'tabflow2');
+  tabDoc.getElementById('aname').dispatchEvent(
+    new dTabName.window.KeyboardEvent('keydown',
+      { key: 'Tab', bubbles: true, cancelable: true }));
+  await until(() => dTabName.window.location.pathname === '/tabflow2');
+  await sleep(20);
+  ok(tabDoc.getElementById('aname').disabled
+     && tabDoc.activeElement === tabDoc.getElementById('descedit'),
+     'tab commits the typed name immediately and the caret lands in'
+     + ' the description: name, tab, describe');
+  // the refusal side: tab on an OCCUPIED name shows the gate banner
+  // and plants no caret in a description that isn't yours to write
+  gas.handle({ action: 'add', aname: 'tabtaken', uname: 'z' });
+  const dTabTaken = await makePage('/?api=' + API_URL);
+  type(dTabTaken, 'aname', 'tabtaken');
+  dTabTaken.window.document.getElementById('aname').dispatchEvent(
+    new dTabTaken.window.KeyboardEvent('keydown',
+      { key: 'Tab', bubbles: true, cancelable: true }));
+  await until(() => !dTabTaken.window.document
+    .getElementById('banner').hidden);
+  ok(!dTabTaken.window.document.getElementById('aname').disabled
+     && dTabTaken.window.document.activeElement
+          !== dTabTaken.window.document.getElementById('descedit'),
+     'tab on an occupied name: the sticky gate banner, and the caret'
+     + ' stays put');
+
   /* --- 2. alice sets up /tau and bids in place; her bid stays visible --- */
   dom = await makePage('/tau?api=' + API_URL);
   doc = dom.window.document;
-  ok(doc.getElementById('aname').disabled,
-     'arriving by URL: the name is set in stone here too');
+  ok(doc.getElementById('aname').disabled
+     && (doc.getElementById('aname').getAttribute('data-tip') || '')
+          === STR.nameStoneTip,
+     'arriving by URL: the name is set in stone here too, tip'
+     + ' matching the copy');
   type(dom, 'roster-input', 'Alice!');
   ok(doc.getElementById('roster-input').value === 'alice',
      'name sanitized while typing');

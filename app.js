@@ -194,10 +194,13 @@ function setPath(a) {
 
 // The one true stamp shape: what toISOString mints, what the sheet
 // stores as text, what compares lexicographically. Asserted in FULL
-// (anti-Postel): a stamp cell that loses its plain-text format gets
-// coerced by Sheets and reads back as "Fri Jul ... GMT-0700 (...)" —
-// whose GMT smuggled a 'T' past the old includes-check while silently
-// breaking the stamp ordering (and a blank stamp rendered "NaNd ago").
+// (anti-Postel): a stamp a human hand-edits or date-formats reads
+// back as "Fri Jul ... GMT-0700 (...)" — whose GMT smuggled a 'T'
+// past the old includes-check while silently breaking the stamp
+// ordering (and a blank stamp rendered "NaNd ago"). (gridScience,
+// 2026-07-18: Sheets' write-parser doesn't coerce the T...Z shape,
+// so sheet-side accidents bite bid text, not stamps — this assert
+// is the belt for the human-edit path.)
 const STAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 function assertState(res) {
@@ -1437,6 +1440,14 @@ async function switchAuction(a) {
     $('aname').disabled = true;   // ...and NAMES ARE CHOSEN ONCE
                                   // (dreev): the field's one job is
                                   // done; the URL is the navigation
+    // the dead field explains itself (dreev's glitch report: mid-
+    // blurb he clicked the name and nothing happened) — the CSS
+    // sheds its box and, when the copy has words, the tip says the
+    // die is cast (empty copy = no tip host: the phone-ergonomics
+    // sweep hovers every host and rightly expects a visible tip)
+    if (nameStoneTip !== '') {
+      $('aname').setAttribute('data-tip', nameStoneTip);
+    }
     $('banner').hidden = true;  // landing somewhere real clears any
                                 // dead-end sign still standing
     state = null;
@@ -1533,6 +1544,22 @@ function wireUp() {
     clearTimeout(anameTimer);
     anameTimer = setTimeout(() => switchAuction(v), 500);
   });
+  // Tab out of a freshly typed name commits it NOW and carries the
+  // caret to the description (dreev's replicata: type name, hit tab,
+  // land in the browser chrome — the description and + row stayed
+  // disabled until the debounce fired, so tab had no enabled target
+  // left in the page). Same commit-on-Tab precedent as the + row;
+  // shift-tab still means backwards, away. Disclosed ifs: only a
+  // nonempty name commits, and the caret moves only if the name
+  // actually took — a refusal keeps you in the field, beside the
+  // sticky gate banner.
+  $('aname').addEventListener('keydown', async (e) => {
+    if (e.key !== 'Tab' || e.shiftKey || $('aname').value === '') return;
+    e.preventDefault();
+    clearTimeout(anameTimer);
+    await switchAuction(sanAname($('aname').value));
+    if (aname !== '') $('descedit').focus();
+  });
 
   // Enter/comma/space commit; deliberately NO commit-on-blur — the blur
   // fires mid-click when you tap a row control, and the rebuild it
@@ -1602,6 +1629,9 @@ async function init() {
   } else {
     setPath(aname);
     $('aname').disabled = true;  // arrived named: the name is stone
+    if (nameStoneTip !== '') {   // ...and says so, given words
+      $('aname').setAttribute('data-tip', nameStoneTip);
+    }
     paintCached();
     await refresh();
   }

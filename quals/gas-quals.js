@@ -665,4 +665,62 @@ budget({ action: 'bid', aname: 'thrift', uname: 'ann', bid: 'a4',
          deviceID: 'dev-thrift' }, 10, 5,
   're-bidding (the hot path, a pile of three behind it)');
 
+// 15. THE ARMOR (gridScience, 2026-07-18: rows born when appendRow
+//     grows the grid do NOT inherit plain-text formatting — bounded
+//     and whole-column armor both fall — so "007" silently becomes 7:
+//     sealed-bid corruption, the worst failure this app can have).
+//     The scheme: every tab is born with an ARMOR_ROWS-deep
+//     pre-armored grid, and an append past the armor refuses LOUDLY
+//     instead of trusting the grid.
+const ARMOR = require('vm').runInContext(
+  "typeof ARMOR_ROWS === 'undefined' ? 10000 : ARMOR_ROWS", ctx);
+const ARMOR_COPY = require('vm').runInContext(
+  "typeof armorFullCopy === 'undefined' ? null : armorFullCopy", ctx);
+ok(ss.sheets['bids'].plainTextRows >= ARMOR
+   && ss.sheets['users'].plainTextRows >= ARMOR
+   && ss.sheets['auctions'].plainTextRows >= ARMOR,
+   'every tab is born fully armored: plain text laid down ' + ARMOR
+     + ' rows deep, got ' + ss.sheets['bids'].plainTextRows);
+const pit = ss.sheets['bids'];
+while (pit.data.length < ARMOR - 1) {  // header + ARMOR-2 data rows:
+  pit.data.push(['ballast', 'b', 'x',  // the next append lands on the
+    '2026-01-01T00:00:00.000Z']);      // LAST armored row
+}
+st = call({ action: 'bid', aname: 'pit', uname: 'penult', bid: 'fits',
+            deviceID: 'd-pit' });
+ok(!st.error && pit.data.length === ARMOR,
+   'the last armored row still accepts a bid: ' + st.error);
+st = call({ action: 'bid', aname: 'pit', uname: 'over', bid: 'spills',
+            deviceID: 'd-pit2' });
+ok(ARMOR_COPY !== null && String(st.error) === ARMOR_COPY('bids')
+   && pit.data.length === ARMOR
+   && !call({ action: 'state', aname: 'pit' }).bidders
+        .some((b) => b.uname === 'over'),
+   'one row past the armor refuses loudly, and no bid row lands: '
+     + st.error);
+ok(typeof ctx.armThePit === 'function',
+   'armThePit exists: the run-once migration for live tabs armored'
+   + ' under the old 1000-row scheme');
+ctx.armThePit();
+ok(ss.sheets['users'].plainTextRows >= ARMOR
+   && ss.sheets['auctions'].plainTextRows >= ARMOR,
+   're-arming live tabs in place reaches full armor depth');
+
+// 16. THE STORAGE FENCE: everything Sheets-flavored lives in the
+//     storage layer; below its fence line the business logic speaks
+//     only records and indexes. Mechanically enforced — like the
+//     freeze doctrine — so a future switch to a real database stays
+//     a one-section rewrite instead of an archaeology dig.
+const FENCE = 'END OF THE SHEETS LAYER';
+const fenceAt = CODE_GS.indexOf(FENCE);
+const business = CODE_GS.slice(fenceAt);
+const SHEETY = ['SpreadsheetApp', 'openById', 'getSheetByName',
+  'insertSheet', 'deleteSheet', 'getRange', 'getDataRange',
+  'appendRow', 'deleteRow', 'insertRows', 'deleteRows', 'getMaxRows',
+  'setValue', 'setNumberFormat', 'setFont', 'setBackground',
+  'setFrozenRows', 'ssMemo', 'sheetMemo', 'rowsMemo'];
+ok(fenceAt !== -1 && SHEETY.every((w) => !business.includes(w)),
+   'no Sheets vocabulary below the storage fence; leaked: '
+     + SHEETY.filter((w) => business.includes(w)).join(', '));
+
 console.log('gas-quals: all ' + passed + ' assertions passed');

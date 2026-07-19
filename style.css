@@ -106,6 +106,14 @@ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   opacity: 1;
 }
 
+/* Names are chosen once: the committed name sheds its input box and
+   reads as the page's title, not a glitching field (dreev clicked it
+   mid-blurb and "nothing happened"). Same geometry — only the border
+   goes — and cursor: help only when a die-is-cast tip is there to
+   point at (empty tip copy = no data-tip host at all). */
+#aname:disabled { border-color: transparent; cursor: default; }
+#aname:disabled[data-tip] { cursor: help; }
+
 input::placeholder { color: var(--muted); opacity: 0.8; }
 
 .at-wrap {
