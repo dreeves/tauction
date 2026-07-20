@@ -14,6 +14,12 @@ const configured = /^https:\/\//.test(api);
 
 const POLL_MS = 5000;
 
+// A hidden tab's entire traffic: one title-only peek a minute — an
+// explicit coarse cadence (dreev's ruling, 2026-07-20), never
+// outsourced to browser throttling heuristics — and none at all once
+// the reveal is seen (peekTitle's latch)
+const PEEK_MS = 60000;
+
 // Decoy text that we blur out for bids that are still sealed. Obviously can't
 // just blur out the actual bid since we'd leak information about it that way.
 const MASK = 'noli spectare'; // Latin for "don't peek", I think
@@ -115,6 +121,12 @@ let settleSeq = 0;        // bumped when a write SETTLES: a read
                           // its response (the server may not have
                           // committed a write before then)
 let refreshing = false;
+let seenRevealed = false; // has ANY response — adopted (ingest) or
+                          // merely peeked at (peekTitle) — shown this
+                          // page the latch? Reveal is one-way, so
+                          // this only ever goes true, and the hidden
+                          // peek retires on it: a revealed auction
+                          // has no further news to poll for
 
 // This browser's anonymous device id. Claims are keyed by it on the
 // server, so every page agrees who's taken — two machines can no longer
@@ -259,6 +271,7 @@ function ingest(res) {
   res.claims = umap(res.claims);
   res.blurbs = umap(res.blurbs);
   state = res;
+  seenRevealed = seenRevealed || res.revealed;
   localStorage.setItem('tauction-state:' + res.aname, JSON.stringify(res));
   // Your device's registered claim is authoritative for who you are.
   // (In the uname era this dragged bid memory along to the new name;
@@ -295,6 +308,30 @@ async function refresh() {
   }
 }
 
+// THE TITLE PEEK: a hidden tab's entire participation — a slow bare
+// state GET spent ONLY on the tab's title (Sol's title-only law).
+// Nothing is ingested: the witnessed-reveal fanfare and every
+// never-clobber invariant sleep until the tab is actually looked at
+// (the visibilitychange refresh). Quiet on failure, deliberately —
+// locate()'s one cousin: a hidden tab has no reader to alarm, and
+// the return-refresh re-raises anything real the moment one exists.
+// Disclosed ifs: unnamed/unconfigured/latched pages have nothing to
+// peek at, and a peek landing after the tab turned visible yields to
+// the adopted pipeline (its snapshot may predate the return-
+// refresh's).
+async function peekTitle() {
+  if (!configured || !aname || seenRevealed) return;
+  try {
+    const res = await apiGet({ action: 'state', aname: aname });
+    assertState(res);  // an {error} payload fails this shape check
+    seenRevealed = seenRevealed || res.revealed;
+    if (document.visibilityState !== 'hidden') return;
+    document.title = tabTitle(
+      titleGlyph(res.seats, res.bidders, res.revealed,
+                 pidAmong(res.seats, umap(res.claims))), aname);
+  } catch (e) { /* the next peek, or the return-refresh, retries */ }
+}
+
 /* ------------------------------ rendering ----------------------------- */
 
 function render() {
@@ -305,11 +342,6 @@ function render() {
   seats = state.seats.map((s) => ({ pid: s.pid, uname: s.uname }));
   renderStatus();
   renderDesc();
-  // the tab wears the auction's name and the seal's glyph (🔒/🎉,
-  // one revealed-ternary): several open tauctions must be tellable
-  // apart — and tellable done — from the tab bar. The unnamed page
-  // never renders, so the HTML's static title rests there untouched.
-  document.title = (state.revealed ? revealedTitle : sealedTitle)(aname);
   adopted = true;  // the arrival edge is consumed exactly once
   $('status').classList.remove('stale');  // server truth is on screen
 }
@@ -416,13 +448,19 @@ function storeMyPid(p) {
 // is this device's. Unclaimed-on-the-server plus remembered locally
 // counts as yours (the optimistic moment before your claim lands); a
 // rival device's registered claim unseats you.
-function mypid() {
+// The rule itself lives in pidAmong, over ANY (seats, claims) pair:
+// mypid answers for the adopted state; the hidden title peek asks
+// the same question of a raw snapshot it never adopts.
+function pidAmong(ss, claims) {
   const p = myPidStored();
-  if (!p || !seats.some((s) => s.pid === p)) return '';
+  if (!p || !ss.some((s) => s.pid === p)) return '';
+  const holder = claims[p];
+  return holder === undefined || holder === DEVICE ? p : '';
+}
+function mypid() {
   // no snapshot yet = no claims are known: optimistically yours (the
   // same optimistic moment as an unclaimed-on-the-server seat)
-  const holder = state === null ? undefined : state.claims[p];
-  return holder === undefined || holder === DEVICE ? p : '';
+  return pidAmong(seats, state === null ? umap() : state.claims);
 }
 
 // Every bid this browser has placed on this auction, keyed by pid —
@@ -449,6 +487,26 @@ function knownBids() {
 // lives there, editable in place; enter (re)submits. × removes a row from
 // the roster, offered only while it has no bid to protect. Reveal lights
 // the 🎉 and glows the card, once.
+// The tab-title state glyph — dreev's ruled quadruple (2026-07-20) —
+// derived per-viewer from ANY snapshot: the adopted state, or a raw
+// glimpse the hidden peek never adopts. Disclosed ifs, one per ruled
+// state: revealed; all in (two-plus, none missing) awaiting the
+// press; everyone waiting on YOU (the standout — the one missing bid
+// is your own, with at least one other person actually waiting; a
+// solo roster never stars, nobody's there to wait); else waiting on
+// bidders.
+function titleGlyph(ss, bidders, revealed, mine) {
+  if (revealed) return revealedGlyph;
+  const missing = ss.filter(
+    (s) => !bidders.some((b) => b.pid === s.pid));
+  if (ss.length >= 2 && missing.length === 0) return readyGlyph;
+  if (ss.length >= 2 && missing.length === 1
+      && missing[0].pid === mine) {
+    return yourMoveGlyph;
+  }
+  return waitingGlyph;
+}
+
 let lastPrint = '';  // fingerprint of the last-rendered rows
 let rowNodes = umap();   // pid -> its living row node (keyed reuse;
                          // the pid never changes, so a rename never
@@ -507,6 +565,12 @@ function renderStatus() {
       : seats.length === 1 ? needOneMoreTip
       : waitingTip(listed));
   }
+
+  // the tab wears the auction's name and its state of play (the
+  // ruled glyph quadruple), so a row of tauction tabs is legible —
+  // and calls you back — without clicking through
+  document.title = tabTitle(
+    titleGlyph(seats, state.bidders, state.revealed, mine), aname);
 
   // no row is you yet: the you-star perches on the + row instead, so
   // the legend's ★ always has a referent
@@ -1452,6 +1516,14 @@ function wireUp() {
     showTip();
   });
 
+  // Returning to a tab refreshes AT ONCE: the glance meets current
+  // truth instead of up-to-POLL_MS-stale state — and it is the
+  // moment a reveal that happened while hidden gets WITNESSED (the
+  // peek never ingests, so the ceremony fires here, seen)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refresh();
+  });
+
   // the sticky banner's ×: bad news leaves when YOU say so (or when
   // newer news or a successful settle replaces it) — never a timer
   $('banner-x').addEventListener('click', () => {
@@ -1582,6 +1654,11 @@ async function init() {
   setInterval(() => {
     if (document.visibilityState === 'visible') refresh();
   }, POLL_MS);
+  // the hidden sibling: the minute-scale title peek (each cadence
+  // self-gates on visibility, so each fires only in its own regime)
+  setInterval(() => {
+    if (document.visibilityState === 'hidden') peekTitle();
+  }, PEEK_MS);
 }
 
 init();

@@ -105,7 +105,8 @@ const STR = new Function(STRINGLES
   + ' claimedByTip, claimTip, mysteryDevice, nameTakenBanner,'
   + ' moneyGlyphs, revealTip, needNameTip, removeTip,'
   + ' tooLateRemoveTip, resubmittedTip, nameStoneTip,'
-  + ' sealedTitle, revealedTitle };')();
+  + ' waitingGlyph, yourMoveGlyph, readyGlyph, revealedGlyph,'
+  + ' tabTitle };')();
 const STAMP = STR.stampCopy;
 
 // ...and the server's half, out of the vm context hosting Code.gs
@@ -147,6 +148,15 @@ async function makePage(pathAndQuery, seed) {
   dom.window.FloatingUIDOM = {
     computePosition: async () => ({ x: 0, y: 0 }),
     offset: () => ({}), flip: () => ({}), shift: () => ({}),
+  };
+  // Record every interval the app registers (callback + cadence), so
+  // quals can fire the slow hidden-tab peek on demand instead of
+  // waiting out its real minute-scale cadence
+  const realSetInterval = dom.window.setInterval;
+  dom.window.__intervals = [];
+  dom.window.setInterval = (fn, ms) => {
+    dom.window.__intervals.push({ fn: fn, ms: ms });
+    return realSetInterval(fn, ms);
   };
   if (seed) seed(dom.window);  // e.g. pre-populate localStorage
   // one eval: eval-scoped consts aren't visible across separate
@@ -235,6 +245,16 @@ function hoverBid(dom, uname) {
   // the attribute is the assertable truth in jsdom
   cell.dispatchEvent(new dom.window.Event('mouseover'));
   return cell.getAttribute('data-tip');
+}
+
+// Flip a page's visibility (jsdom is permanently 'visible' on its
+// own): shadow the prototype getter, then announce the change the way
+// a real browser would
+function setVisibility(dom, vis) {
+  Object.defineProperty(dom.window.document, 'visibilityState',
+    { value: vis, configurable: true });
+  dom.window.document.dispatchEvent(
+    new dom.window.Event('visibilitychange'));
 }
 
 const tiles = (doc, sel = '') => doc.querySelectorAll('#tiles .tile' + sel);
@@ -1003,12 +1023,14 @@ const cssBattles = [];
      'Enter commits deliberately: the name takes, the field freezes,'
      + ' the label tip flips');
 
-  /* --- 1f. the tab wears the auction's name ----------------------------
+  /* --- 1f. the tab wears the auction's name and its state of play ------
      Replicata: open /alpha and /beta in two tabs, bid in both, come
      back later to reveal one. Expectata: the tab bar itself tells
      the auctions apart — the auction's own name leads the title —
-     and tells sealed from revealed by the seal's own glyph (🔒/🎉),
-     with the unnamed page resting on the HTML's static title.
+     and a glyph tells the state of play, dreev's ruled quadruple
+     (2026-07-20): waiting on bidders, everyone-waiting-on-YOU (the
+     standout: you are the blocker), all-in-awaiting-the-press, and
+     revealed. The unnamed page rests on the HTML's static title.
      Resultata pre-fix: every tab read the static "tauction". */
   const dBareTitle = await makePage('/?api=' + API_URL);
   ok(dBareTitle.window.document.title === 'tauction',
@@ -1025,15 +1047,16 @@ const cssBattles = [];
   const titleDoc = dTitle.window.document;
   await until(() => !titleDoc.getElementById('status')
     .classList.contains('stale'));
-  ok(titleDoc.title === STR.sealedTitle('titular'),
-     "arrival by URL: the tab reads the auction's name under the"
-     + " seal's glyph, got " + JSON.stringify(titleDoc.title));
+  ok(titleDoc.title === STR.tabTitle(STR.readyGlyph, 'titular'),
+     'all bids in, unrevealed: the tab offers the press (ready is the'
+     + ' state that calls SOMEONE back), got '
+     + JSON.stringify(titleDoc.title));
   gas.handle({ action: 'reveal', aname: 'titular' });  // from elsewhere
   await until(() => titleDoc.getElementById('status')
     .classList.contains('revealed'));
-  ok(titleDoc.title === STR.revealedTitle('titular'),
-     'the reveal flips the tab glyph: sealed and revealed tauctions'
-     + ' are tellable apart from the tab bar');
+  ok(titleDoc.title === STR.tabTitle(STR.revealedGlyph, 'titular'),
+     'the reveal flips the tab glyph: done auctions are tellable from'
+     + ' the tab bar');
   // the cached instant paint titles the tab too, before the live
   // fetch lands (the same never-flash-blank promise as the roster)
   const seededTitle = gas.handle({ action: 'state', aname: 'titular' });
@@ -1041,7 +1064,8 @@ const cssBattles = [];
   const dWarmTitle = await makePage('/titular?api=' + API_URL, (win) =>
     win.localStorage.setItem('tauction-state:titular',
       JSON.stringify(seededTitle)));
-  ok(dWarmTitle.window.document.title === STR.revealedTitle('titular'),
+  ok(dWarmTitle.window.document.title
+       === STR.tabTitle(STR.revealedGlyph, 'titular'),
      'a returning browser titles the tab from the cached paint,'
      + ' before the live fetch lands');
   mockDelay = 0;
@@ -1051,8 +1075,113 @@ const cssBattles = [];
   commitName(dTypedTitle);
   await until(() =>
     dTypedTitle.window.location.pathname === '/titulus');
-  ok(dTypedTitle.window.document.title === STR.sealedTitle('titulus'),
-     'the typed-name road titles the tab the instant the name takes');
+  ok(dTypedTitle.window.document.title
+       === STR.tabTitle(STR.waitingGlyph, 'titulus'),
+     'the typed-name road titles the tab the instant the name takes'
+     + ' (empty roster: plain waiting)');
+  // a solo roster is never "everyone waiting on you": nobody's there
+  // to wait — the ⭐ needs at least one actual waiter
+  const dSolo = await makePage('/solome?api=' + API_URL);
+  addName(dSolo, 'me');
+  await until(() => !dSolo.window.document.getElementById('status')
+    .classList.contains('stale'));
+  ok(dSolo.window.document.title === STR.tabTitle(STR.waitingGlyph, 'solome'),
+     'alone on the roster, bidless: waiting, never the ⭐');
+
+  /* --- 1f2. the hidden tab: the minute peek, title-only ----------------
+     Replicata: join /peekaboo, background the tab, and let the others
+     bid — then reveal — while you're away. Expectata (dreev's ruling
+     + Sol's title-only law): a hidden tab spends one bare state GET a
+     minute on its TITLE alone — ⭐ when the missing bid is yours, 🔓
+     when all are in, 🎉 at the latch (where peeking retires forever)
+     — while ingesting NOTHING, so the witnessed-reveal ceremony law
+     holds: returning to the tab refreshes at once and the party fires
+     THEN, seen. Resultata pre-fix: hidden tabs were fully silent and
+     a returning glance waited out the poll interval. */
+  gas.handle({ action: 'add', aname: 'peekaboo',
+    uname: 'ann', pid: 'pid-peekaboo-ann' });
+  const dPeek = await makePage('/peekaboo?api=' + API_URL);
+  const peekDoc = dPeek.window.document;
+  ok(peekDoc.title === STR.tabTitle(STR.waitingGlyph, 'peekaboo'),
+     'a spectator over a bidless pair-less roster: plain waiting');
+  addName(dPeek, 'me');
+  await until(() => row(peekDoc, 'me')
+    && !peekDoc.getElementById('status').classList.contains('stale'));
+  const peek = dPeek.window.__intervals.find((i) => i.ms === 60000);
+  ok(peek !== undefined,
+     'the hidden peek is registered at its explicit minute cadence'
+     + ' (never outsourced to browser throttling heuristics)');
+  const peekCalls = () => apiCalls.filter((c) => c.action === 'state'
+    && c.aname === 'peekaboo').length;
+  setVisibility(dPeek, 'hidden');
+  gas.handle({ action: 'bid', aname: 'peekaboo',
+    uname: 'ann', pid: 'pid-peekaboo-ann', bid: 'a' });
+  peek.fn();
+  await sleep(150);
+  ok(peekDoc.title === STR.tabTitle(STR.yourMoveGlyph, 'peekaboo'),
+     'everyone has bid but YOU: the tab bar says so while you are'
+     + ' away — the standout state (dreev), got '
+     + JSON.stringify(peekDoc.title));
+  ok(!row(peekDoc, 'ann').classList.contains('has-bid')
+     && !peekDoc.getElementById('status').classList.contains('stale'),
+     "the peek is title-ONLY: ann's bid is NOT ingested and the box"
+     + ' is untouched — never-clobber sleeps until the tab is looked at');
+  const mePid = pidOf(gas.handle({ action: 'state', aname: 'peekaboo' }),
+                      'me');
+  gas.handle({ action: 'bid', aname: 'peekaboo',
+    uname: 'me', pid: mePid, bid: 'b' });  // you, from your phone
+  peek.fn();
+  await sleep(150);
+  ok(peekDoc.title === STR.tabTitle(STR.readyGlyph, 'peekaboo'),
+     'all in: the hidden tab offers the press');
+  gas.handle({ action: 'reveal', aname: 'peekaboo' });
+  peek.fn();
+  await sleep(150);
+  ok(peekDoc.title === STR.tabTitle(STR.revealedGlyph, 'peekaboo'),
+     'the latch reaches the hidden title');
+  ok(!peekDoc.getElementById('status').classList.contains('revealed')
+     && dPeek.window.__confettiCalls.length === 0,
+     'but the reveal is NOT witnessed hidden: no flip, no ceremony —'
+     + ' the party waits for a viewer');
+  const latched = peekCalls();
+  peek.fn();
+  await sleep(150);
+  ok(peekCalls() === latched,
+     'peeking retires forever at the latch: a revealed auction has no'
+     + ' further news');
+  setVisibility(dPeek, 'visible');
+  await until(() =>
+    peekDoc.getElementById('status').classList.contains('revealed'));
+  ok(peekDoc.getElementById('status').classList.contains('just-revealed')
+     && peekDoc.title === STR.tabTitle(STR.revealedGlyph, 'peekaboo'),
+     'returning WITNESSES the reveal: the tada lights on the glance,'
+     + ' not into the void');
+  await until(() => dPeek.window.__confettiCalls.length >= 1);
+  ok(dPeek.window.__confettiCalls.length >= 1,
+     "...and the strike's money flies for the returned viewer");
+
+  /* --- 1f3. returning to a tab refreshes AT ONCE -----------------------
+     Replicata: background a tab inside its first poll interval, then
+     return to it. Expectata: the glance meets a fresh fetch
+     immediately, not up-to-POLL_MS-stale state; and the visible-tab
+     peek gate holds (the minute cadence belongs to hidden tabs
+     alone). Both pinned inside the first interval's 5s dead zone, so
+     no poll tick can confound the counts. */
+  const dRet = await makePage('/retvisit?api=' + API_URL);
+  const retCalls = () => apiCalls.filter((c) => c.action === 'state'
+    && c.aname === 'retvisit').length;
+  const retBoot = retCalls();
+  ok(retBoot === 1, 'one boot fetch, no poll tick yet: the dead zone'
+     + ' holds (got ' + retBoot + ')');
+  dRet.window.__intervals.find((i) => i.ms === 60000).fn();
+  await sleep(150);
+  ok(retCalls() === 1,
+     'a visible tab never peeks: the minute cadence is hidden-only');
+  setVisibility(dRet, 'hidden');
+  setVisibility(dRet, 'visible');
+  await sleep(300);
+  ok(retCalls() === 2,
+     'becoming visible refreshes at once — no waiting out the poll');
 
   /* --- 2. alice sets up /tau and bids in place; her bid stays visible --- */
   dom = await makePage('/tau?api=' + API_URL);

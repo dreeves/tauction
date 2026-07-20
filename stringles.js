@@ -51,11 +51,19 @@ const closedLine = (stamp) => 'Closed ' + stamp;
 // The tab's title once an auction is on screen (the unnamed page
 // keeps the HTML's static title): the auction's own name leads —
 // tabs truncate from the right, so the distinctive word goes first —
-// and the seal's own glyph tells sealed from revealed across a row
-// of tabs at a glance. (No generated English here: the name is the
-// user's, "tauction" is the product's, the glyphs are the seal's.)
-const sealedTitle = (aname) => '🔒 ' + aname + ' · tauction';
-const revealedTitle = (aname) => '🎉 ' + aname + ' · tauction';
+// and a state glyph tells the state of play across a row of tabs at
+// a glance. The glyph quadruple is dreev's ruling (2026-07-20):
+// waiting on bidders, everyone-waiting-on-YOU (the standout — you
+// are the blocker), all-in-awaiting-the-press (🔓 lives on here:
+// retired from the seal button, where the pulsing 🔒 says press-me
+// better, but a title can't pulse), and revealed. (No generated
+// English here: the name is the user's, "tauction" is the
+// product's, the glyphs are glyphs.)
+const waitingGlyph = '🔒';
+const yourMoveGlyph = '⭐';
+const readyGlyph = '🔓';
+const revealedGlyph = '🎉';
+const tabTitle = (glyph, aname) => glyph + ' ' + aname + ' · tauction';
 
 // The reveal ceremony's rubber stamp, and the money it rains
 const stampCopy = 'SOLD';
