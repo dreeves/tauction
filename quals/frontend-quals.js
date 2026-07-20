@@ -682,6 +682,43 @@ const cssBattles = [];
      + ' with your text kept, the committed label restored — and you'
      + ' are still you (nothing to roll back: identity never moved)');
 
+  /* Replicata: focus alice's live name field, submit alicia, wait for
+     the server to accept it, then press Escape without first leaving
+     the field. Expectata: alicia is now the committed baseline, so
+     Escape is a no-op. Resultata pre-fix: defaultValue was still alice,
+     so Escape submitted a second rename and reversed the first one. */
+  gas.handle({ action: 'add', aname: 'renescape',
+    uname: 'alice', pid: 'pid-renescape-alice' });
+  gas.handle({ action: 'add', aname: 'renescape',
+    uname: 'bob', pid: 'pid-renescape-bob' });
+  const dRenEscape = await makePage('/renescape?api=' + API_URL);
+  const renEscapeDoc = dRenEscape.window.document;
+  const renEscapeInput = row(renEscapeDoc, 'alice')
+    .querySelector('.rename input');
+  renEscapeInput.focus();
+  renEscapeInput.value = 'alicia';
+  renEscapeInput.form.dispatchEvent(new dRenEscape.window.Event('submit',
+    { bubbles: true, cancelable: true }));
+  await until(() => names(gas.handle({ action: 'state',
+    aname: 'renescape' })) === 'alicia,bob'
+    && !renEscapeDoc.getElementById('status').classList.contains('stale'));
+  ok(renEscapeInput.value === 'alicia'
+     && renEscapeInput.defaultValue === 'alicia'
+     && renEscapeDoc.activeElement === renEscapeInput,
+     'an accepted focused rename advances value and committed baseline');
+  const renEscapeCalls = apiCalls.filter((c) => c.action === 'rename'
+    && c.aname === 'renescape').length;
+  renEscapeInput.dispatchEvent(new dRenEscape.window.KeyboardEvent('keydown',
+    { key: 'Escape', bubbles: true }));
+  await sleep(50);
+  ok(row(renEscapeDoc, 'alicia') !== null
+     && names(gas.handle({ action: 'state', aname: 'renescape' }))
+          === 'alicia,bob'
+     && apiCalls.filter((c) => c.action === 'rename'
+          && c.aname === 'renescape').length === renEscapeCalls,
+     'Escape after an accepted focused rename is a no-op: one request,'
+     + ' one committed label');
+
   /* --- 1. bare visit: no server-invented name — the user picks ---------- */
   let dom = await makePage('/?api=' + API_URL);
   let doc = dom.window.document;

@@ -1049,7 +1049,8 @@ function commitRename(pid, raw, field) {
             if (node) {
               node.querySelector('.rename input').classList.add('error');
             }
-          });
+          },
+          () => { field.defaultValue = to; });
 }
 
 // Claim a row as yourself, or release it if it's already yours
