@@ -305,6 +305,11 @@ function render() {
   seats = state.seats.map((s) => ({ pid: s.pid, uname: s.uname }));
   renderStatus();
   renderDesc();
+  // the tab wears the auction's name and the seal's glyph (🔒/🎉,
+  // one revealed-ternary): several open tauctions must be tellable
+  // apart — and tellable done — from the tab bar. The unnamed page
+  // never renders, so the HTML's static title rests there untouched.
+  document.title = (state.revealed ? revealedTitle : sealedTitle)(aname);
   adopted = true;  // the arrival edge is consumed exactly once
   $('status').classList.remove('stale');  // server truth is on screen
 }

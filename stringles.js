@@ -48,6 +48,15 @@ const resubmittedTip = (tini, tmod) =>
 // The Closed line under a finished auction
 const closedLine = (stamp) => 'Closed ' + stamp;
 
+// The tab's title once an auction is on screen (the unnamed page
+// keeps the HTML's static title): the auction's own name leads —
+// tabs truncate from the right, so the distinctive word goes first —
+// and the seal's own glyph tells sealed from revealed across a row
+// of tabs at a glance. (No generated English here: the name is the
+// user's, "tauction" is the product's, the glyphs are the seal's.)
+const sealedTitle = (aname) => '🔒 ' + aname + ' · tauction';
+const revealedTitle = (aname) => '🎉 ' + aname + ' · tauction';
+
 // The reveal ceremony's rubber stamp, and the money it rains
 const stampCopy = 'SOLD';
 const moneyGlyphs = ['$', '¥', '£', '\u{1fa99}', '⚖️'];

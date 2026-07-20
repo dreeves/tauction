@@ -104,7 +104,8 @@ const STR = new Function(STRINGLES
   + ' consensusStamp,'
   + ' claimedByTip, claimTip, mysteryDevice, nameTakenBanner,'
   + ' moneyGlyphs, revealTip, needNameTip, removeTip,'
-  + ' tooLateRemoveTip, resubmittedTip, nameStoneTip };')();
+  + ' tooLateRemoveTip, resubmittedTip, nameStoneTip,'
+  + ' sealedTitle, revealedTitle };')();
 const STAMP = STR.stampCopy;
 
 // ...and the server's half, out of the vm context hosting Code.gs
@@ -1001,6 +1002,57 @@ const cssBattles = [];
           .getAttribute('data-tip') === STR.nameStoneTip,
      'Enter commits deliberately: the name takes, the field freezes,'
      + ' the label tip flips');
+
+  /* --- 1f. the tab wears the auction's name ----------------------------
+     Replicata: open /alpha and /beta in two tabs, bid in both, come
+     back later to reveal one. Expectata: the tab bar itself tells
+     the auctions apart — the auction's own name leads the title —
+     and tells sealed from revealed by the seal's own glyph (🔒/🎉),
+     with the unnamed page resting on the HTML's static title.
+     Resultata pre-fix: every tab read the static "tauction". */
+  const dBareTitle = await makePage('/?api=' + API_URL);
+  ok(dBareTitle.window.document.title === 'tauction',
+     "the unnamed page keeps the HTML's static title");
+  gas.handle({ action: 'add', aname: 'titular',
+    uname: 'ann', pid: 'pid-titular-ann' });
+  gas.handle({ action: 'add', aname: 'titular',
+    uname: 'bo', pid: 'pid-titular-bo' });
+  gas.handle({ action: 'bid', aname: 'titular',
+    uname: 'ann', pid: 'pid-titular-ann', bid: 'a' });
+  gas.handle({ action: 'bid', aname: 'titular',
+    uname: 'bo', pid: 'pid-titular-bo', bid: 'b' });
+  const dTitle = await makePage('/titular?api=' + API_URL);
+  const titleDoc = dTitle.window.document;
+  await until(() => !titleDoc.getElementById('status')
+    .classList.contains('stale'));
+  ok(titleDoc.title === STR.sealedTitle('titular'),
+     "arrival by URL: the tab reads the auction's name under the"
+     + " seal's glyph, got " + JSON.stringify(titleDoc.title));
+  gas.handle({ action: 'reveal', aname: 'titular' });  // from elsewhere
+  await until(() => titleDoc.getElementById('status')
+    .classList.contains('revealed'));
+  ok(titleDoc.title === STR.revealedTitle('titular'),
+     'the reveal flips the tab glyph: sealed and revealed tauctions'
+     + ' are tellable apart from the tab bar');
+  // the cached instant paint titles the tab too, before the live
+  // fetch lands (the same never-flash-blank promise as the roster)
+  const seededTitle = gas.handle({ action: 'state', aname: 'titular' });
+  mockDelay = 400;
+  const dWarmTitle = await makePage('/titular?api=' + API_URL, (win) =>
+    win.localStorage.setItem('tauction-state:titular',
+      JSON.stringify(seededTitle)));
+  ok(dWarmTitle.window.document.title === STR.revealedTitle('titular'),
+     'a returning browser titles the tab from the cached paint,'
+     + ' before the live fetch lands');
+  mockDelay = 0;
+  // the typed-name road runs through switchAuction, not init
+  const dTypedTitle = await makePage('/?api=' + API_URL);
+  type(dTypedTitle, 'aname', 'titulus');
+  commitName(dTypedTitle);
+  await until(() =>
+    dTypedTitle.window.location.pathname === '/titulus');
+  ok(dTypedTitle.window.document.title === STR.sealedTitle('titulus'),
+     'the typed-name road titles the tab the instant the name takes');
 
   /* --- 2. alice sets up /tau and bids in place; her bid stays visible --- */
   dom = await makePage('/tau?api=' + API_URL);
