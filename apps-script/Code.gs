@@ -564,17 +564,17 @@ function describe(req) {
 
 // The roster is CLOSED once revealed: the game is over, and a fresh
 // participant could neither bid meaningfully nor be waited on.
-// Adding an already-live label is an idempotent no-op (one seat per
-// person), matching the old one-seat-per-name behavior.
+// An exact pid retry is idempotent; a different pid carrying an
+// already-live label is a collision and refuses loudly.
 function addParticipant(req) {
   const aname = cleanAname(req.aname);
   const uname = cleanUname(req.uname);
   const pid = cleanPid(req.pid);
   if (getState(aname).revealed) throw rosterClosedCopy;
-  touchAuction(aname);
   if (seatIndex(aname, pid) === -1 && seatByName(aname, uname)) {
-    return getState(aname);  // that label is already seated: no-op
+    throw nameTakenCopy;
   }
+  touchAuction(aname);
   ensureSeat(aname, pid, uname);
   return getState(aname);
 }

@@ -388,18 +388,28 @@ st = call({ action: 'add', aname: 'muon', uname: 'a',
             pid: pid('muon', 'a') });
 st = call({ action: 'add', aname: 'muon', uname: 'a',
             pid: pid('muon', 'a') });
+ok(!st.error && names(st) === 'a',
+   'an exact same-pid add retry is idempotent');
 st = call({ action: 'add', aname: 'muon', uname: 'b',
             pid: pid('muon', 'b') });
 ok(names(st) === 'a,b', 'roster grows in insertion order');
 ok(ss.sheets['users'].data.filter(r => r[0] === 'muon').length === 2,
    'duplicate add: still one seat row');
-// adding a LIVE label under a fresh pid is the same no-op: one seat
-// per person, however many browsers type the name
+// Replicata: another browser submits a live label under its own fresh
+// pid. Expectata: this is a collision, not a retry, so it is refused
+// loudly without touching the sheet. Resultata pre-fix: it reported
+// success as a no-op and even bumped the auction's modification stamp.
+const collisionWrites = ctx.__tally.writes;
 st = call({ action: 'add', aname: 'muon', uname: 'a',
             pid: 'pid-muon-second-browser' });
-ok(!st.error && names(st) === 'a,b'
-   && ss.sheets['users'].data.filter(r => r[0] === 'muon').length === 2,
-   'adding an already-live label under a new pid mints no doppelganger');
+const afterCollision = call({ action: 'state', aname: 'muon' });
+ok(String(st.error) === COPY.nameTakenCopy
+   && names(afterCollision) === 'a,b'
+   && afterCollision.seats.find((s) => s.uname === 'a').pid
+        === pid('muon', 'a')
+   && ss.sheets['users'].data.filter(r => r[0] === 'muon').length === 2
+   && ctx.__tally.writes === collisionWrites,
+   'a live label under a different pid is refused loudly and atomically');
 ok(ss.sheets['auctions'].data.filter(r => r[0] === 'muon').length === 1,
    'one auctions row per auction');
 st = call({ action: 'remove', aname: 'muon', pid: pid('muon', 'a') });

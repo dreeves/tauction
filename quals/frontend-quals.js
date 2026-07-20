@@ -1237,6 +1237,32 @@ const cssBattles = [];
   ok(!domQ.window.document.getElementById('status').classList.contains('stale'),
      'box settles unstale after the queued ops');
 
+  /* --- 2d2. a stale duplicate add refuses loudly -----------------------
+     Replicata: a page loads an empty ledger; another browser seats
+     alice; before the stale page polls, it submits alice under its own
+     fresh pid. Expectata: the stale request is refused by name, the
+     losing row is discarded, and the winning row is adopted. Resultata
+     pre-fix: the server called it success and hid the collision. */
+  const dAddRace = await makePage('/addrace?api=' + API_URL);
+  const remoteAddPid = 'pid-addrace-remote-alice';
+  gas.handle({ action: 'add', aname: 'addrace', uname: 'alice',
+    pid: remoteAddPid });
+  addName(dAddRace, 'alice');
+  const addRaceDoc = dAddRace.window.document;
+  await until(() => {
+    const r = row(addRaceDoc, 'alice');
+    return r && r.dataset.pid === remoteAddPid
+      && !addRaceDoc.getElementById('status').classList.contains('stale');
+  });
+  const addRaceState = gas.handle({ action: 'state', aname: 'addrace' });
+  ok(!addRaceDoc.getElementById('banner').hidden
+     && addRaceDoc.getElementById('banner-msg').textContent
+          === SCOPY.nameTakenCopy
+     && !row(addRaceDoc, 'alice').classList.contains('mine')
+     && addRaceState.seats.length === 1
+     && addRaceState.seats[0].pid === remoteAddPid,
+     'the stale duplicate gets loud refusal and adopts the winning row');
+
   /* --- 2e. a name you typed must never vanish ----------------------------
      Replicata: add a name after a poll's GET has left but before its
      response lands; wait out the 4s edit shield so the stale response is
