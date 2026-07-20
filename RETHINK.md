@@ -92,7 +92,7 @@ the count itself is the maintenance burden, and it is why bug-fixing
 here can feel like whack-a-mole even when each fix is sound. The plan
 below is ordered by how many concepts each move deletes.
 
-## 4. The big one: finish the pid migration (deletes #6, half of #7 and #10)
+## 4. ✅ DONE 2026-07-19 — the pid migration (deleted #6, half of #7 and #10)
 
 The rename-transaction machinery — the subtlest code in the app —
 exists only because **a name IS an identity**. The pid spec at the
@@ -107,7 +107,7 @@ already accepted in the spec (delete the tabs pre-launch; Code.gs
 rebuilds). **This is the single highest-leverage change available.**
 (L; needs dreev's green light + one tab reset.)
 
-## 5. Medium move: make the empty state representable (deletes #8 and #11)
+## 5. ✅ DONE 2026-07-19 — the arrival edge (deleted #8; #11 shrank to one named guard)
 
 `state === null` on a named page forces guards in me()/slotUnames and
 defers optimistic paints; the one-shot latches exist because renders
@@ -117,7 +117,9 @@ revealed) folds four ad-hoc booleans into one named thing and was
 already identified (and deferred) during the cold-page crash fix.
 (M; no behavior change intended, so the suite carries it.)
 
-## 6. The submit-on-blur question (dreev's unease, addressed honestly)
+## 6. ✅ RULED 2026-07-19 — the submit-on-blur question (dreev chose
+the middle path: the commit pulse, shipped; and banners went sticky
+with an × — the 5s self-destruct is gone)
 
 The app's commit gestures today:
 
@@ -180,10 +182,20 @@ all are listed so they're chosen, not forgotten.
    became a cut FLAG (rows keep name+pid), and relatch became spec
    option (b). Suite: 646 assertions green.]**
 2. **Sequence counters for write adoption** (S) — kills the last
-   clock-as-logic.
+   clock-as-logic. **[DONE 2026-07-19: writeSeq/settleSeq; the
+   NTP-stepped-clock replicata pinned it red first.]**
 3. **Representable empty state + latch fold** (M) — after pids.
+   **[DONE 2026-07-19: one `adopted` arrival edge replaced
+   caretPlaced, descModeSet, and wasRevealed's null sentinel; two
+   characterization pins guard the witnessed-reveal and cached-caret
+   arrival semantics.]**
 4. **Commit-flash feedback** (S–M) — only if §6's principle alone
-   doesn't settle the unease.
-5. **Banner auto-hide policy** (XS) — dreev's taste call.
+   doesn't settle the unease. **[DONE 2026-07-19: dreev ruled for the
+   pulse — one shimmer-green glow on the field the instant its write
+   queues; refused/no-op gestures never pulse.]**
+5. **Banner auto-hide policy** (XS) — dreev's taste call. **[DONE
+   2026-07-19: dreev ruled sticky + × — the 5s self-destruct is
+   deleted; a banner leaves by its ×, by newer news, or when a
+   successful settle retires it.]**
 6. The norms, already in force: delete-first bug fixing; replicata
    batteries, not single pins.

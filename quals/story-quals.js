@@ -200,12 +200,22 @@ async function bid(page, bidText) {
       && document.getElementById('desctoggle').textContent.length > 0),
        'clicking away commits and renders rich (h1 + bold); the'
        + ' pencil appears, the only way back to the source');
+    // the commit pulse tints the card green for a beat (your words
+    // are away); the resting look this pin is about arrives when the
+    // pulse fades — so outwait it, and bank that it fired at all
+    await alice.waitForFunction(() => {
+      const box = getComputedStyle(document.getElementById('desc'));
+      return box.backgroundColor === 'rgba(0, 0, 0, 0)';
+    });
     ok(await alice.evaluate(() => {
       const box = getComputedStyle(document.getElementById('desc'));
       return box.borderTopColor === 'rgba(0, 0, 0, 0)'
-        && box.backgroundColor === 'rgba(0, 0, 0, 0)';
-    }), 'and the rendered blurb sheds its box: prose on the page, not'
-       + ' a field — the box itself says "editable here" (dreev)');
+        && box.backgroundColor === 'rgba(0, 0, 0, 0)'
+        && document.getElementById('desc').classList
+             .contains('committed');
+    }), 'and the rendered blurb pulses its commit, then sheds its box:'
+       + ' prose on the page, not a field — the box itself says'
+       + ' "editable here" (dreev)');
 
     await alice.reload({ waitUntil: 'networkidle0' });
     await alice.waitForSelector('#tiles');

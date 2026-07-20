@@ -46,7 +46,12 @@
   </div>
 
 
-  <div id="banner" hidden></div>
+  <!-- banners STICK (no self-destruct timer): the message span takes
+       text (or, for dead-end signs, app-built markup); the × is the
+       reader's own dismiss -->
+  <div id="banner" hidden><span id="banner-msg"></span><button
+    id="banner-x" type="button" tabindex="-1"
+    aria-label="Close">×</button></div>
   <!-- THE tooltip: one for the whole app, parked at body level and
        positioned by Floating UI — never a descendant of what it
        describes, so no stacking context, overflow clip, or z battle
@@ -116,7 +121,7 @@
     <!-- tabindex: tab is for editable fields; the link stays clickable -->
     <a href="/sourcery.html" tabindex="-1">sourcery</a>
     <span class="sep">·</span>
-    <span class="version">v2026.07.19-a</span>
+    <span class="version">v2026.07.19-b</span>
   </footer>
 </main>
 

@@ -50,26 +50,36 @@ async function apiPost(body) {
   return r.json();
 }
 
-let bannerTimer = null;
+// Banners STICK (dreev's ruling, 2026-07-19): a timer must not
+// snatch bad news while you read — the old 5s self-destruct is gone.
+// A banner leaves exactly three ways: its × (wired in wireUp), a
+// newer banner replacing it, or a later successful settle retiring
+// it (settleWrite). Server and user text comes here, through
+// textContent — never markup.
 function banner(msg, kind) {
-  const b = $('banner');
-  b.textContent = msg;
-  b.className = kind || 'err';
-  b.hidden = false;
-  clearTimeout(bannerTimer);
-  bannerTimer = setTimeout(() => { b.hidden = true; }, 5000);
+  $('banner-msg').textContent = msg;
+  $('banner').className = kind || 'err';
+  $('banner').hidden = false;
 }
 
-// A dead-end sign: stays up until replaced or explicitly cleared (a
-// timer must not snatch it while you read — dreev). innerHTML, for
-// the link inside; ONLY app-built markup may come here, never server
-// or user text (that all goes through banner()'s textContent).
-function stickyBanner(html) {
-  const b = $('banner');
-  b.innerHTML = html;
-  b.className = 'err';
-  b.hidden = false;
-  clearTimeout(bannerTimer);
+// The dead-end-sign variant: innerHTML, for the link inside; ONLY
+// app-built markup may come here, never server or user text (that
+// all goes through banner()'s textContent).
+function linkBanner(html) {
+  $('banner-msg').innerHTML = html;
+  $('banner').className = 'err';
+  $('banner').hidden = false;
+}
+
+// THE COMMIT PULSE (dreev's ruling, 2026-07-19): the instant a
+// gesture queues a write, flash the field it happened in — submit-
+// button legibility without submit buttons; the outgoing twin of the
+// incoming shimmer. Only ever called where a write actually queues:
+// a pulse on a refused or no-op gesture would be a lie.
+function flashCommit(node) {
+  node.classList.remove('committed');  // the shimmer's same remove-
+  void node.offsetWidth;               // reflow-add dance: back-to-
+  node.classList.add('committed');     // back commits restart it
 }
 
 /* ------------------------------- state -------------------------------- */
@@ -81,17 +91,30 @@ let seats = [];           // local working copy of the seats: one
                           // — the pid is the IDENTITY (2026-07-19,
                           // dreev's spec), the uname just its label
 let seen = umap();        // pid -> updated stamp at last render (shimmer)
-let wasRevealed = null;   // reveal state at last render (null = unknown)
-let lastWriteAt = 0;      // when this client last STARTED a write (bid,
-                          // add/remove, claim, reveal); of concurrent
-                          // write responses, only the newest is adopted
+let wasRevealed = false;  // reveal state at last render
+let adopted = false;      // THE ARRIVAL EDGE: has any snapshot —
+                          // cached or live — been adopted for this
+                          // auction? The one-shot arrival effects
+                          // (caret landing, description mode choice,
+                          // no-fanfare-for-latecomers) all key off
+                          // the first render where this is false;
+                          // one named edge, not a latch apiece
+                          // (2026-07-19, folding caretPlaced,
+                          // descModeSet, and wasRevealed's null)
+let writeSeq = 0;         // bumped when a write STARTS (bid, add/
+                          // remove, claim, reveal): of concurrent
+                          // write responses, only the newest — the
+                          // one holding the latest seq — is adopted.
+                          // Sequence counters, never wall clocks:
+                          // Date.now() is not monotonic (NTP steps
+                          // it), and a stepped clock froze adoption
 let writesPending = 0;    // writes queued or in flight, of any kind
-let writeSettledAt = 0;   // when the last write's response arrived: a
-                          // read snapshot is trustworthy only if it was
-                          // requested after that (the server may not
-                          // have committed a write before then)
+let settleSeq = 0;        // bumped when a write SETTLES: a read
+                          // snapshot is trustworthy only if no
+                          // settle landed between its request and
+                          // its response (the server may not have
+                          // committed a write before then)
 let refreshing = false;
-let caretPlaced = false;  // the on-arrival focus into your editor fired
 
 // This browser's anonymous device id. Claims are keyed by it on the
 // server, so every page agrees who's taken — two machines can no longer
@@ -253,18 +276,16 @@ async function refresh() {
   if (!configured || refreshing || !aname) return;
   refreshing = true;
   const a = aname;  // the auction this request is for
-  const started = Date.now();
+  const seqAtRequest = settleSeq;
   try {
     const res = await apiGet({ action: 'state', aname: a });
     if (res.error) banner(res.error);
-    // adopt only if no writes are pending and this snapshot was requested
-    // no earlier than the last write settled — anything less and it can
-    // lack a name you just added or a bid you just placed (the server
-    // commits a write somewhere between our send and its response). >=
-    // because a settle's own recovery fetch goes out in the same
-    // millisecond it stamps, and a read issued after a settle is safe.
+    // adopt only if no writes are pending and no write SETTLED while
+    // this snapshot was in flight — anything less and it can lack a
+    // name you just added or a bid you just placed (the server
+    // commits a write somewhere between our send and its response)
     else if (res.aname === aname && writesPending === 0
-             && started >= writeSettledAt) { ingest(res); render(); }
+             && settleSeq === seqAtRequest) { ingest(res); render(); }
   } catch (e) {
     banner(e2152(e.message));
   } finally {
@@ -284,6 +305,7 @@ function render() {
   seats = state.seats.map((s) => ({ pid: s.pid, uname: s.uname }));
   renderStatus();
   renderDesc();
+  adopted = true;  // the arrival edge is consumed exactly once
   $('status').classList.remove('stale');  // server truth is on screen
 }
 
@@ -293,7 +315,6 @@ function render() {
 // progress, warn once and RE-BASE the draft — your next save, made
 // informed, wins (the server's compare-and-swap remains the backstop
 // for sub-poll races).
-let descModeSet = false;  // initial mode chosen once per auction
 function renderDesc() {
   const view = $('descview');
   const edit = $('descedit');
@@ -314,8 +335,7 @@ function renderDesc() {
     edit.classList.add('error');  // the banner is global; the problem
                                   // is this field (cleared on input)
   }
-  if (!descModeSet) {
-    descModeSet = true;
+  if (!adopted) {  // the arrival picks the mode, once per auction
     $('desc').classList.toggle('viewing', state.blurb !== '');
   }
 }
@@ -365,6 +385,7 @@ function commitDesc() {
     const view = $('descview');
     view.dataset.md = draft;
     view.innerHTML = mdRender(draft);
+    flashCommit($('desc'));  // the card glows: your words are away
   }
   $('desc').classList.toggle('viewing', edit.value !== '');
 }
@@ -442,9 +463,11 @@ function renderStatus() {
 
   const box = $('status');
   box.classList.toggle('revealed', state.revealed);
-  box.classList.toggle('just-revealed',
-    wasRevealed === false && state.revealed);
-  if (wasRevealed === false && state.revealed) celebrate();
+  // fanfare belongs to the WITNESSED false->true flip: a latecomer's
+  // arrival render (the adopted edge) sets the baseline silently
+  const justNow = adopted && wasRevealed === false && state.revealed;
+  box.classList.toggle('just-revealed', justNow);
+  if (justNow) celebrate();
   wasRevealed = state.revealed;
 
   const mine = mypid();
@@ -532,8 +555,7 @@ function renderStatus() {
   // signal (no placeholder words, no pulse). One attempt per auction,
   // and only from an idle page — never stealing focus from a field
   // the user is in, and never re-grabbing it mid-session.
-  if (!caretPlaced) {
-    caretPlaced = true;
+  if (!adopted) {
     const editor = tiles.querySelector(
       '.tile.mine:not(.has-bid) .rebid input');
     if (editor && document.activeElement === document.body) editor.focus();
@@ -1017,6 +1039,7 @@ function commitRename(pid, raw, field) {
     return;
   }
   seat.uname = to;  // the optimistic label; server truth re-adopts
+  flashCommit(field);
   // a server-side refusal (a stale-roster race the local guard can't
   // see) reddens the field too; the recovery snapshot restores the
   // label itself
@@ -1074,6 +1097,7 @@ async function placeBid(pid, form) {
   if (!bid) { input.classList.add('error'); return; }
   input.dataset.sent = bid;  // this exact text is on its way: the
                              // blur that follows an enter is a no-op
+  flashCommit(input);  // the pulse marks the SUBMIT, not the settle
   // The editor stays HOT during flight: down to the wire you can
   // change your mind and resubmit while the last bid still flies.
   // Bids ride the op chain, so submissions land in the order you made
@@ -1192,12 +1216,11 @@ function queueLazyOp(request, onRefusal, onSuccess = () => {}) {
   });
 }
 
-// Bookkeeping for starting any write; returns the write's birth stamp
+// Bookkeeping for starting any write; returns the write's birth seq
 // for settleWrite's last-write-standing test
 function startWrite() {
-  lastWriteAt = Date.now();
   writesPending++;
-  return lastWriteAt;
+  return ++writeSeq;
 }
 
 // Every write response funnels here. Only the LAST write standing gets
@@ -1211,7 +1234,7 @@ function startWrite() {
 function settleWrite(res, at, onRefusal) {
   writesPending--;
   assert(writesPending >= 0, 'write bookkeeping went negative');
-  writeSettledAt = Date.now();
+  settleSeq++;
   if (res && res.error) {
     // Disclosed if: losing a seat race (ERROR1304) is normal auction
     // physics, not an exceptional failure — the recovery snapshot
@@ -1221,8 +1244,12 @@ function settleWrite(res, at, onRefusal) {
     if (onRefusal) onRefusal();
     res = null;
   }
+  // Disclosed if: a SUCCESSFUL settle retires stale bad news — the
+  // question the banner answered is over (the durable signal, a red
+  // field, stays). One of the three exits of a sticky banner.
+  if (res) $('banner').hidden = true;
   if (writesPending > 0) return;
-  if (res && res.aname === aname && at === lastWriteAt) {
+  if (res && res.aname === aname && at === writeSeq) {
     ingest(res);
     render();
   } else {
@@ -1332,7 +1359,7 @@ async function switchAuction(a) {
     if (res.error) { banner(res.error); return; }
     assertState(res);
     if (res.exists) {
-      stickyBanner(auctionExistsBanner('/' + a));
+      linkBanner(auctionExistsBanner('/' + a));
       return;
     }
     aname = a;
@@ -1352,9 +1379,8 @@ async function switchAuction(a) {
     state = null;
     seats = [];
     seen = umap();
-    wasRevealed = null;
-    caretPlaced = false;  // the new auction gets its own arrival focus
-    descModeSet = false;  // and picks its description mode afresh
+    wasRevealed = false;
+    adopted = false;  // the new auction gets its own arrival edge
     ingest(res);  // the probe IS a live snapshot: paint it, no refetch
     render();
   } catch (e) {
@@ -1420,6 +1446,11 @@ function wireUp() {
     showTip();
   });
 
+  // the sticky banner's ×: bad news leaves when YOU say so (or when
+  // newer news or a successful settle replaces it) — never a timer
+  $('banner-x').addEventListener('click', () => {
+    $('banner').hidden = true;
+  });
   $('seal').addEventListener('click', pressReveal);
   $('desctoggle').addEventListener('click', editDesc);
   $('descedit').addEventListener('blur', commitDesc);
@@ -1458,7 +1489,11 @@ function wireUp() {
         || $('aname').value === '') return;
     const wasTab = e.key === 'Tab';
     e.preventDefault();
-    await switchAuction(sanAname($('aname').value));
+    const want = sanAname($('aname').value);
+    await switchAuction(want);
+    // the pulse only if the name TOOK (a gate refusal keeps the
+    // field pulseless beside its banner)
+    if (aname === want) flashCommit($('aname'));
     if (aname !== '' && wasTab) $('descedit').focus();
   });
 
@@ -1473,6 +1508,9 @@ function wireUp() {
   // caret here for the next name.
   const commitAdd = () => {
     const added = addName();
+    // pulse iff a write queued (addName returns '' on every refusal
+    // and no-op; the taken-seat path queues a claim, so it counts)
+    if (added !== '') flashCommit($('roster-input'));
     const t = rowNodes[added];
     if (t && t.classList.contains('mine')) {
       t.querySelector('.rebid input').focus();

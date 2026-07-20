@@ -287,7 +287,25 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   padding: 0.55rem 0.8rem;
   font-size: 0.9rem;
   box-shadow: var(--pop);
+  display: flex;         /* message | × */
+  align-items: baseline;
+  gap: 0.6rem;
 }
+#banner[hidden] { display: none; }  /* hidden must beat the flex */
+#banner-msg { flex: 1; }
+
+/* the sticky banner's dismiss: quiet, inked like its message */
+#banner-x {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: inherit;
+  opacity: 0.7;
+}
+#banner-x:hover { opacity: 1; }
 
 #banner.err { background: var(--err-bg); color: var(--err-fg); }
 #banner.ok { background: var(--ok-bg); color: var(--ok-fg); }
@@ -992,6 +1010,14 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   from { background-position: 130% 0; }
   to   { background-position: -130% 0; }
 }
+
+/* THE COMMIT PULSE (dreev's ruling, 2026-07-19): the instant a
+   gesture queues a write, the field it happened in glows the shimmer
+   green once and fades — the outgoing twin of the incoming shimmer
+   (sweep = their news arrived, glow = yours is away). One keyframe:
+   from the tint back to whatever the field's resting background is. */
+.committed { animation: commit-pulse 0.6s ease-out; }
+@keyframes commit-pulse { from { background-color: var(--shimmer); } }
 
 /* Empty slots breathe slowly: unmistakably awaiting a bid, unmistakably
    not a loading spinner. (Both pieces breathe; the tile carries the

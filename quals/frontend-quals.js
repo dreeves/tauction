@@ -558,8 +558,8 @@ const cssBattles = [];
   await until(() => !dProbeError.window.document
     .getElementById('banner').hidden);
   ok(dProbeError.window.location.pathname === '/'
-     && dProbeError.window.document.getElementById('banner').textContent
-          === SCOPY.nameTakenCopy,
+     && dProbeError.window.document.getElementById('banner-msg')
+          .textContent === SCOPY.nameTakenCopy,
      'a typed-name probe displays res.error verbatim and stays put');
 
   /* Replicata: an active typed-name probe returns a state payload from
@@ -638,7 +638,7 @@ const cssBattles = [];
   mockDelay = 300;
   renameTo(dRen, 'alice', 'beta');
   renameTo(dRen, 'beta', 'gamma');
-  ok(row(dRen.window.document, 'gamma') !== undefined
+  ok(row(dRen.window.document, 'gamma') !== null
      && row(dRen.window.document, 'gamma').classList.contains('mine')
      && dRen.window.localStorage.getItem('tauction-mybids:renops')
           === '{"pid-renops-alice":"alice bid"}'
@@ -672,7 +672,7 @@ const cssBattles = [];
   await settled(dRen);
   ok(dRen.window.document.getElementById('banner').textContent
        .includes(SCOPY.nameTakenCopy)
-     && row(dRen.window.document, 'gamma') !== undefined
+     && row(dRen.window.document, 'gamma') !== null
      && row(dRen.window.document, 'gamma')
           .querySelector('.rename input').classList.contains('error')
      && row(dRen.window.document, 'gamma')
@@ -1222,6 +1222,32 @@ const cssBattles = [];
   ok(names(gas.handle({ action: 'state', aname: 'keepname' }))
      === 'uno,dos', 'both names reach the server');
 
+  /* --- 2e2. the wall clock is not a logic input ------------------------
+     Replicata: a write settles; the machine's clock then steps BACK
+     (NTP does this — wall clocks are not monotonic); someone else's
+     edit lands and the next poll fetches it. Resultata pre-fix: the
+     adoption gate compared the poll's request TIME to the last
+     write's settle TIME, so every post-stepback poll looked older
+     than the settle and was rejected — the remote edit stayed
+     invisible until the clock caught back up (ten stubbed minutes
+     here, so no poll can sneak past inside this qual). Expectata:
+     adoption is gated on SEQUENCE, not clocks; the next poll
+     adopts. */
+  gas.handle({ action: 'add', aname: 'clockstep',
+    uname: 'ann', pid: 'pid-clockstep-ann' });
+  const dClock = await makePage('/clockstep?api=' + API_URL);
+  addName(dClock, 'bee');       // a write, so a settle gets recorded
+  await settled(dClock);
+  const realNow = dClock.window.Date.now;
+  dClock.window.Date.now = () => realNow() - 600000;  // NTP steps back
+  gas.handle({ action: 'add', aname: 'clockstep',
+    uname: 'cee', pid: 'pid-clockstep-cee' });  // the remote edit
+  await until(() => row(dClock.window.document, 'cee') !== null);
+  ok(row(dClock.window.document, 'cee') !== null,
+     'a backwards clock step cannot freeze snapshot adoption: the'
+     + ' next poll still adopts the remote edit');
+  dClock.window.Date.now = realNow;
+
   /* --- 2w. the cold-page double-add must not dead-key --------------------
      Replicata: first-ever visit to an auction URL (no cache to paint)
      on a slow server; type your name, enter. No snapshot has landed,
@@ -1274,7 +1300,7 @@ const cssBattles = [];
   nameInp.dispatchEvent(new domT2.window.Event('blur'));
   // [dreev FLIPPED the old enter-only-commit pin 2026-07-17: mobile
   // users never hit enter — clicking/tapping away now SAVES]
-  await until(() => row(docT2, 'wronger') !== undefined);
+  await until(() => row(docT2, 'wronger') !== null);
   ok(!row(docT2, 'alicw') && row(docT2, 'wronger'),
      'clicking away SAVES the rename, like every field edit');
   renameTo(domT2, 'wronger', 'alice');
@@ -1341,6 +1367,22 @@ const cssBattles = [];
   const docK = domK.window.document;
   ok(docK.activeElement === myInput(docK),
      'arriving claimed and bidless: the caret is already in your editor');
+  // the CACHED paint is an arrival too: with the live fetch still in
+  // flight, the caret lands from the cached snapshot (pinned before
+  // folding the arrival latches into the one adopted-edge)
+  const caretSnap = JSON.stringify(
+    gas.handle({ action: 'state', aname: 'caret' }));
+  mockDelay = 800;
+  const domKc = await makePage('/caret?api=' + API_URL, (w) => {
+    seedK(w);
+    w.localStorage.setItem('tauction-state:caret', caretSnap);
+  });
+  ok(domKc.window.document.activeElement
+       === myInput(domKc.window.document),
+     'a cache-painted arrival seats the caret before the live fetch'
+     + ' even lands');
+  mockDelay = 0;
+  await settled(domKc);
   myInput(docK).blur();
   const pollsK = apiCalls.filter((c) => c.action === 'state'
     && c.aname === 'caret').length;
@@ -2154,12 +2196,13 @@ const cssBattles = [];
   await until(() => !dPwa.window.document.getElementById('banner').hidden);
   const gateLink = dPwa.window.document.querySelector('#banner a');
   ok(gateLink && gateLink.getAttribute('href') === '/occupied'
-     && dPwa.window.document.getElementById('banner').textContent
+     && dPwa.window.document.getElementById('banner-msg').textContent
           === STR.auctionExistsBanner('/occupied')
               .replace(/<[^>]+>/g, ''),
      'the exists-banner offers the URL as a real LINK (a PWA has no'
      + ' URL bar to fall back on), in dreev\'s words');
-  await sleep(5300);  // outlive the ordinary banner timer
+  await sleep(5300);  // outlives the RETIRED 5s self-destruct (this
+                      // pin predates all banners going sticky)
   ok(!dPwa.window.document.getElementById('banner').hidden,
      'and the dead-end sign does NOT dismiss itself (dreev: you are'
      + ' stuck until you act on it)');
@@ -2321,7 +2364,7 @@ const cssBattles = [];
   dSelf.window.document.getElementById('roster-input').dispatchEvent(
     new dSelf.window.KeyboardEvent('keydown',
       { key: 'Tab', bubbles: true, cancelable: true }));
-  ok(row(dSelf.window.document, 'gwen') !== undefined
+  ok(row(dSelf.window.document, 'gwen') !== null
      && !row(dSelf.window.document, 'gwen').classList.contains('mine')
      && dSelf.window.document.activeElement
           === dSelf.window.document.getElementById('roster-input'),
@@ -2353,7 +2396,7 @@ const cssBattles = [];
   bobInp.dispatchEvent(new dRn.window.Event('blur'));
   await settled(dRn);
   ok(dRn.window.document.getElementById('banner').hidden
-     && row(dRn.window.document, 'bob123') !== undefined
+     && row(dRn.window.document, 'bob123') !== null
      && names(gas.handle({ action: 'state', aname: 'freshren' })).includes('bob123'),
      'enter-then-blur renames ONCE: no false "taken" (the trailing'
      + ' commit of a row already renamed away is a stale event, not'
@@ -2467,7 +2510,7 @@ const cssBattles = [];
   dAdd.window.document.getElementById('roster-input').dispatchEvent(
     new dAdd.window.Event('blur'));
   await settled(dAdd);
-  ok(row(dAdd.window.document, 'gala') !== undefined
+  ok(row(dAdd.window.document, 'gala') !== null
      && row(dAdd.window.document, 'gala').classList.contains('mine')
      && dAdd.window.document.activeElement
           === myInput(dAdd.window.document),
@@ -2545,6 +2588,7 @@ const cssBattles = [];
      'padlock unlocks when the roster is complete');
   ok(seal2.getAttribute('data-tip') === STR.revealTip,
      'everyone in: the tip offers the reveal');
+  const preRevealTau = gas.handle({ action: 'state', aname: 'tau' });
   mockDelay = 150;
   seal2.click();
   ok(doc2.getElementById('status').classList.contains('stale'),
@@ -2713,6 +2757,23 @@ const cssBattles = [];
      && late.window.document.getElementById('status').textContent
        .includes('$40 and my dignity'),
      'a fresh window sees both revealed bids as cards');
+  // ...but a STALE-CACHED window is a witness, not a latecomer: its
+  // cache painted the auction still sealed, so the live snapshot's
+  // reveal is news it watched arrive — fanfare and all (pinned as a
+  // characterization of the arrival-latch semantics before folding
+  // the latches into the one adopted-edge, 2026-07-19)
+  const staleSeed = JSON.stringify(preRevealTau);
+  const domStale = await makePage('/tau?api=' + API_URL, (w) =>
+    w.localStorage.setItem('tauction-state:tau', staleSeed));
+  await until(() => domStale.window.document.getElementById('status')
+    .classList.contains('revealed'));
+  ok(domStale.window.document.getElementById('status').classList
+       .contains('just-revealed'),
+     'a stale-unrevealed cache makes the arrival a WITNESSED reveal:'
+     + ' the ceremony fires');
+  await until(() => domStale.window.__confettiCalls.length > 0);
+  ok(domStale.window.__confettiCalls.length > 0,
+     '...money and all (the strike lands at its usual beat)');
 
   // the ceremony self-cleans: nothing left in the DOM afterward
   await sleep(4100);  // FETE_MS
@@ -3155,14 +3216,14 @@ const cssBattles = [];
   ok(domG.window.location.pathname === '/',
      'typing an occupied name does not navigate');
   ok(!domG.window.document.getElementById('banner').hidden
-     && domG.window.document.getElementById('banner').textContent
+     && domG.window.document.getElementById('banner-msg').textContent
           === STR.auctionExistsBanner('/fresh1').replace(/<[^>]+>/g, ''),
      "the refusal says why, in dreev's words");
   ok(!domG.window.document.getElementById('status').classList
        .contains('stale'),
      'the old ledger comes back to life after the refusal');
   // dreev saw (or thought he saw) a SILENT failure once: pin that a
-  // repeat attempt after the banner auto-hides banners again
+  // repeat attempt after the banner is dismissed banners again
   domG.window.document.getElementById('banner').hidden = true;
   type(domG, 'aname', 'occupied');
   commitName(domG);
@@ -3185,6 +3246,111 @@ const cssBattles = [];
      + ' auction');
   ok(domWeird.window.location.search.includes('api='),
      '?api= preserved on the fresh-auction redirect');
+
+  /* --- 7. the commit pulse: a gesture visibly TAKES (dreev's ruling,
+     2026-07-19: submit-button legibility without submit buttons — a
+     one-shot ring on the field the instant its write queues; the
+     outgoing twin of the incoming shimmer). The negatives matter as
+     much as the positives: a gesture that queues NOTHING must never
+     flash, or the pulse becomes a lie. ------------------------------- */
+  const dPulse = await makePage('/?api=' + API_URL);
+  const pdoc = dPulse.window.document;
+  // negative first: naming an OCCUPIED auction is refused at the gate
+  type(dPulse, 'aname', 'occupied');
+  commitName(dPulse);
+  await until(() => !pdoc.getElementById('banner').hidden);
+  ok(!pdoc.getElementById('aname').classList.contains('committed'),
+     'a gate-refused name does not pulse: nothing was committed');
+  // positive: a fresh name takes, and the field says so
+  type(dPulse, 'aname', 'pulse');
+  commitName(dPulse);
+  await until(() =>
+    pdoc.getElementById('aname').classList.contains('committed'), 2000);
+  ok(pdoc.getElementById('aname').classList.contains('committed'),
+     'a name that takes pulses once: the commit is visible');
+  // the + row: an add queues a write and pulses; junk does not
+  addName(dPulse, 'pip');
+  ok(pdoc.getElementById('roster-input').classList.contains('committed'),
+     'adding a person pulses the + row the instant the write queues');
+  await settled(dPulse);
+  pdoc.getElementById('roster-input').classList.remove('committed');
+  addName(dPulse, '@#$%');
+  ok(!pdoc.getElementById('roster-input').classList.contains('committed')
+     && pdoc.getElementById('roster-input').classList.contains('error'),
+     'junk in the + row reddens but never pulses: no write queued');
+  // the bid editor: an empty submit is a local slip (no pulse); a
+  // real bid pulses at submit time, before any response lands
+  typeBid(dPulse, '');
+  submitBid(dPulse);
+  ok(!myInput(pdoc).classList.contains('committed')
+     && myInput(pdoc).classList.contains('error'),
+     'an empty bid reddens but never pulses');
+  typeBid(dPulse, '7 tacos');
+  submitBid(dPulse);
+  ok(myInput(pdoc).classList.contains('committed'),
+     'a bid pulses the moment it is away, not when the server answers');
+  await settled(dPulse);
+  // a rename: same-name snap-back is a non-event; a real edit pulses
+  renameTo(dPulse, 'pip', 'pip');
+  ok(!row(pdoc, 'pip').querySelector('.rename input').classList
+       .contains('committed'),
+     'a rename to the same name snaps back without a pulse');
+  renameTo(dPulse, 'pip', 'quinn');
+  ok(row(pdoc, 'quinn').querySelector('.rename input').classList
+       .contains('committed'),
+     'a real rename pulses its field');
+  await settled(dPulse);
+  // the description: an untouched blur commits nothing; a dirty blur
+  // saves, and the card ring says so
+  const pedit = pdoc.getElementById('descedit');
+  pedit.dispatchEvent(new dPulse.window.Event('blur'));
+  ok(!pdoc.getElementById('desc').classList.contains('committed'),
+     'an untouched description blur commits nothing and shows nothing');
+  pedit.value = 'pulse notes';
+  pedit.dispatchEvent(new dPulse.window.Event('blur'));
+  ok(pdoc.getElementById('desc').classList.contains('committed'),
+     'a dirty description blur saves and pulses the card');
+  await settled(dPulse);
+
+  /* --- 8. banners STICK (dreev's ruling, 2026-07-19): bad news stays
+     until dismissed by its × or retired by a later successful settle —
+     no timer may snatch it while you read. --------------------------- */
+  const dStick = await makePage('/?api=' + API_URL);
+  const sdoc = dStick.window.document;
+  type(dStick, 'aname', 'stick');
+  commitName(dStick);
+  await until(() => dStick.window.location.pathname === '/stick');
+  addName(dStick, 'sam');    // mine (the fresh-add latch)
+  addName(dStick, 'tara');   // a guest
+  await settled(dStick);
+  // capture everything the page schedules while the bad news arrives:
+  // a self-destruct timer here is the exact bug this section outlaws
+  const scheduled = [];
+  const pageSetTimeout = dStick.window.setTimeout;
+  dStick.window.setTimeout = function (fn, ms) {
+    scheduled.push(ms);
+    return pageSetTimeout.apply(this, arguments);
+  };
+  renameTo(dStick, 'tara', 'sam');  // local collision: instant bad news
+  dStick.window.setTimeout = pageSetTimeout;
+  ok(!sdoc.getElementById('banner').hidden
+     && !scheduled.some((ms) => ms >= 1000),
+     'bad news arrives with NO self-destruct scheduled: it waits to be'
+     + ' read');
+  // the × dismisses (short-circuit: the click only fires if the
+  // button exists, so a missing × fails the assert, not the run)
+  const bx = sdoc.getElementById('banner-x');
+  ok(bx !== null && (bx.click(), sdoc.getElementById('banner').hidden),
+     'the banner carries its own × and the × dismisses it');
+  // a later SUCCESSFUL settle retires stale bad news (the error it
+  // answered is over; the durable signal — the red field — remains)
+  renameTo(dStick, 'tara', 'sam');  // bad news again
+  ok(!sdoc.getElementById('banner').hidden, 'the collision banners again');
+  renameTo(dStick, 'tara', 'uma');  // a good op
+  await settled(dStick);
+  ok(sdoc.getElementById('banner').hidden
+     && row(sdoc, 'uma') !== null,
+     'a successful settle retires the stale banner');
 
   console.log('frontend-quals: all ' + passed + ' assertions passed');
   process.exit(0);
