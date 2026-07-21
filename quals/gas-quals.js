@@ -396,20 +396,24 @@ ok(names(st) === 'a,b', 'roster grows in insertion order');
 ok(ss.sheets['users'].data.filter(r => r[0] === 'muon').length === 2,
    'duplicate add: still one seat row');
 // Replicata: another browser submits a live label under its own fresh
-// pid. Expectata: this is a collision, not a retry, so it is refused
-// loudly without touching the sheet. Resultata pre-fix: it reported
-// success as a no-op and even bumped the auction's modification stamp.
+// pid (two people type alice). Expectata (dreev 2026-07-21, reversing
+// the 07-20 loud refusal — the error read as wrong when alice WAS
+// added, exactly as requested): the goal state already holds, so this
+// is idempotent SUCCESS — no error, no doppelganger, zero sheet
+// writes, not even a tmod bump; the loser's pid stays unseated and
+// they converge as an ordinary latecomer. Renames onto a live label
+// still refuse: their goal is a CHANGE, which genuinely didn't
+// happen. Resultata pre-flip: it threw nameTakenCopy at a satisfied
+// request.
 const collisionWrites = ctx.__tally.writes;
 st = call({ action: 'add', aname: 'muon', uname: 'a',
             pid: 'pid-muon-second-browser' });
-const afterCollision = call({ action: 'state', aname: 'muon' });
-ok(String(st.error) === COPY.nameTakenCopy
-   && names(afterCollision) === 'a,b'
-   && afterCollision.seats.find((s) => s.uname === 'a').pid
-        === pid('muon', 'a')
+ok(!st.error && names(st) === 'a,b'
+   && st.seats.find((s) => s.uname === 'a').pid === pid('muon', 'a')
    && ss.sheets['users'].data.filter(r => r[0] === 'muon').length === 2
    && ctx.__tally.writes === collisionWrites,
-   'a live label under a different pid is refused loudly and atomically');
+   'a live label under a different pid is idempotent success: zero'
+   + ' writes, no doppelganger, the original seat stands');
 ok(ss.sheets['auctions'].data.filter(r => r[0] === 'muon').length === 1,
    'one auctions row per auction');
 st = call({ action: 'remove', aname: 'muon', pid: pid('muon', 'a') });

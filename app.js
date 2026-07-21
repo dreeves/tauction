@@ -44,6 +44,9 @@ const sanUname = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
 // A umap is a prototype-less dictionary keyed by uname
 const umap = (src = {}) => Object.assign(Object.create(null), src);
 
+// A umap parsed out of localStorage (absent key = empty map)
+const jmap = (key) => umap(JSON.parse(localStorage.getItem(key) || '{}'));
+
 async function apiGet(params) {
   const r = await fetch(api + '?' + new URLSearchParams(params));
   return r.json();
@@ -52,6 +55,13 @@ async function apiGet(params) {
 // Body as a plain string => "simple" CORS request, no preflight (Apps Script
 // web apps can't answer preflights)
 async function apiPost(body) {
+  // the chronicle's outbound half: every write announces itself as
+  // '(actor) → deed' the moment it flies (the settled truth narrates
+  // at ingest; every error warns ✗ inside banner() itself)
+  const s = seats.find((z) => z.pid === mypid());
+  console.log('(' + (s === undefined ? 'nobody' : '@' + s.uname)
+    + ') → ' + body.action + (body.uname ? ' @' + body.uname : '')
+    + (body.to ? ' → @' + body.to : ''));
   const r = await fetch(api, { method: 'POST', body: JSON.stringify(body) });
   return r.json();
 }
@@ -63,6 +73,9 @@ async function apiPost(body) {
 // it (settleWrite). Server and user text comes here, through
 // textContent — never markup.
 function banner(msg, kind) {
+  console.warn('✗ ' + msg);  // every bannered error joins the
+                             // chronicle — logged HERE so no call
+                             // site can forget
   $('banner-msg').textContent = msg;
   $('banner').className = kind || 'err';
   $('banner').hidden = false;
@@ -73,6 +86,8 @@ function banner(msg, kind) {
 // all goes through banner()'s textContent).
 function linkBanner(html) {
   $('banner-msg').innerHTML = html;
+  console.warn('✗ ' + $('banner-msg').textContent);  // the chronicle
+                             // gets the words, sans markup
   $('banner').className = 'err';
   $('banner').hidden = false;
 }
@@ -264,12 +279,80 @@ function assertState(res) {
   'bad state shape — is the deployed Code.gs current?');
 }
 
+// THE CHRONICLE (dreev's spec, 2026-07-20): every adopted snapshot
+// narrates its delta to the console — the ledger's story, one line
+// per change, in the app's own glyphs. ONE differ at the ONE
+// adoption seam (ingest), so local writes and remote arrivals alike
+// surface here when they become table truth, and no per-action
+// logging exists anywhere; an unchanged snapshot narrates nothing
+// (the 5s poll stays silent by construction). Arrival — no previous
+// snapshot — tables the roster as found; the reveal tables the
+// unmasked results, the one moment bid TEXT may reach the console
+// (sealed bids narrate as ordinals only). Developer-facing
+// diagnostics, deliberately plain inline English, not stringles
+// copy: the end user never reads here.
+function narrate(prev, next) {
+  const label = umap();  // pid -> its CURRENT display name
+  next.seats.forEach((s) => { label[s.pid] = s.uname; });
+  if (prev === null) {
+    console.log('· /' + next.aname
+      + (next.revealed ? ' (revealed)' : ''));
+    if (next.seats.length > 0) {
+      console.table(next.seats.map((s) => {
+        const b = next.bidders.find((x) => x.pid === s.pid);
+        return { who: '@' + s.uname,
+                 bids: b === undefined ? 0 : b.bcount,
+                 device: next.blurbs[s.pid] || '' };
+      }));
+    }
+    return;
+  }
+  const was = umap();  // pid -> its name in the PREVIOUS snapshot
+  prev.seats.forEach((s) => { was[s.pid] = s.uname; });
+  next.seats.forEach((s) => {
+    if (was[s.pid] === undefined) console.log('+ @' + s.uname);
+    else if (was[s.pid] !== s.uname) {
+      console.log('@' + was[s.pid] + ' → @' + s.uname);
+    }
+  });
+  prev.seats.forEach((s) => {
+    if (label[s.pid] === undefined) console.log('− @' + s.uname);
+  });
+  const had = umap();  // pid -> bcount in the previous snapshot
+  prev.bidders.forEach((b) => { had[b.pid] = b.bcount; });
+  next.bidders.forEach((b) => {
+    if (had[b.pid] !== b.bcount) {
+      console.log('@' + (label[b.pid] || b.pid) + ': bid #' + b.bcount);
+    }
+  });
+  Object.keys(next.claims).forEach((p) => {
+    if (prev.claims[p] !== next.claims[p]) {
+      console.log('★ @' + (label[p] || p)
+        + (next.blurbs[p] ? ' — ' + next.blurbs[p] : ''));
+    }
+  });
+  Object.keys(prev.claims).forEach((p) => {
+    if (next.claims[p] === undefined) {
+      console.log('☆ @' + (was[p] || p));
+    }
+  });
+  if (prev.blurb !== next.blurb) {
+    console.log('✎ description (' + next.blurb.length + ' chars)');
+  }
+  if (!prev.revealed && next.revealed) {
+    console.log('🎉 revealed');
+    console.table((next.bids || []).map((b) =>
+      ({ who: '@' + (label[b.pid] || b.pid), bid: b.bid })));
+  }
+}
+
 // Validate + adopt a state snapshot from the server; remember it so the
 // next page load can paint instantly instead of flashing a blank roster
 function ingest(res) {
   assertState(res);
   res.claims = umap(res.claims);
   res.blurbs = umap(res.blurbs);
+  narrate(state, res);
   state = res;
   seenRevealed = seenRevealed || res.revealed;
   localStorage.setItem('tauction-state:' + res.aname, JSON.stringify(res));
@@ -290,15 +373,32 @@ async function refresh() {
   refreshing = true;
   const a = aname;  // the auction this request is for
   const seqAtRequest = settleSeq;
+  // Only the network call sits in its own try (placeBid's precedent):
+  // transport death is WEATHER, not news (dreev's ruling, 2026-07-20)
+  // — no user action was lost, so nothing banners. The ledger grays
+  // under the hammering gavel (the app's one signal for "this picture
+  // may be stale") until a poll lands and render clears it, and the
+  // diagnostic detail goes to the console, greppable by its code.
+  // Anything downstream of a SUCCESSFUL response — a spoken refusal,
+  // version skew — still banners loudly: polling heals outages,
+  // never drift.
+  let res = null;
   try {
-    const res = await apiGet({ action: 'state', aname: a });
-    if (res.error) banner(res.error);
-    // adopt only if no writes are pending and no write SETTLED while
-    // this snapshot was in flight — anything less and it can lack a
-    // name you just added or a bid you just placed (the server
-    // commits a write somewhere between our send and its response)
-    else if (res.aname === aname && writesPending === 0
-             && settleSeq === seqAtRequest) { ingest(res); render(); }
+    res = await apiGet({ action: 'state', aname: a });
+  } catch (e) {
+    console.warn(e2152(e.message));
+    $('status').classList.add('stale');
+  }
+  try {
+    if (res !== null) {
+      if (res.error) banner(res.error);
+      // adopt only if no writes are pending and no write SETTLED while
+      // this snapshot was in flight — anything less and it can lack a
+      // name you just added or a bid you just placed (the server
+      // commits a write somewhere between our send and its response)
+      else if (res.aname === aname && writesPending === 0
+               && settleSeq === seqAtRequest) { ingest(res); render(); }
+    }
   } catch (e) {
     banner(e2152(e.message));
   } finally {
@@ -312,9 +412,11 @@ async function refresh() {
 // state GET spent ONLY on the tab's title (Sol's title-only law).
 // Nothing is ingested: the witnessed-reveal fanfare and every
 // never-clobber invariant sleep until the tab is actually looked at
-// (the visibilitychange refresh). Quiet on failure, deliberately —
-// locate()'s one cousin: a hidden tab has no reader to alarm, and
-// the return-refresh re-raises anything real the moment one exists.
+// (the visibilitychange refresh). No banner on failure — a hidden
+// tab has no reader to alarm, and the return-refresh re-raises
+// anything real the moment one exists — but the diagnostic goes to
+// the console like the poll's (transport detail is console
+// business, dreev's ruling).
 // Disclosed ifs: unnamed/unconfigured/latched pages have nothing to
 // peek at, and a peek landing after the tab turned visible yields to
 // the adopted pipeline (its snapshot may predate the return-
@@ -329,7 +431,7 @@ async function peekTitle() {
     document.title = tabTitle(
       titleGlyph(res.seats, res.bidders, res.revealed,
                  pidAmong(res.seats, umap(res.claims))), aname);
-  } catch (e) { /* the next peek, or the return-refresh, retries */ }
+  } catch (e) { console.warn(e2152(e.message)); }
 }
 
 /* ------------------------------ rendering ----------------------------- */
@@ -432,12 +534,10 @@ function commitDesc() {
 // memory, claims, row keys — ever needs re-keying. tauction-uname
 // lives on only as a display-name HINT for the add-yourself flow.
 function myPidStored() {
-  return umap(JSON.parse(
-    localStorage.getItem('tauction-pids') || '{}'))[aname] || '';
+  return jmap('tauction-pids')[aname] || '';
 }
 function storeMyPid(p) {
-  const m = umap(JSON.parse(
-    localStorage.getItem('tauction-pids') || '{}'));
+  const m = jmap('tauction-pids');
   if (p === '') delete m[aname];
   else m[aname] = p;
   localStorage.setItem('tauction-pids', JSON.stringify(m));
@@ -466,8 +566,7 @@ function mypid() {
 // Every bid this browser has placed on this auction, keyed by pid —
 // pids never change, so this memory never needs migrating
 function myBids() {
-  return umap(JSON.parse(
-    localStorage.getItem('tauction-mybids:' + aname) || '{}'));
+  return jmap('tauction-mybids:' + aname);
 }
 
 // Bids whose text this client knows: the ones it placed, plus everyone's
@@ -809,13 +908,12 @@ function buildBidContent(kind, pid) {
                && v !== input.dataset.sent) placeBid(pid, form);
     });
     form.append(input);
-    // the row-local busy sign: a mini gavel, shown by .rebid.busy
+    // the row-local busy sign: a mini gavel, shown by .rebid.busy —
+    // its anatomy copied from the page's one true gavel (index.html),
+    // never spelled twice
     const g = el('span', 'gavel mini');
     g.setAttribute('aria-hidden', 'true');
-    g.innerHTML = '<span class="mallet"><span class="head"></span>'
-      + '<span class="grip"></span></span>'
-      + '<span class="bang"><span></span></span>'
-      + '<span class="block"></span>';
+    g.innerHTML = $('status').querySelector(':scope > .gavel').innerHTML;
     form.append(g);
     form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -1195,8 +1293,7 @@ async function placeBid(pid, form) {
       banner(e2153(e.message));
     }
     if (res && !res.error) {
-      const mine = umap(JSON.parse(
-        localStorage.getItem('tauction-mybids:' + a) || '{}'));
+      const mine = jmap('tauction-mybids:' + a);
       mine[pid] = bid;
       localStorage.setItem('tauction-mybids:' + a, JSON.stringify(mine));
       input.defaultValue = bid;  // the submitted text is the new
@@ -1311,6 +1408,8 @@ function settleWrite(res, at, onRefusal) {
     // itself shows the truth (filled star + claimed-by tooltip), so
     // no red banner for that one. Everything else stays loud.
     if (!/^ERROR1304/.test(res.error)) banner(res.error);
+    else console.warn('✗ ' + res.error);  // suppressed from the
+                                          // banner, never the chronicle
     if (onRefusal) onRefusal();
     res = null;
   }
@@ -1620,6 +1719,9 @@ function wireUp() {
 
 async function init() {
   wireUp();
+  // the chronicle's first line: which build (dreev hand-bumps the
+  // footer version) — question zero of any console session
+  console.log('tauction ' + document.querySelector('.version').textContent);
 
   const m = location.pathname.match(/^\/([a-zA-Z0-9]{1,40})\/?$/);
   if (m) aname = m[1].toLowerCase();

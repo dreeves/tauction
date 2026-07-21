@@ -54,6 +54,10 @@ let stripTini = false;
 // leg gets its own isolated red)
 let stampSwap = null;
 
+// Simulate transport death (the wifi blink, the wake race): every API
+// fetch rejects the way Chrome does, before any response exists
+let fetchDown = false;
+
 function mockFetch(url, opts) {
   url = String(url);
   // the geo lookup gets a fixture: quals must never touch the network
@@ -62,6 +66,7 @@ function mockFetch(url, opts) {
     return Promise.resolve({ json: () => Promise.resolve(geoFixture) });
   }
   if (!url.startsWith(API_URL)) return Promise.reject(new Error('unexpected URL ' + url));
+  if (fetchDown) return Promise.reject(new TypeError('Failed to fetch'));
   let req;
   if (opts && opts.method === 'POST') req = JSON.parse(opts.body);
   else req = Object.fromEntries(new URL(url).searchParams);
@@ -158,6 +163,15 @@ async function makePage(pathAndQuery, seed) {
     dom.window.__intervals.push({ fn: fn, ms: ms });
     return realSetInterval(fn, ms);
   };
+  // Capture the app's console diagnostics per page — warnings
+  // (transport weather) and the chronicle (log lines + table rows):
+  // assertable where a qual cares, and never leaking into the suite's
+  // own output when a zombie page's poll hits simulated weather
+  dom.window.__warns = [];
+  dom.window.console.warn = (m) => dom.window.__warns.push(String(m));
+  dom.window.__logs = [];
+  dom.window.console.log = (m) => dom.window.__logs.push(String(m));
+  dom.window.console.table = (rows) => dom.window.__logs.push(rows);
   if (seed) seed(dom.window);  // e.g. pre-populate localStorage
   // one eval: eval-scoped consts aren't visible across separate
   // evals the way script tags share scope, so copy + code go together
@@ -945,6 +959,185 @@ const cssBattles = [];
   ok(row(domWarm.window.document, 'ann') === nodeBefore,
      'a no-change poll leaves the DOM alone (no swallowed clicks)');
 
+  /* --- 1c3. transport death is WEATHER, not news -----------------------
+     Replicata: a live page's poll dies at the network layer — the
+     wifi blink, or the return-refresh racing a laptop wake (dreev hit
+     this in a test auction right after a reveal). Expectata (dreev's
+     ruling): no banner — nothing the user did was lost, so the only
+     honest signal is the existing one for "this picture may be
+     stale": the ledger grays under the hammering gavel until a poll
+     lands, and the diagnostic detail goes to the console for whoever
+     is debugging. Banners keep carrying SPOKEN news only (server
+     refusals, failed user writes, version skew — see 1c, which pins
+     that drift still banners: polling heals outages, never drift).
+     Resultata pre-fix: a sticky ERROR2152 banner over a bright,
+     normal-looking ledger — claiming catastrophe while looking fine,
+     the exact inverse of the truth. */
+  gas.handle({ action: 'add', aname: 'wifi',
+    uname: 'ann', pid: 'pid-wifi-ann' });
+  const dWifi = await makePage('/wifi?api=' + API_URL);
+  const wifiDoc = dWifi.window.document;
+  await until(() => row(wifiDoc, 'ann')
+    && !wifiDoc.getElementById('status').classList.contains('stale'));
+  const warns = dWifi.window.__warns;
+  fetchDown = true;
+  setVisibility(dWifi, 'hidden');  // the return-refresh IS the racy
+  setVisibility(dWifi, 'visible'); // fetch: fire it into dead air
+  await sleep(100);
+  ok(wifiDoc.getElementById('banner').hidden,
+     'a dead fetch banners NOTHING: no user action was lost, so there'
+     + ' is no news to read');
+  ok(wifiDoc.getElementById('status').classList.contains('stale'),
+     'instead the ledger grays under the gavel: the one honest'
+     + ' statement is that this picture may be stale');
+  ok(warns.some((w) => w.includes('ERROR2152')
+       && w.includes('Failed to fetch')),
+     'the detail lands on the console, greppable by its code, for'
+     + ' whoever is debugging');
+  ok(row(wifiDoc, 'ann') !== null,
+     'the last-known rows stand while the weather passes — grayed,'
+     + ' never wiped');
+  fetchDown = false;
+  setVisibility(dWifi, 'hidden');  // the weather passes; the next
+  setVisibility(dWifi, 'visible'); // fetch heals the gray
+  await until(() =>
+    !wifiDoc.getElementById('status').classList.contains('stale'));
+  ok(!wifiDoc.getElementById('status').classList.contains('stale')
+     && wifiDoc.getElementById('banner').hidden
+     && row(wifiDoc, 'ann') !== null,
+     'the first landed poll re-brightens the ledger — self-healing by'
+     + ' construction, still bannerless in both directions');
+
+  /* --- 1c4. THE CHRONICLE: the console narrates the ledger's story -----
+     Replicata: debug any hallway session by opening the console.
+     Expectata (dreev's spec, 2026-07-20): a transaction log in the
+     app's own glyphs — boot names the build; arrival tables the
+     roster as found; then one line per observed change (+ @join,
+     − @leave, @old → @new, '@who: bid #n', ★ claim, ✎ description,
+     🎉 revealed with the unmasked results tabled); this page's own
+     writes announce themselves as '(actor) → deed' when SENT and
+     narrate like everything else when their settle becomes table
+     truth; refusals log ✗ with the server's words. One differ at the
+     one adoption seam — an unchanged snapshot logs NOTHING, so the
+     5s poll stays silent. Resultata pre-fix: a silent console. */
+  gas.handle({ action: 'add', aname: 'diary',
+    uname: 'ann', pid: 'pid-diary-ann' });
+  const dDiary = await makePage('/diary?api=' + API_URL);
+  const diaryDoc = dDiary.window.document;
+  const logs = dDiary.window.__logs;
+  const has = (s) => logs.some((l) => typeof l === 'string'
+    && l.includes(s));
+  const jog = async () => {  // force an immediate poll: hide + return
+    setVisibility(dDiary, 'hidden');
+    setVisibility(dDiary, 'visible');
+    await sleep(120);
+  };
+  await until(() => row(diaryDoc, 'ann') !== null);
+  ok(logs[0] === 'tauction '
+       + diaryDoc.querySelector('.version').textContent,
+     'boot names the build (dreev hand-bumps it; "which version am I'
+     + ' looking at" is question zero)');
+  ok(has('· /diary') && logs.some((l) => Array.isArray(l)
+       && l.some((r) => r.who === '@ann')),
+     'arrival: the auction named, the roster tabled as found');
+  addName(dDiary, 'me');
+  await until(() => row(diaryDoc, 'me')
+    && !diaryDoc.getElementById('status').classList.contains('stale'));
+  ok(has('→ add @me'),
+     'an outbound write announces itself at the send');
+  ok(has('+ @me'),
+     '...and narrates like any other change when its settle becomes'
+     + ' table truth');
+  gas.handle({ action: 'add', aname: 'diary',
+    uname: 'bob', pid: 'pid-diary-bob' });
+  gas.handle({ action: 'add', aname: 'diary',
+    uname: 'tmp', pid: 'pid-diary-tmp' });
+  await jog();
+  ok(has('+ @bob') && has('+ @tmp'),
+     'remote joins narrate on the poll that shows them');
+  row(diaryDoc, 'tmp').querySelector('.x').click();
+  await until(() =>
+    !diaryDoc.getElementById('status').classList.contains('stale'));
+  ok(has('→ remove') && has('− @tmp'),
+     'a removal: announced outbound, narrated at the settle');
+  renameTo(dDiary, 'bob', 'rob');
+  await until(() => row(diaryDoc, 'rob')
+    && !diaryDoc.getElementById('status').classList.contains('stale'));
+  ok(has('→ rename → @rob') && has('@bob → @rob'),
+     'a rename narrates as old → new');
+  const warned = (s) => dDiary.window.__warns.some((w) => w.includes(s));
+  const renPosts = () => apiCalls.filter((c) => c.action === 'rename'
+    && c.aname === 'diary').length;
+  const renBefore = renPosts();
+  renameTo(dDiary, 'rob', 'ann');  // ann is live: the LOCAL guard
+  await sleep(30);
+  ok(warned('✗ ' + STR.nameTakenBanner) && renPosts() === renBefore,
+     'even a client-side refusal warns ✗ — every bannered error, from'
+     + ' ANY path, reaches the chronicle (structurally: banner()'
+     + ' itself warns, so no site can forget)');
+  gas.handle({ action: 'bid', aname: 'diary',
+    uname: 'ann', pid: 'pid-diary-ann', bid: 'aa' });
+  await jog();
+  ok(has('@ann: bid #1'), "a bid narrates by owner and ordinal —"
+     + ' never its sealed text');
+  typeBid(dDiary, 'mm');  // (the fresh add already auto-claimed me)
+  submitBid(dDiary);
+  await settled(dDiary);
+  ok(has('→ bid @me') && has('@me: bid #1'),
+     'your own bid: announced at the send, narrated at the settle');
+  ok(has('★ @me'),
+     "the bid's registered claim narrates too (★ = taken, as on the"
+     + ' ledger)');
+  gas.handle({ action: 'bid', aname: 'diary',
+    uname: 'ann', pid: 'pid-diary-ann', bid: 'aaa' });
+  await jog();
+  ok(has('@ann: bid #2'), 're-bids narrate by their bumped ordinal');
+  gas.handle({ action: 'add', aname: 'diary',
+    uname: 'zed', pid: 'pid-diary-zed-remote' });
+  addName(dDiary, 'zed');  // the 2d2 race: this page loses, quietly
+  await until(() => row(diaryDoc, 'zed')
+    && row(diaryDoc, 'zed').dataset.pid === 'pid-diary-zed-remote'
+    && !diaryDoc.getElementById('status').classList.contains('stale'));
+  ok(diaryDoc.getElementById('banner').hidden && has('+ @zed'),
+     'a lost add race converges quietly: one + entry, no error — the'
+     + ' loser is an ordinary latecomer (dreev 2026-07-21)');
+  gas.handle({ action: 'add', aname: 'diary',
+    uname: 'kim', pid: 'pid-diary-kim' });
+  renameTo(dDiary, 'rob', 'kim');  // stale roster: the local guard is
+                                   // blind, the server refuses
+  await until(() => !diaryDoc.getElementById('banner').hidden);
+  await until(() => row(diaryDoc, 'rob')
+    && !diaryDoc.getElementById('status').classList.contains('stale'));
+  ok(warned('✗ ' + SCOPY.nameTakenCopy) && row(diaryDoc, 'rob') !== null,
+     "a server refusal warns ✗ with the server's words (a rename onto"
+     + ' a live label is a real error: the requested CHANGE did not'
+     + ' happen — unlike the add race)');
+  const quiet = logs.length;
+  await jog();
+  ok(logs.length === quiet,
+     'an unchanged snapshot narrates NOTHING: the 5s poll is silent'
+     + ' by construction');
+  const base = gas.handle({ action: 'state', aname: 'diary' });
+  gas.handle({ action: 'describe', aname: 'diary',
+    blurb: 'de rebus emptis', base: base.tblurb });
+  await jog();
+  ok(has('✎ description (15 chars)'),
+     'a description edit narrates its new length, not its text');
+  gas.handle({ action: 'bid', aname: 'diary',
+    uname: 'rob', pid: 'pid-diary-bob', bid: 'rr' });
+  gas.handle({ action: 'bid', aname: 'diary',
+    uname: 'zed', pid: 'pid-diary-zed-remote', bid: 'zz' });
+  gas.handle({ action: 'bid', aname: 'diary',
+    uname: 'kim', pid: 'pid-diary-kim', bid: 'kk' });
+  gas.handle({ action: 'reveal', aname: 'diary' });
+  await jog();
+  ok(has('@rob: bid #1') && has('@zed: bid #1') && has('🎉 revealed'),
+     'the finale narrates: the last bids in, then the latch');
+  ok(logs.some((l) => Array.isArray(l)
+       && l.some((r) => r.who === '@rob' && r.bid === 'rr')),
+     'the unmasked results land as a table — public now, so the'
+     + ' console may finally say them');
+
   /* --- 1d. tab out of the typed name lands in the DESCRIPTION ----------
      Replicata (dreev, 2026-07-18): type the auction name, hit tab.
      Resultata pre-fix: the description and + row were still DISABLED
@@ -1418,12 +1611,18 @@ const cssBattles = [];
   ok(!domQ.window.document.getElementById('status').classList.contains('stale'),
      'box settles unstale after the queued ops');
 
-  /* --- 2d2. a stale duplicate add refuses loudly -----------------------
+  /* --- 2d2. a stale duplicate add converges QUIETLY --------------------
      Replicata: a page loads an empty ledger; another browser seats
-     alice; before the stale page polls, it submits alice under its own
-     fresh pid. Expectata: the stale request is refused by name, the
-     losing row is discarded, and the winning row is adopted. Resultata
-     pre-fix: the server called it success and hid the collision. */
+     alice; before the stale page polls, it submits alice under its
+     own fresh pid. Expectata (dreev 2026-07-21, reversing the 07-20
+     loud refusal — "the error seems wrong": alice IS added, exactly
+     as requested): the goal state already holds, so the server
+     answers idempotent success — the losing row is discarded, the
+     winning row adopted, the loser left unseated as an ordinary
+     latecomer (the claimable star is the re-attach affordance), and
+     NO banner, because nothing failed. Resultata pre-flip: "That
+     name is taken" glared over a ledger showing alice, freshly
+     added. */
   const dAddRace = await makePage('/addrace?api=' + API_URL);
   const remoteAddPid = 'pid-addrace-remote-alice';
   gas.handle({ action: 'add', aname: 'addrace', uname: 'alice',
@@ -1436,13 +1635,11 @@ const cssBattles = [];
       && !addRaceDoc.getElementById('status').classList.contains('stale');
   });
   const addRaceState = gas.handle({ action: 'state', aname: 'addrace' });
-  ok(!addRaceDoc.getElementById('banner').hidden
-     && addRaceDoc.getElementById('banner-msg').textContent
-          === SCOPY.nameTakenCopy
+  ok(addRaceDoc.getElementById('banner').hidden
      && !row(addRaceDoc, 'alice').classList.contains('mine')
      && addRaceState.seats.length === 1
      && addRaceState.seats[0].pid === remoteAddPid,
-     'the stale duplicate gets loud refusal and adopts the winning row');
+     'the stale duplicate converges quietly onto the winning row');
 
   /* --- 2e. a name you typed must never vanish ----------------------------
      Replicata: add a name after a poll's GET has left but before its

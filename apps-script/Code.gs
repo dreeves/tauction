@@ -564,15 +564,20 @@ function describe(req) {
 
 // The roster is CLOSED once revealed: the game is over, and a fresh
 // participant could neither bid meaningfully nor be waited on.
-// An exact pid retry is idempotent; a different pid carrying an
-// already-live label is a collision and refuses loudly.
+// Adding is IDEMPOTENT on the label (dreev 2026-07-21, reversing the
+// 07-20 loud refusal): if the label is already seated — same pid or
+// not — the requested goal state holds, so this is success, sans
+// writes (not even a tmod bump). The race loser converges as an
+// ordinary latecomer: their next snapshot unseats their ghost pid and
+// the claimable star is the re-attach affordance. Renames onto a live
+// label still refuse: their goal is a CHANGE, which didn't happen.
 function addParticipant(req) {
   const aname = cleanAname(req.aname);
   const uname = cleanUname(req.uname);
   const pid = cleanPid(req.pid);
   if (getState(aname).revealed) throw rosterClosedCopy;
   if (seatIndex(aname, pid) === -1 && seatByName(aname, uname)) {
-    throw nameTakenCopy;
+    return getState(aname);  // the label is seated: mission complete
   }
   touchAuction(aname);
   ensureSeat(aname, pid, uname);
