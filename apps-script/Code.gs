@@ -49,8 +49,9 @@ const ARMOR_ROWS = 10000;
 // that this file generates. Throw strings land verbatim in the client's
 // error banner. stringles.js can't be shared across the deployment
 // boundary, so this block mirrors its role — edit copy here as freely.
-// The ERROR-numbered prefixes are load-bearing (the client quietly
-// swallows /^ERROR1304/ as an expected seat race); keep them.
+// The ERROR-numbered prefixes are for greppability; nothing swallows
+// them anymore (the /^ERROR1304/ seat-race swallow died with the
+// claim lock, 2026-07-21: claims TAKE the seat, last write wins).
 const badAnameCopy = 'auction name must be alphanumeric';
 const badUnameCopy = 'username must be alphanumeric and start with a letter';
 const badDeviceCopy = 'bad deviceID';
@@ -72,8 +73,7 @@ const auctionClosedCopy = 'Auction closed, no editing';
 const noSuchOneCopy = (pid) => 'No such participant: ' + pid;
 const badPidCopy = 'bad pid';
 const claimNeedsDeviceCopy = 'ERROR1303: claim requires a deviceID';
-const seatHeldCopy = (blurb) =>
-  'ERROR1304: Claimed by someone (' + blurb + ')';
+// (ERROR1304 seatHeldCopy died with the claim lock, 2026-07-21)
 const releaseNeedsDeviceCopy = 'ERROR1305: release requires a deviceID';
 const notYourSeatCopy = 'ERROR1306: Can this error ever happen?'
   + ' Disclaiming yourself as a participant failed?';
@@ -628,13 +628,15 @@ function removeParticipant(req) {
   return getState(aname);
 }
 
-// Stake a claim on a seat — FIRST COME, FIRST SERVED: a seat held by
-// another device refuses loudly (last-write-wins let a stale page
-// silently steal a seat). Re-claiming your own seat is idempotent.
-// One name per device: claiming a new seat releases any other seat
-// this device held, radio-style. No auth: the device id is an
-// anonymous marker whose only job is making every page agree who's
-// taken.
+// Stake a claim on a seat — LAST WRITE WINS (dreev 2026-07-21,
+// reversing first-come-first-served after faire's /carnoon lockout:
+// Safari re-minted her device uuid and her own seat refused her).
+// A claim is a consistency marker, not auth: it TAKES the seat, the
+// previous holder's page converges at its next poll, and genuine
+// seat fights fall to the honor system like every other op.
+// Re-claiming your own seat is the idempotent subcase. One name per
+// device: claiming a new seat releases any other seat this device
+// held, radio-style.
 function saveClaim(req) {
   const aname = cleanAname(req.aname);
   const pid = cleanPid(req.pid);
@@ -645,10 +647,6 @@ function saveClaim(req) {
   if (getState(aname).revealed) throw auctionClosedCopy;
   const deviceBlurb = cleanBlurb(req.deviceBlurb);
   if (seatIndex(aname, pid) === -1) throw noSuchOneCopy(pid);
-  const held = deviceOf(aname, pid);
-  if (held && held !== deviceID) {
-    throw seatHeldCopy(holderBlurb(aname, pid));
-  }
   touchAuction(aname);
   setDeviceID(aname, pid, deviceID, deviceBlurb);
   return getState(aname);

@@ -38,7 +38,7 @@ const call = (req) => {
 // vm context hosting it), so copy edits there never break these quals
 // — they pin the right words in the right place, not the wording
 const COPY = require('vm').runInContext('({ gavelFellCopy,'
-  + ' simulEditsCopy, seatHeldCopy, bidSeatHeldCopy, unknownActionCopy,'
+  + ' simulEditsCopy, bidSeatHeldCopy, unknownActionCopy,'
   + ' mysteryDeviceCopy, schemaDriftCopy, auctionClosedCopy,'
   + ' rosterClosedCopy, badDevBlurbCopy, badPidCopy, nameTakenCopy,'
   + ' removeBidderCopy })', ctx);
@@ -457,22 +457,30 @@ st = call({ action: 'claim', aname: 'higgs', pid: annP, deviceID: 'dev-1',
             deviceBlurb: 'a Mac (Chrome)' });
 ok(!st.error && st.claims[annP] === 'dev-1', 're-claiming your own seat is'
    + ' idempotent (a device that lost localStorage re-latches)');
-st = call({ action: 'claim', aname: 'higgs', pid: annP, deviceID: 'dev-2' });
-ok(String(st.error) === COPY.seatHeldCopy('a Mac (Chrome)')
-   && call({ action: 'state', aname: 'higgs' }).claims[annP] === 'dev-1',
-   "a held seat refuses a rival's claim, loudly, naming the holder's"
-   + ' rig: no silent stealing');
+// Replicata (faire, /carnoon, 2026-07-21): her phone claimed her
+// seat, then Safari handed her a fresh device uuid (private tab or
+// evicted storage) and her own seat refused her as "Claimed by
+// someone (iPhone Safari...)" — herself. Expectata (dreev's ruling,
+// reversing first-come-first-served): a claim is a consistency
+// marker, not auth — it TAKES the seat, last write wins, honor
+// system like every other op. Resultata pre-flip: ERROR1304; her
+// only escape was removing and re-adding herself.
+st = call({ action: 'claim', aname: 'higgs', pid: annP, deviceID: 'dev-2',
+            deviceBlurb: 'an iPhone (Safari)' });
+ok(!st.error && st.claims[annP] === 'dev-2'
+   && st.blurbs[annP] === 'an iPhone (Safari)',
+   'a claim on a held seat TAKES it: last write wins, new rig blurbed');
 st = call({ action: 'release', aname: 'higgs', pid: annP,
-            deviceID: 'dev-2' });
+            deviceID: 'dev-1' });
 ok(String(st.error).includes('ERROR1306')
-   && call({ action: 'state', aname: 'higgs' }).claims[annP] === 'dev-1',
-   'only the holder may release a seat');
+   && call({ action: 'state', aname: 'higgs' }).claims[annP] === 'dev-2',
+   'only the CURRENT holder may release a seat');
 st = call({ action: 'release', aname: 'higgs', pid: benP,
             deviceID: 'dev-9' });
 ok(!st.error, 'releasing an unheld seat is a no-op (a merely-local'
    + ' soft claim must release without drama)');
 st = call({ action: 'release', aname: 'higgs', pid: annP,
-            deviceID: 'dev-1' });
+            deviceID: 'dev-2' });
 ok(!st.error && st.claims[annP] === undefined,
    'the holder releases: seat open again');
 st = call({ action: 'claim', aname: 'higgs', pid: benP, deviceID: 'dev-1' });
@@ -636,10 +644,13 @@ const atomicValidationResults = atomicValidationCases.map((req) => {
 ok(atomicValidationResults.every(Boolean),
    'claim/bid validation errors are atomic: no auction, seat, or bid row');
 
-// 9c. Replicata: a rival claims or bids on a seat already held by
-//     another device. Expectata: the refusal precedes every write.
-//     Resultata pre-fix: the visible state was unchanged, but the
-//     auction's tmod was silently bumped before the holder check.
+// 9c. Replicata: a rival claims, then a THIRD device bids, on a held
+//     seat. Expectata (post-takeover-ruling): the claim TAKES the
+//     seat (a real write, by design); the bare rival bid still
+//     refuses, and that refusal precedes every write. Resultata
+//     pre-fix of the atomicity half: the visible state was
+//     unchanged, but tmod was silently bumped before the holder
+//     check.
 call({ action: 'add', aname: 'heldatomic', uname: 'alice',
        pid: pid('heldatomic', 'alice') });
 call({ action: 'claim', aname: 'heldatomic',
@@ -647,21 +658,20 @@ call({ action: 'claim', aname: 'heldatomic',
        deviceID: 'holder', deviceBlurb: 'holder rig' });
 const atomicSheetData = () => JSON.stringify(
   ['auctions', 'users', 'bids'].map((name) => ss.sheets[name].data));
-let beforeRival = atomicSheetData();
-{ const t = Date.now(); while (Date.now() - t < 3); }
 const rivalClaim = call({ action: 'claim', aname: 'heldatomic',
   pid: pid('heldatomic', 'alice'),
   deviceID: 'rival', deviceBlurb: 'rival rig' });
-const rivalClaimAtomic = atomicSheetData() === beforeRival;
-beforeRival = atomicSheetData();
+ok(!rivalClaim.error
+   && rivalClaim.claims[pid('heldatomic', 'alice')] === 'rival',
+   'the rival claim takes the held seat: last write wins');
+const beforeRival = atomicSheetData();
 { const t = Date.now(); while (Date.now() - t < 3); }
 const rivalBid = call({ action: 'bid', aname: 'heldatomic',
   uname: 'alice', pid: pid('heldatomic', 'alice'),
-  bid: 'hijack', deviceID: 'rival', deviceBlurb: 'rival rig' });
-const rivalBidAtomic = atomicSheetData() === beforeRival;
-ok(rivalClaim.error && rivalBid.error
-   && rivalClaimAtomic && rivalBidAtomic,
-   'held-seat claim/bid refusals leave every sheet cell unchanged');
+  bid: 'hijack', deviceID: 'rival2', deviceBlurb: 'third rig' });
+ok(rivalBid.error && atomicSheetData() === beforeRival,
+   'a bare bid on a held seat still refuses, leaving every sheet'
+   + ' cell unchanged');
 ok(call({ action: 'add', aname: 'tau2', uname: '1bad',
           pid: 'pid-tau2-bad' }).error,
    'bad roster name rejected');

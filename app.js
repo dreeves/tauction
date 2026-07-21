@@ -681,7 +681,6 @@ function renderStatus() {
   $('closed').textContent = state.revealed
     ? closedLine(closedStamp(state.tfin)) : '';
   const known = knownBids();
-  const placed = myBids();  // bids THIS browser placed (the dibs exception)
   const byPid = umap();
   state.bidders.forEach((b) => { byPid[b.pid] = b; });
   // Placing a bid locks the who-you-are radio: no switching rows, no
@@ -703,7 +702,7 @@ function renderStatus() {
     const b = byPid[seat.pid];
     let t = rowNodes[seat.pid] || buildRow(seat.pid);
     keep[seat.pid] = t;
-    updateRow(t, seat, b, mine, known, placed, locked);
+    updateRow(t, seat, b, mine, known, locked);
     if (t.parentElement !== tiles || t.previousElementSibling !== cursor) {
       tiles.insertBefore(t, cursor ? cursor.nextElementSibling
                                    : tiles.firstElementChild);
@@ -844,10 +843,13 @@ function buildRow(pid) {
   // works: while you are NOBODY, tapping it claims the seat and
   // readies the editor — same deal as the star, and the intent is
   // just as unambiguous. Disclosed ifs: only for the unclaimed
-  // (misclicks must not switch a claimed identity), only on takeable
-  // (star-enabled) rows, only while bidless (a slot, not a card).
+  // (misclicks must not switch a claimed identity), only on open
+  // rows (a takeover is a deliberate STAR tap, never a stray cell
+  // tap — the .taken check keeps the cell's pre-takeover reach),
+  // only while bidless (a slot, not a card).
   bidEl.addEventListener('click', () => {
     if (mypid() === '' && !t.querySelector('.tu').disabled
+        && !t.querySelector('.tu').classList.contains('taken')
         && !t.classList.contains('has-bid')) {
       toggleTu(pid);
     }
@@ -934,7 +936,7 @@ function buildBidContent(kind, pid) {
 // Idempotently sync a row node to the current state: same state in,
 // same DOM out, whatever the node rendered before (a property qual
 // holds this to a fresh build, byte for byte).
-function updateRow(t, seat, b, mine, known, placed, locked) {
+function updateRow(t, seat, b, mine, known, locked) {
   const pid = seat.pid;
   const stamp = b === undefined ? undefined : b.tmod;
   const bcount = b === undefined ? 0 : b.bcount;
@@ -942,19 +944,17 @@ function updateRow(t, seat, b, mine, known, placed, locked) {
   // (dataset.uname rides along for humans reading the DOM and quals)
   t.dataset.uname = seat.uname;
   // Every row leads with its star, a radio for who-you-are: hollow =
-  // claimable, dimmed hollow = dibsed, gold fill = you. A row is dibsed by
-  // a rival device's registered claim, or (for claim-less legacy rows)
-  // by a bid this browser didn't place. Clicking your own lit star
-  // releases you to nobody. A bid placed by THIS browser never dibses
-  // you out of the row (that keeps re-attach working if localStorage
-  // forgot who you are). Once YOUR bid is in, the whole radio locks.
+  // open, filled = claimed by a rival device, gold fill = you — and
+  // the filled star stays LIVE (dreev 2026-07-21, deleting the dibs
+  // lock after faire's lockout: Safari re-minted her device uuid and
+  // her own seat refused her). A claim is a consistency marker, not
+  // auth: a tap on a taken star TAKES the seat, last write wins,
+  // honor system. Clicking your own lit star releases you to nobody.
+  // Once YOUR bid is in, the whole radio locks.
   const holder = state.claims[pid];
-  const dibsed = pid !== mine
-    && ((holder !== undefined && holder !== DEVICE)
-        || (stamp !== undefined && placed[pid] === undefined));
   const star = t.querySelector('.tu');
   // revealed: identity is part of the frozen record, like the names
-  star.disabled = dibsed || locked || state.revealed;
+  star.disabled = locked || state.revealed;
   star.classList.toggle('selected', pid === mine);
   // a rival's REGISTERED claim fills the star in (hollow = open,
   // filled = claimed by someone else, gold = you)...
@@ -1403,13 +1403,10 @@ function settleWrite(res, at, onRefusal) {
   assert(writesPending >= 0, 'write bookkeeping went negative');
   settleSeq++;
   if (res && res.error) {
-    // Disclosed if: losing a seat race (ERROR1304) is normal auction
-    // physics, not an exceptional failure — the recovery snapshot
-    // itself shows the truth (filled star + claimed-by tooltip), so
-    // no red banner for that one. Everything else stays loud.
-    if (!/^ERROR1304/.test(res.error)) banner(res.error);
-    else console.warn('✗ ' + res.error);  // suppressed from the
-                                          // banner, never the chronicle
+    // (the old /^ERROR1304/ banner suppression died with the claim
+    // lock, 2026-07-21: claims take the seat, so no refusal exists
+    // to soften — every refusal banners, and banner() chronicles)
+    banner(res.error);
     if (onRefusal) onRefusal();
     res = null;
   }
@@ -1467,7 +1464,10 @@ function addName() {  // returns the added seat's pid ('' if refused)
       $('roster-input').value = '';
       return '';
     }
-    if (trow && !trow.querySelector('.tu').disabled) {
+    // (.taken keeps the + row's pre-takeover reach: typing a HELD
+    // name objects rather than usurps — takeover is star-only)
+    if (trow && !trow.querySelector('.tu').disabled
+        && !trow.querySelector('.tu').classList.contains('taken')) {
       $('roster-input').value = '';
       toggleTu(live.pid);  // claims the seat and focuses the editor
       return live.pid;

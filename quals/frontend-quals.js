@@ -2204,14 +2204,17 @@ const cssBattles = [];
   ok(true, 'saving again, informed, wins: one warning per clobber');
 
   /* --- 2k. the alice race: two machines, one seat ------------------------
-     Replicata (dreev's report): machine 1 and machine 2 both have the
-     auction open, alice unclaimed on both screens. Machine 1 claims
-     alice; before machine 2's page hears about it (no poll yet),
-     machine 2 clicks alice's star too. Resultata pre-fix: the server
-     was last-write-wins — machine 2 silently STOLE the seat and both
-     machines believed they were alice. Expectata: first come, first
-     served; the loser is told loudly and recovers to the dibsed
-     truth; the winner is untouched. */
+     Replicata (dreev's report, re-ruled 2026-07-21 after faire's
+     /carnoon lockout): machine 1 and machine 2 both have the auction
+     open, alice unclaimed on both screens. Machine 1 claims alice;
+     before machine 2's page hears about it (no poll yet), machine 2
+     clicks alice's star too. Expectata (claims are a consistency
+     marker, not auth): the later claim TAKES the seat — last write
+     wins, one holder at a time — and machine 1 converges to the new
+     truth bannerlessly, its unseated star filled but LIVE (one tap
+     takes it back). Resultata pre-flip: first come, first served,
+     which locked faire out of her own seat when Safari re-minted her
+     device id. */
   gas.handle({ action: 'add', aname: 'race2',
     uname: 'alice', pid: 'pid-race2-alice' });
   gas.handle({ action: 'add', aname: 'race2',
@@ -2223,32 +2226,26 @@ const cssBattles = [];
     .claims['pid-race2-alice'] !== undefined);
   ok(!row(r2.window.document, 'alice').querySelector('.tu').disabled,
      "machine 2 hasn't polled yet: its stale screen still offers alice");
-  claimRow(r2, 'alice');  // the race click
-  await until(() =>
-    row(r2.window.document, 'alice').querySelector('.tu').disabled);
-  ok(r2.window.document.getElementById('banner').hidden,
-     'losing a seat race is normal auction physics: NO red banner'
-     + " (dreev's call) — the UI itself shows the truth");
-  ok(row(r2.window.document, 'alice').querySelector('.tu').classList
-       .contains('taken')
-     && row(r2.window.document, 'alice').querySelector('.tu')
-          .getAttribute('data-tip')
-          // the tip up to the parenthesized rig, whatever the copy says
-          .startsWith(STR.claimedByTip('').slice(0, -1))
-     && !r2.window.document.querySelector('#tiles .rebid'),
-     'instead: the filled star and its tooltip explain who beat you');
-  ok(gas.handle({ action: 'state', aname: 'race2' })
+  claimRow(r2, 'alice');  // the race click: the takeover
+  await until(() => gas.handle({ action: 'state', aname: 'race2' })
     .claims['pid-race2-alice']
-       === r1.window.localStorage.getItem('tauction-device'),
-     "machine 1's claim survived: first come, first served");
-  ok(row(r1.window.document, 'alice').classList.contains('mine'),
-     'machine 1 never even notices the skirmish');
-  // machine 2's consolation: bea is open, and life goes on
-  claimRow(r2, 'bea');
+      === r2.window.localStorage.getItem('tauction-device'));
+  ok(row(r2.window.document, 'alice').classList.contains('mine')
+     && r2.window.document.getElementById('banner').hidden,
+     'the later claim TAKES the seat: machine 2 is alice, no drama');
+  await until(() => row(r1.window.document, 'alice')
+    .querySelector('.tu').classList.contains('taken'));
+  ok(!row(r1.window.document, 'alice').classList.contains('mine')
+     && !row(r1.window.document, 'alice').querySelector('.tu').disabled
+     && r1.window.document.getElementById('banner').hidden,
+     'machine 1 converges bannerlessly: unseated, its star filled but'
+     + ' LIVE — one more tap would take the seat right back');
+  // machine 1's consolation: bea is open, and life goes on
+  claimRow(r1, 'bea');
   await until(() => gas.handle({ action: 'state', aname: 'race2' })
     .claims['pid-race2-bea'] !== undefined);
-  ok(row(r2.window.document, 'bea').classList.contains('mine'),
-     'machine 2 claims the open seat instead and lives happily');
+  ok(row(r1.window.document, 'bea').classList.contains('mine'),
+     'machine 1 claims the open seat instead and lives happily');
 
   /* --- 2k2. seat-race stress battery (dreev: "stress-qual it") ----------
      Every way two machines can want the same seat in a NEW auction. */
@@ -2280,34 +2277,43 @@ const cssBattles = [];
      && !row(loser.window.document, 'alice').classList.contains('mine')
      && loser.window.document.getElementById('banner').hidden,
      'the loser converges to taken, bannerlessly; the winner holds');
-  // (ii) spam-clicking the taken star stays inert and quiet
+  // (ii) tapping the taken star TAKES the seat back (faire's one-tap
+  // recovery: a new browser identity reclaims her own seat)
   claimRow(loser, 'alice');
-  claimRow(loser, 'alice');
-  await sleep(200);
-  ok(loser.window.document.getElementById('banner').hidden
-     && gas.handle({ action: 'state', aname: 'race4' })
+  await until(() => gas.handle({ action: 'state', aname: 'race4' })
     .claims['pid-race4-alice']
-          === claim4,
-     'spamming a lost seat: still quiet, still theirs');
-  // (iii) the winner releases; the seat reopens everywhere by poll
-  claimRow(winner, 'alice');  // own lit star: release
+      === loser.window.localStorage.getItem('tauction-device'));
+  await until(() => row(winner.window.document, 'alice')
+    .querySelector('.tu').classList.contains('taken'));
+  ok(row(loser.window.document, 'alice').classList.contains('mine')
+     && !row(winner.window.document, 'alice').classList.contains('mine')
+     && winner.window.document.getElementById('banner').hidden,
+     'the taken star is LIVE: one tap takes the seat back, and the'
+     + ' unseated machine converges quietly');
+  // (iii) the new holder releases; the seat reopens and the unseated
+  // machine re-latches by its remembered hint — no click, no noise
+  claimRow(loser, 'alice');  // own lit star: release
   await until(() => gas.handle({ action: 'state', aname: 'race4' })
     .claims['pid-race4-alice'] === undefined);
   await until(() =>
-    row(loser.window.document, 'alice').classList.contains('mine'));
-  ok(!row(loser.window.document, 'alice').querySelector('.tu').classList
+    row(winner.window.document, 'alice').classList.contains('mine'));
+  ok(!row(winner.window.document, 'alice').querySelector('.tu').classList
        .contains('taken')
-     && loser.window.document.getElementById('banner').hidden,
-     'released seats RE-LATCH the loser automatically: their machine'
-     + ' never forgot who they wanted to be, and the seat is open'
-     + ' again — gold star, no click, no noise');
+     && winner.window.document.getElementById('banner').hidden,
+     'released seats RE-LATCH the unseated automatically: their'
+     + ' machine never forgot who they wanted to be — gold star, no'
+     + ' click, no noise');
 
-  /* --- 2l. the stolen-seat bid: the race, lost mid-keystroke -------------
+  /* --- 2l. the takeover bid: claim + bid while the ops fly ---------------
      Replicata: same stale-screen setup, but machine 2 clicks alice's
      star and IMMEDIATELY types a bid while its claim op is still in
-     flight (the optimistic editor appears at once). Expectata: the
-     claim is refused AND the bid is refused — a bid must never hijack
-     a held seat — and machine 1's world is intact. */
+     flight (the optimistic editor appears at once). Expectata
+     (post-takeover-ruling): the claim TAKES the seat mid-race, the
+     bid follows it in on the op chain and lands — exactly faire's
+     recovery gesture, star-tap then bid — and machine 1 converges to
+     the new truth. (A bare bid carrying a RIVAL device on a held
+     seat still refuses server-side, pinned in gas-quals; the UI
+     always claims first, so its chain arrives in order.) */
   gas.handle({ action: 'add', aname: 'race3',
     uname: 'alice', pid: 'pid-race3-alice' });
   const r3 = await makePage('/race3?api=' + API_URL);
@@ -2317,21 +2323,23 @@ const cssBattles = [];
     .claims['pid-race3-alice'] !== undefined);
   mockDelay = 300;        // r4's ops fly slowly: the window for typing
   claimRow(r4, 'alice');  // stale screen, optimistic editor appears
-  typeBid(r4, 'stolen goods');
+  typeBid(r4, 'takeover bid');
   submitBid(r4);
-  await sleep(900);       // claim + bid both land and are refused
+  await sleep(900);       // claim + bid land, in chain order
   mockDelay = 0;
-  ok(gas.handle({ action: 'state', aname: 'race3' }).bidders.length === 0,
-     "the hijack bid never reached the sheet: alice's seat held firm");
-  ok(gas.handle({ action: 'state', aname: 'race3' })
-    .claims['pid-race3-alice']
-       === r3.window.localStorage.getItem('tauction-device'),
-     "and machine 1 still holds the seat");
-  await until(() =>  // the RENDERED truth, not the submit-time lock
-    row(r4.window.document, 'alice').querySelector('.tu').classList
+  const race3st = gas.handle({ action: 'state', aname: 'race3' });
+  ok(bidderNamed(race3st, 'alice') !== undefined
+     && race3st.claims['pid-race3-alice']
+          === r4.window.localStorage.getItem('tauction-device'),
+     'the takeover claim and its bid both land: machine 2 is alice,'
+     + ' bid in');
+  await until(() =>  // the RENDERED truth on the unseated machine
+    row(r3.window.document, 'alice').querySelector('.tu').classList
       .contains('taken'));
-  ok(!r4.window.document.querySelector('#tiles .rebid'),
-     'machine 2 recovers to reality: taken star, no editor');
+  ok(!r3.window.document.querySelector('#tiles .rebid')
+     && r3.window.document.getElementById('banner').hidden,
+     'machine 1 converges to the new truth: taken star, no editor,'
+     + ' no banner');
 
   /* --- 2m. the radio locks at SUBMIT, not at the server's ack ------------
      Replicata (dreev: "claim a participant, submit a bid, then see a
@@ -2398,14 +2406,16 @@ const cssBattles = [];
   ok(names(gas.handle({ action: 'state', aname: 'burst' }))
      === 'aa,bb,cc,dd,ee', 'and they all reached the server');
 
-  /* --- 2f. two machines can't both be alice ------------------------------
+  /* --- 2f. two machines both wanting alice: dibs, not locks --------------
      Replicata (dreev's bug report): machine 1 adds alice (self-claim,
      2j); machine 2 opens the auction and clicks alice's star too; both
      machines bid as alice. Resultata pre-fix: both believed they were
      alice and silently overwrote each other's bid. Expectata: the
      self-claim is SOFT (registered on the server only by a bid or an
      explicit claim), so machine 2 sees alice claimable at first — but
-     the moment machine 1 bids, every other machine shows dibs. */
+     the moment machine 1 bids, every other machine shows dibs: the
+     filled star and its rig-naming tip. (Post-takeover-ruling the
+     star stays LIVE — dibs inform, they don't lock.) */
   const m1 = await makePage('/twoalices?api=' + API_URL);
   addName(m1, 'alice');
   await sleep(800);  // roster push lands on the server
@@ -2420,11 +2430,14 @@ const cssBattles = [];
   ok(myInput(m1.window.document).value === 'the real bid',
      'machine 1, the (self-)claim holder, bids normally');
   await until(() =>  // machine 2's next poll delivers the dibs
-    row(m2.window.document, 'alice').querySelector('.tu').disabled);
-  ok(row(m2.window.document, 'alice').querySelector('.tu').disabled
+    row(m2.window.document, 'alice').querySelector('.tu').classList
+      .contains('taken'));
+  ok(!row(m2.window.document, 'alice').querySelector('.tu').disabled
+     && !row(m2.window.document, 'alice').classList.contains('mine')
      && !m2.window.document.querySelector('#tiles .rebid'),
-     "machine 1's bid registered the claim: alice dibsed on machine 2,"
-     + ' no editor for her');
+     "machine 1's bid registered the claim: alice dibsed on machine 2"
+     + ' — no editor there, though the star stays live (dibs inform,'
+     + " they don't lock)");
   ok(row(m2.window.document, 'alice').querySelector('.tu').classList
        .contains('taken')
      && row(m2.window.document, 'alice').querySelector('.tu')
@@ -3012,8 +3025,10 @@ const cssBattles = [];
      && !doc2.querySelector('#status .tile-bid .masked').textContent
           .includes('three tacos'),
      'sealed bid rendered as a masked decoy, not the real text');
-  ok(row(doc2, 'alice').querySelector('.tu').disabled,
-     "alice's bid dibses her row: a fresh browser can't usurp it");
+  ok(row(doc2, 'alice').querySelector('.tu').classList.contains('taken')
+     && !row(doc2, 'alice').querySelector('.tu').disabled,
+     "alice's bid dibses her row — filled star, still live: usurping"
+     + ' is possible (honor system) but never accidental');
   ok(/^bid submitted \d+[sm] ago$/.test(hoverBid(dom2, 'alice')),
      "someone else's single-submission tooltip drops the 'your', got "
      + hoverBid(dom2, 'alice'));

@@ -634,7 +634,9 @@ async function bid(page, bidText) {
       };
       const taken = document.querySelector('.tile[data-uname="alice"] .tu');
       const plain = document.querySelector('.tile[data-uname="bob"] .tu');
-      return taken.disabled && !plain.disabled
+      // (post-takeover-ruling the taken star is enabled: dibs inform,
+      // they don't lock — the fill and tip carry the message)
+      return !taken.disabled && !plain.disabled
         && getComputedStyle(taken).opacity === '1'
         && alpha(getComputedStyle(taken).color) > 0.5
         && alpha(getComputedStyle(plain).color) === 0
@@ -1133,10 +1135,11 @@ async function bid(page, bidText) {
        Roommates both open /squabble on their phones; the roster lists
        alice and bea, unclaimed. Phone 1 taps alice's star. Phone 2 —
        its screen still showing alice open (no poll yet) — taps alice
-       too. First come, first served: phone 2 loses LOUDLY (no silent
-       stealing, no two-alices), watches the star go dibsed as the
-       recovery snapshot lands, takes bea instead, and the game plays
-       out normally. */
+       too. Post-takeover-ruling (dreev 2026-07-21, after faire's
+       lockout): the later tap TAKES the seat, phone 1 converges
+       QUIETLY to the filled-but-live star (its tooltip naming the
+       rig that took it), takes bea instead, and the game plays out
+       normally — one holder per seat throughout, honor system. */
     gas.handle({ action: 'add', aname: 'squabble',
       uname: 'alice', pid: 'pid-squabble-alice' });
     gas.handle({ action: 'add', aname: 'squabble',
@@ -1151,32 +1154,35 @@ async function bid(page, bidText) {
         (e) => !e.disabled),
        "phone 2's stale screen still offers alice: the race is on");
     await p2.tap('.tile[data-uname="alice"] .tu');
-    await p2.waitForFunction(() =>
+    await p2.waitForSelector('.tile[data-uname="alice"].mine');
+    await p1.waitForFunction(() =>
       document.querySelector('.tile[data-uname="alice"] .tu.taken')
       && !document.querySelector('#tiles .rebid'));
-    ok(await p2.evaluate(() =>
+    ok(await p1.evaluate(() =>
       document.getElementById('banner').hidden
+      && !document.querySelector('.tile[data-uname="alice"] .tu')
+           .disabled
       && document.querySelector('.tile[data-uname="alice"] .tu')
            .getAttribute('data-tip')
            // the tip up to the rig, whatever the copy says
            .startsWith(claimedByTip('').slice(0, -1))),
-       'phone 2 loses the race QUIETLY: no red banner — the star fills'
-       + ' in and its tooltip says who beat her');
-    await p2.tap('.tile[data-uname="bea"] .tu');
-    await p2.waitForSelector('.tile[data-uname="bea"].mine .rebid input');
-    ok(true, 'phone 2 takes the open seat instead, one tap');
-    await p2.type('.tile.mine .rebid input', 'a dozen eggs');
-    await p2.keyboard.press('Enter');
-    await p2.waitForSelector('.tile.mine.has-bid');
-    await p1.type('.tile.mine .rebid input', 'my parking spot');
+       'phone 1 is unseated QUIETLY: no red banner — the star fills'
+       + ' in, stays live, and its tooltip says whose thumb took it');
+    await p1.tap('.tile[data-uname="bea"] .tu');
+    await p1.waitForSelector('.tile[data-uname="bea"].mine .rebid input');
+    ok(true, 'phone 1 takes the open seat instead, one tap');
+    await p1.type('.tile.mine .rebid input', 'a dozen eggs');
     await p1.keyboard.press('Enter');
     await p1.waitForSelector('.tile.mine.has-bid');
+    await p2.type('.tile.mine .rebid input', 'my parking spot');
+    await p2.keyboard.press('Enter');
+    await p2.waitForSelector('.tile.mine.has-bid');
     await p1.waitForFunction(() =>
       !document.getElementById('seal').disabled);
     await p1.tap('#seal');
-    await p1.waitForFunction(() =>
+    await p1.waitForFunction(() =>  // the OTHER thumb's bid unmasks
       document.getElementById('status').textContent
-        .includes('a dozen eggs'));
+        .includes('my parking spot'));
     ok(true, 'and the game plays out: both bids in, revealed by thumb');
 
     /* ====== the gavel catches a half-typed revision ==================
