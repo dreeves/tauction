@@ -538,8 +538,8 @@ function myPidStored() {
 }
 function storeMyPid(p) {
   const m = jmap('tauction-pids');
-  if (p === '') delete m[aname];
-  else m[aname] = p;
+  m[aname] = p;  // '' = nobody (myPidStored's || '' reads both the
+                 // absent and the empty entry the same way)
   localStorage.setItem('tauction-pids', JSON.stringify(m));
 }
 
@@ -863,12 +863,8 @@ function buildRow(pid) {
     bidEl.setAttribute('data-tip', bidTip(pid));
   });
   // (green ✅ scrapped 2026-07-16 — it sat confusingly next to the ×,
-  // and the card's green styling already says "bid in"; its subs
-  // superscript was shelved 2026-07-15. Restore with the matching
-  // lines in updateRow and the .check rules in style.css:)
-  // const check = el('span', 'check', '✅');
-  // check.append(el('sup', 'tile-subs'));
-  // bidEl.append(check);
+  // and the card's green styling already says "bid in"; git has the
+  // scaffolding if it ever returns)
   // × removes the whole row from the roster — grayed out once a bid is
   // in, because a sealed bid is never deletable (its tip is bid-state-
   // dependent, so updateRow owns it)
@@ -1003,9 +999,6 @@ function updateRow(t, seat, b, mine, known, locked) {
   const kind = pid === mine ? 'editor'
     : stamp !== undefined ? 'card' : 'slot';
   let content = bidEl.firstElementChild;  // null on a fresh row
-  // (when the shelved ✅ returns, it rides after the content, so a
-  // firstElementChild that IS the check means "no content yet":
-  // if (content && content.classList.contains('check')) content = null;)
   if (!content || content.dataset.kind !== kind) {
     const fresh = buildBidContent(kind, pid);
     fresh.dataset.kind = kind;
@@ -1048,8 +1041,6 @@ function updateRow(t, seat, b, mine, known, locked) {
     text.className = sealed ? 'bid-text masked' : 'bid-text';
     text.textContent = sealed ? MASK : known[pid];
   }
-  // (subs superscript shelved 2026-07-15)
-  // t.querySelector('.tile-subs').textContent = String(subs);
   // a bid protects its seat: the × grays the moment a bid is in
   // (and the server refuses the removal outright if a race slips
   // one past), and the whole record freezes at the gavel
