@@ -41,6 +41,12 @@ const sanAname = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 40);
 const sanUname = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
                          .replace(/^[0-9]+/, '').slice(0, 30);
 
+// The bid-length objection, everywhere it's judged (the live ring,
+// the render resync, the submit refusal): a pure function of the
+// draft. The server clamps at the same 160 — no keystroke is ever
+// eaten client-side (dreev); the limit OBJECTS, never chops.
+const overlong = (s) => s.trim().length > 160;
+
 // A umap is a prototype-less dictionary keyed by uname
 const umap = (src = {}) => Object.assign(Object.create(null), src);
 
@@ -445,7 +451,9 @@ function render() {
   renderStatus();
   renderDesc();
   adopted = true;  // the arrival edge is consumed exactly once
-  $('status').classList.remove('stale');  // server truth is on screen
+  // server truth is on screen: both cards' in-flight signs retire
+  $('status').classList.remove('stale');
+  $('desc').classList.remove('stale');
 }
 
 // The description block: the view pane always mirrors server truth;
@@ -515,7 +523,7 @@ function commitDesc() {
       // is idle (the arrival-caret law) — if you've moved on to
       // another field, the red editor waits its turn
       if (document.activeElement === document.body) edit.focus();
-    }, (res) => { edit.dataset.base = res.tblurb; });
+    }, (res) => { edit.dataset.base = res.tblurb; }, $('desc'));
     edit.defaultValue = draft;  // ours is the working base now
     edit.classList.remove('error');
     // paint the draft NOW — rendering is pure client work; the write
@@ -582,7 +590,7 @@ function knownBids() {
 // breathing cells = no bid yet; solid green = bid in (text if you may
 // read it, a blurred decoy if not); struck-through name = bid doesn't
 // count toward the reveal (not on the roster — reachable only via roster
-// races, never via the UI). Your own row's bid slot is an input: your bid
+// races, never via the UI). Your own row's bid slot is an editor: your bid
 // lives there, editable in place; enter (re)submits. × removes a row from
 // the roster, offered only while it has no bid to protect. Reveal lights
 // the 🎉 and glows the card, once.
@@ -724,7 +732,7 @@ function renderStatus() {
   // the user is in, and never re-grabbing it mid-session.
   if (!adopted) {
     const editor = tiles.querySelector(
-      '.tile.mine:not(.has-bid) .rebid input');
+      '.tile.mine:not(.has-bid) .rebid textarea');
     if (editor && document.activeElement === document.body) editor.focus();
   }
 
@@ -882,37 +890,67 @@ function buildRow(pid) {
   return t;
 }
 
+// The mini gavel: a card- or row-local busy sign, its anatomy copied
+// from the page's one true gavel (index.html), never spelled twice
+function miniGavel() {
+  const g = el('span', 'gavel mini');
+  g.setAttribute('aria-hidden', 'true');
+  g.innerHTML = $('status').querySelector(':scope > .gavel').innerHTML;
+  return g;
+}
+
 // The bid cell's content comes in three kinds; swapped wholesale when
 // the kind changes, synced in place otherwise
 function buildBidContent(kind, pid) {
   if (kind === 'editor') {
     const form = el('form', 'rebid');
-    const input = el('input');
-    input.maxLength = 80;
-    input.autocomplete = 'off';
+    // A TEXTAREA, not an input, so a long bid can WRAP and its box
+    // grow to hold it (field-sizing in style.css) — while typing,
+    // and in the frozen record after the reveal (your own row keeps
+    // its editor forever). Semantically it stays ONE line: Enter
+    // commits (the keydown below — a textarea gets no implicit form
+    // submission) and a pasted newline lands as a space, so a bid is
+    // one line of text however many lines of box it wraps across.
+    const editor = el('textarea');
+    editor.rows = 1;
+    editor.autocomplete = 'off';
     // the mobile return key names the deed
-    input.setAttribute('enterkeyhint', 'send');
-    // typing withdraws the empty-bid objection
-    input.addEventListener('input', () => input.classList.remove('error'));
+    editor.setAttribute('enterkeyhint', 'send');
+    // No maxLength clamp (dreev: "i don't like how it abruptly cuts
+    // me off"): no keystroke is ever eaten. The 160-char limit OBJECTS
+    // instead — the ring here, live (which also withdraws the empty-
+    // bid objection on the next keystroke, as before), and the words
+    // at submit (placeBid's refusal).
+    editor.addEventListener('input', () => {
+      editor.classList.toggle('error', overlong(editor.value));
+      // a pasted newline lands as a space (typed ones can't exist:
+      // Enter never reaches the value) — the same live-constraint
+      // pattern as the name fields' sanUname rewrite
+      const v = editor.value.replace(/\n/g, ' ');
+      if (v !== editor.value) editor.value = v;
+    });
+    // Enter means SEND, exactly as when the editor was a one-line
+    // input — routed through the form's one submit funnel below,
+    // never becoming a newline
+    editor.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      form.requestSubmit();
+    });
     // Clicking/tapping away SAVES, like the name fields (dreev).
     // Empty = nothing to place (no objection: leaving an empty
     // editor is normal); unchanged = nothing new; already-sent =
     // enter-then-blur (the mobile keyboard closing right after a
     // submit) must not fire twice.
-    input.addEventListener('blur', () => {
-      const v = input.value.trim();
-      if (v === '') input.value = input.defaultValue;
-      else if (v !== input.defaultValue
-               && v !== input.dataset.sent) placeBid(pid, form);
+    editor.addEventListener('blur', () => {
+      const v = editor.value.trim();
+      if (v === '') editor.value = editor.defaultValue;
+      else if (v !== editor.defaultValue
+               && v !== editor.dataset.sent) placeBid(pid, form);
     });
-    form.append(input);
-    // the row-local busy sign: a mini gavel, shown by .rebid.busy —
-    // its anatomy copied from the page's one true gavel (index.html),
-    // never spelled twice
-    const g = el('span', 'gavel mini');
-    g.setAttribute('aria-hidden', 'true');
-    g.innerHTML = $('status').querySelector(':scope > .gavel').innerHTML;
-    form.append(g);
+    form.append(editor);
+    // the row-local busy sign, shown by .rebid.busy
+    form.append(miniGavel());
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       placeBid(pid, form);
@@ -1017,19 +1055,23 @@ function updateRow(t, seat, b, mine, known, locked) {
   }
   const stackShadow = sheets.concat('var(--lift)').join(', ');
   if (kind === 'editor') {
-    const input = content.querySelector('input');
+    const editor = content.querySelector('textarea');
     // the gavel drop is a bright line: your bid stays readable in
     // your own editor, but the field goes dead at the reveal
-    input.disabled = state.revealed;
-    input.className = stamp === undefined ? 'bid-slot' : 'bid-card';
-    input.style.boxShadow = stamp === undefined ? '' : stackShadow;
+    editor.disabled = state.revealed;
+    // className rebuilt wholesale (as ever — the transient commit
+    // pulse rides out on this cleanup), then the overlong objection
+    // recomputed: a LIVE ring must survive a change-ful render
+    editor.className = stamp === undefined ? 'bid-slot' : 'bid-card';
+    editor.classList.toggle('error', overlong(editor.value));
+    editor.style.boxShadow = stamp === undefined ? '' : stackShadow;
     // never clobber what the user is typing: leave a focused or dirty
-    // input alone (a draft = live value differs from defaultValue)
-    if (input !== document.activeElement
-        && input.value === input.defaultValue) {
+    // editor alone (a draft = live value differs from defaultValue)
+    if (editor !== document.activeElement
+        && editor.value === editor.defaultValue) {
       const baseline = known[pid] === undefined ? '' : known[pid];
-      input.value = baseline;
-      input.defaultValue = baseline;
+      editor.value = baseline;
+      editor.defaultValue = baseline;
     }
   } else if (kind === 'card') {
     // a received bid is a card; each re-submission stacks a sheet
@@ -1227,8 +1269,8 @@ function toggleTu(pid) {
               deviceID: DEVICE,     // stake it: rival pages show dibs
               deviceBlurb: DEVBLURB }); // ...and who by, humanely
   }
-  const input = $('tiles').querySelector('.rebid input');
-  if (input) input.focus();
+  const editor = $('tiles').querySelector('.rebid textarea');
+  if (editor) editor.focus();
 }
 
 
@@ -1240,8 +1282,8 @@ let bidsAloft = 0;  // submissions still flying; busy shows till zero
 async function placeBid(pid, form) {
   const a = aname;  // pin the auction this bid belongs to; the user might
                     // switch auctions while the POST is in flight
-  const input = form.querySelector('input');
-  const bid = input.value.trim();
+  const editor = form.querySelector('textarea');
+  const bid = editor.value.trim();
   assert(pid, 'placeBid without an identity');
   // your editor only exists while mypid() === pid, and mypid() can
   // only ever echo localStorage — so this holds or the model is broken
@@ -1253,10 +1295,19 @@ async function placeBid(pid, form) {
   assert(seat !== undefined, 'placeBid without a seat');
   // a local slip gets a local objection: the field itself reddens
   // (cleared on the next keystroke); banners are for the server's news
-  if (!bid) { input.classList.add('error'); return; }
-  input.dataset.sent = bid;  // this exact text is on its way: the
-                             // blur that follows an enter is a no-op
-  flashCommit(input);  // the pulse marks the SUBMIT, not the settle
+  if (!bid) { editor.classList.add('error'); return; }
+  // past the server's 160-char clamp: the same local objection, plus
+  // the WORDS (a red ring alone can't say why) — in the server's
+  // exact copy, so a race that slips one through reads identically.
+  // The draft stays put for trimming.
+  if (overlong(bid)) {
+    banner(bidTooLongBanner);
+    editor.classList.add('error');
+    return;
+  }
+  editor.dataset.sent = bid;  // this exact text is on its way: the
+                              // blur that follows an enter is a no-op
+  flashCommit(editor);  // the pulse marks the SUBMIT, not the settle
   // The editor stays HOT during flight: down to the wire you can
   // change your mind and resubmit while the last bid still flies.
   // Bids ride the op chain, so submissions land in the order you made
@@ -1287,8 +1338,8 @@ async function placeBid(pid, form) {
       const mine = jmap('tauction-mybids:' + a);
       mine[pid] = bid;
       localStorage.setItem('tauction-mybids:' + a, JSON.stringify(mine));
-      input.defaultValue = bid;  // the submitted text is the new
-                                 // baseline, not a draft to shield
+      editor.defaultValue = bid;  // the submitted text is the new
+                                  // baseline, not a draft to shield
     }
     bidsAloft--;
     if (bidsAloft === 0) form.classList.remove('busy');
@@ -1354,11 +1405,15 @@ async function copyUrl() {
 // earlier ones predate later local edits.
 let opChain = Promise.resolve();
 function queueOp(body, onRefusal, onSuccess) {
-  queueLazyOp(() => body, onRefusal, onSuccess);
+  queueLazyOp(() => body, onRefusal, onSuccess, $('status'));
 }
 
-function queueLazyOp(request, onRefusal, onSuccess = () => {}) {
-  $('status').classList.add('stale');
+// host: the card that wears the in-flight sign while this op flies —
+// stale grays the ledger under its hammering gavel for table ops;
+// the desc card spins its own mini gavel for blurb saves (dreev,
+// 2026-07-21: saving JUST the blurb must not gray the bid table)
+function queueLazyOp(request, onRefusal, onSuccess = () => {}, host) {
+  host.classList.add('stale');
   if (state) renderStatus();
   if (!configured) return;
   const at = startWrite();
@@ -1561,6 +1616,10 @@ function wireUp() {
   // over it.
   $('seal').setAttribute('data-tip', needNameTip);
 
+  // the desc card's own busy sign, shown by .desc.stale: a blurb
+  // save must not gray the bid table (dreev, 2026-07-21)
+  $('desc').append(miniGavel());
+
   // Universal button hygiene: an activated button doesn't keep
   // focus — you pressed it, you know what it is (none is a tab stop,
   // so focus on one serves nothing). This also drops any focus-tip
@@ -1681,7 +1740,7 @@ function wireUp() {
     if (added !== '') flashCommit($('roster-input'));
     const t = rowNodes[added];
     if (t && t.classList.contains('mine')) {
-      t.querySelector('.rebid input').focus();
+      t.querySelector('.rebid textarea').focus();
     }
   };
   $('roster-input').addEventListener('keydown', (e) => {

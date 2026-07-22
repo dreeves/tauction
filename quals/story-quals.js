@@ -3,7 +3,7 @@
 // are intercepted and answered by fake-gas in-process). jsdom does no layout
 // and no navigation, so this suite is what catches "human clicks around and
 // it's broken" bugs: dead-end 404s, clipped tooltips, horizontal overflow,
-// and enter-to-submit in the row editor (real implicit form submission).
+// and enter-to-submit in the row editor (the editor's real keydown wiring).
 //
 // Screenshots land in quals/screenshots/ (gitignored) for eyeballing.
 //
@@ -44,7 +44,7 @@ const gas = makeGas();
 // server copy derived from Code.gs (via its vm context), same as the
 // frontend suite does
 const SCOPY = require('vm')
-  .runInContext('({ gavelFellCopy })', gas);
+  .runInContext('({ gavelFellCopy, bidTooLongCopy })', gas);
 
 // Answer any request to the deployed API URL with the local Code.gs
 // logic; write ops can be artificially delayed for in-flight-race quals
@@ -61,8 +61,8 @@ async function bridge(page) {
     const q = req.method() === 'POST'
       ? JSON.parse(req.postData())
       : Object.fromEntries(new URL(req.url()).searchParams);
-    const wait = ['add', 'remove', 'claim', 'release', 'bid', 'reveal']
-      .includes(q.action) ? opDelay : 0;
+    const wait = ['add', 'remove', 'claim', 'release', 'bid', 'reveal',
+                  'describe'].includes(q.action) ? opDelay : 0;
     const body = JSON.stringify(gas.handle(q));
     setTimeout(() => req.respond({
       status: 200,
@@ -113,14 +113,14 @@ async function addName(page, uname) {
 // Claim a row as yourself via its star, then wait for the editor
 async function claimRow(page, uname) {
   await page.click('.tile[data-uname="' + uname + '"] .tu');
-  await page.waitForSelector('.tile.mine .rebid input');
+  await page.waitForSelector('.tile.mine .rebid textarea');
 }
 
 // Type a bid into your row and submit it the way a human does: Enter.
-// (Implicit form submission — a single-input form with no button — is
-// exactly what this exercises; jsdom can't.)
+// (The editor's Enter keydown — a wrapping textarea gets no implicit
+// form submission — exercised in a real browser.)
 async function bid(page, bidText) {
-  await page.type('.tile.mine .rebid input', bidText);
+  await page.type('.tile.mine .rebid textarea', bidText);
   await page.keyboard.press('Enter');
 }
 
@@ -187,7 +187,21 @@ async function bid(page, bidText) {
        + ' NO save button anywhere');
     await alice.click('#descedit');
     await alice.type('#descedit', '# Rules\n\nLoser buys **coffee**');
+    opDelay = 900;  // hold the describe in flight: its busy sign is
+                    // the DESC card's own mini gavel (dreev: saving
+                    // just the blurb must not gray the bid table)
     await alice.click('#aname');  // clicking away = save
+    ok(await alice.evaluate(() => {
+      const mini = document.querySelector('#desc .gavel.mini');
+      return getComputedStyle(mini).display === 'block'
+        && getComputedStyle(mini.querySelector('.mallet'))
+             .animationName === 'gavel'
+        && !document.getElementById('status').classList.contains('stale')
+        && getComputedStyle(document.querySelector('#status > .gavel'))
+             .opacity === '0';
+    }), 'the blurb save spins a mini gavel on the desc card itself —'
+       + ' the ledger neither grays nor gavels');
+    opDelay = 0;
     await alice.waitForFunction(() =>
       document.querySelector('#descview h1'));
     ok(await alice.evaluate(() =>
@@ -354,7 +368,7 @@ async function bid(page, bidText) {
     await alice.waitForSelector('.tile[data-uname="alice"].mine');
 
     ok(await alice.evaluate(() =>
-      document.activeElement === document.querySelector('.tile.mine .rebid input')),
+      document.activeElement === document.querySelector('.tile.mine .rebid textarea')),
        'claiming your row drops you straight into the bid editor');
     ok(await alice.evaluate(() => {
       const mine = document.querySelector('.tile.mine .tile-name');
@@ -365,26 +379,26 @@ async function bid(page, bidText) {
         && getComputedStyle(other).animationName === 'breathe';
     }), 'others pulse (awaited); your row sits still, subtly up-popped');
     ok(await alice.evaluate(() =>
-      getComputedStyle(document.querySelector('.tile.mine .rebid input'))
+      getComputedStyle(document.querySelector('.tile.mine .rebid textarea'))
         .boxShadow !== 'none'),
        'the pop lifts the whole you-row, bid piece included');
     // the empty editor invites with the caret, not words: no
     // placeholder, a normal solid field, focus already in it — and
     // never a pulse (pulsing means "waiting on THEM")
-    ok(await alice.$eval('.tile.mine .rebid input',
+    ok(await alice.$eval('.tile.mine .rebid textarea',
         (e) => e.placeholder === ''), 'the editor holds no placeholder');
     ok(await alice.evaluate(() => {
-      const e = document.querySelector('.tile.mine .rebid input');
+      const e = document.querySelector('.tile.mine .rebid textarea');
       return getComputedStyle(e).animationName === 'none'
         && getComputedStyle(e).borderTopStyle === 'solid'
         && document.activeElement === e;
     }), 'your empty editor: a normal solid field, focused, not pulsing');
     await bid(alice, 'three tacos');
     await alice.waitForSelector('#tiles .tile.has-bid');
-    ok(await alice.$eval('.tile.mine .rebid input', (e) => e.value)
+    ok(await alice.$eval('.tile.mine .rebid textarea', (e) => e.value)
        === 'three tacos', 'her bid lives in her row, editable in place');
     ok(await alice.evaluate(() =>
-      getComputedStyle(document.querySelector('.tile.mine .rebid input'))
+      getComputedStyle(document.querySelector('.tile.mine .rebid textarea'))
         .animationName === 'none'),
        'no pulse with the bid in either: only not-you rows ever pulse');
     ok(await alice.evaluate(() => {
@@ -462,14 +476,14 @@ async function bid(page, bidText) {
     ok(true, "the disabled ×'s tooltip shows at full strength");
     ok(await alice.evaluate(() => {
       const edges = [...document.querySelectorAll('#tiles .tile')].map((t) =>
-        t.querySelector('.bid-card, .rebid input')
+        t.querySelector('.bid-card, .rebid textarea')
           .getBoundingClientRect().right);
       return edges.every((e) => Math.abs(e - edges[0]) < 1);
     }), 'every bid box matches length: one right edge down the column');
 
     await alice.reload({ waitUntil: 'networkidle0' });
-    await alice.waitForSelector('.tile.mine .rebid input');
-    ok(await alice.$eval('.tile.mine .rebid input', (e) => e.value)
+    await alice.waitForSelector('.tile.mine .rebid textarea');
+    ok(await alice.$eval('.tile.mine .rebid textarea', (e) => e.value)
        === 'three tacos', 'identity and bid survive reload');
 
     // phone ergonomics: every tooltip in the app fits on screen, nothing
@@ -658,7 +672,7 @@ async function bid(page, bidText) {
     await bob.hover('.tile.mine .tile-bid');
     ok(await bob.evaluate(() =>
          document.activeElement === document.querySelector(
-           '.tile.mine .rebid input')
+           '.tile.mine .rebid textarea')
          && document.getElementById('tip').hidden),
        'no tooltip under your own typing: a bid cell holding your'
        + ' focused editor shows no tip even hovered');
@@ -694,14 +708,14 @@ async function bid(page, bidText) {
       document.activeElement !== document.getElementById('seal')),
        "pressing the padlock doesn't leave its tooltip stuck (the"
        + ' universal blur-on-activation rule)');
-    ok(await bob.$eval('.tile.mine .rebid input', (e) => e.value)
+    ok(await bob.$eval('.tile.mine .rebid textarea', (e) => e.value)
        === 'my entire kingdom',
        "pressing the padlock reveals everything: alice's card + his own row");
     await bob.waitForFunction(() =>  // fade-in: wait, don't sample
       parseFloat(getComputedStyle(document.querySelector('#status .seal'))
         .opacity) === 1);
     ok(true, 'the icon comes to full strength at the reveal');
-    ok(await bob.$eval('.tile.mine .rebid input', (e) => e.disabled),
+    ok(await bob.$eval('.tile.mine .rebid textarea', (e) => e.disabled),
        'the gavel drop is a bright line: the editor goes dead at the'
        + ' reveal');
     /* Replicata (dreev's screenshot): his own revealed bid rendered
@@ -717,7 +731,7 @@ async function bid(page, bidText) {
       const ink = getComputedStyle(probe).color;
       probe.remove();
       const s = getComputedStyle(document.querySelector(
-        '.tile.mine .rebid input'));
+        '.tile.mine .rebid textarea'));
       return s.color === ink && s.opacity === '1';
     }), 'your own revealed bid reads in FULL ink — color AND opacity'
        + ' (the 0.6 relic dimmed what color alone could not reveal)');
@@ -831,7 +845,7 @@ async function bid(page, bidText) {
        'alice is nobody here until her name is on the ledger');
 
     await addName(alice, 'alice');
-    await alice.waitForSelector('.tile.mine .rebid input');
+    await alice.waitForSelector('.tile.mine .rebid textarea');
     ok(true, 'adding her remembered name back re-latches automatically');
     await bid(alice, 'sweep the porch');
     await alice.waitForFunction(() =>
@@ -912,7 +926,7 @@ async function bid(page, bidText) {
     await new Promise((r) => setTimeout(r, 700));  // ack + render land
     opDelay = 0;
     await carol.mouse.up();
-    await carol.waitForSelector('.tile[data-uname="dog"].mine .rebid input',
+    await carol.waitForSelector('.tile[data-uname="dog"].mine .rebid textarea',
                                 { timeout: 2000 });
     ok(true, 'a click straddling an op-ack render still lands (the very'
        + ' row whose ack was in flight)');
@@ -920,16 +934,16 @@ async function bid(page, bidText) {
     /* ---- re-bid stacks and the you-row pop share box-shadow: both
        must survive composition (carol switched to dog in the gesture
        test above) ----------------------------------------------------- */
-    await carol.waitForSelector('.tile.mine .rebid input');
+    await carol.waitForSelector('.tile.mine .rebid textarea');
     await bid(carol, 'one fish');
-    await carol.waitForSelector('.tile.mine .rebid input.bid-card');
-    await carol.$eval('.tile.mine .rebid input', (e) => { e.value = ''; });
+    await carol.waitForSelector('.tile.mine .rebid textarea.bid-card');
+    await carol.$eval('.tile.mine .rebid textarea', (e) => { e.value = ''; });
     await bid(carol, 'two fish');
     await carol.waitForFunction(() =>  // one sheet: the 2px pair
-      document.querySelector('.tile.mine .rebid input')
+      document.querySelector('.tile.mine .rebid textarea')
         .style.boxShadow.includes('2px 2px'));
     ok(await carol.evaluate(() =>
-      (getComputedStyle(document.querySelector('.tile.mine .rebid input'))
+      (getComputedStyle(document.querySelector('.tile.mine .rebid textarea'))
         .boxShadow.match(/rgba?\(/g) || []).length >= 3),
        'the re-bid stack sheets and the you-pop compose, losing neither');
 
@@ -953,13 +967,15 @@ async function bid(page, bidText) {
       document.body.append(probe);
       const wood = getComputedStyle(probe).color;
       probe.remove();
-      const head = getComputedStyle(
-        document.querySelector('.gavel .head')).backgroundColor;
+      const head = getComputedStyle(  // (#status-scoped: the desc
+        // card's mini gavel sits earlier in the DOM now)
+        document.querySelector('#status > .gavel .head')).backgroundColor;
       const spin = document.styleSheets;  // (the 360 lives in keyframes)
       return head === wood;
     }), 'the gavel is wood, as gavels are');
     ok(await carol.evaluate(() =>
-      getComputedStyle(document.querySelector('.gavel .grip'), '::after')
+      getComputedStyle(document.querySelector('#status > .gavel .grip'),
+                       '::after')
         .content === 'none'),
        'no pommel knob: it sat at the rotation origin and read as a'
        + ' fixed hub the gavel spun around');
@@ -976,7 +992,7 @@ async function bid(page, bidText) {
     }), 'after the strike it follows through all the way around: spinner');
     ok(await carol.evaluate(() => {
       // matrix(cos, sin, ...): a negative sin means the ray tilts upward
-      const bang = document.querySelector('.gavel .bang');
+      const bang = document.querySelector('#status > .gavel .bang');
       const sin = (cs) => parseFloat(cs.transform.split(',')[1]);
       return [getComputedStyle(bang, '::before'),
               getComputedStyle(bang.firstElementChild),
@@ -996,7 +1012,7 @@ async function bid(page, bidText) {
     ok(true, 'the gavel rests once the server has confirmed everything');
     /* ---- a bid gets a row-local mini gavel, not the table-wide one ---- */
     opDelay = 1200;
-    await carol.$eval('.tile.mine .rebid input', (e) => { e.value = ''; });
+    await carol.$eval('.tile.mine .rebid textarea', (e) => { e.value = ''; });
     await bid(carol, 'three fish');
     await carol.waitForFunction(() => {
       const m = document.querySelector('.rebid.busy .gavel.mini');
@@ -1052,8 +1068,9 @@ async function bid(page, bidText) {
        Chromium synthesizes the clicks our listeners hear) and the
        keyboard's return key: adding, claiming, bidding, renaming,
        removing, revealing. The return key rides implicit form
-       submission (the bid and name fields are single-input forms) or
-       the Enter keydown (the + row) — no physical Enter key, no mouse,
+       submission (the name fields are single-input forms) or the
+       Enter keydown (the bid editor, the + row) — no physical Enter
+       key, no mouse,
        no buttons required. (The real iOS/Android keyboard itself can't
        be driven from Chromium; enterkeyhint attributes are pinned by
        the frontend quals.) */
@@ -1068,12 +1085,12 @@ async function bid(page, bidText) {
     await thumb.keyboard.press('Enter');
     await thumb.waitForSelector('.tile[data-uname="bo"]');
     ok(true, 'the + row takes names from the return key');
-    await thumb.waitForSelector('.tile.mine .rebid input');
+    await thumb.waitForSelector('.tile.mine .rebid textarea');
     ok(true, 'her first thumbed-in name is hers (2j): editor ready');
-    await thumb.type('.tile.mine .rebid input', 'thumb-typed bid');
+    await thumb.type('.tile.mine .rebid textarea', 'thumb-typed bid');
     await thumb.keyboard.press('Enter');
     await thumb.waitForSelector('.tile.mine.has-bid');
-    ok(true, 'return submits the bid: implicit form submission, no'
+    ok(true, 'return submits the bid: the editor keydown, no'
        + ' button, no mouse');
     await thumb.tap('.tile[data-uname="bo"] .rename input');
     await thumb.$eval('.tile[data-uname="bo"] .rename input',
@@ -1092,7 +1109,7 @@ async function bid(page, bidText) {
     const thumb2 = await makePage(browser, mobileViewport);
     await thumb2.goto(BASE + '/thumbs', { waitUntil: 'networkidle0' });
     await thumb2.tap('.tile[data-uname="bob"] .tu');
-    await thumb2.waitForSelector('.tile.mine .rebid input');
+    await thumb2.waitForSelector('.tile.mine .rebid textarea');
     ok(true, 'tapping a star (a touch, not a click) claims the row');
     /* Replicata (dreev, phone): ALL tooltips vanished, surviving
        reload. The over-broad hover-none rule had killed the sticky-
@@ -1105,7 +1122,7 @@ async function bid(page, bidText) {
          && document.getElementById('tip').textContent.length > 0),
        'tooltips LIVE on touch: the star she just tapped wears its'
        + " tip via the tap's sticky hover");
-    await thumb2.tap('.tile.mine .rebid input');
+    await thumb2.tap('.tile.mine .rebid textarea');
     /* Replicata (dreev, phone): his is-you row — row two here — wore
        a stuck 'awaiting bid...' tooltip below it while he typed his
        bid. A tap sticks :hover to the bid cell and the tap's
@@ -1169,12 +1186,12 @@ async function bid(page, bidText) {
        'phone 1 is unseated QUIETLY: no red banner — the star fills'
        + ' in, stays live, and its tooltip says whose thumb took it');
     await p1.tap('.tile[data-uname="bea"] .tu');
-    await p1.waitForSelector('.tile[data-uname="bea"].mine .rebid input');
+    await p1.waitForSelector('.tile[data-uname="bea"].mine .rebid textarea');
     ok(true, 'phone 1 takes the open seat instead, one tap');
-    await p1.type('.tile.mine .rebid input', 'a dozen eggs');
+    await p1.type('.tile.mine .rebid textarea', 'a dozen eggs');
     await p1.keyboard.press('Enter');
     await p1.waitForSelector('.tile.mine.has-bid');
-    await p2.type('.tile.mine .rebid input', 'my parking spot');
+    await p2.type('.tile.mine .rebid textarea', 'my parking spot');
     await p2.keyboard.press('Enter');
     await p2.waitForSelector('.tile.mine.has-bid');
     await p1.waitForFunction(() =>
@@ -1203,10 +1220,10 @@ async function bid(page, bidText) {
                  bid: 'bee bid' });
     await wire.goto(BASE + '/wirestory', { waitUntil: 'networkidle0' });
     await claimRow(wire, 'ann');
-    await wire.type('.tile.mine .rebid input', 'first word');
+    await wire.type('.tile.mine .rebid textarea', 'first word');
     await wire.keyboard.press('Enter');
     await wire.waitForSelector('.tile.mine.has-bid');
-    await wire.click('.tile.mine .rebid input');
+    await wire.click('.tile.mine .rebid textarea');
     await wire.keyboard.type('!!!');  // a dirty, focused revision
     gas.handle({ action: 'reveal', aname: 'wirestory' });
     await wire.waitForFunction((womp) =>
@@ -1250,6 +1267,112 @@ async function bid(page, bidText) {
              document.getElementById('banner')).zIndex, 10)),
        'a summoned tooltip outranks the standing banner (heights'
        + ' pinned in the z-ladder registry too)');
+
+    /* ================= Story 7: the long bid ===========================
+       Replicata (dreev, 2026-07-21): type a bid longer than its box.
+       Expectata: the box grows to hold it — while typing, and again
+       in the revealed record. Sealed is the deliberate exception: a
+       sealed card must never leak the bid's SIZE, so it stays one
+       decoy line however long the secret. (The editor is queried
+       tag-agnostically: these quals judge the box, not the tag.) */
+    const ED = '.tile.mine .rebid :is(input, textarea)';
+    const leo = await makePage(browser, DESKTOP);
+    await leo.goto(BASE + '/longbid', { waitUntil: 'networkidle0' });
+    await addName(leo, 'leo');   // self-claims (2j)
+    await addName(leo, 'mo');
+    await leo.waitForSelector(ED);
+    const LONGBID = 'one hundred dollars, my cast-iron skillet, and a'
+      + ' month of doing all the dishes';
+    ok(LONGBID.length === 78, 'the fixture wraps hard while staying'
+       + ' well inside the 160-char limit');
+    const h0 = await leo.$eval(ED, (e) => e.getBoundingClientRect().height);
+    ok(await leo.evaluate((h) => {
+      const slot = document.querySelector('.tile:not(.mine) .bid-card.slot');
+      return h < slot.getBoundingClientRect().height * 1.5;
+    }, h0), "empty, the editor keeps the ledger's one-line rhythm");
+    await leo.click(ED);
+    await leo.type(ED, LONGBID);
+    ok(await leo.$eval(ED, (e, h) =>
+         e.getBoundingClientRect().height > h * 1.8
+         && e.scrollHeight <= e.clientHeight + 1, h0),
+       'the box grows under her fingers: every word of the long bid'
+       + ' stays in sight while she types');
+    await leo.keyboard.press('Enter');
+    await leo.waitForSelector('.tile.mine.has-bid');
+    ok(await leo.$eval(ED, (e, h) =>
+         e.getBoundingClientRect().height > h * 1.8
+         && e.scrollHeight <= e.clientHeight + 1, h0),
+       'and the standing bid keeps its tall box after submitting');
+    await shoot(leo, 'story7-long-bid-typing');
+
+    const mo = await makePage(browser, DESKTOP);
+    await mo.goto(BASE + '/longbid', { waitUntil: 'networkidle0' });
+    await mo.waitForSelector('#tiles .tile.has-bid');
+    ok(await mo.evaluate(() => {
+      const sealed = document.querySelector('.tile.has-bid .bid-card');
+      const slot = document.querySelector(
+        '.tile:not(.has-bid) .bid-card.slot');
+      return sealed.getBoundingClientRect().height
+             < slot.getBoundingClientRect().height * 1.5;
+    }), 'sealed, the 78-char bid wears a ONE-LINE card: the box must'
+       + ' never leak the size of what it hides');
+    await claimRow(mo, 'mo');
+    /* the 160-char limit OBJECTS, never chops (dreev: "i don't like
+       how it abruptly cuts me off... it should make it obvious"):
+       past it every keystroke still lands in sight, the field
+       reddens live, and Enter is refused in the server's own words,
+       the draft intact for trimming */
+    await mo.type(ED, 'x'.repeat(170));
+    ok(await mo.$eval(ED, (e) => e.value.length === 170
+         && e.scrollHeight <= e.clientHeight + 1),
+       'no keystroke eaten past the limit: all 170 chars land, in sight');
+    ok(await mo.evaluate(() => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--err-fg)';
+      document.body.append(probe);
+      const red = getComputedStyle(probe).color;
+      probe.remove();
+      return getComputedStyle(document.querySelector(
+        '.tile.mine .rebid textarea')).outlineColor === red;
+    }), 'and the field wears the red objection ring, live');
+    await mo.keyboard.press('Enter');
+    await mo.waitForFunction((womp) =>
+      !document.getElementById('banner').hidden
+      && document.getElementById('banner-msg').textContent === womp,
+      {}, SCOPY.bidTooLongCopy);
+    ok(await mo.$eval(ED, (e) => e.value.length === 170),
+       "refused before the wire, in the server's words, draft intact");
+    await mo.$eval(ED, (e) => e.select());
+    await mo.type(ED, '$100');
+    ok(await mo.$eval(ED, (e) => !e.classList.contains('error')),
+       'trimmed under the limit, the objection withdraws live');
+    await mo.keyboard.press('Enter');
+    await mo.waitForFunction(() =>
+      document.querySelectorAll('#tiles .tile.has-bid').length === 2);
+    ok(await mo.evaluate(() =>
+      document.getElementById('banner').hidden),
+       'and the successful settle retires the stale objection banner');
+    await mo.waitForFunction(() => !document.getElementById('seal').disabled);
+    await mo.click('#seal');
+    await mo.waitForFunction((t) => document.getElementById('status')
+      .textContent.includes(t), {}, LONGBID);
+    ok(await mo.evaluate(() => {
+      const long = document.querySelector(
+        '.tile[data-uname="leo"] .bid-card');
+      const short = document.querySelector(
+        '.tile.mine .rebid').firstElementChild;
+      return long.getBoundingClientRect().height
+             > short.getBoundingClientRect().height * 1.8
+        && document.documentElement.scrollWidth <= window.innerWidth;
+    }), "revealed, leo's card grows to fit all 78 characters —"
+       + ' downward, never sideways off the page');
+    await leo.waitForFunction(() =>
+      document.getElementById('status').classList.contains('revealed'));
+    ok(await leo.$eval(ED, (e) =>
+         e.disabled && e.scrollHeight <= e.clientHeight + 1),
+       "leo's own frozen record shows every word: the dead editor is"
+       + ' as tall as its bid');
+    await shoot(leo, 'story7-long-bid-revealed');
 
     ok(pageErrors.length === 0,
        'ZERO page errors across every story flow (the net catches'

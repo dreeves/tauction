@@ -108,6 +108,7 @@ const STR = new Function(STRINGLES
   + ' awaitingTip, auctionExistsBanner, simulEditsBanner, stampCopy,'
   + ' consensusStamp,'
   + ' claimedByTip, claimTip, mysteryDevice, nameTakenBanner,'
+  + ' bidTooLongBanner,'
   + ' moneyGlyphs, revealTip, needNameTip, removeTip,'
   + ' tooLateRemoveTip, resubmittedTip, nameStoneTip,'
   + ' waitingGlyph, yourMoveGlyph, readyGlyph, revealedGlyph,'
@@ -117,7 +118,7 @@ const STAMP = STR.stampCopy;
 // ...and the server's half, out of the vm context hosting Code.gs
 const SCOPY = require('vm')
   .runInContext('({ gavelFellCopy, simulEditsCopy, mysteryDeviceCopy,'
-    + ' nameTakenCopy, removeBidderCopy })', gas);
+    + ' nameTakenCopy, removeBidderCopy, bidTooLongCopy })', gas);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -220,7 +221,7 @@ function claimRow(dom, uname) {
 // Type into your row's in-place editor (jsdom does no implicit form
 // submission, so submitBid dispatches the submit event itself)
 function typeBid(dom, text) {
-  dom.window.document.querySelector('#tiles .rebid input').value = text;
+  dom.window.document.querySelector('#tiles .rebid textarea').value = text;
 }
 
 function submitBid(dom) {
@@ -241,7 +242,7 @@ const settled = (dom) => until(() => {
     && !doc.getElementById('status').classList.contains('stale');
 });
 
-const myInput = (doc) => doc.querySelector('#tiles .tile.mine .rebid input');
+const myEditor = (doc) => doc.querySelector('#tiles .tile.mine .rebid textarea');
 
 // Rename in place: every name IS a live text field; set it and submit
 function renameTo(dom, uname, to) {
@@ -454,7 +455,7 @@ const cssBattles = [];
       '{"pid-emptybid-ann":"standing bid"}');
   });
   const standingBid = row(dEmptyBid.window.document, 'ann')
-    .querySelector('.rebid input');
+    .querySelector('.rebid textarea');
   standingBid.value = '';
   standingBid.dispatchEvent(new dEmptyBid.window.Event('blur'));
   ok(standingBid.value === 'standing bid'
@@ -473,7 +474,7 @@ const cssBattles = [];
       '{"blankbid":"pid-blankbid-ann"}');
   });
   const blankBid = row(dBlankBid.window.document, 'ann')
-    .querySelector('.rebid input');
+    .querySelector('.rebid textarea');
   blankBid.value = '   ';
   blankBid.dispatchEvent(new dBlankBid.window.Event('blur'));
   ok(blankBid.value === '' && blankBid.defaultValue === ''
@@ -632,7 +633,7 @@ const cssBattles = [];
       '{"constructormap":"constructor"}'); });
   const constructorRow = row(dConstructor.window.document, 'constructor');
   ok(constructorRow && constructorRow.classList.contains('mine')
-     && constructorRow.querySelector('.rebid input').value === ''
+     && constructorRow.querySelector('.rebid textarea').value === ''
      && dConstructor.window.document.getElementById('banner').hidden,
      'constructor survives real JSON semantics as an ordinary unclaimed'
      + ' participant, with an ordinary blank bid editor');
@@ -641,7 +642,7 @@ const cssBattles = [];
   await settled(dConstructor);
   const constructorState = gas.handle(
     { action: 'state', aname: 'constructormap' });
-  ok(myInput(dConstructor.window.document).value === 'constructor bid'
+  ok(myEditor(dConstructor.window.document).value === 'constructor bid'
      && constructorState.bidders.find((b) => b.pid === 'constructor')
           .bcount === 1,
      'constructor submits and remembers its bid through the same safe'
@@ -693,7 +694,7 @@ const cssBattles = [];
      + ' stale');
   await settled(dRen);
   ok(row(dRen.window.document, 'gamma').classList.contains('mine')
-     && myInput(dRen.window.document).value === 'alice bid',
+     && myEditor(dRen.window.document).value === 'alice bid',
      'after the dust: same seat, same you, same bid — only the label'
      + ' changed');
   // the server-side label race (a collision the local guard cannot
@@ -1449,15 +1450,15 @@ const cssBattles = [];
   ok(dom.window.localStorage.getItem('tauction-uname') === 'alice',
      'the first add latched her name');
   ok(row(doc, 'alice').classList.contains('mine')
-     && myInput(doc), 'her row is hers, with an in-place editor');
+     && myEditor(doc), 'her row is hers, with an in-place editor');
   ok([...tiles(doc)].every((t) => t.querySelector('.x')
        && !t.querySelector('.x').disabled),
      'every row offers a live × while bidless');
-  ok(myInput(doc).placeholder === '' && myInput(doc).value === '',
+  ok(myEditor(doc).placeholder === '' && myEditor(doc).value === '',
      'fresh editor: blank — the caret invites the bid, not words');
-  ok(myInput(doc).getAttribute('enterkeyhint') === 'send',
+  ok(myEditor(doc).getAttribute('enterkeyhint') === 'send',
      "the mobile return key reads Send over the bid editor");
-  ok(myInput(doc).closest('.rebid').querySelector('.gavel.mini'),
+  ok(myEditor(doc).closest('.rebid').querySelector('.gavel.mini'),
      'your editor carries its own mini gavel for bid-in-flight');
   ok(!doc.getElementById('status').classList.contains('unclaimed'),
      'someone is you now: the + row stops wearing the you-star');
@@ -1468,25 +1469,25 @@ const cssBattles = [];
      'other bidless rows keep live stars (radio: one click to switch)');
 
   submitBid(dom);  // empty: the field itself objects, inline
-  ok(myInput(doc).classList.contains('error')
+  ok(myEditor(doc).classList.contains('error')
      && doc.getElementById('banner').hidden,
      'an empty bid reddens the field itself — no banner for a local'
      + ' slip');
   typeBid(dom, 'three tacos');
-  myInput(doc).dispatchEvent(new dom.window.Event('input',
+  myEditor(doc).dispatchEvent(new dom.window.Event('input',
     { bubbles: true }));
-  ok(!myInput(doc).classList.contains('error'),
+  ok(!myEditor(doc).classList.contains('error'),
      'typing clears the objection');
   submitBid(dom);
   await settled(dom);
-  ok(myInput(doc).value === 'three tacos',
+  ok(myEditor(doc).value === 'three tacos',
      'own bid lives in your row, editable in place');
   ok(tiles(doc, '.has-bid').length === 1 && tiles(doc).length === 2,
      'one green, one empty after first bid');
   ok(!tiles(doc, '.has-bid')[0].classList.contains('cut'),
      'roster member not crossed out');
-  ok(myInput(doc).className === 'bid-card'
-     && myInput(doc).style.boxShadow === 'var(--lift)',
+  ok(myEditor(doc).className === 'bid-card'
+     && myEditor(doc).style.boxShadow === 'var(--lift)',
      'first bid: your editor becomes a single card, no sheets — just'
      + ' the composable lift');
   // (subs superscript shelved 2026-07-15)
@@ -1586,7 +1587,7 @@ const cssBattles = [];
      '×ing your own row removes it and your editor with it');
   addName(domO, 'pam');
   ok(row(domO.window.document, 'pam').classList.contains('mine')
-     && myInput(domO.window.document),
+     && myEditor(domO.window.document),
      'adding your remembered name back re-latches automatically');
   await sleep(2000);
 
@@ -1764,7 +1765,7 @@ const cssBattles = [];
   renameTo(domT2, 'alice', 'alicia');
   await sleep(100);
   ok(row(docT2, 'alicia').classList.contains('mine')
-     && myInput(docT2).value === 'first dibs',
+     && myEditor(docT2).value === 'first dibs',
      'renaming yourself keeps you latched, bid and editor intact'
      + ' (nothing to migrate: the pid never moved)');
 
@@ -1784,7 +1785,7 @@ const cssBattles = [];
   await sleep(100);
   await sleep(5100);  // machine 1 polls
   ok(row(mA.window.document, 'carol').classList.contains('mine')
-     && myInput(mA.window.document).value === 'a carrot',
+     && myEditor(mA.window.document).value === 'a carrot',
      "a rename from another machine changes machine 1's LABEL only:"
      + ' the pid held firm, so identity and bid rode along untouched');
 
@@ -1806,7 +1807,7 @@ const cssBattles = [];
   };
   const domK = await makePage('/caret?api=' + API_URL, seedK);
   const docK = domK.window.document;
-  ok(docK.activeElement === myInput(docK),
+  ok(docK.activeElement === myEditor(docK),
      'arriving claimed and bidless: the caret is already in your editor');
   // the CACHED paint is an arrival too: with the live fetch still in
   // flight, the caret lands from the cached snapshot (pinned before
@@ -1819,25 +1820,25 @@ const cssBattles = [];
     w.localStorage.setItem('tauction-state:caret', caretSnap);
   });
   ok(domKc.window.document.activeElement
-       === myInput(domKc.window.document),
+       === myEditor(domKc.window.document),
      'a cache-painted arrival seats the caret before the live fetch'
      + ' even lands');
   mockDelay = 0;
   await settled(domKc);
-  myInput(docK).blur();
+  myEditor(docK).blur();
   const pollsK = apiCalls.filter((c) => c.action === 'state'
     && c.aname === 'caret').length;
   await until(() => apiCalls.filter((c) => c.action === 'state'
     && c.aname === 'caret').length > pollsK);
   await sleep(100);  // the poll's response lands and renders
-  ok(docK.activeElement !== myInput(docK),
+  ok(docK.activeElement !== myEditor(docK),
      'focus placement is one-shot: a poll never steals the caret back');
   typeBid(domK, 'ann bid');
   submitBid(domK);
   await settled(domK);
   const domK2 = await makePage('/caret?api=' + API_URL, seedK);
   ok(domK2.window.document.activeElement
-       !== myInput(domK2.window.document),
+       !== myEditor(domK2.window.document),
      'arriving with your bid already in: no auto-focus (nothing owed)');
 
   /* --- 2j. your first add, on a browser with no memory, adds YOURSELF ---
@@ -2095,6 +2096,10 @@ const cssBattles = [];
      'stringles.js and Code.gs agree verbatim on the name-taken copy'
      + ' (the client pre-check and the server refusal must read as one'
      + ' message)');
+  ok(STR.bidTooLongBanner === SCOPY.bidTooLongCopy,
+     'stringles.js and Code.gs agree verbatim on the bid-too-long copy'
+     + ' (the client refuses before the wire; the server clamps the'
+     + ' races and the hand-rolled requests)');
 
   /* --- 2p2. a rename that loses the race reddens the FIELD ------------
      Replicata: the local roster is a poll behind — someone else just
@@ -2368,7 +2373,7 @@ const cssBattles = [];
   mockDelay = 0;
   ok(domFL.window.localStorage.getItem('tauction-uname') === 'alice'
      && row(domFL.window.document, 'alice').classList.contains('mine')
-     && myInput(domFL.window.document).value === 'my treasure',
+     && myEditor(domFL.window.document).value === 'my treasure',
      'your bid stays in YOUR editor: no blank field, no orphaned bid');
 
   /* --- 2g. rapid adds must never flash-vanish ----------------------------
@@ -2427,7 +2432,7 @@ const cssBattles = [];
   typeBid(m1, 'the real bid');
   submitBid(m1);
   await settled(m1);
-  ok(myInput(m1.window.document).value === 'the real bid',
+  ok(myEditor(m1.window.document).value === 'the real bid',
      'machine 1, the (self-)claim holder, bids normally');
   await until(() =>  // machine 2's next poll delivers the dibs
     row(m2.window.document, 'alice').querySelector('.tu').classList
@@ -2629,7 +2634,7 @@ const cssBattles = [];
      && dTab.window.document.getElementById('aname').tabIndex === 0,
      '...which all remain tab stops themselves');
   ok(dTab.window.document.querySelector(
-       '.tile[data-uname="tia"] .rebid input').tabIndex === 0,
+       '.tile[data-uname="tia"] .rebid textarea').tabIndex === 0,
      "your own bid editor is an editable field: in the ring (dreev's"
      + ' checklist pinned it)');
   ok(dTab.window.document.querySelector('footer a').tabIndex === -1,
@@ -2810,7 +2815,7 @@ const cssBattles = [];
     new dSelf.window.KeyboardEvent('keydown',
       { key: 'Tab', bubbles: true, cancelable: true }));
   ok(dSelf.window.document.activeElement
-       === myInput(dSelf.window.document)
+       === myEditor(dSelf.window.document)
      && row(dSelf.window.document, 'dree').classList.contains('mine'),
      'add yourself, tab: the caret lands in YOUR fresh bid editor');
   dSelf.window.document.getElementById('roster-input').focus();
@@ -2911,7 +2916,7 @@ const cssBattles = [];
   await settled(dHall);
   ok(row(dHall.window.document, 'bee').classList.contains('mine')
      && dHall.window.document.activeElement
-          === myInput(dHall.window.document),
+          === myEditor(dHall.window.document),
      "tapping a takeable row's empty bid box claims it and puts the"
      + ' caret in the editor: the intent was never ambiguous');
   claimRow(dHall, 'bee');  // release again (radio) for scene (b)
@@ -2924,7 +2929,7 @@ const cssBattles = [];
   await settled(dHall2);
   ok(row(dHall2.window.document, 'bee').classList.contains('mine')
      && dHall2.window.document.activeElement
-          === myInput(dHall2.window.document)
+          === myEditor(dHall2.window.document)
      && dHall2.window.document.getElementById('roster-input').value === ''
      && !dHall2.window.document.getElementById('roster-input')
           .classList.contains('error'),
@@ -2967,7 +2972,7 @@ const cssBattles = [];
   ok(row(dAdd.window.document, 'gala') !== null
      && row(dAdd.window.document, 'gala').classList.contains('mine')
      && dAdd.window.document.activeElement
-          === myInput(dAdd.window.document),
+          === myEditor(dAdd.window.document),
      'tapping away commits the typed name — and a self-add lands the'
      + ' caret in YOUR fresh bid editor, no enter anywhere (dreev:'
      + ' show up, add your name, bid)');
@@ -2985,7 +2990,7 @@ const cssBattles = [];
   addName(dBlur, 'bea');
   await settled(dBlur);
   typeBid(dBlur, 'saved by blur');
-  myInput(dBlur.window.document).dispatchEvent(
+  myEditor(dBlur.window.document).dispatchEvent(
     new dBlur.window.Event('blur'));
   await until(() => (bidderNamed(gas.handle(
     { action: 'state', aname: 'blursave' }), 'bea') || {}).bcount === 1);
@@ -2993,22 +2998,22 @@ const cssBattles = [];
   await settled(dBlur);
   typeBid(dBlur, 'enter then blur');
   submitBid(dBlur);
-  myInput(dBlur.window.document).dispatchEvent(
+  myEditor(dBlur.window.document).dispatchEvent(
     new dBlur.window.Event('blur'));  // the keyboard closes
   await settled(dBlur);
   ok(bidderNamed(gas.handle(
        { action: 'state', aname: 'blursave' }), 'bea').bcount === 2,
      'enter then blur is ONE submission, not two (the closing mobile'
      + ' keyboard must not double-fire)');
-  ok(myInput(dBlur.window.document).value === 'enter then blur'
+  ok(myEditor(dBlur.window.document).value === 'enter then blur'
      && dBlur.window.document.getElementById('banner').hidden,
      'and an idle blur of a clean editor commits nothing');
   typeBid(dBlur, 'abandoned thought');
-  myInput(dBlur.window.document).dispatchEvent(
+  myEditor(dBlur.window.document).dispatchEvent(
     new dBlur.window.KeyboardEvent('keydown',
       { key: 'Escape', bubbles: true }));
   await settled(dBlur);
-  ok(myInput(dBlur.window.document).value === 'enter then blur'
+  ok(myEditor(dBlur.window.document).value === 'enter then blur'
      && bidderNamed(gas.handle(
           { action: 'state', aname: 'blursave' }), 'bea').bcount === 2,
      'Escape abandons a bid edit (the only way out now that clicking'
@@ -3056,7 +3061,7 @@ const cssBattles = [];
   ok(doc2.querySelector('#status .th-bid').textContent.includes('BIDS'),
      'BIDS column heading, before and after reveal');
   ok(doc2.getElementById('status').textContent.includes('three tacos')
-     && myInput(doc2).value === '$40 and my dignity',
+     && myEditor(doc2).value === '$40 and my dignity',
      "both bids shown: alice's card and bob's own editable row");
   ok(tiles(doc2, '.has-bid').length === 2, 'all rows green after reveal');
   // (subs superscript shelved 2026-07-15)
@@ -3111,8 +3116,8 @@ const cssBattles = [];
      'the gavel freezes the NAMES too (dreev: a post-close rename'
      + ' could swap who bid what), and the lit tada needs no tip —'
      + ' revealed is self-evident');
-  ok(myInput(doc2) && myInput(doc2).disabled
-     && myInput(doc2).value === '$40 and my dignity',
+  ok(myEditor(doc2) && myEditor(doc2).disabled
+     && myEditor(doc2).value === '$40 and my dignity',
      'the gavel drop is a bright line: your bid stays READABLE in your'
      + ' editor but the field goes dead (2026-07-16, dreev — reversing'
      + ' the old permissive pin)');
@@ -3181,8 +3186,8 @@ const cssBattles = [];
      + ' your still-flying revision');
   ok(bidNamed(gas.handle({ action: 'state', aname: 'selfwire' }), 'ann').bid === 'final answer',
      'the revision beat the gavel: writes land in click order');
-  ok(myInput(domSW.window.document).value === 'final answer'
-     && myInput(domSW.window.document).disabled,
+  ok(myEditor(domSW.window.document).value === 'final answer'
+     && myEditor(domSW.window.document).disabled,
      'and the frozen editor agrees with the revealed record');
 
   // first window catches up via polling (jsdom timers run; wait for it)
@@ -3311,7 +3316,7 @@ const cssBattles = [];
   submitBid(domA);
   await settled(domA);
   const own = tiles(domA.window.document, '.updated');
-  ok(own.length === 1 && own[0].querySelector('.rebid input').value === 'second',
+  ok(own.length === 1 && own[0].querySelector('.rebid textarea').value === 'second',
      'own re-bid shimmers and holds the new text');
   // (subs superscript shelved 2026-07-15)
   // ok(own[0].querySelector('.tile-subs').textContent === '2',
@@ -3326,7 +3331,7 @@ const cssBattles = [];
   ok(resubRe.test(hoverBid(domA, 'ann')),
      're-submission tooltip matches the stringles template, got '
      + hoverBid(domA, 'ann'));
-  ok(own[0].querySelector('.rebid input').style.boxShadow
+  ok(own[0].querySelector('.rebid textarea').style.boxShadow
        .includes('2px 2px'),
      're-bid stacks a sheet behind your card');
   await until(() =>  // domB polls
@@ -3379,7 +3384,7 @@ const cssBattles = [];
      && !docS.querySelector('#tiles .rebid'),
      'clicking your lit star releases: nobody again, no editor');
   claimRow(domS, 'bob');
-  ok(myInput(docS).value === '' && myInput(docS).placeholder === '',
+  ok(myEditor(docS).value === '' && myEditor(docS).placeholder === '',
      'a fresh claim starts a fresh, blank editor (bob has no bid yet)');
   typeBid(domS, 'second secret');
   submitBid(domS);
@@ -3437,7 +3442,7 @@ const cssBattles = [];
   await sleep(50);
   ok(domP.window.document.querySelector('#tiles .rebid').classList
        .contains('busy')
-     && !myInput(domP.window.document).disabled,
+     && !myEditor(domP.window.document).disabled,
      'your row shows busy while the bid flies — and the editor stays'
      + ' live for a change of heart');
   // the change of heart, mid-flight:
@@ -3462,7 +3467,7 @@ const cssBattles = [];
      && progressRows[1][2] === 'hurry HARDER',
      'the log holds both; the later row wins: client-serialized, last'
      + ' word standing');
-  ok(myInput(domP.window.document).value === 'hurry HARDER',
+  ok(myEditor(domP.window.document).value === 'hurry HARDER',
      'and the editor agrees');
 
   /* --- 3h. the 5s poll must not eat a bid you are mid-typing ------------
@@ -3471,9 +3476,9 @@ const cssBattles = [];
      survive the rebuild. */
   const domD = await makePage('/draft?api=' + API_URL);
   addName(domD, 'dan');  // self-claims (2j)
-  myInput(domD.window.document).focus();  // click into your editor
+  myEditor(domD.window.document).focus();  // click into your editor
   typeBid(domD, 'half a tho');
-  myInput(domD.window.document).setSelectionRange(4, 4);
+  myEditor(domD.window.document).setSelectionRange(4, 4);
   // wait for a poll to actually go out (a fixed sleep can miss a late
   // one, making "survives the poll" pass vacuously), then let its
   // response land and render
@@ -3482,12 +3487,90 @@ const cssBattles = [];
   await until(() => apiCalls.filter((c) => c.action === 'state'
     && c.aname === 'draft').length > polls0);
   await sleep(100);
-  ok(myInput(domD.window.document).value === 'half a tho',
+  ok(myEditor(domD.window.document).value === 'half a tho',
      'draft bid survives the poll rebuild');
-  ok(domD.window.document.activeElement === myInput(domD.window.document),
+  ok(domD.window.document.activeElement === myEditor(domD.window.document),
      'focus survives the poll rebuild');
-  ok(myInput(domD.window.document).selectionStart === 4,
+  ok(myEditor(domD.window.document).selectionStart === 4,
      'caret position survives the poll rebuild');
+
+  /* --- 3j. long bids: the editor commits like a one-line field ----------
+     Replicata (dreev, 2026-07-21): a bid longer than its box gets
+     clipped. The cure is a WRAPPING editor whose box grows (the
+     layout truth lives in story-quals; jsdom does no layout). Here
+     live the structural facts that keep it semantically ONE LINE:
+     Enter commits through the editor's own keydown (a wrapping field
+     gets no implicit form submission, and the keystroke must never
+     become a newline), and a pasted newline lands as a space. */
+  const domW = await makePage('/wrap?api=' + API_URL);
+  addName(domW, 'wes');  // self-claims (2j)
+  typeBid(domW, 'a very fine bid');
+  const swallowed = !myEditor(domW.window.document).dispatchEvent(
+    new domW.window.KeyboardEvent('keydown',
+      { key: 'Enter', bubbles: true, cancelable: true }));
+  await settled(domW);
+  ok(swallowed
+     && gas.handle({ action: 'state', aname: 'wrap' }).bidders.length === 1,
+     "Enter commits the bid via the editor's own keydown — and eats"
+     + ' the keystroke (it must never become a newline)');
+  typeBid(domW, 'line one\nline two');
+  // a real paste is a value change plus one input event (typeBid
+  // alone skips the event; nothing else in the suite needs it)
+  myEditor(domW.window.document).dispatchEvent(
+    new domW.window.Event('input', { bubbles: true }));
+  ok(myEditor(domW.window.document).value === 'line one line two',
+     'a pasted newline lands as a space: a bid is one line of text,'
+     + ' however many lines of box it wraps across');
+  // [the maxLength clamp REPLACED same-day (dreev: "i don't like how
+  // it abruptly cuts me off... it should make it obvious"): no
+  // keystroke is ever eaten — past 160 the field objects live, and
+  // submit is refused LOCALLY, in the server's exact words]
+  typeBid(domW, 'x'.repeat(161));
+  myEditor(domW.window.document).dispatchEvent(
+    new domW.window.Event('input', { bubbles: true }));
+  ok(myEditor(domW.window.document).value.length === 161
+     && myEditor(domW.window.document).classList.contains('error'),
+     'past 160 chars every keystroke still lands, and the field'
+     + ' reddens live');
+  const bids0 = apiCalls.filter((c) => c.action === 'bid').length;
+  submitBid(domW);
+  await sleep(60);
+  ok(apiCalls.filter((c) => c.action === 'bid').length === bids0
+     && !domW.window.document.getElementById('banner').hidden
+     && domW.window.document.getElementById('banner-msg').textContent
+          === SCOPY.bidTooLongCopy
+     && myEditor(domW.window.document).value === 'x'.repeat(161),
+     'an overlong submit is refused before the wire, in the'
+     + " server's exact words, the draft intact for trimming");
+  typeBid(domW, 'x'.repeat(160));
+  myEditor(domW.window.document).dispatchEvent(
+    new domW.window.Event('input', { bubbles: true }));
+  ok(!myEditor(domW.window.document).classList.contains('error'),
+     'trimmed back under the limit, the objection withdraws itself');
+
+  /* --- 3k. the busy sign is op-local (dreev, 2026-07-21): saving
+     JUST the blurb must not gray the bid table — the desc card wears
+     its own mini gavel; roster ops still gray the ledger ----------- */
+  const domY = await makePage('/descbusy?api=' + API_URL);
+  addName(domY, 'gia');  // self-claims (2j)
+  const docY = domY.window.document;
+  ok(docY.getElementById('status').classList.contains('stale')
+     && !docY.getElementById('desc').classList.contains('stale'),
+     'a roster op grays the ledger, never the description');
+  await until(() => !docY.getElementById('status').classList
+    .contains('stale'));
+  docY.getElementById('descedit').value = 'brunch rules';
+  docY.getElementById('descedit').dispatchEvent(
+    new domY.window.Event('blur'));
+  ok(docY.getElementById('desc').classList.contains('stale')
+     && docY.querySelector('#desc .gavel.mini')
+     && !docY.getElementById('status').classList.contains('stale'),
+     'a blurb save marks the desc card busy — its own mini gavel —'
+     + ' and the ledger neither grays nor gavels');
+  await until(() => !docY.getElementById('desc').classList
+    .contains('stale'));
+  ok(!docY.getElementById('desc').classList.contains('stale'),
+     "the settle stills the desc card's gavel");
 
   /* --- 3i. keyed node reuse: rows keep their DOM nodes across CHANGE-ful
      renders too, so a mid-gesture click or focused editor can never be
@@ -3576,7 +3659,7 @@ const cssBattles = [];
   typeBid(dom4, 'i bid 2 dishes');
   submitBid(dom4);
   await until(() => row(doc4, 'dee').classList.contains('has-bid'));
-  ok(myInput(doc4).value === 'i bid 2 dishes', 'own roster bid visible');
+  ok(myEditor(doc4).value === 'i bid 2 dishes', 'own roster bid visible');
   ok(row(doc4, 'dee').classList.contains('has-bid')
      && !row(doc4, 'evy').classList.contains('has-bid'),
      'dee green, evy still empty');
@@ -3738,12 +3821,12 @@ const cssBattles = [];
   // real bid pulses at submit time, before any response lands
   typeBid(dPulse, '');
   submitBid(dPulse);
-  ok(!myInput(pdoc).classList.contains('committed')
-     && myInput(pdoc).classList.contains('error'),
+  ok(!myEditor(pdoc).classList.contains('committed')
+     && myEditor(pdoc).classList.contains('error'),
      'an empty bid reddens but never pulses');
   typeBid(dPulse, '7 tacos');
   submitBid(dPulse);
-  ok(myInput(pdoc).classList.contains('committed'),
+  ok(myEditor(pdoc).classList.contains('committed'),
      'a bid pulses the moment it is away, not when the server answers');
   await settled(dPulse);
   // a rename: same-name snap-back is a non-event; a real edit pulses

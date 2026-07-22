@@ -78,7 +78,7 @@ const releaseNeedsDeviceCopy = 'ERROR1305: release requires a deviceID';
 const notYourSeatCopy = 'ERROR1306: Can this error ever happen?'
   + ' Disclaiming yourself as a participant failed?';
 const emptyBidCopy = 'Bid is empty';
-const bidTooLongCopy = 'bid too long (80 characters max)';
+const bidTooLongCopy = 'bid too long (160 characters max)';
 const gavelFellCopy =
   'Womp Womp! The auction closed before your bid got through';
 const bidSeatHeldCopy = (blurb) =>
@@ -702,7 +702,7 @@ function placeBid(req) {
   const uname = cleanUname(req.uname);  // the label, for walk-on seats
   const bid = String(req.bid == null ? '' : req.bid).trim();
   if (!bid) throw emptyBidCopy;
-  if (bid.length > 80) throw bidTooLongCopy;
+  if (bid.length > 160) throw bidTooLongCopy;
   // The gavel drop is a bright line: no bid lands after tfin. This is
   // also the explicit loss notice for an under-the-wire revision that
   // arrived a beat too late.

@@ -92,7 +92,10 @@ input:not([type]) {  /* every input in the app is typeless */
   width: 100%;
 }
 
-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+input:focus, .rebid textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
 
 /* The gavel disables the bid editor and the name fields, but their
    text is the RECORD, not gray history. Chrome already honors the
@@ -100,7 +103,7 @@ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
    -webkit-text-fill-color plus opacity (fill beats color — dreev's
    grayed final bid), so all three axes get pinned. The grayed-🎉
    class of bug: when text looks washed, check every ink channel. */
-.rebid input:disabled, .rename input:disabled, #aname:disabled {
+.rebid textarea:disabled, .rename input:disabled, #aname:disabled {
   color: var(--fg);
   -webkit-text-fill-color: var(--fg);
   opacity: 1;
@@ -212,6 +215,22 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   padding-right: 2rem;
   resize: vertical;
 }
+
+/* the desc card's own busy sign, the .rebid.busy recipe: a blurb
+   save spins its mini gavel here (dreev: saving JUST the
+   description must not gray the bid table) */
+.desc .gavel.mini {
+  display: none;
+  position: absolute;
+  left: auto;
+  right: 0.5rem;
+  top: 50%;
+  zoom: 0.45;
+  transform: translateY(-50%);
+  opacity: 1;
+}
+
+.desc.stale .gavel.mini { display: block; }
 
 .descview {
   font-size: 0.85rem;
@@ -523,13 +542,16 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .gavel .bang::after { transform: rotate(-8deg); }
 
-#status.stale .gavel .mallet, .rebid.busy .gavel.mini .mallet {
+#status.stale .gavel .mallet, .rebid.busy .gavel.mini .mallet,
+.desc.stale .gavel.mini .mallet {
   animation: gavel 1.15s infinite;
 }
-#status.stale .gavel .bang, .rebid.busy .gavel.mini .bang {
+#status.stale .gavel .bang, .rebid.busy .gavel.mini .bang,
+.desc.stale .gavel.mini .bang {
   animation: gavel-bang 1.15s infinite;
 }
-#status.stale .gavel .block, .rebid.busy .gavel.mini .block {
+#status.stale .gavel .block, .rebid.busy .gavel.mini .block,
+.desc.stale .gavel.mini .block {
   animation: gavel-thud 1.15s infinite;
 }
 
@@ -937,30 +959,41 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   cursor: default;
 }
 
-/* Your row's bid slot is an input: dashed while empty, the card look
-   (stack shadows and all) once your bid is in */
+/* Your row's bid slot is an editor: dashed while empty, the card look
+   (stack shadows and all) once your bid is in. A TEXTAREA, not an
+   input, so a long bid can WRAP — field-sizing grows the box to hold
+   exactly what's typed: one line empty, taller as the words demand,
+   while typing and in the frozen record alike. (Sealed cards never
+   wrap: the masked decoy is one constant line by design.) */
 .rebid { display: flex; flex: 1; }
 
-.rebid input {
+.rebid textarea {
+  /* the base recipe input:not([type]) gives every input above — a
+     textarea matches none of it */
+  font: inherit;
+  color: inherit;
+  background: transparent;
   font-size: 0.85rem;
   width: 100%;
   min-width: 0;
   text-align: left;
   padding: 0.3rem 0.65rem;  /* the same box recipe as every other cell */
+  field-sizing: content;    /* the whole growing-box mechanism */
+  resize: none;             /* the box is exactly its words: no grip */
 }
 
 /* Your empty editor is a normal, solid field with the caret already
    in it (app.js places focus on arrival): the blinking cursor is the
    whole "type your bid here" signal. It never pulses — pulsing means
    "waiting on THEM", and the auction waits on you via the caret. */
-.rebid input.bid-slot {
+.rebid textarea.bid-slot {
   border: 1px solid var(--border);
   border-radius: 3px;
   background-color: var(--bg);
   box-shadow: var(--lift);
 }
 
-.rebid input.bid-card {
+.rebid textarea.bid-card {
   border: 1px solid var(--ok-fg);
   background-color: var(--ok-bg);
   border-radius: 3px;
@@ -969,7 +1002,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* the empty-bid objection: the field itself reddens (outline beats
    the accent focus ring while it stands) */
-.rebid input.error, .rename input.error {
+.rebid textarea.error, .rename input.error {
   outline: 2px solid var(--err-fg);
   outline-offset: -1px;
 }

@@ -613,11 +613,11 @@ ok(call({ action: 'bid', aname: 'tau2', uname: 'abc',
           pid: pid('tau2', 'abc'), bid: '' }).error,
    'empty bid rejected');
 ok(call({ action: 'bid', aname: 'tau2', uname: 'abc',
-          pid: pid('tau2', 'abc'), bid: 'y'.repeat(81) })
+          pid: pid('tau2', 'abc'), bid: 'y'.repeat(161) })
    .error, '81-char bid rejected');
 ok(!call({ action: 'bid', aname: 'tau2', uname: 'abc',
-           pid: pid('tau2', 'abc'), bid: 'y'.repeat(80) })
-   .error, '80-char bid accepted');
+           pid: pid('tau2', 'abc'), bid: 'y'.repeat(160) })
+   .error, '160-char bid accepted');
 
 // 9b. Replicata: send a virgin claim/bid whose device decoration or id
 //     is invalid. Expectata: validation refuses before any write.

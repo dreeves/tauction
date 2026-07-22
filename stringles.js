@@ -88,6 +88,12 @@ const auctionExistsBanner = (url) =>
 // words (a qual pins the match), so both read as one message
 const nameTakenBanner = 'That name is taken';
 
+// The overlong-bid objection: the field reddens live past 160 and a
+// submit is refused before the wire — in the server's exact words
+// (Code.gs clamps too, for races and hand-rolled requests; a qual
+// pins the verbatim match so both read as one message)
+const bidTooLongBanner = 'bid too long (160 characters max)';
+
 // Someone saved the description while you were editing yours (also
 // thrown by the server's compare-and-swap; must match it exactly so
 // the back-to-back banners read as one)
