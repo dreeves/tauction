@@ -129,6 +129,22 @@ ok(st.bidders.length === 1
         === pid('tau', 'alice'),
    'one BIDDER in the payload however many rows: latest-row-wins');
 
+// The UI owns the consecutive-same-bid no-op BEFORE the wire. Once a
+// bid request reaches this append-only API it is a submission, even
+// when its sealed text matches the last row. Server-side equality
+// would make unchanged bcount an oracle for guessing a sealed bid.
+const wireDupe = { action: 'bid', aname: 'wiredupe', uname: 'ann',
+  pid: pid('wiredupe', 'ann'), bid: 'same sealed words',
+  deviceID: 'dev-wiredupe' };
+call(wireDupe);
+st = call(wireDupe);
+ok(st.bidders[0].bcount === 2
+   && ss.sheets['bids'].data.filter(
+        (r) => r[0] === 'wiredupe' && r[1] === pid('wiredupe', 'ann')).length
+      === 2,
+   'two explicit wire submissions remain two log rows: the server never'
+     + ' reveals sealed-text equality');
+
 // 4b. Replicata: a pid that is literally "constructor" (valid by the
 //     pid grammar) submits a bid. Expectata: aggregated like any pid.
 //     Resultata pre-fix: Object.prototype.constructor impersonated an

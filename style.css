@@ -393,9 +393,14 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    toward the reveal. Your own row's slot is an input; × removes
    bidless rows; the + row at the bottom adds people to the roster. */
 
-/* Each ledger line splits into two visible pieces: a bordered person
-   cell and a bordered bid cell. State colors both pieces: dashed +
-   breathing = awaiting a bid, solid green = bid in. */
+/* Each ledger line is a FIELD and a CARD (dreev 2026-07-22, replacing
+   the twin-boxes look where both pieces wore one recipe): the person
+   cell is a normal one-line field — solid quiet border, no fill, no
+   shadow, never growing — and the bid is a card you write on, which
+   carries ALL the state chrome: dashed and breathing while awaited,
+   green when the bid is in, stack sheets, the you-pop, growing as the
+   words demand. The person side speaks state in ink alone: green text
+   once the bid is in, a breathing color while awaited. */
 
 /* Column headings over the two pieces. Same font-size as .tile-name so
    the ch-based min-width resolves to the identical column width. */
@@ -695,20 +700,20 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .tile {
   display: flex;
-  align-items: stretch;
+  /* flex-start, not stretch: a wrapped bid grows its own card, and
+     the bare name holds its first line instead of inflating with it */
+  align-items: flex-start;
   gap: 0.4rem;
 }
 
-.tile-name, .addrow .at-wrap {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  border: 1px dashed var(--border);
+/* the + row is a normal field like the person cells it mints — same
+   recipe (base .at-wrap gives the solid border), so the columns
+   rhyme; its old dashed border retired with the twin-boxes look
+   (dashed now means exactly one thing: a card awaiting its bid) */
+.addrow .at-wrap {
   border-radius: 3px;
   padding: 0.3rem 0.65rem;
-  background-color: var(--bg);
-  background-repeat: no-repeat;
-  transition: border-color 0.5s, background-color 0.5s;
+  width: calc(15ch + 3rem);  /* = .tile-name: twin edges, one column */
 }
 
 /* the auction's tombstone: the + row retires at the reveal and this
@@ -772,8 +777,17 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 #status.unclaimed .addrow .you-hint { visibility: visible; }
 
-/* the person cell is name-sized (longer names widen their own line) */
+/* The person cell: a normal one-line field. Same border-and-padding
+   geometry as the bid card (1px + 0.3rem), so the two first lines sit
+   level and a one-line row's two pieces are exactly equal heights —
+   but flat and unfilled where the card wears fills and shadows. */
 .tile-name {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.3rem 0.65rem;
   font-weight: 700;
   font-size: 0.85rem;
   color: var(--muted);
@@ -821,12 +835,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   margin-left: 0.15rem;   air between the ✅ and its count
 }
 */
-
-.tile.has-bid .tile-name {
-  border-style: solid;
-  border-color: var(--ok-fg);
-  background-color: var(--ok-bg);
-}
 
 .tile.has-bid .tile-name { color: var(--ok-fg); }
 
@@ -939,12 +947,15 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* × removes the whole row from the roster; grayed once a bid is in */
 .tile .x {
   flex: none;
-  align-self: center;
+  /* pinned to the row's first line, not its middle: the 0.12rem is
+     exactly where centering put it on a one-line row, so short rows
+     look unchanged and a wrapped bid can't drag the × down */
+  align-self: flex-start;
   border: none;
   background: none;
   /* dimmed via color alpha, not opacity — see the .tu comment above */
   color: color-mix(in srgb, var(--muted) 70%, transparent);
-  padding: 0 0 0 0.1rem;
+  padding: 0.12rem 0 0 0.1rem;
   /* optical parity with the ✅ beside it: the emoji inks ~1.03em of its
      0.75rem font, the × glyph only ~0.46em of its own, so equal ink
      height = 0.75rem × 1.03/0.46 ≈ 1.7rem */
@@ -1032,10 +1043,13 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .rebid.busy .gavel.mini { display: block; }
 
-.tile.updated .tile-name {
+/* the incoming shimmer sweeps the CARD — the thing that changed (it
+   rode the name box until the box died, 2026-07-22) */
+.tile.updated .bid-card {
   background-image: linear-gradient(105deg,
     transparent 40%, var(--shimmer) 50%, transparent 60%);
   background-size: 250% 100%;
+  background-repeat: no-repeat;
   animation: shimmer 1.1s ease-out;
 }
 
@@ -1053,29 +1067,37 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 @keyframes commit-pulse { from { background-color: var(--shimmer); } }
 
 /* Empty slots breathe slowly: unmistakably awaiting a bid, unmistakably
-   not a loading spinner. (Both pieces breathe; the tile carries the
-   phase-lock delay inline and the pieces inherit it.) */
+   not a loading spinner. (Both pieces still breathe, in phase — the
+   slot in chrome, the person field in INK, its border constant; the
+   tile carries the phase-lock delay inline and the pieces inherit
+   it.) */
 
 /* the pulse means "waiting on them" — and you're not waiting on
    yourself, so your own row sits still... */
 .tile:not(.has-bid):not(.mine) .tile-name {
-  animation: breathe 3s ease-in-out infinite;
+  animation: breathe-ink 3s ease-in-out infinite;
   animation-delay: inherit;
 }
 
 /* ...and subtly up-popped instead (doc.beeminder.com/pop): elevation,
    not motion, marks which row is you. --lift is a no-op shadow that
    .mine flips to the pop; every shadowed piece composes with it, so the
-   re-bid stack sheets and the pop coexist. */
+   re-bid stack sheets and the pop coexist. (Since 2026-07-22 the only
+   shadowed piece is the bid box: shadows are card vocabulary, and the
+   person field stays flat.) */
 .tile { --lift: 0 0 0 0 transparent; }
 
 .tile.mine { --lift: var(--pop); }
 
-.tile-name { box-shadow: var(--lift); }
-
 @keyframes breathe {
   0%, 100% { border-color: var(--border); background-color: var(--bg); }
   50%      { border-color: var(--accent); background-color: var(--accent-soft); }
+}
+
+/* the same pulse for a boxless element: ink instead of chrome */
+@keyframes breathe-ink {
+  0%, 100% { color: var(--muted); }
+  50%      { color: var(--accent); }
 }
 
 /* the + row: the ledger's last line, a standing invitation to add a
@@ -1090,11 +1112,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    so the @ stays on the name column */
 .addrow .at-wrap { flex: none; font-size: 0.85rem; gap: 0; }
 
+/* the input fills whatever the fixed-width wrap has left (base
+   .at-wrap input is flex: 1) — its old 14ch pin made the box wider
+   than the person fields above it */
 .addrow .at-wrap input {
   padding: 0 0.3rem 0 0.1rem;  /* hug the @ like the row names do */
   font-size: 0.85rem;
-  flex: none;
-  width: 14ch;
 }
 
 @media (prefers-reduced-motion: reduce) {

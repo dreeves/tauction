@@ -1305,6 +1305,15 @@ async function placeBid(pid, form) {
     editor.classList.add('error');
     return;
   }
+  // The latest effective submission is the last one sent while a
+  // volley is aloft, otherwise the last one the server accepted.
+  // Sending those same normalized words again changes nothing: no
+  // wire call, commit pulse, busy sign, bcount, or card sheet. The
+  // busy split preserves A→B→A while B flies, and lets a failed B
+  // retry against the still-accepted A baseline.
+  const lastBid = form.classList.contains('busy')
+    ? editor.dataset.sent : editor.defaultValue;
+  if (bid === lastBid) return;
   editor.dataset.sent = bid;  // this exact text is on its way: the
                               // blur that follows an enter is a no-op
   flashCommit(editor);  // the pulse marks the SUBMIT, not the settle

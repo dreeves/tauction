@@ -244,7 +244,8 @@ async function bid(page, bidText) {
     ok(await alice.evaluate(() =>
       getComputedStyle(document.querySelector(
         '#tiles .tile:not(.has-bid):not(.mine) .tile-name'))
-        .animationName === 'breathe'), 'awaiting person cells breathe');
+        .animationName === 'breathe-ink'),
+       'awaiting names breathe in ink (no box left to breathe in)');
     ok(await alice.evaluate(() => {
       const slot = document.querySelector(
         '#tiles .tile:not(.has-bid) .bid-card.slot');
@@ -253,12 +254,35 @@ async function bid(page, bidText) {
         && slot.getBoundingClientRect().height > 10;
     }), 'an empty dashed card breathes where the awaited bid will go');
     ok(await alice.evaluate(() => {
-      const slot = document.querySelector('#tiles .bid-card.slot');
-      const name = document.querySelector('#tiles .tile-name');
-      return getComputedStyle(slot).padding === getComputedStyle(name).padding
-        && getComputedStyle(slot).borderRadius
-           === getComputedStyle(name).borderRadius;
-    }), 'bid boxes wear the same box recipe as the participant boxes');
+      const name = getComputedStyle(
+        document.querySelector('#tiles .tile-name'));
+      const wrap = getComputedStyle(
+        document.querySelector('#status .addrow .at-wrap'));
+      return name.borderTopStyle === 'solid'
+        && name.backgroundColor === 'rgba(0, 0, 0, 0)'
+        && name.boxShadow === 'none'
+        && wrap.borderTopStyle === 'solid'
+        && name.borderTopColor === wrap.borderTopColor;
+    }), 'person cells are normal one-line fields — solid quiet border,'
+       + ' no fill, no shadow — twins of the + row that mints them');
+    // fastidious alignment: field and card share border+padding
+    // geometry, so their first lines sit level and a one-line row's
+    // two pieces are equal heights
+    ok(await alice.evaluate(() => {
+      const t = document.querySelector(
+        '#tiles .tile:not(.mine):not(.has-bid)');
+      const name = t.querySelector('.tile-name').getBoundingClientRect();
+      const slot = t.querySelector('.bid-card.slot').getBoundingClientRect();
+      return Math.abs(name.top - slot.top) < 1
+        && Math.abs(name.height - slot.height) < 1;
+    }), 'field and awaiting card sit level: same top, same height');
+    ok(await alice.evaluate(() => {
+      const m = document.querySelector('#tiles .tile.mine');
+      const name = m.querySelector('.tile-name').getBoundingClientRect();
+      const ed = m.querySelector('.rebid textarea').getBoundingClientRect();
+      return Math.abs(name.top - ed.top) < 1
+        && Math.abs(name.height - ed.height) < 1;
+    }), 'your field and your editor sit level too');
     // (subs superscript shelved 2026-07-15 for clutter; restore with the
     // commented code in app.js/style.css)
     // ok(await alice.evaluate(() =>
@@ -284,6 +308,15 @@ async function bid(page, bidText) {
       const add = document.querySelector('.addrow').getBoundingClientRect();
       return add.top - last.bottom >= 4;
     }), 'the + row keeps the same breathing room as the rows above it');
+    ok(await alice.evaluate(() => {
+      const name = document.querySelector('#tiles .tile-name')
+        .getBoundingClientRect();
+      const wrap = document.querySelector('#status .addrow .at-wrap')
+        .getBoundingClientRect();
+      return Math.abs(name.left - wrap.left) < 1
+        && Math.abs(name.right - wrap.right) < 1;
+    }), 'the + row is a true twin of the person fields: both edges on'
+       + ' the column');
     ok(await alice.evaluate(() => {
       const alpha = (c) => {
         const m = c.match(/(?:rgba\([^)]+,\s*|\/\s*)([\d.]+)\)\s*$/);
@@ -336,15 +369,18 @@ async function bid(page, bidText) {
        'column headings lead the section; padlock with BIDS, tip with'
        + ' PARTICIPANTS');
 
-    // each ledger line splits into two visible pieces: a bordered person
-    // cell and a bordered bid cell, with the line itself borderless
+    // each ledger line is a FIELD and a CARD, the line itself
+    // borderless; flex-start (not stretch) so a wrapped bid grows its
+    // own card while the one-line field holds its height
     ok(await alice.evaluate(() => {
       const t = document.querySelector('#tiles .tile');
       const name = getComputedStyle(t.querySelector('.tile-name'));
       const bid = getComputedStyle(t.querySelector('.tile-bid'));
       return getComputedStyle(t).borderBottomWidth === '0px'
+        && getComputedStyle(t).alignItems === 'flex-start'
         && name.borderTopWidth === '1px' && bid.borderTopWidth === '0px';
-    }), 'person cell boxed; the bid floats free (its card is box enough)');
+    }), 'a field for the person, a card for the bid, and a tall bid'
+       + ' cannot inflate its neighbor');
 
     /* [FLIPPED 2026-07-17 per dreev's frictionless-add: the + row
        commits on blur like every other field now — the click-swallow
@@ -375,13 +411,13 @@ async function bid(page, bidText) {
       const other = document.querySelector(
         '.tile:not(.mine):not(.has-bid) .tile-name');
       return getComputedStyle(mine).animationName === 'none'
-        && getComputedStyle(mine).boxShadow !== 'none'
-        && getComputedStyle(other).animationName === 'breathe';
-    }), 'others pulse (awaited); your row sits still, subtly up-popped');
+        && getComputedStyle(mine).boxShadow === 'none'
+        && getComputedStyle(other).animationName === 'breathe-ink';
+    }), 'others pulse (awaited); your row sits still');
     ok(await alice.evaluate(() =>
       getComputedStyle(document.querySelector('.tile.mine .rebid textarea'))
         .boxShadow !== 'none'),
-       'the pop lifts the whole you-row, bid piece included');
+       'the pop rides your bid editor (the person field stays flat)');
     // the empty editor invites with the caret, not words: no
     // placeholder, a normal solid field, focus already in it — and
     // never a pulse (pulsing means "waiting on THEM")
@@ -401,6 +437,16 @@ async function bid(page, bidText) {
       getComputedStyle(document.querySelector('.tile.mine .rebid textarea'))
         .animationName === 'none'),
        'no pulse with the bid in either: only not-you rows ever pulse');
+    ok(await alice.evaluate(() => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--ok-fg)';
+      document.body.append(probe);
+      const green = getComputedStyle(probe).color;
+      probe.remove();
+      return getComputedStyle(document.querySelector(
+        '.tile.has-bid .tile-name')).color === green;
+    }), 'the bid-in signal speaks in ink: the name text itself goes'
+       + ' green');
     ok(await alice.evaluate(() => {
       const f = getComputedStyle(document.querySelector('footer'));
       const a = getComputedStyle(document.querySelector('footer a'));

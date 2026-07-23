@@ -3019,6 +3019,93 @@ const cssBattles = [];
      'Escape abandons a bid edit (the only way out now that clicking'
      + ' away saves): reverted, nothing submitted');
 
+  /* --- 2w. an unchanged bid is NO submission -----------------------------
+     Replicata: send a bid, then send the same words again — after the
+     first settles or while it is still flying.
+     Expectata: the repeat is a client-side no-op: no POST, no new log
+     row/count/card sheet, no busy sign, and no commit pulse.
+     Resultata pre-fix: every form submit appended another identical row
+     and made the card pile one sheet deeper. ---------------------------- */
+  const dDupe = await makePage('/dupebid?api=' + API_URL);
+  addName(dDupe, 'dot');
+  await settled(dDupe);
+  const dupePosts = () => apiCalls.filter((c) =>
+    c.action === 'bid' && c.aname === 'dupebid').length;
+
+  // Two immediate identical sends: the second gesture lands while the
+  // first request is aloft, before defaultValue can become the baseline.
+  mockDelay = 150;
+  typeBid(dDupe, 'same bid');
+  submitBid(dDupe);
+  submitBid(dDupe);
+  await settled(dDupe);
+  mockDelay = 0;
+  let dupeState = gas.handle({ action: 'state', aname: 'dupebid' });
+  ok(dupePosts() === 1
+     && bidderNamed(dupeState, 'dot').bcount === 1,
+     'rapid same→same sends one POST and leaves one bid-log row');
+  ok(myEditor(dDupe.window.document).style.boxShadow === 'var(--lift)',
+     'rapid same→same leaves a single card, with no extra stack sheet');
+
+  // Once settled, equality is judged on the server-normalized text:
+  // whitespace around the same bid is still the same bid.
+  const settledPosts = dupePosts();
+  const settledShadow = myEditor(dDupe.window.document).style.boxShadow;
+  myEditor(dDupe.window.document).classList.remove('committed');
+  typeBid(dDupe, '  same bid  ');
+  submitBid(dDupe);
+  ok(!myEditor(dDupe.window.document).closest('.rebid').classList
+       .contains('busy')
+     && !myEditor(dDupe.window.document).classList.contains('committed'),
+     'settled same→same is inert immediately: no busy sign or pulse');
+  await sleep(30);
+  dupeState = gas.handle({ action: 'state', aname: 'dupebid' });
+  ok(dupePosts() === settledPosts
+     && bidderNamed(dupeState, 'dot').bcount === 1
+     && myEditor(dDupe.window.document).style.boxShadow === settledShadow,
+     'settled same→same sends no POST and changes no count or card layer');
+
+  // Only CONSECUTIVE equality disappears. Returning to the standing
+  // words while a different revision flies must queue the return;
+  // comparing only with defaultValue would incorrectly eat it.
+  mockDelay = 150;
+  typeBid(dDupe, 'different bid');
+  submitBid(dDupe);
+  typeBid(dDupe, 'same bid');
+  submitBid(dDupe);
+  await settled(dDupe);
+  mockDelay = 0;
+  dupeState = gas.handle({ action: 'state', aname: 'dupebid' });
+  ok(dupePosts() === 3
+     && bidderNamed(dupeState, 'dot').bcount === 3,
+     'same→different→same keeps all three submissions: only adjacent'
+       + ' duplicates are no-ops');
+
+  // A transport failure submits nothing, so retrying the same words is
+  // not a duplicate. The first request dies before reaching mockFetch;
+  // the recovery refresh and retry use the real bridge.
+  const bridgedFetch = dDupe.window.fetch;
+  let failNextBid = true;
+  dDupe.window.fetch = (url, opts) => {
+    const body = opts && opts.method === 'POST'
+      ? JSON.parse(opts.body) : null;
+    if (failNextBid && body && body.action === 'bid') {
+      failNextBid = false;
+      return Promise.reject(new TypeError('Failed to fetch'));
+    }
+    return bridgedFetch(url, opts);
+  };
+  typeBid(dDupe, 'retry me');
+  submitBid(dDupe);
+  await until(() => !myEditor(dDupe.window.document).closest('.rebid')
+    .classList.contains('busy'));
+  submitBid(dDupe);
+  await settled(dDupe);
+  dupeState = gas.handle({ action: 'state', aname: 'dupebid' });
+  ok(dupePosts() === 4
+     && bidderNamed(dupeState, 'dot').bcount === 4,
+     'a failed bid may be retried unchanged: one successful POST and row');
+
   /* --- 3. bob's window: alice's bid sealed there; his bid reveals ------- */
   const dom2 = await makePage('/tau?api=' + API_URL);
   const doc2 = dom2.window.document;
