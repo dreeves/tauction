@@ -844,7 +844,7 @@ function buildRow(pid) {
   star.type = 'button';
   star.addEventListener('click', () => toggleTu(pid));
   const nameEl = el('div', 'tile-name');
-  nameEl.append(star, buildNameField(pid));
+  nameEl.append(buildNameField(pid));
   const bidEl = el('div', 'tile-bid');
   // The empty bid box of a takeable row is where dreev's hallway
   // tester kept tapping ("clicking on this box doesn't work"), so it
@@ -886,7 +886,7 @@ function buildRow(pid) {
     seats = seats.filter((z) => z.pid !== pid);
     queueOp({ action: 'remove', aname: aname, pid: pid });
   });
-  t.append(nameEl, bidEl, x);
+  t.append(star, nameEl, bidEl, x);
   return t;
 }
 
@@ -989,6 +989,8 @@ function updateRow(t, seat, b, mine, known, locked) {
   const star = t.querySelector('.tu');
   // revealed: identity is part of the frozen record, like the names
   star.disabled = locked || state.revealed;
+  star.setAttribute('aria-label', '@' + seat.uname);
+  star.setAttribute('aria-pressed', String(pid === mine));
   star.classList.toggle('selected', pid === mine);
   // a rival's REGISTERED claim fills the star in (hollow = open,
   // filled = claimed by someone else, gold = you)...

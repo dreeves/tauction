@@ -406,6 +406,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    the ch-based min-width resolves to the identical column width. */
 .thead { display: flex; gap: 0.4rem; margin-bottom: 0.4rem; }
 
+.thead::before {
+  content: '';
+  flex: none;
+  width: 1.5rem;
+}
+
 .th {
   display: flex;
   align-items: center;
@@ -417,9 +423,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   color: var(--muted);
 }
 
-.th-person { flex: none; min-width: calc(15ch + 3rem); }  /* = .tile-name */
+.th-person { flex: none; min-width: calc(15ch + 1.1rem); }  /* = .tile-name */
 
-.th-bid { flex: 1; min-width: 0; padding-left: 0; }  /* bids sit unboxed */
+.th-bid { flex: 1; min-width: 0; }
 
 /* The busy indicator: a gavel hammering its sound block, overlaid
    spinner-style on the grayed ledger while the app talks to the server
@@ -713,7 +719,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .addrow .at-wrap {
   border-radius: 3px;
   padding: 0.3rem 0.65rem;
-  width: calc(15ch + 3rem);  /* = .tile-name: twin edges, one column */
+  width: calc(15ch + 1.1rem);  /* = .tile-name: twin edges, one column */
 }
 
 /* the auction's tombstone: the + row retires at the reveal and this
@@ -723,7 +729,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 #status.revealed .closed {
   display: block;
   margin-top: 0.5rem;
-  padding-left: 0.65rem;
+  padding-left: calc(2.55rem + 1px);
   font-size: 0.8rem;
   color: var(--muted);
 }
@@ -746,22 +752,25 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* a disabled + row (unnamed page, or the roster closed at reveal)
    sits dimmed — grayed, never hidden */
-.addrow .at-wrap:has(input:disabled) { opacity: 0.4; }
+.addrow:has(input:disabled) { opacity: 0.4; }
 
-/* the + row leads with its + where the rows lead with their star
-   (width = star 1.5rem + gap 0.4rem, so the @s align down the column) */
-.addrow .at-wrap::before {
-  content: '+';
+/* the + row leads with its + where the rows lead with their star */
+.addmark {
   color: var(--muted);
   flex: none;
-  width: 1.9rem;
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 2rem;
+  font-size: 0.85rem;
+  user-select: none;
 }
 
 /* Until some row is you, the you-star perches on the +'s shoulder —
    the legend's ★ always has a referent: your row, or the place you
-   would appear. Absolutely positioned so the + and the @ alignment
-   stay untouched. */
-.addrow .at-wrap { position: relative; }
+   would appear. Absolutely positioned so the + alignment stays
+   untouched. */
+.addmark { position: relative; }
 
 .addrow .you-hint {
   position: absolute;
@@ -792,7 +801,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   font-size: 0.85rem;
   color: var(--muted);
   flex: none;
-  min-width: calc(15ch + 3rem);  /* 15ch of name + marker, gap, padding */
+  min-width: calc(15ch + 1.1rem);
 }
 
 /* (the .tile.cut cancellation stroke lived here until 2026-07-19,
@@ -887,7 +896,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    glyph and stacking-trap it behind the rows below. */
 .tu {
   flex: none;
+  display: grid;
+  place-items: center;
   width: 1.5rem;
+  height: 2rem;
   border: none;
   background: none;
   padding: 0;
@@ -1107,9 +1119,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    own margin. */
 .tile.addrow { margin-top: 0.4rem; }
 
-/* gap 0 keeps the input hugging the @; the 1.9rem marker slot (set
-   above: star 1.5rem + the rows' 0.4rem gap) absorbs the missing gap
-   so the @ stays on the name column */
+/* gap 0 keeps the input hugging the @ */
 .addrow .at-wrap { flex: none; font-size: 0.85rem; gap: 0; }
 
 /* the input fills whatever the fixed-width wrap has left (base

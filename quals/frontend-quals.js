@@ -1462,8 +1462,25 @@ const cssBattles = [];
      'your editor carries its own mini gavel for bid-in-flight');
   ok(!doc.getElementById('status').classList.contains('unclaimed'),
      'someone is you now: the + row stops wearing the you-star');
+  ok([...tiles(doc)].every((t) =>
+       t.firstElementChild === t.querySelector('.tu')
+       && !t.querySelector('.tile-name .tu'))
+     && doc.querySelector('.addrow > .addmark')
+     && doc.querySelector('.addrow > .at-wrap'),
+     'stars and + occupy the identity gutter, outside the participant'
+     + ' fields');
   ok(row(doc, 'alice').querySelector('.tu').classList.contains('selected'),
      "your row's star is lit");
+  ok(row(doc, 'alice').querySelector('.tu').getAttribute('aria-label')
+       === '@alice'
+     && row(doc, 'alice').querySelector('.tu')
+          .getAttribute('aria-pressed') === 'true'
+     && row(doc, 'bob').querySelector('.tu').getAttribute('aria-label')
+       === '@bob'
+     && row(doc, 'bob').querySelector('.tu')
+          .getAttribute('aria-pressed') === 'false',
+     'identity buttons name their participant and expose their toggle'
+     + ' state');
   ok(row(doc, 'bob').querySelector('.tu')
      && !row(doc, 'bob').querySelector('.tu').disabled,
      'other bidless rows keep live stars (radio: one click to switch)');

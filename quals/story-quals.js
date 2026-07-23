@@ -31,6 +31,7 @@ const CHROME = [
 const BASE_URL_FOR_QUAL = BASE;  // the QR/share URL is origin-based
 
 const PHONE = { width: 390, height: 844, deviceScaleFactor: 2 };
+const NARROW = { width: 320, height: 844, deviceScaleFactor: 2 };
 const DESKTOP = { width: 1200, height: 800 };
 
 
@@ -162,6 +163,10 @@ async function bid(page, bidText) {
         .opacity === '0'),
        'the unnamed ledger IDLES — no eternal gavel (the busy sign'
        + ' means busy, and nothing is happening)');
+    ok(await alice.evaluate(() =>
+      getComputedStyle(document.querySelector('#status .addrow')).opacity
+        === '0.4'),
+       'the disabled + row dims its marker and field together');
     await alice.type('#aname', 'brunch');
     await alice.keyboard.press('Enter');  // names commit on deliberate
                                           // gestures only, never a timer
@@ -296,12 +301,13 @@ async function bid(page, bidText) {
       getComputedStyle(document.querySelector(
         '#tiles .tile:not(.has-bid) .tile-name'),
         '::before').content === 'none'
-      && document.querySelector('#tiles .tile-name')
-           .firstElementChild.classList.contains('tu')),
+      && document.querySelector('#tiles .tile')
+           .firstElementChild.classList.contains('tu')
+      && !document.querySelector('#tiles .tile-name .tu')),
        'each row leads with its star; the hollow dot is retired');
     ok(await alice.evaluate(() =>
-      getComputedStyle(document.querySelector('#status .addrow .at-wrap'),
-        '::before').content.includes('+')), 'the + row marked with a +');
+      document.querySelector('#status .addrow .addmark')
+        .firstChild.nodeValue === '+'), 'the + row marked with a +');
     ok(await alice.evaluate(() => {
       const rows = document.querySelectorAll('#tiles .tile');
       const last = rows[rows.length - 1].getBoundingClientRect();
@@ -317,6 +323,48 @@ async function bid(page, bidText) {
         && Math.abs(name.right - wrap.right) < 1;
     }), 'the + row is a true twin of the person fields: both edges on'
        + ' the column');
+    /* Replicata: put two names on the ledger and inspect the column
+       headings, the identity star, the participant text, the + row,
+       and the bid card. Expectata: headings align with data text;
+       star/+ are a control gutter outside the participant fields.
+       Resultata: PARTICIPANTS aligns with the star inside the field,
+       + is boxed with the name, and BIDS aligns with the card edge. */
+    ok(await alice.evaluate(() => {
+      const near = (a, b) => Math.abs(a - b) < 1;
+      const textLeft = (e) => {
+        const r = document.createRange();
+        r.selectNode(e.firstChild);
+        return r.getBoundingClientRect().left;
+      };
+      const row = document.querySelector('#tiles .tile');
+      const star = row.querySelector('.tu').getBoundingClientRect();
+      const name = row.querySelector('.tile-name').getBoundingClientRect();
+      const who = row.querySelector('.rename').getBoundingClientRect();
+      const mark = document.querySelector('.addrow .addmark');
+      const plus = mark && mark.getBoundingClientRect();
+      const addBox = document.querySelector('.addrow .at-wrap')
+        .getBoundingClientRect();
+      const addAt = document.querySelector('.addrow .at')
+        .getBoundingClientRect();
+      const bid = row.querySelector('.bid-card, .rebid textarea');
+      const bidBox = bid.getBoundingClientRect();
+      const bidStyle = getComputedStyle(bid);
+      const bidText = bidBox.left + parseFloat(bidStyle.borderLeftWidth)
+        + parseFloat(bidStyle.paddingLeft);
+      return row.firstElementChild.classList.contains('tu')
+        && star.right < name.left
+        && near(name.left - star.right, parseFloat(getComputedStyle(row).gap))
+        && near(textLeft(document.querySelector('.th-person')), who.left)
+        && near(addBox.left, name.left)
+        && near(addBox.right, name.right)
+        && plus && near((plus.left + plus.right) / 2,
+                        (star.left + star.right) / 2)
+        && near(addAt.left, who.left)
+        && near(star.top, name.top) && near(star.bottom, name.bottom)
+        && star.width >= 24 && star.height >= 24
+        && near(textLeft(document.querySelector('.th-bid')), bidText);
+    }), 'headings align with participant and bid text; star and + sit'
+       + ' in the control gutter outside equal-height participant fields');
     ok(await alice.evaluate(() => {
       const alpha = (c) => {
         const m = c.match(/(?:rgba\([^)]+,\s*|\/\s*)([\d.]+)\)\s*$/);
@@ -506,6 +554,17 @@ async function bid(page, bidText) {
       return getComputedStyle(document.querySelector('#status .legend'),
         '::first-letter').color === gold;
     }), "the legend's star is the same gold as a lit one");
+    ok(await alice.evaluate(() => {
+      const r = document.createRange();
+      const legend = document.querySelector('#status .legend');
+      r.setStart(legend.firstChild, 0);
+      r.setEnd(legend.firstChild, 1);
+      const key = r.getBoundingClientRect();
+      const star = document.querySelector('.tile.mine .tu')
+        .getBoundingClientRect();
+      return Math.abs((key.left + key.right) / 2
+        - (star.left + star.right) / 2) < 2;
+    }), "the legend's star sits on the identity-control axis");
     ok(await alice.evaluate(() =>
       ['#tiles .tile.has-bid .x', '#seal'].every((sel) => {
         // dreev's bug: opacity on a grayed control dimmed its tooltip
@@ -589,6 +648,48 @@ async function bid(page, bidText) {
     const overflow = await alice.evaluate(() =>
       document.scrollingElement.scrollWidth - window.innerWidth);
     ok(overflow <= 0, 'no horizontal overflow on phone (' + overflow + 'px)');
+    await alice.setViewport(NARROW);
+    await alice.waitForFunction(() => innerWidth === 320);
+    ok(await alice.evaluate(() => {
+      const near = (a, b) => Math.abs(a - b) < 1;
+      const textLeft = (e) => {
+        const r = document.createRange();
+        r.selectNode(e.firstChild);
+        return r.getBoundingClientRect().left;
+      };
+      const row = document.querySelector('#tiles .tile');
+      const name = row.querySelector('.tile-name').getBoundingClientRect();
+      const who = row.querySelector('.rename').getBoundingClientRect();
+      const add = document.querySelector('.addrow .at-wrap')
+        .getBoundingClientRect();
+      const bid = row.querySelector('.bid-card, .rebid textarea');
+      const box = bid.getBoundingClientRect();
+      const css = getComputedStyle(bid);
+      const bidText = box.left + parseFloat(css.borderLeftWidth)
+        + parseFloat(css.paddingLeft);
+      const thBid = document.querySelector('.th-bid');
+      return document.scrollingElement.scrollWidth <= innerWidth
+        && thBid.scrollWidth <= thBid.clientWidth + 1
+        && box.width >= 3 * parseFloat(getComputedStyle(
+          document.documentElement).fontSize)
+        && near(textLeft(document.querySelector('.th-person')), who.left)
+        && near(textLeft(thBid), bidText)
+        && near(add.left, name.left) && near(add.right, name.right);
+    }), 'at 320px the same text axes hold, both fields stay usable,'
+       + ' and nothing scrolls sideways');
+    await shoot(alice, 'story1-alice-narrow');
+    await alice.hover('.tile:not(.mine) .tu');
+    await alice.waitForFunction(() =>
+      !document.getElementById('tip').hidden);
+    ok(await alice.$eval('#tip', (e) => {
+      const r = e.getBoundingClientRect();
+      return r.left >= 0 && r.right <= innerWidth;
+    }), 'the star moved left and its tooltip still fits at 320px');
+    await alice.setViewport(PHONE);
+    await alice.waitForFunction(() => innerWidth === 390);
+    await alice.mouse.move(5, 400);
+    await alice.waitForFunction(() =>
+      document.getElementById('tip').hidden);
     await shoot(alice, 'story1-alice-phone');
 
     /* ---- share dialog: copy button + a QR that actually scans ---------- */
@@ -853,6 +954,15 @@ async function bid(page, bidText) {
            .textContent)),
        'the + row retires at the reveal; the Closed stamp takes its'
        + ' place');
+    ok(await bob.evaluate(() => {
+      const textLeft = (e) => {
+        const r = document.createRange();
+        r.selectNode(e.firstChild);
+        return r.getBoundingClientRect().left;
+      };
+      return Math.abs(textLeft(document.querySelector('.th-person'))
+        - textLeft(document.querySelector('#status .closed'))) < 1;
+    }), 'the Closed stamp starts on the participant-text axis');
     await bob.waitForFunction(() =>  // the ceremony self-cleans (the
       // confetti canvas is the library's own; it lingers, inert and
       // invisible, until the last long-lived piece times out)
@@ -1343,6 +1453,19 @@ async function bid(page, bidText) {
          && e.scrollHeight <= e.clientHeight + 1, h0),
        'the box grows under her fingers: every word of the long bid'
        + ' stays in sight while she types');
+    ok(await leo.evaluate(() => {
+      const row = document.querySelector('.tile.mine').getBoundingClientRect();
+      const star = document.querySelector('.tile.mine .tu')
+        .getBoundingClientRect();
+      const name = document.querySelector('.tile.mine .tile-name')
+        .getBoundingClientRect();
+      return row.height > name.height * 1.8
+        && Math.abs(star.top - name.top) < 1
+        && Math.abs(star.bottom - name.bottom) < 1
+        && Math.abs((star.top + star.bottom) / 2
+          - (row.top + row.bottom) / 2) > 4;
+    }), 'beside a wrapped bid, the star stays on the first line with'
+       + ' the name instead of sinking to the tall row center');
     await leo.keyboard.press('Enter');
     await leo.waitForSelector('.tile.mine.has-bid');
     ok(await leo.$eval(ED, (e, h) =>
