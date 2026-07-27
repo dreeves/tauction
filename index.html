@@ -73,15 +73,15 @@
   <!-- The auction description: freeform markdown, no label (the
        placeholder explains), editable by anyone before or after the
        close. The corner ✎ (rendered mode only) opens the editor;
-       leaving the editor saves and renders — no save button. -->
+       SAVE (hot fields only; copy stamped from stringles) commits.
+       Clicking away commits nothing, anywhere (dreev 2026-07-27). -->
   <section id="desc" class="card desc">
     <div id="descview" class="descview"></div>
     <textarea id="descedit" class="descedit" maxlength="2000" rows="3"
       placeholder="Describe this auction..."></textarea>
-    <!-- the ✎ shows only in rendered mode: editing ends by clicking
-         away (which saves), not by any button -->
     <button id="desctoggle" class="desctoggle" type="button"
             tabindex="-1">✎</button>
+    <button id="descgo" class="go" type="button" tabindex="-1"></button>
   </section>
 
   <section id="status" class="card">
@@ -104,10 +104,12 @@
     <div class="tile addrow">
       <span class="addmark" aria-hidden="true">+<span class="you-hint"
             >★</span></span>
-      <!-- enterkeyhint: the mobile return key says what it does -->
+      <!-- enterkeyhint: the mobile return key says what it does; the
+           SAVE button (hot fields only) is the finger's Enter -->
       <div class="at-wrap"><span class="at">@</span><input id="roster-input"
            autocomplete="off" autocapitalize="off" spellcheck="false"
-           maxlength="30" placeholder="" enterkeyhint="next"></div>
+           maxlength="30" placeholder="" enterkeyhint="next"><button
+           id="roster-go" class="go" type="button" tabindex="-1"></button></div>
     </div>
     <!-- once revealed, the + row retires and this stamp takes its
          place (text filled in by render; format is dreev's spec) -->
@@ -121,7 +123,7 @@
     <!-- tabindex: tab is for editable fields; the link stays clickable -->
     <a href="/sourcery.html" tabindex="-1">sourcery</a>
     <span class="sep">·</span>
-    <span class="version">v2026.07.23</span>
+    <span class="version">v2026.07.27-a</span>
   </footer>
 </main>
 

@@ -161,6 +161,12 @@ overwrite and bump `bcount`.
 
 ## Behavior
 
+- Commits are deliberate gestures only (2026-07-27, cletus's clobber):
+  Enter on one-line fields, the SAVE/SUBMIT buttons (which appear
+  while a field is hot — focused or holding an uncommitted draft),
+  and the + row's comma/space/Tab. Blur commits NOTHING, anywhere;
+  Escape reverts and leaves. The auction-name field commits on
+  Enter/Tab only (chosen once, irreversible, no button).
 - Nothing ever reveals automatically. The padlock on the BIDS box is the
   reveal button: it unlocks (and pulses) once everyone on the roster — at
   least two people — has bid, and anyone may press it. Ending early =
@@ -412,3 +418,12 @@ pids without tokens; sealing stays honor-system, exactly as today.
 Estimated shape: Code.gs gains ~4 small actions and loses joinRoster's
 CSV surgery; app.js's renderStatus keys rows by pid; quals for rename,
 collision, re-claim, and the localStorage migration of nothing.
+
+## Known gaps, chosen not forgotten (harvested from RETHINK.md at its deletion, 2026-07-27)
+
+The suite's honest blind spots, listed so they stay chosen: two tabs
+of the same browser (shared localStorage + device id) editing at
+once; offline/network-flap recovery stories; accessibility
+(aria/focus-order is ad hoc); and the closed-state covenant's
+assumption that sheet rows stay in submission order (a human sorting
+the sheet breaks it silently). None block daily use.

@@ -56,6 +56,14 @@ body {
   min-height: 100vh;
 }
 
+/* a closed auction changes the weather: the paper warms a shade of
+   the star's gold, in either theme (dreev 2026-07-27 — another
+   subtle closed indicator; the cards keep their own paper, so they
+   pop faintly against it) */
+body.revealed {
+  background-color: color-mix(in srgb, var(--bg) 92%, var(--star));
+}
+
 main {
   position: relative;  /* anchors .corner to the column, not the viewport */
   width: 100%;
@@ -123,6 +131,7 @@ input::placeholder { color: var(--muted); opacity: 0.8; }
   border: 1px solid var(--border);
   border-radius: 3px;
   padding-left: 0.6rem;
+  position: relative;  /* anchors the + row's SAVE */
 }
 
 .at-wrap:focus-within { outline: 2px solid var(--accent); outline-offset: -1px; }
@@ -288,8 +297,71 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .desctoggle:hover { color: var(--accent); }
 
 /* the pencil is rendered-mode's control only: while editing, its
-   spot is just more click-away-to-save (dreev killed the 💾) */
+   corner belongs to SAVE */
 .desc:not(.viewing) .desctoggle { display: none; }
+
+/* -------------------------- commit buttons ----------------------------- */
+/* SAVE/SUBMIT (dreev's copy, via stringles): the finger's Enter. Each
+   rides its field's wrapper and shows only while the field is HOT —
+   focused or holding an uncommitted draft (the .hot class, app.js's
+   never-clobber predicate) — because clicking away commits nothing,
+   anywhere. Hidden-not-grayed when cold, per dreev's "appears while
+   editing" spec: a permanent button on every row would be clutter,
+   and a cold field has nothing the button could say. */
+.go {
+  display: none;
+  position: absolute;
+  right: 0.3rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font: inherit;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  line-height: 1;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  color: var(--accent);
+  background: var(--card);
+}
+
+.hot > .go { display: block; }
+
+.go:hover:not(:disabled) { background: var(--accent-soft); }
+
+/* the gavel froze the field: its button grays WITH it, wearing the
+   too-late tip (grayed, never suppressed — the one exception to
+   hidden-when-cold is disabled-while-hot: a dead draft keeps its
+   grayed button as the visible reason it will never send) */
+.go:disabled {
+  color: var(--muted);
+  border-color: var(--border);
+  cursor: default;
+}
+
+/* the blurb's SAVE takes the pencil's corner (they never coexist:
+   the pencil is rendered-mode's, SAVE is edit-mode's) and its words
+   stay clear of the button, as they already were of the pencil */
+.desc .go { top: 0.5rem; right: 0.6rem; transform: none; }
+
+/* ...and edit-mode's ONLY: a restored draft (drafts survive the tab,
+   2026-07-27) can make the card hot while rendered — there the
+   corner is the pencil's, and the pencil is the whole affordance
+   for "the source holds a draft" */
+.desc.viewing .go { display: none; }
+
+.desc.hot .descedit { padding-right: 3.2rem; }
+
+/* the bid's SUBMIT overlays the box's right end, words padded clear,
+   so the sacred uniform right edge never moves; the busy mini gavel
+   steps left of it while both are on duty */
+.rebid.hot textarea { padding-right: 3.9rem; }
+
+.rebid.hot .gavel.mini { right: 3.9rem; }
+
+/* the name fields' SAVE: same overlay, anchored to each wrapper */
+.rename { position: relative; }
 
 /* ----------------------------- BIDS box -------------------------------- */
 
@@ -728,7 +800,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 #status.revealed .closed {
   display: block;
-  margin-top: 0.5rem;
+  /* a full breath above it (dreev: it sat squished against the
+     ledger's last row) */
+  margin-top: 1.1rem;
   padding-left: calc(2.55rem + 1px);
   font-size: 0.8rem;
   color: var(--muted);
@@ -849,6 +923,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .tile.has-bid .tile-bid { color: inherit; }
 
+/* a revealed bid keeps its author's line breaks (bids went multiline
+   2026-07-27); the masked decoy's nowrap below still wins for sealed
+   cards, which must never leak a bid's shape */
+.bid-text { white-space: pre-wrap; }
+
 /* Each received bid is a card wearing the same box recipe as the person
    cells (padding, radius, green fill); re-submissions stack sheets
    behind it. flex: 1 gives every bid box the same length. */
@@ -935,8 +1014,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 
 /* every name is a live text field, like the + row's: click in, type,
-   enter commits the rename; escape or clicking away restores it */
-.rename { display: flex; align-items: center; }
+   enter or SAVE commits the rename; escape restores it (flex: 1 so
+   the form reaches the cell's far edge, where its SAVE anchors) */
+.rename { display: flex; align-items: center; flex: 1; }
 
 .rename input {
   width: 12ch;
@@ -946,14 +1026,16 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   background: none;
   font: inherit;
   color: inherit;
+  outline: none;  /* the CELL rings instead, below */
 }
 
-/* The app-standard focus ring would draw a box inside the cell's box
-   (and lasso the star), so names trade it for an underline — in the
-   same accent every other focus signal speaks */
-.rename input:focus {
-  outline: none;
-  box-shadow: 0 1px 0 0 var(--accent);
+/* Editing a name highlights the field itself: the person cell wears
+   the same ring the + row's wrapper does (.at-wrap:focus-within),
+   star lassoed and all — the underline special case is retired
+   (dreev 2026-07-27: "shouldn't the field just highlight itself?") */
+.tile-name:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
 }
 
 /* × removes the whole row from the roster; grayed once a bid is in */

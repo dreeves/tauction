@@ -185,17 +185,35 @@ async function bid(page, bidText) {
         && t.placeholder.length > 0
         && getComputedStyle(document.getElementById('desctoggle'))
              .display === 'none'
+        && getComputedStyle(document.getElementById('descgo'))
+             .display === 'none'
         && getComputedStyle(document.getElementById('desc'))
              .borderTopColor !== 'rgba(0, 0, 0, 0)';
     }), 'the description sits between name and ledger, explaining'
        + ' itself by placeholder, boxed like the field it is — and'
-       + ' NO save button anywhere');
+       + ' its SAVE asleep while the field is cold');
     await alice.click('#descedit');
     await alice.type('#descedit', '# Rules\n\nLoser buys **coffee**');
+    ok(await alice.evaluate(() =>
+      getComputedStyle(document.getElementById('descgo')).display
+        !== 'none'
+      && document.getElementById('descgo').textContent === saveCopy),
+       "typing wakes SAVE on the desc card, wearing dreev's copy");
+    await alice.click('#aname');  // clicking away...
+    await new Promise((r) => setTimeout(r, 150));
+    ok(await alice.evaluate(() =>
+      document.getElementById('descedit').value
+        === '# Rules\n\nLoser buys **coffee**'
+      && getComputedStyle(document.getElementById('descedit')).display
+           !== 'none'
+      && getComputedStyle(document.getElementById('descgo')).display
+           !== 'none'),
+       'clicking away saves NOTHING (dreev 2026-07-27): the draft'
+       + ' sits in the open editor, SAVE still standing');
     opDelay = 900;  // hold the describe in flight: its busy sign is
                     // the DESC card's own mini gavel (dreev: saving
                     // just the blurb must not gray the bid table)
-    await alice.click('#aname');  // clicking away = save
+    await alice.click('#descgo');  // SAVE
     ok(await alice.evaluate(() => {
       const mini = document.querySelector('#desc .gavel.mini');
       return getComputedStyle(mini).display === 'block'
@@ -217,7 +235,7 @@ async function bid(page, bidText) {
       && getComputedStyle(document.getElementById('desctoggle'))
            .display !== 'none'
       && document.getElementById('desctoggle').textContent.length > 0),
-       'clicking away commits and renders rich (h1 + bold); the'
+       'SAVE commits and renders rich (h1 + bold); the'
        + ' pencil appears, the only way back to the source');
     // the commit pulse tints the card green for a beat (your words
     // are away); the resting look this pin is about arrives when the
@@ -430,21 +448,28 @@ async function bid(page, bidText) {
     }), 'a field for the person, a card for the bid, and a tall bid'
        + ' cannot inflate its neighbor');
 
-    /* [FLIPPED 2026-07-17 per dreev's frictionless-add: the + row
-       commits on blur like every other field now — the click-swallow
-       that banned blur-commit died with keyed node reuse. The click
-       must STILL land: mousedown and mouseup need the same node
-       across the commit's rebuild.] */
+    /* [FLIPPED twice: 2026-07-17 to blur-commits per frictionless-
+       add; 2026-07-27 back — blur commits NOTHING (cletus's clobber).
+       A typed name now WAITS with its SAVE, and the star click lands
+       trivially: no hidden write, no rebuild mid-gesture.] */
     await alice.type('#roster-input', 'carol');
     await alice.click('.tile[data-uname="bob"] .tu');  // a radio switch
     await alice.waitForSelector('.tile[data-uname="bob"].mine',
                                 { timeout: 2000 });
-    ok(true, 'clicking a star works even mid-add: the blur-commit'
-       + ' rebuild reuses the clicked node');
+    ok(true, 'clicking a star works even mid-add: no hidden write, no'
+       + ' rebuild, nothing to swallow the click');
+    await new Promise((r) => setTimeout(r, 150));
+    ok(await alice.evaluate(() =>
+      !document.querySelector('.tile[data-uname="carol"]')
+      && document.getElementById('roster-input').value === 'carol'
+      && getComputedStyle(document.getElementById('roster-go'))
+           .display !== 'none'),
+       'and the tapped-away name is NOT committed: it waits in the'
+       + ' + row, SAVE standing (the finger taps the button now)');
+    await alice.click('#roster-go');
     await alice.waitForSelector('.tile[data-uname="carol"]');
     ok(await alice.$eval('#roster-input', (e) => e.value) === '',
-       'and the tapped-away name is COMMITTED, not lost — mobile'
-       + ' never heard of enter');
+       'SAVE lands carol and clears the row for the next name');
     await alice.click('.tile[data-uname="carol"] .x');  // tidy the scene
     await alice.waitForFunction(() =>
       !document.querySelector('.tile[data-uname="carol"]'));
@@ -477,6 +502,40 @@ async function bid(page, bidText) {
         && getComputedStyle(e).borderTopStyle === 'solid'
         && document.activeElement === e;
     }), 'your empty editor: a normal solid field, focused, not pulsing');
+    // Editing a name highlights the FIELD: the person cell wears the
+    // + row's ring recipe — the underline special case is retired
+    // (dreev 2026-07-27: "shouldn't the field just highlight
+    // itself?") — and its SAVE wakes only once the field is dirty
+    await alice.click('.tile[data-uname="bob"] .rename input');
+    ok(await alice.evaluate(() => {
+      const cell = document.querySelector(
+        '.tile[data-uname="bob"] .tile-name');
+      const inp = cell.querySelector('.rename input');
+      return getComputedStyle(cell).outlineWidth === '2px'
+        && getComputedStyle(cell).outlineStyle === 'solid'
+        && getComputedStyle(inp).boxShadow === 'none'
+        && getComputedStyle(cell.querySelector('.go')).display
+             !== 'none';
+    }), 'editing a name rings the person cell itself, star lassoed'
+       + ' like the + row rings its @ — no underline — and SAVE'
+       + ' wakes the moment you are in the field');
+    await alice.keyboard.type('by');
+    await alice.click('.legend');  // wander off mid-edit
+    ok(await alice.evaluate(() =>
+      document.querySelector('.tile[data-uname="bob"] .rename input')
+        .value === 'bobby'
+      && getComputedStyle(document.querySelector(
+           '.tile[data-uname="bob"] .rename .go')).display !== 'none'),
+       'a wandering click commits nothing and cannot dismiss the'
+       + " draft's SAVE: dirty keeps it standing, focus or no");
+    await alice.click('.tile[data-uname="bob"] .rename input');
+    await alice.keyboard.press('Escape');  // never mind: bob is bob
+    ok(await alice.evaluate(() =>
+      document.querySelector('.tile[data-uname="bob"] .rename input')
+        .value === 'bob'
+      && getComputedStyle(document.querySelector(
+           '.tile[data-uname="bob"] .rename .go')).display === 'none'),
+       'Escape reverts and SAVE stands down');
     await bid(alice, 'three tacos');
     await alice.waitForSelector('#tiles .tile.has-bid');
     ok(await alice.$eval('.tile.mine .rebid textarea', (e) => e.value)
@@ -1187,17 +1246,23 @@ async function bid(page, bidText) {
     /* ---- names are live text fields: click in, type, enter ------------ */
     await carol.click('.tile[data-uname="fox"] .rename input');
     ok(await carol.evaluate(() => {
-      // one focus language: the ring is suppressed here (box-in-a-box),
-      // so the stand-in underline must speak the same accent color
+      // one focus language: the person CELL wears the ring, exactly
+      // like the + row's wrapper (the stand-in underline retired,
+      // dreev 2026-07-27)
       const probe = document.createElement('span');
       probe.style.color = 'var(--accent)';
       document.body.append(probe);
       const accent = getComputedStyle(probe).color;
       probe.remove();
-      const cs = getComputedStyle(
+      const cell = getComputedStyle(document.querySelector(
+        '.tile[data-uname="fox"] .tile-name'));
+      const inp = getComputedStyle(
         document.querySelector('.tile[data-uname="fox"] .rename input'));
-      return cs.outlineStyle === 'none' && cs.boxShadow.includes(accent);
-    }), 'the focused name field underlines itself in the focus accent');
+      return cell.outlineStyle === 'solid' && cell.outlineWidth === '2px'
+        && cell.outlineColor === accent
+        && inp.outlineStyle === 'none' && inp.boxShadow === 'none';
+    }), 'the focused name field highlights its whole cell in the'
+       + ' focus accent, the at-wrap ring recipe');
     await carol.$eval('.tile[data-uname="fox"] .rename input',
                       (e) => e.select());
     await carol.keyboard.type('foxy');
@@ -1289,9 +1354,10 @@ async function bid(page, bidText) {
        "no tooltip under a thumb's typing: tapping your bid cell is"
        + ' not hovering it');
     await thumb2.keyboard.type('the other thumb');
-    // no enter: she taps elsewhere and the bid SAVES (dreev: nobody
-    // on a phone expects the return key to be load-bearing)
-    await thumb2.tap('.th-person');
+    // no enter: typing woke SUBMIT and her thumb taps it (2026-07-27:
+    // tapping elsewhere commits nothing — the button is the phone's
+    // return key now)
+    await thumb2.tap('.tile.mine .rebid .go');
     await thumb2.waitForSelector('.tile.mine.has-bid');
     await thumb.waitForFunction(() =>  // the poll delivers bob's bid
       !document.getElementById('seal').disabled);
@@ -1348,7 +1414,13 @@ async function bid(page, bidText) {
     await p1.keyboard.press('Enter');
     await p1.waitForSelector('.tile.mine.has-bid');
     await p2.type('.tile.mine .rebid textarea', 'my parking spot');
-    await p2.keyboard.press('Enter');
+    // the OTHER thumb goes by button: typing woke SUBMIT, and the
+    // tap's own blur must not vanish it mid-press (the hot class
+    // holds through the mousedown-blur-click sequence)
+    await p2.waitForFunction(() =>
+      getComputedStyle(document.querySelector('.tile.mine .rebid .go'))
+        .display !== 'none');
+    await p2.tap('.tile.mine .rebid .go');
     await p2.waitForSelector('.tile.mine.has-bid');
     await p1.waitForFunction(() =>
       !document.getElementById('seal').disabled);
@@ -1359,13 +1431,14 @@ async function bid(page, bidText) {
     ok(true, 'and the game plays out: both bids in, revealed by thumb');
 
     /* ====== the gavel catches a half-typed revision ==================
-       Pins the emergent auto-submit dreev blessed 2026-07-17:
-       disabling a focused editor blurs it in real Chrome (probed),
-       and blur-commit races the draft against the gavel. Replicata:
-       ann edits her bid, never submits; the reveal lands elsewhere.
-       Expectata: the dying editor's blur submits the draft, it loses
-       EXPLICITLY (Womp Womp), and the sheet keeps the pre-gavel
-       bid. */
+       [FLIPPED 2026-07-27: the emergent auto-submit (blessed
+       2026-07-17, when disabling a focused editor blurred it in real
+       Chrome and blur-commit raced the draft against the gavel) died
+       with blur-commits.] Replicata: ann edits her bid, never
+       submits; the reveal lands elsewhere. Expectata: the dying
+       draft just STAYS — visible, disabled, unsent, its grayed
+       SUBMIT wearing the too-late tip — and no banner, because no
+       write was ever made or lost. */
     const wire = await makePage(browser, DESKTOP);
     gas.handle({ action: 'add', aname: 'wirestory',
       uname: 'ann', pid: 'pid-wirestory-ann' });
@@ -1380,16 +1453,106 @@ async function bid(page, bidText) {
     await wire.keyboard.press('Enter');
     await wire.waitForSelector('.tile.mine.has-bid');
     await wire.click('.tile.mine .rebid textarea');
+    await wire.keyboard.press('End');  // caret to the end, not the click point
     await wire.keyboard.type('!!!');  // a dirty, focused revision
     gas.handle({ action: 'reveal', aname: 'wirestory' });
-    await wire.waitForFunction((womp) =>
-      !document.getElementById('banner').hidden
-      && document.getElementById('banner').textContent.includes(womp),
-      {}, SCOPY.gavelFellCopy);
+    await wire.waitForFunction(() =>
+      document.querySelector('.tile.mine .rebid textarea').disabled);
+    await new Promise((r) => setTimeout(r, 300));  // an auto-submit
+                                    // would be on the wire by now
+    ok(await wire.evaluate(() => {
+      const ed = document.querySelector('.tile.mine .rebid textarea');
+      const go = document.querySelector('.tile.mine .rebid .go');
+      return ed.value === 'first word!!!'
+        && go.disabled
+        && getComputedStyle(go).display !== 'none'
+        && go.getAttribute('data-tip') === tooLateGoTip
+        && document.getElementById('banner').hidden;
+    }), 'the dying draft just stays: visible, unsent, its grayed'
+       + ' SUBMIT saying why — and no banner, since nothing was lost');
     ok(gas.handle({ action: 'state', aname: 'wirestory' }).bids
          .find((b) => b.pid === 'pid-wirestory-ann').bid === 'first word',
-       'a half-typed revision races the gavel on its own and loses'
-       + ' out loud; the sheet keeps the pre-gavel bid');
+       'the sheet keeps the pre-gavel bid');
+    // ...and the page's weather changed at the close (dreev
+    // 2026-07-27: the paper warms as another subtle indicator), with
+    // the Closed line sitting a full breath under the ledger
+    ok(await wire.evaluate(() => {
+      const probe = document.createElement('div');
+      probe.style.backgroundColor = 'var(--bg)';
+      document.body.append(probe);
+      const paper = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return document.body.classList.contains('revealed')
+        && getComputedStyle(document.body).backgroundColor !== paper
+        && parseFloat(getComputedStyle(
+             document.getElementById('closed')).marginTop) > 12;
+    }), 'a closed auction changes the weather: the body tints off the'
+       + ' resting paper and the Closed line gets its air');
+
+    /* ====== cletus and winifred, in a real browser ===================
+       The frontend suite pins the logic; THIS pins the browser's
+       event order — the banner's × is a mousedown that blurs the
+       editor before the click lands, and that blur must write
+       nothing (pre-fix it committed the silently re-based draft). */
+    gas.handle({ action: 'describe', aname: 'clobstory',
+      blurb: 'original', base: '' });
+    const cle = await makePage(browser, DESKTOP);
+    await cle.goto(BASE + '/clobstory', { waitUntil: 'networkidle0' });
+    await cle.click('#desctoggle');  // pencil: to the source (focuses)
+    await cle.keyboard.press('End');  // caret to the line's end
+    await cle.keyboard.type(' plus cletus');
+    // winifred lands from her own machine mid-draft...
+    gas.handle({ action: 'describe', aname: 'clobstory',
+      blurb: 'per winifred',
+      base: gas.handle({ action: 'state', aname: 'clobstory' }).tblurb });
+    await cle.waitForFunction(() =>
+      !document.getElementById('banner').hidden);
+    // ...cletus ×es the warning — the real mousedown-blur-click
+    await cle.click('#banner-x');
+    await new Promise((r) => setTimeout(r, 400));  // a blur-commit
+                                    // would be on the wire by now
+    ok(gas.handle({ action: 'state', aname: 'clobstory' }).blurb
+         === 'per winifred'
+       && await cle.evaluate(() =>
+            document.getElementById('descedit').value
+              === 'original plus cletus'
+            && getComputedStyle(document.getElementById('descgo'))
+                 .display !== 'none'),
+       "dismissing the warning writes NOTHING: winifred's words stand"
+       + " and cletus's draft waits beside its SAVE");
+    // ...and the tab closes (drafts survive it, 2026-07-27): the
+    // reload shows him winifred's version RENDERED — what the old
+    // clobber never let him see — while his draft waits behind the
+    // pencil, still his to insist on or abandon
+    await cle.reload({ waitUntil: 'networkidle0' });
+    await cle.waitForFunction(() =>
+      document.getElementById('desc').classList.contains('viewing'));
+    ok(await cle.evaluate(() =>
+      document.getElementById('descview').textContent
+        .includes('per winifred')
+      && document.getElementById('descedit').value
+           === 'original plus cletus'
+      && getComputedStyle(document.getElementById('descgo'))
+           .display === 'none'
+      && getComputedStyle(document.getElementById('desctoggle'))
+           .display !== 'none'),
+       "the reload finally shows winifred's words, rendered — and"
+       + " cletus's draft came home with the tab, parked behind the"
+       + ' pencil (SAVE stays edit-mode-only)');
+    await cle.click('#desctoggle');  // back to the source: the draft
+    ok(await cle.evaluate(() =>
+      getComputedStyle(document.getElementById('descgo')).display
+        !== 'none'),
+       'opening the source wakes the restored draft\'s SAVE');
+    // insisting is a deliberate press, and the button must survive
+    // its own mousedown's blur to take the click
+    await cle.click('#descgo');
+    await cle.waitForFunction(() =>
+      document.querySelector('#descview') !== null
+      && document.getElementById('desc').classList.contains('viewing'));
+    ok(gas.handle({ action: 'state', aname: 'clobstory' }).blurb
+         === 'original plus cletus',
+       'SAVE survives its own blur and lands the informed insist');
 
     /* ---- tooltips outrank the banner --------------------------------
        Replicata (dreev: "tooltips appearing behind other elements" —
@@ -1542,6 +1705,63 @@ async function bid(page, bidText) {
        "leo's own frozen record shows every word: the dead editor is"
        + ' as tall as its bid');
     await shoot(leo, 'story7-long-bid-revealed');
+
+    /* ====== story 7b: the poem bid (newlines, dreev 2026-07-27) ======
+       Shift+Enter breaks the line; Enter still submits; the sealed
+       decoy still betrays nothing; the revealed card keeps the
+       poem's shape, growing downward. */
+    const poet = await makePage(browser, DESKTOP);
+    await poet.goto(BASE + '/poembid', { waitUntil: 'networkidle0' });
+    await addName(poet, 'ann');  // self-claims (2j)
+    await poet.waitForSelector(ED);
+    const hPoem0 = await poet.$eval(ED,
+      (e) => e.getBoundingClientRect().height);
+    await poet.click(ED);
+    await poet.keyboard.type('roses are red');
+    await poet.keyboard.down('Shift');
+    await poet.keyboard.press('Enter');
+    await poet.keyboard.up('Shift');
+    await poet.keyboard.type('violets are blue');
+    ok(await poet.$eval(ED, (e, h) =>
+         e.value === 'roses are red\nviolets are blue'
+         && e.getBoundingClientRect().height > h * 1.8, hPoem0),
+       'Shift+Enter breaks the line under her fingers, the box'
+       + ' growing to show both');
+    await poet.keyboard.press('Enter');  // Enter still means SEND
+    await poet.waitForSelector('.tile.mine.has-bid');
+    gas.handle({ action: 'add', aname: 'poembid', uname: 'zed',
+      pid: 'pid-poem-zed' });
+    gas.handle({ action: 'bid', aname: 'poembid', uname: 'zed',
+      pid: 'pid-poem-zed', bid: 'a limerick' });
+    const reader = await makePage(browser, DESKTOP);
+    await reader.goto(BASE + '/poembid', { waitUntil: 'networkidle0' });
+    await reader.waitForFunction(() =>
+      document.querySelectorAll('#tiles .tile.has-bid').length === 2);
+    ok(await reader.evaluate(() => {
+      const cards = [...document.querySelectorAll('.bid-card')];
+      return Math.abs(cards[0].getBoundingClientRect().height
+                      - cards[1].getBoundingClientRect().height) < 1;
+    }), "sealed, the two-line poem wears the same one-line decoy as"
+       + " the one-liner: a bid's shape is part of its secret");
+    await poet.waitForFunction(() =>
+      !document.getElementById('seal').disabled);
+    await poet.click('#seal');
+    await reader.waitForFunction(() =>
+      document.getElementById('status').classList.contains('revealed'));
+    ok(await reader.evaluate(() => {
+      const poem = document.querySelector(
+        '.tile[data-uname="ann"] .bid-text');
+      const one = document.querySelector(
+        '.tile[data-uname="zed"] .bid-card');
+      return poem.textContent === 'roses are red\nviolets are blue'
+        && getComputedStyle(poem).whiteSpace === 'pre-wrap'
+        // taller by at least a text line (padding keeps the naive
+        // two-to-one height ratio under 1.7, so ratios mislead here)
+        && poem.closest('.bid-card').getBoundingClientRect().height
+           > one.getBoundingClientRect().height + 12
+        && document.documentElement.scrollWidth <= window.innerWidth;
+    }), 'revealed, the poem keeps its line break — the card grows'
+       + ' downward, never sideways off the page');
 
     ok(pageErrors.length === 0,
        'ZERO page errors across every story flow (the net catches'

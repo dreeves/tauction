@@ -450,10 +450,91 @@ function render() {
   seats = state.seats.map((s) => ({ pid: s.pid, uname: s.uname }));
   renderStatus();
   renderDesc();
+  if (!adopted) restoreDrafts();  // the tab's drafts come home, once
   adopted = true;  // the arrival edge is consumed exactly once
   // server truth is on screen: both cards' in-flight signs retire
   $('status').classList.remove('stale');
   $('desc').classList.remove('stale');
+}
+
+// A field is HOT — focused, or holding words that differ from its
+// committed baseline (defaultValue, the never-clobber truth) — iff
+// walking away now would leave something uncommitted. The commit
+// buttons ride this class: SAVE/SUBMIT stand exactly while the field
+// is hot, because blur commits NOTHING (dreev 2026-07-27, cletus's
+// clobber: a blur is a side effect of every OTHER gesture — banner
+// ×es, star taps, reloads — never a decision to save). The auction-
+// name field has no button (Enter, dreev's chosen-once gesture),
+// so closest() finding no button home is its normal case.
+function syncHot(f) {
+  const home = f.closest('.rebid, .rename, .at-wrap, .desc');
+  if (home === null) return;
+  const dirty = f.value !== f.defaultValue;
+  home.classList.toggle('hot', f === document.activeElement || dirty);
+  saveDraft(f, dirty);
+}
+
+// Drafts survive the tab (dreev 2026-07-27): a dirty field's words
+// are already in tauction-drafts:<aname>, keyed by slot, and the
+// arrival edge hands them back. Committing or Escaping deletes the
+// slot. The store rides the same chokepoint as hotness (syncHot), so
+// there is no second bookkeeping to drift. Per-auction keys linger
+// for auctions never revisited — the tauction-mybids precedent.
+function draftSlot(f) {
+  if (f.id === 'descedit') return 'blurb';
+  if (f.id === 'roster-input') return 'addrow';
+  const t = f.closest('.tile');  // a row field: keyed by its pid
+  if (t === null) return null;   // #aname: chosen once, no drafts
+  return (f.closest('.rebid') ? 'bid:' : 'rename:') + t.dataset.pid;
+}
+
+function saveDraft(f, dirty) {
+  if (aname === '') return;
+  // A clean field only PRUNES its slot once the arrival edge has
+  // passed: the pre-adoption renders sweep every (still-empty) field
+  // clean, and pruning there would empty the store before
+  // restoreDrafts gets its turn. Dirty writes are always welcome.
+  if (!dirty && !adopted) return;
+  const slot = draftSlot(f);
+  if (slot === null) return;
+  const key = 'tauction-drafts:' + aname;
+  const all = JSON.parse(localStorage.getItem(key) || '{}');
+  const want = dirty ? f.value : undefined;
+  if (all[slot] === want) return;  // nothing new to record
+  if (dirty) all[slot] = f.value;
+  else delete all[slot];
+  localStorage.setItem(key, JSON.stringify(all));
+}
+
+// The returning tab's half of the deal: hand each stored draft back
+// to its field, once, at the arrival edge — after the first snapshot
+// has laid the baselines (restoring before them would read as a
+// foreign edit landing on a dirty field and cry simultaneous-edits).
+// A field already holding live words is never touched; a slot whose
+// field no longer exists (a removed row) stays in storage, inert.
+function restoreDrafts() {
+  const all = JSON.parse(
+    localStorage.getItem('tauction-drafts:' + aname) || '{}');
+  Object.entries(all).forEach(([slot, draft]) => {
+    const [kind, pid] = slot.split(':');
+    const t = rowNodes[pid];
+    const f = slot === 'blurb' ? $('descedit')
+      : slot === 'addrow' ? $('roster-input')
+      : t === undefined ? null
+      : t.querySelector(kind === 'bid' ? '.rebid textarea'
+                                       : '.rename input');
+    if (f && f.value === f.defaultValue) f.value = draft;
+  });
+  sweepHot();
+}
+
+// Programmatic value/baseline writes fire no input events, so every
+// render re-derives hotness for all fields the same way it re-derives
+// everything else: idempotent sweep, zero bookkeeping.
+function sweepHot() {
+  document.querySelectorAll(
+    '.rebid textarea, .rename input, .at-wrap input, .descedit')
+    .forEach(syncHot);
 }
 
 // The description block: the view pane always mirrors server truth;
@@ -485,21 +566,22 @@ function renderDesc() {
   if (!adopted) {  // the arrival picks the mode, once per auction
     $('desc').classList.toggle('viewing', state.blurb !== '');
   }
+  syncHot(edit);
 }
 
 // The corner ✎ (rendered mode's only control; the glyph lives in
-// index.html) reopens the editor. There is no save button: leaving
-// the editor saves (dreev killed the 💾 — the blurb obeys the same
-// clicking-away-saves rule as bids and names). Escape reverts first,
-// so its blur commits nothing.
+// index.html) reopens the editor. SAVE commits (dreev 2026-07-27,
+// reversing his own 💾 kill: cletus's clobber showed that a blur —
+// dismissing a banner, reloading — is never a decision to save).
+// Escape still reverts and leaves.
 function editDesc() {
   $('desc').classList.remove('viewing');
   $('descedit').focus();
 }
 
-// Save any change and flip back to rendered. Disclosed ifs: dirty →
-// save; the flip is gated on having something to show — a blur
-// leaving the blurb EMPTY stays in edit mode (flipping would trade
+// SAVE: commit any change and flip back to rendered. Disclosed ifs:
+// dirty → save; the flip is gated on having something to show — a
+// SAVE of an EMPTY blurb stays in edit mode (flipping would trade
 // the placeholder for an invisible empty pane).
 function commitDesc() {
   const edit = $('descedit');
@@ -512,13 +594,12 @@ function commitDesc() {
       // The commit bounced (someone's edit beat ours): back into the
       // editor, your words intact and the field red — the recovery
       // snapshot re-bases the (again-dirty) draft, so saving again,
-      // now informed, wins. Hiding a textarea blurs it in real
-      // browsers, so never-clobber alone can't protect a bounced
-      // draft; this restore is what does.
+      // now informed, wins.
       edit.value = draft;
       edit.defaultValue = cleanBase;
       edit.classList.add('error');
       $('desc').classList.remove('viewing');
+      syncHot(edit);  // dirty again: SAVE back on duty at once
       // reopen but never STEAL: the caret returns only if the page
       // is idle (the arrival-caret law) — if you've moved on to
       // another field, the red editor waits its turn
@@ -535,6 +616,7 @@ function commitDesc() {
     flashCommit($('desc'));  // the card glows: your words are away
   }
   $('desc').classList.toggle('viewing', edit.value !== '');
+  syncHot(edit);  // committed: the field cools, SAVE stands down
 }
 
 // This browser's identity ledger: aname -> pid (which seat is YOU,
@@ -633,6 +715,9 @@ function renderStatus() {
 
   const box = $('status');
   box.classList.toggle('revealed', state.revealed);
+  // the page itself changes weather at the close: the paper warms a
+  // shade (dreev 2026-07-27 — another subtle closed indicator)
+  document.body.classList.toggle('revealed', state.revealed);
   // fanfare belongs to the WITNESSED false->true flip: a latecomer's
   // arrival render (the adopted edge) sets the baseline silently
   const justNow = adopted && wasRevealed === false && state.revealed;
@@ -741,6 +826,7 @@ function renderStatus() {
   // pointer to move (the old attr()-based tip live-updated; the
   // singleton must too)
   showTip();
+  sweepHot();
 }
 
 // The reveal ceremony: the gavel returns for one mighty ceremonial
@@ -907,10 +993,11 @@ function buildBidContent(kind, pid) {
     // A TEXTAREA, not an input, so a long bid can WRAP and its box
     // grow to hold it (field-sizing in style.css) — while typing,
     // and in the frozen record after the reveal (your own row keeps
-    // its editor forever). Semantically it stays ONE line: Enter
-    // commits (the keydown below — a textarea gets no implicit form
-    // submission) and a pasted newline lands as a space, so a bid is
-    // one line of text however many lines of box it wraps across.
+    // its editor forever). Bids are MULTILINE (dreev 2026-07-27):
+    // Enter commits (42⏎ is sacred), Shift+Enter breaks the line,
+    // and a pasted newline stays a newline. Mobile's return key
+    // still means send (enterkeyhint); phone newlines arrive by
+    // paste.
     const editor = el('textarea');
     editor.rows = 1;
     editor.autocomplete = 'off';
@@ -923,32 +1010,24 @@ function buildBidContent(kind, pid) {
     // at submit (placeBid's refusal).
     editor.addEventListener('input', () => {
       editor.classList.toggle('error', overlong(editor.value));
-      // a pasted newline lands as a space (typed ones can't exist:
-      // Enter never reaches the value) — the same live-constraint
-      // pattern as the name fields' sanUname rewrite
-      const v = editor.value.replace(/\n/g, ' ');
-      if (v !== editor.value) editor.value = v;
     });
-    // Enter means SEND, exactly as when the editor was a one-line
-    // input — routed through the form's one submit funnel below,
-    // never becoming a newline
+    // Enter means SEND, routed through the form's one submit funnel
+    // below (a textarea gets no implicit form submission). Disclosed
+    // if: shiftKey exempts the keystroke — Shift+Enter falls through
+    // to the browser's own newline insertion.
     editor.addEventListener('keydown', (e) => {
-      if (e.key !== 'Enter') return;
+      if (e.key !== 'Enter' || e.shiftKey) return;
       e.preventDefault();
       form.requestSubmit();
     });
-    // Clicking/tapping away SAVES, like the name fields (dreev).
-    // Empty = nothing to place (no objection: leaving an empty
-    // editor is normal); unchanged = nothing new; already-sent =
-    // enter-then-blur (the mobile keyboard closing right after a
-    // submit) must not fire twice.
-    editor.addEventListener('blur', () => {
-      const v = editor.value.trim();
-      if (v === '') editor.value = editor.defaultValue;
-      else if (v !== editor.defaultValue
-               && v !== editor.dataset.sent) placeBid(pid, form);
-    });
     form.append(editor);
+    // SUBMIT (dreev's copy), on duty while the field is hot: the
+    // deliberate gesture for fingers, as Enter is for keyboards —
+    // clicking/tapping away commits NOTHING (dreev 2026-07-27)
+    const go = el('button', 'go', submitCopy);
+    go.type = 'submit';
+    go.tabIndex = -1;  // tab is for editable fields (dreev's tab law)
+    form.append(go);
     // the row-local busy sign, shown by .rebid.busy
     form.append(miniGavel());
     form.addEventListener('submit', (e) => {
@@ -1012,6 +1091,12 @@ function updateRow(t, seat, b, mine, known, locked) {
   // could swap around who bid what) — grayed, never suppressed
   const nameInput = t.querySelector('.rename input');
   nameInput.disabled = state.revealed;
+  // its SAVE grays with it — and only the grayed button explains
+  // itself (a live SAVE is its own explanation, per dreev's tip diet)
+  const nameGo = t.querySelector('.rename .go');
+  nameGo.disabled = state.revealed;
+  if (state.revealed) nameGo.setAttribute('data-tip', tooLateGoTip);
+  else nameGo.removeAttribute('data-tip');
   // the label under never-clobber: sync unless mid-edit (a rename is
   // a plain optimistic op now — no transactions, nothing to lock)
   if (nameInput !== document.activeElement
@@ -1059,8 +1144,15 @@ function updateRow(t, seat, b, mine, known, locked) {
   if (kind === 'editor') {
     const editor = content.querySelector('textarea');
     // the gavel drop is a bright line: your bid stays readable in
-    // your own editor, but the field goes dead at the reveal
+    // your own editor, but the field goes dead at the reveal — and a
+    // half-typed revision just STAYS, visibly unsent beside its
+    // grayed SUBMIT (no phantom auto-submit: that magic died with
+    // blur-commits, dreev 2026-07-27)
     editor.disabled = state.revealed;
+    const bidGo = content.querySelector('.go');
+    bidGo.disabled = state.revealed;
+    if (state.revealed) bidGo.setAttribute('data-tip', tooLateGoTip);
+    else bidGo.removeAttribute('data-tip');
     // className rebuilt wholesale (as ever — the transient commit
     // pulse rides out on this cleanup), then the overlong objection
     // recomputed: a LIVE ring must survive a change-ful render
@@ -1185,7 +1277,7 @@ function bidTip(pid) {
 }
 
 // The name is a live text field, like the + row's: click in and type.
-// Enter or clicking away commits the rename; Escape restores it. The
+// Enter or SAVE commits the rename; Escape restores it. The
 // pid is the row's key, so a rename never re-keys a living node —
 // updateRow syncs the label under never-clobber like any field.
 function buildNameField(pid) {
@@ -1201,18 +1293,18 @@ function buildNameField(pid) {
     const v = sanUname(input.value);
     if (v !== input.value) input.value = v;
   });
-  // Clicking/tapping away SAVES (dreev, 2026-07-17, reversing the
-  // old restore-on-blur: on a phone nobody expects the return key to
-  // be load-bearing). Escape above still reverts first, so its blur
-  // arrives clean and commits nothing.
-  input.addEventListener('blur', () => {
-    commitRename(pid, input.value, input);
-  });
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     commitRename(pid, input.value, input);
   });
   form.append(input);
+  // SAVE (dreev's copy), on duty while the field is hot — the phone's
+  // gesture, as Enter is the keyboard's (dreev 2026-07-27, re-reversing
+  // his 07-17 tap-away-saves: blur commits nothing, anywhere)
+  const go = el('button', 'go', saveCopy);
+  go.type = 'submit';
+  go.tabIndex = -1;  // tab is for editable fields (dreev's tab law)
+  form.append(go);
   return form;
 }
 
@@ -1229,10 +1321,9 @@ function commitRename(pid, raw, field) {
   const to = sanUname(raw);
   const seat = seats.find((s) => s.pid === pid);
   // nothing usable, or nothing changed: the field just snaps back
-  // (also quiets the enter-then-blur double fire: by the blur, the
-  // label already IS the committed value)
   if (seat === undefined || !to || to === seat.uname) {
     field.value = field.defaultValue;
+    syncHot(field);
     return;
   }
   if (seats.some((s) => s.uname === to && s.pid !== pid)) {
@@ -1240,19 +1331,30 @@ function commitRename(pid, raw, field) {
     field.classList.add('error');  // the problem is THIS field
     return;
   }
+  const from = seat.uname;  // the committed label, for the bounce path
   seat.uname = to;  // the optimistic label; server truth re-adopts
+  // the baseline follows the optimistic label at once — committed is
+  // committed the moment you commit it, not when the server settles
+  // (a settle-time baseline left a window where a second commit's
+  // snap-back path repainted the OLD name)
+  field.defaultValue = to;
+  syncHot(field);
   flashCommit(field);
   // a server-side refusal (a stale-roster race the local guard can't
-  // see) reddens the field too; the recovery snapshot restores the
-  // label itself
+  // see): the draft comes back DIRTY — your text, red, the committed
+  // label as baseline, SAVE standing — while the recovery snapshot
+  // restores the row's label itself (the blurb bounce's recipe)
   queueOp({ action: 'rename', aname: aname, pid: pid, to: to },
           () => {
             const node = rowNodes[pid];
             if (node) {
-              node.querySelector('.rename input').classList.add('error');
+              const f = node.querySelector('.rename input');
+              f.classList.add('error');
+              f.value = to;
+              f.defaultValue = from;
+              syncHot(f);
             }
-          },
-          () => { field.defaultValue = to; });
+          });
 }
 
 // Claim a row as yourself, or release it if it's already yours
@@ -1316,8 +1418,7 @@ async function placeBid(pid, form) {
   const lastBid = form.classList.contains('busy')
     ? editor.dataset.sent : editor.defaultValue;
   if (bid === lastBid) return;
-  editor.dataset.sent = bid;  // this exact text is on its way: the
-                              // blur that follows an enter is a no-op
+  editor.dataset.sent = bid;  // this exact text is on its way
   flashCommit(editor);  // the pulse marks the SUBMIT, not the settle
   // The editor stays HOT during flight: down to the wire you can
   // change your mind and resubmit while the last bid still flies.
@@ -1691,9 +1792,39 @@ function wireUp() {
   });
   $('seal').addEventListener('click', pressReveal);
   $('desctoggle').addEventListener('click', editDesc);
-  $('descedit').addEventListener('blur', commitDesc);
+  // the commit buttons wear dreev's copy, single-sourced from
+  // stringles (their dynamic row siblings are built with the same
+  // constants)
+  $('descgo').textContent = saveCopy;
+  $('descgo').addEventListener('click', commitDesc);
+  $('roster-go').textContent = saveCopy;
+  // Disclosed if: leaving a CLEAN, nonempty editor flips back to
+  // rendered — a pure mode flip, no write, undone by the ✎ (without
+  // it a look-but-don't-touch visit would strand the card in source
+  // mode). A dirty editor stays open: unsaved work stays visibly
+  // unsaved, its SAVE standing, until a deliberate SAVE or Escape.
+  $('descedit').addEventListener('blur', () => {
+    const edit = $('descedit');
+    if (edit.value === edit.defaultValue && edit.value !== '') {
+      $('desc').classList.add('viewing');
+    }
+  });
   $('descedit').addEventListener('input', () => {
     $('descedit').classList.remove('error');  // objection acknowledged
+  });
+
+  // Hotness listens once, delegated: typing (bubble phase, so the
+  // per-field sanitizers have already rewritten the value) and every
+  // focus move re-derive the one field they touched; renders sweep
+  // the rest (programmatic writes fire no events)
+  document.addEventListener('input', (e) => {
+    if (e.target.matches('input, textarea')) syncHot(e.target);
+  });
+  document.addEventListener('focusin', (e) => {
+    if (e.target.matches('input, textarea')) syncHot(e.target);
+  });
+  document.addEventListener('focusout', (e) => {
+    if (e.target.matches('input, textarea')) syncHot(e.target);
   });
 
   $('share').addEventListener('click', openShare);
@@ -1710,65 +1841,58 @@ function wireUp() {
     const v = sanAname($('aname').value);
     if (v !== $('aname').value) $('aname').value = v;
   });
-  // NAMES COMMIT ON DELIBERATE GESTURES ONLY — Enter or Tab — never
-  // on a timer, and deliberately not even on blur (dreev's mid-typing
-  // lockout, 2026-07-18: the old 500ms debounce committed his half-
-  // typed name and froze the field; blur-commit would let a stray tap
-  // elsewhere do the same). Committing a name is IRREVERSIBLE (names
-  // are chosen once), so a thinking pause or a wandering click costs
-  // nothing: the typed text just waits in the live field. Tab (the
-  // + row's commit-on-Tab precedent) also carries the caret on to
-  // the description; shift-tab still means backwards, away.
-  // Disclosed ifs: only a nonempty name commits, and the caret moves
-  // only if the name actually took — a refusal keeps you in the
-  // field, beside the sticky gate banner.
+  // NAMES COMMIT ON ENTER — only. Never a timer (dreev's mid-typing
+  // lockout, 2026-07-18: a 500ms debounce committed his half-typed
+  // name and froze the field), never blur (a stray tap must not name
+  // an auction), and since 2026-07-27 never Tab either (Tab is
+  // navigation, everywhere — dreev, after Tab wrote a participant to
+  // the database). Committing a name is IRREVERSIBLE (names are
+  // chosen once), so a thinking pause or a wandering click costs
+  // nothing: the typed text just waits in the live field. The old
+  // name-tab-describe flow survives by convention: the committed
+  // name DISABLES its field, so native Tab lands in the description.
+  // Disclosed ifs: only a nonempty name commits, and the pulse fires
+  // only if the name TOOK (a gate refusal keeps the field pulseless
+  // beside its banner).
   $('aname').addEventListener('keydown', async (e) => {
-    if ((e.key !== 'Enter' && (e.key !== 'Tab' || e.shiftKey))
-        || $('aname').value === '') return;
-    const wasTab = e.key === 'Tab';
+    if (e.key !== 'Enter' || $('aname').value === '') return;
     e.preventDefault();
     const want = sanAname($('aname').value);
     await switchAuction(want);
-    // the pulse only if the name TOOK (a gate refusal keeps the
-    // field pulseless beside its banner)
     if (aname === want) flashCommit($('aname'));
-    if (aname !== '' && wasTab) $('descedit').focus();
   });
 
-  // Enter/comma/space commit; deliberately NO commit-on-blur — the blur
-  // fires mid-click when you tap a row control, and the rebuild it
-  // triggered used to destroy the very button being clicked. An
-  // uncommitted name just stays visible in the + row.
+  // Enter/comma/space or SAVE commit; NO commit-on-blur — a blur is
+  // a side effect of every other gesture (it used to fire mid-click
+  // and destroy the very button being clicked, and it briefly saved
+  // anyway, 07-17 to 07-27) — and NO commit-on-Tab either (dreev
+  // 2026-07-27, after Tab wrote alice to the database: Tab is
+  // navigation; nothing but the deliberate gestures writes). A
+  // tapped-away name just stays visible in the + row, its SAVE
+  // standing (the hallway fumble — type, tap away, expect it added —
+  // is answered by the visible button now).
   // Commit the + row and — iff the fresh row is YOURS (the gold
   // star: you just added yourself) — land in its bid editor: name,
-  // tab (or tap away, or enter), bid. Frictionless self-add is the
-  // whole game (dreev's hallway test); adding someone ELSE keeps the
-  // caret here for the next name.
+  // enter (or SAVE), bid. Frictionless self-add is the whole game
+  // (dreev's hallway test); adding someone ELSE keeps the caret
+  // here for the next name.
   const commitAdd = () => {
     const added = addName();
     // pulse iff a write queued (addName returns '' on every refusal
     // and no-op; the taken-seat path queues a claim, so it counts)
     if (added !== '') flashCommit($('roster-input'));
+    syncHot($('roster-input'));  // a landed name cools the field
     const t = rowNodes[added];
     if (t && t.classList.contains('mine')) {
       t.querySelector('.rebid textarea').focus();
     }
   };
+  $('roster-go').addEventListener('click', commitAdd);
   $('roster-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ',' || e.key === ' ') {
       e.preventDefault();
       commitAdd();
     }
-    if (e.key === 'Tab' && !e.shiftKey
-        && $('roster-input').value !== '') {
-      e.preventDefault();
-      commitAdd();
-    }
-  });
-  // tapping away commits here too (the + row is a field like any
-  // other; an empty blur commits nothing and objects to nothing)
-  $('roster-input').addEventListener('blur', () => {
-    if ($('roster-input').value !== '') commitAdd();
   });
   $('roster-input').addEventListener('input', () => {
     $('roster-input').classList.remove('error');  // objection withdrawn

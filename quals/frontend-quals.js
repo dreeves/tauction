@@ -112,7 +112,7 @@ const STR = new Function(STRINGLES
   + ' moneyGlyphs, revealTip, needNameTip, removeTip,'
   + ' tooLateRemoveTip, resubmittedTip, nameStoneTip,'
   + ' waitingGlyph, yourMoveGlyph, readyGlyph, revealedGlyph,'
-  + ' tabTitle };')();
+  + ' tabTitle, saveCopy, submitCopy, tooLateGoTip };')();
 const STAMP = STR.stampCopy;
 
 // ...and the server's half, out of the vm context hosting Code.gs
@@ -419,8 +419,9 @@ const cssBattles = [];
   mockDelay = 0;
 
   /* Replicata: erase a persisted participant name and leave its field.
-     Expectata: the committed name returns. Resultata pre-fix: the
-     living field stayed blank although the model still said bob. */
+     Expectata (2026-07-27, blur commits nothing): the emptied field
+     just STAYS — an honest dirty draft, hot, SAVE standing, no write —
+     and Escape is the never-mind that restores the committed name. */
   gas.handle({ action: 'add', aname: 'emptyrename',
     uname: 'ann', pid: 'pid-emptyrename-ann' });
   gas.handle({ action: 'add', aname: 'emptyrename',
@@ -428,17 +429,29 @@ const cssBattles = [];
   const dEmptyRename = await makePage('/emptyrename?api=' + API_URL);
   const emptyName = row(dEmptyRename.window.document, 'bob')
     .querySelector('.rename input');
+  emptyName.focus();
   emptyName.value = '';
-  emptyName.dispatchEvent(new dEmptyRename.window.Event('blur'));
-  ok(emptyName.value === 'bob' && emptyName.defaultValue === 'bob'
-     && !emptyName.classList.contains('error'),
-     'leaving an emptied persisted name restores the committed name'
-     + ' without objecting');
+  emptyName.dispatchEvent(
+    new dEmptyRename.window.Event('input', { bubbles: true }));
+  emptyName.blur();
+  await sleep(80);
+  ok(emptyName.value === '' && emptyName.defaultValue === 'bob'
+     && emptyName.closest('.rename').classList.contains('hot')
+     && apiCalls.every((r) => r.action !== 'rename'
+          || r.aname !== 'emptyrename'),
+     'leaving an emptied persisted name writes nothing: the empty'
+     + ' draft waits, hot, its SAVE standing');
+  emptyName.focus();
+  emptyName.dispatchEvent(new dEmptyRename.window.KeyboardEvent(
+    'keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  ok(emptyName.value === 'bob'
+     && !emptyName.closest('.rename').classList.contains('hot'),
+     'Escape is the never-mind: the committed name returns and the'
+     + ' field cools');
 
-  /* Replicata: erase a standing bid and leave the editor. Expectata:
-     the committed bid returns; a whitespace-only never-saved editor
-     simply returns to blank. Resultata pre-fix: both fields retained
-     their empty draft even though no write happened. */
+  /* Replicata: erase a standing bid and leave the editor. Expectata
+     (2026-07-27): the empty draft stays, hot, and nothing is sent —
+     no phantom withdrawal, bcount untouched; Escape restores. */
   gas.handle({ action: 'add', aname: 'emptybid',
     uname: 'ann', pid: 'pid-emptybid-ann' });
   gas.handle({ action: 'add', aname: 'emptybid',
@@ -456,15 +469,25 @@ const cssBattles = [];
   });
   const standingBid = row(dEmptyBid.window.document, 'ann')
     .querySelector('.rebid textarea');
+  standingBid.focus();
   standingBid.value = '';
-  standingBid.dispatchEvent(new dEmptyBid.window.Event('blur'));
-  ok(standingBid.value === 'standing bid'
+  standingBid.dispatchEvent(
+    new dEmptyBid.window.Event('input', { bubbles: true }));
+  standingBid.blur();
+  await sleep(80);
+  ok(standingBid.value === ''
      && standingBid.defaultValue === 'standing bid'
-     && !standingBid.classList.contains('error')
+     && standingBid.closest('.rebid').classList.contains('hot')
      && gas.handle({ action: 'state', aname: 'emptybid' })
           .bidders.find((b) => b.pid === 'pid-emptybid-ann').bcount === 1,
-     'leaving an emptied standing bid restores server truth and sends'
-     + ' no withdrawal');
+     'leaving an emptied standing bid sends no withdrawal: the empty'
+     + ' draft waits, hot');
+  standingBid.focus();
+  standingBid.dispatchEvent(new dEmptyBid.window.KeyboardEvent(
+    'keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  ok(standingBid.value === 'standing bid'
+     && !standingBid.closest('.rebid').classList.contains('hot'),
+     'Escape restores the standing bid and the field cools');
   gas.handle({ action: 'add', aname: 'blankbid',
     uname: 'ann', pid: 'pid-blankbid-ann' });
   gas.handle({ action: 'add', aname: 'blankbid',
@@ -475,13 +498,18 @@ const cssBattles = [];
   });
   const blankBid = row(dBlankBid.window.document, 'ann')
     .querySelector('.rebid textarea');
+  blankBid.focus();
   blankBid.value = '   ';
-  blankBid.dispatchEvent(new dBlankBid.window.Event('blur'));
-  ok(blankBid.value === '' && blankBid.defaultValue === ''
+  blankBid.dispatchEvent(
+    new dBlankBid.window.Event('input', { bubbles: true }));
+  blankBid.blur();
+  await sleep(80);
+  ok(blankBid.value === '   ' && blankBid.defaultValue === ''
      && !blankBid.classList.contains('error')
      && bidderNamed(gas.handle(
           { action: 'state', aname: 'blankbid' }), 'ann') === undefined,
-     'leaving a blank never-saved bid is a normal no-op');
+     'a blank never-saved draft is likewise nobody\'s business: it'
+     + ' waits, and no write ever went');
 
   /* Replicata: save B, then save C before B's response arrives.
      Expectata: this client's serialized saves both land in order.
@@ -496,12 +524,10 @@ const cssBattles = [];
   mockDelay = 300;
   rapidDoc.getElementById('desctoggle').click();
   rapidDoc.getElementById('descedit').value = 'B version';
-  rapidDoc.getElementById('descedit').dispatchEvent(
-    new dRapidDesc.window.Event('blur'));
+  rapidDoc.getElementById('descgo').click();
   rapidDoc.getElementById('desctoggle').click();
   rapidDoc.getElementById('descedit').value = 'C version';
-  rapidDoc.getElementById('descedit').dispatchEvent(
-    new dRapidDesc.window.Event('blur'));
+  rapidDoc.getElementById('descgo').click();
   await until(() => gas.handle({ action: 'state', aname: 'rapiddesc' })
     .blurb === 'C version'
     || !rapidDoc.getElementById('banner').hidden);
@@ -530,8 +556,7 @@ const cssBattles = [];
   addName(dNewerDesc, 'bob');
   newerDoc.getElementById('desctoggle').click();
   newerDoc.getElementById('descedit').value = 'B version';
-  newerDoc.getElementById('descedit').dispatchEvent(
-    new dNewerDesc.window.Event('blur'));
+  newerDoc.getElementById('descgo').click();
   newerDoc.getElementById('desctoggle').click();
   newerDoc.getElementById('descedit').value = 'C version';
   newerDoc.getElementById('descedit').focus();
@@ -550,8 +575,7 @@ const cssBattles = [];
      && newerDoc.getElementById('descedit').defaultValue === 'A2 version'
      && newerDoc.getElementById('descedit').classList.contains('error'),
      'recovery rebases the surviving C draft on the external A2 truth');
-  newerDoc.getElementById('descedit').dispatchEvent(
-    new dNewerDesc.window.Event('blur'));
+  newerDoc.getElementById('descgo').click();
   await until(() => gas.handle({ action: 'state', aname: 'newerdesc' })
     .blurb === 'C version');
   await until(() => !newerDoc.getElementById('status').classList
@@ -1139,42 +1163,37 @@ const cssBattles = [];
      'the unmasked results land as a table — public now, so the'
      + ' console may finally say them');
 
-  /* --- 1d. tab out of the typed name lands in the DESCRIPTION ----------
-     Replicata (dreev, 2026-07-18): type the auction name, hit tab.
-     Resultata pre-fix: the description and + row were still DISABLED
-     (the commit rode a 500ms debounce), so tab had no enabled target
-     left in the page and threw focus into the browser chrome.
-     Expectata: tab commits the name NOW and carries the caret to the
-     description box — name, tab, describe (the + row's own
-     commit-on-Tab precedent). */
+  /* --- 1d. tab in the typed name is NAVIGATION, like everywhere --------
+     [FLIPPED 2026-07-27, dreev: "we don't ever want commit-on-tab
+     anymore. consistency." — the last Tab-commit dies. The old
+     name-tab-describe flow (his 2026-07-18 ask) survives by
+     convention instead: Enter commits, the committed name DISABLES
+     its field, and native Tab then lands in the description because
+     it is the page's first enabled field.] */
   const dTabName = await makePage('/?api=' + API_URL);
   const tabDoc = dTabName.window.document;
+  const tabProbes = () => apiCalls.filter((c) => c.action === 'state'
+    && c.aname === 'tabflow2').length;
   type(dTabName, 'aname', 'tabflow2');
-  tabDoc.getElementById('aname').dispatchEvent(
+  const tabUneaten = tabDoc.getElementById('aname').dispatchEvent(
     new dTabName.window.KeyboardEvent('keydown',
       { key: 'Tab', bubbles: true, cancelable: true }));
+  await sleep(80);
+  ok(tabUneaten
+     && dTabName.window.location.pathname === '/'
+     && !tabDoc.getElementById('aname').disabled
+     && tabDoc.getElementById('aname').value === 'tabflow2'
+     && tabProbes() === 0,
+     'tab in the auction name commits NOTHING, uneaten — it moves'
+     + ' focus like Tab should; the typed name just waits');
+  commitName(dTabName);  // Enter is the one gesture
   await until(() => dTabName.window.location.pathname === '/tabflow2');
   await sleep(20);
   ok(tabDoc.getElementById('aname').disabled
-     && tabDoc.activeElement === tabDoc.getElementById('descedit'),
-     'tab commits the typed name immediately and the caret lands in'
-     + ' the description: name, tab, describe');
-  // the refusal side: tab on an OCCUPIED name shows the gate banner
-  // and plants no caret in a description that isn't yours to write
-  gas.handle({ action: 'add', aname: 'tabtaken',
-    uname: 'z', pid: 'pid-tabtaken-z' });
-  const dTabTaken = await makePage('/?api=' + API_URL);
-  type(dTabTaken, 'aname', 'tabtaken');
-  dTabTaken.window.document.getElementById('aname').dispatchEvent(
-    new dTabTaken.window.KeyboardEvent('keydown',
-      { key: 'Tab', bubbles: true, cancelable: true }));
-  await until(() => !dTabTaken.window.document
-    .getElementById('banner').hidden);
-  ok(!dTabTaken.window.document.getElementById('aname').disabled
-     && dTabTaken.window.document.activeElement
-          !== dTabTaken.window.document.getElementById('descedit'),
-     'tab on an occupied name: the sticky gate banner, and the caret'
-     + ' stays put');
+     && !tabDoc.getElementById('descedit').disabled,
+     'Enter commits and stones the name field, leaving the'
+     + ' description as the first enabled field — native Tab now'
+     + ' does the old name-tab-describe carry by convention');
 
   /* --- 1e. a thinking pause mid-name commits NOTHING -------------------
      Replicata (dreev, 2026-07-18, mid-whack-a-mole): start typing
@@ -1182,10 +1201,10 @@ const cssBattles = [];
      typing. Resultata pre-fix: a 500ms timer committed the half-
      typed name and froze the field — locked out of your own auction
      name mid-word, irreversibly (names are chosen once). Expectata:
-     an IRREVERSIBLE commit rides deliberate gestures only — Enter
-     or Tab — never a clock, and deliberately not even blur: a stray
-     tap elsewhere must not commit half a name either. Typed text
-     just waits in the live field. */
+     an IRREVERSIBLE commit rides ONE deliberate gesture — Enter —
+     never a clock, never Tab (navigation), and deliberately not
+     even blur: a stray tap elsewhere must not commit half a name
+     either. Typed text just waits in the live field. */
   const dPause = await makePage('/?api=' + API_URL);
   const pauseDoc = dPause.window.document;
   // other pages keep polling their own auctions; only probes for the
@@ -1207,7 +1226,7 @@ const cssBattles = [];
      && !pauseDoc.getElementById('aname').disabled
      && pauseDoc.getElementById('aname').value === 'pizzanight'
      && pizProbes() === 0,
-     'even BLUR commits nothing here, unlike every other field:'
+     'BLUR commits nothing here either (since 2026-07-27, nowhere):'
      + ' wandering off must not irreversibly name the auction');
   commitName(dPause);
   await until(() => dPause.window.location.pathname === '/pizzanight');
@@ -1755,14 +1774,23 @@ const cssBattles = [];
   nameInp.dispatchEvent(new domT2.window.KeyboardEvent('keydown',
     { key: 'Escape', bubbles: true }));
   ok(nameInp.value === 'alicw', 'escape restores the name, commits nothing');
+  nameInp.focus();
   nameInp.value = 'wronger';
-  nameInp.dispatchEvent(new domT2.window.Event('blur'));
-  // [dreev FLIPPED the old enter-only-commit pin 2026-07-17: mobile
-  // users never hit enter — clicking/tapping away now SAVES]
-  await until(() => row(docT2, 'wronger') !== null);
-  ok(!row(docT2, 'alicw') && row(docT2, 'wronger'),
-     'clicking away SAVES the rename, like every field edit');
-  renameTo(domT2, 'wronger', 'alice');
+  nameInp.dispatchEvent(
+    new domT2.window.Event('input', { bubbles: true }));
+  nameInp.blur();
+  // [dreev flipped this pin TWICE: 07-17 tap-away-saves, 07-27 blur
+  // commits nothing anywhere — the draft waits with its SAVE instead]
+  await sleep(80);
+  ok(row(docT2, 'alicw') !== null && !row(docT2, 'wronger')
+     && nameInp.value === 'wronger'
+     && nameInp.closest('.rename').classList.contains('hot'),
+     'clicking away saves NOTHING: the rename draft waits, hot, its'
+     + ' SAVE standing');
+  nameInp.dispatchEvent(new domT2.window.KeyboardEvent('keydown',
+    { key: 'Escape', bubbles: true }));
+  ok(nameInp.value === 'alicw', 'Escape hands back the committed name');
+  renameTo(domT2, 'alicw', 'alice');
   ok(row(docT2, 'alice') && !row(docT2, 'alicw')
      && tiles(docT2)[0].dataset.uname === 'alice',
      'the typo is fixed in place immediately, order kept');
@@ -1900,17 +1928,16 @@ const cssBattles = [];
   ok(!dsDoc.getElementById('desctoggle').hasAttribute('data-tip'),
      'the pencil explains itself by icon: no tooltip [dreev retired'
      + ' his toggle-tip copy 2026-07-17]');
-  // clicking away = save + flip to rendered (dreev killed the 💾:
-  // the blurb obeys the same rule as bids and names now)
-  dsDoc.getElementById('descedit').dispatchEvent(
-    new domDs.window.Event('blur'));
+  // SAVE = commit + flip to rendered (dreev revived the button
+  // 2026-07-27; clicking away commits nothing, anywhere)
+  dsDoc.getElementById('descgo').click();
   await until(() => gas.handle({ action: 'state', aname: 'descy' })
     .blurb === '# Brunch\n\n**bring** cash');
   await until(() => !!dsDoc.querySelector('#descview h1'));
   ok(dsDoc.getElementById('desc').classList.contains('viewing')
      && dsDoc.querySelector('#descview h1').textContent === 'Brunch'
      && dsDoc.querySelector('#descview strong').textContent === 'bring',
-     'flipping to view commits, and the markdown renders (h1, bold)');
+     'SAVE commits, and the markdown renders (h1, bold)');
   // the mode flip is gated on having something to show: pencil-only
   // model edge cases (dreev's redesign 2026-07-17)
   dsDoc.getElementById('desctoggle').click();  // pencil: back to edit
@@ -1937,7 +1964,7 @@ const cssBattles = [];
      && dsDoc.getElementById('desc').classList.contains('viewing')
      && descOps() === opsBefore,
      'Escape abandons the edit: reverted, back to rendered, nothing'
-     + ' sent (mobile is out of luck — tapping away saves)');
+     + ' sent');
   const domBk = await makePage('/blank?api=' + API_URL);
   await sleep(20);
   domBk.window.document.getElementById('descedit').focus();
@@ -2085,13 +2112,12 @@ const cssBattles = [];
   const dB = await makePage('/descy?api=' + API_URL);
   dA.window.document.getElementById('desctoggle').click();  // to edit
   dA.window.document.getElementById('descedit').value = 'A version';
-  dA.window.document.getElementById('descedit').dispatchEvent(
-    new dA.window.Event('blur'));  // click away = commit
+  dA.window.document.getElementById('descgo').click();  // SAVE
   await until(() => gas.handle({ action: 'state', aname: 'descy' })
     .blurb === 'A version');
   dB.window.document.getElementById('desctoggle').click();  // stale base
   dB.window.document.getElementById('descedit').value = 'B version';
-  dB.window.document.getElementById('descedit').blur();  // = commit!
+  dB.window.document.getElementById('descgo').click();  // SAVE, stale
   // ...and B moves on: clicks into the + row and starts thinking
   dB.window.document.getElementById('roster-input').focus();
   await until(() =>
@@ -2117,6 +2143,257 @@ const cssBattles = [];
      'stringles.js and Code.gs agree verbatim on the bid-too-long copy'
      + ' (the client refuses before the wire; the server clamps the'
      + ' races and the hand-rolled requests)');
+
+  /* --- 2q. BLUR COMMITS NOTHING, anywhere (dreev 2026-07-27) ----------
+     Cletus's clobber, verbatim from the bug report: winifred and
+     cletus edit the blurb at once; winifred's save lands; cletus gets
+     the simultaneous-edits banner (so far so good), copies his draft
+     somewhere safe, ×es the banner — a CLICK, which blurs his editor —
+     and reloads to go read winifred's version. Expectata: blur is not
+     a gesture, so nothing is written; winifred's words stand and the
+     reload shows them; cletus's draft needs a deliberate SAVE to
+     insist. Resultata (pre-fix): the ×'s blur committed cletus's
+     silently re-based draft — the clobbered became the clobberer and
+     nobody ever saw winifred's words. ------------------------------ */
+  const cw = await makePage('/clob?api=' + API_URL);
+  const cwEd = cw.window.document.getElementById('descedit');
+  cwEd.focus();
+  cwEd.value = 'per cletus';
+  cwEd.dispatchEvent(new cw.window.Event('input', { bubbles: true }));
+  // winifred's save lands from her own machine...
+  gas.handle({ action: 'describe', aname: 'clob', blurb: 'per winifred',
+    base: gas.handle({ action: 'state', aname: 'clob' }).tblurb });
+  // ...and the next poll warns cletus, re-basing his dirty draft
+  await until(() => !cw.window.document.getElementById('banner').hidden);
+  ok(!cw.window.document.getElementById('banner').hidden,
+     "cletus is warned about winifred's simultaneous edit");
+  const cwWrites = () =>
+    apiCalls.filter((r) => r.action === 'describe').length;
+  const cwBefore = cwWrites();
+  // the × is a click, and a click anywhere else blurs the editor
+  // (jsdom moves no focus on click, so the focus loss is explicit)
+  cwEd.blur();
+  cw.window.document.getElementById('banner-x').click();
+  await sleep(150);  // an outbound write would be in apiCalls by now
+  ok(cwWrites() === cwBefore,
+     'dismissing the banner — the blur — writes NOTHING: blur is not'
+     + ' a gesture');
+  ok(gas.handle({ action: 'state', aname: 'clob' }).blurb
+       === 'per winifred',
+     "winifred's words stand on the sheet");
+  ok(cwEd.value === 'per cletus',
+     "cletus's draft stays his own business, visibly unsaved");
+  ok(cw.window.document.getElementById('desc').classList.contains('hot'),
+     'the desc card is HOT (an uncommitted draft): its SAVE stands');
+  ok(cw.window.document.querySelector('#desc .go').textContent
+       === STR.saveCopy,
+     "the blurb's commit button wears dreev's copy: SAVE");
+  // the reload that used to arrive too late now just shows him
+  // winifred's version (his draft died with the page, as drafts do)
+  const cw2 = await makePage('/clob?api=' + API_URL);
+  await until(() => cw2.window.document.getElementById('descedit').value
+    === 'per winifred');
+  ok(cw2.window.document.getElementById('descedit').value
+       === 'per winifred',
+     'the reload shows cletus what winifred actually wrote');
+  // ...and a deliberate SAVE is the one way to insist, now informed
+  cw.window.document.querySelector('#desc .go').click();
+  await until(() =>
+    gas.handle({ action: 'state', aname: 'clob' }).blurb === 'per cletus');
+  ok(gas.handle({ action: 'state', aname: 'clob' }).blurb === 'per cletus',
+     'pressing SAVE is how insisting works: a click, never a blur');
+
+  // The same law for the bid editor: clicking away sends nothing
+  const nb = await makePage('/noblur?api=' + API_URL);
+  addName(nb, 'bea');  // self-add: the fresh row is yours, editor live
+  await until(() =>
+    nb.window.document.querySelector('#tiles .rebid textarea') !== null);
+  const nbEd = nb.window.document.querySelector('#tiles .rebid textarea');
+  nbEd.focus();
+  nbEd.value = '42';
+  nbEd.dispatchEvent(new nb.window.Event('input', { bubbles: true }));
+  const nbBids = () => apiCalls.filter((r) => r.action === 'bid').length;
+  const nbBefore = nbBids();
+  nbEd.blur();
+  await sleep(150);
+  ok(nbBids() === nbBefore,
+     'clicking away from a typed bid sends nothing');
+  ok(nbEd.value === '42' && nb.window.document
+       .querySelector('#tiles .rebid').classList.contains('hot'),
+     'the unsent bid stays put, its field hot');
+  ok(nb.window.document.querySelector('#tiles .rebid .go').textContent
+       === STR.submitCopy,
+     "the bid's commit button wears dreev's copy: SUBMIT");
+  nb.window.document.querySelector('#tiles .rebid').dispatchEvent(
+    new nb.window.Event('submit', { bubbles: true, cancelable: true }));
+  await until(() => gas.handle({ action: 'state', aname: 'noblur' })
+    .bidders.length === 1);
+  ok(gas.handle({ action: 'state', aname: 'noblur' })
+       .bidders.length === 1, 'SUBMIT (or Enter) still commits');
+  await until(() => !nb.window.document
+    .querySelector('#tiles .rebid').classList.contains('hot'));
+  ok(!nb.window.document.querySelector('#tiles .rebid')
+       .classList.contains('hot'),
+     'settled and left: the field cools and its button stands down');
+
+  // ...and the rename field: a tapped-away draft waits, visibly
+  const nbRow = row(nb.window.document, 'bea');
+  const nbName = nbRow.querySelector('.rename input');
+  nbName.focus();
+  nbName.value = 'beatrix';
+  nbName.dispatchEvent(new nb.window.Event('input', { bubbles: true }));
+  const nbRens = () =>
+    apiCalls.filter((r) => r.action === 'rename').length;
+  const nbRensBefore = nbRens();
+  nbName.blur();
+  await sleep(150);
+  ok(nbRens() === nbRensBefore && nbName.value === 'beatrix',
+     'clicking away from a half-renamed name renames nobody; the'
+     + ' draft waits');
+  ok(nbRow.querySelector('.rename').classList.contains('hot'),
+     "the name field is hot, dreev's SAVE standing by");
+  nbName.form.dispatchEvent(
+    new nb.window.Event('submit', { bubbles: true, cancelable: true }));
+  ok(nbName.defaultValue === 'beatrix',
+     'the committed label is the baseline the moment it commits — no'
+     + ' flicker window between commit and settle');
+  await until(() => gas.handle({ action: 'state', aname: 'noblur' })
+    .seats.some((s) => s.uname === 'beatrix'));
+  ok(gas.handle({ action: 'state', aname: 'noblur' })
+       .seats.some((s) => s.uname === 'beatrix'),
+     'Enter/SAVE still renames');
+
+  // ...and the + row: a tapped-away name is NOT added — it waits in
+  // the field with its SAVE (the hallway fumble is answered by the
+  // visible button now, not by a hidden write)
+  const nbAdds = () => apiCalls.filter((r) => r.action === 'add').length;
+  const nbAddsBefore = nbAdds();
+  const nbPlus = nb.window.document.getElementById('roster-input');
+  nbPlus.focus();
+  type(nb, 'roster-input', 'carol');
+  nbPlus.blur();
+  await sleep(150);
+  ok(nbAdds() === nbAddsBefore && nbPlus.value === 'carol',
+     'a tapped-away + row adds nobody; the name and its SAVE wait');
+  ok(nbPlus.closest('.at-wrap').classList.contains('hot'),
+     "the + row is hot while it holds an uncommitted name");
+  submitName(nb);
+  await until(() => row(nb.window.document, 'carol') !== null);
+  ok(row(nb.window.document, 'carol') !== null,
+     'Enter (or SAVE) still adds');
+
+  // Escape stays the universal never-mind: revert, leave, cool
+  nbPlus.focus();
+  type(nb, 'roster-input', 'dave');
+  nbPlus.dispatchEvent(new nb.window.KeyboardEvent('keydown',
+    { key: 'Escape', bubbles: true, cancelable: true }));
+  ok(nbPlus.value === '' &&
+       !nbPlus.closest('.at-wrap').classList.contains('hot'),
+     'Escape reverts and cools the field: no button left standing');
+
+  // At the gavel, a half-typed revision just STAYS — no phantom
+  // auto-submit riding the disable's blur (that magic died with
+  // blur-commits): the draft sits in the frozen editor, its SUBMIT
+  // grayed and saying why, and the sheet keeps the pre-gavel bid
+  nbEd.focus();
+  nbEd.value = '43';
+  nbEd.dispatchEvent(new nb.window.Event('input', { bubbles: true }));
+  gas.handle({ action: 'add', aname: 'noblur', uname: 'zed',
+    pid: 'pid-nb-zed' });
+  gas.handle({ action: 'bid', aname: 'noblur', pid: 'pid-nb-zed',
+    bid: '7', uname: 'zed' });
+  gas.handle({ action: 'reveal', aname: 'noblur' });
+  await until(() =>
+    nb.window.document.body.classList.contains('revealed'));
+  ok(nb.window.document.body.classList.contains('revealed'),
+     'the page itself changes weather at the close (body.revealed'
+     + ' drives the closed tint)');
+  ok(nbEd.disabled && nbEd.value === '43',
+     'a half-typed revision at the gavel stays put, unsent');
+  const nbGo = nb.window.document.querySelector('#tiles .rebid .go');
+  ok(nbGo.disabled
+       && nbGo.getAttribute('data-tip') === STR.tooLateGoTip,
+     'its SUBMIT grays with the editor and its tip says why');
+  const nbFinal = gas.handle({ action: 'state', aname: 'noblur' });
+  const nbBeaPid =
+    nbFinal.seats.find((s) => s.uname === 'beatrix').pid;
+  ok(nbFinal.bids.some((b) => b.pid === nbBeaPid && b.bid === '42'),
+     "the sheet keeps the pre-gavel bid — the dead draft never went");
+  ok(nbFinal.bids.some((b) => b.pid === 'pid-nb-zed'),
+     'sanity: the reveal actually landed');
+
+  /* --- 2q2. drafts survive the tab (dreev 2026-07-27) -----------------
+     Replicata: start typing a bid, close the tab, come back to the
+     auction's URL. Expectata: the draft is right there — hot, its
+     button standing — because every uncommitted field lives in
+     tauction-drafts:<aname> (this browser only, like tauction-mybids)
+     until committed or Escaped. */
+  gas.handle({ action: 'add', aname: 'draftkeep', uname: 'lou',
+    pid: 'pid-dk-lou' });
+  const dk1 = await makePage('/draftkeep?api=' + API_URL);
+  addName(dk1, 'kim');  // self-claims (2j)
+  await settled(dk1);
+  const kimPid = JSON.parse(
+    dk1.window.localStorage.getItem('tauction-pids')).draftkeep;
+  const dk1ed = myEditor(dk1.window.document);
+  dk1ed.value = 'half a tho';
+  dk1ed.dispatchEvent(new dk1.window.Event('input', { bubbles: true }));
+  type(dk1, 'descedit', 'work in prog');
+  type(dk1, 'roster-input', 'mel');
+  const louName = row(dk1.window.document, 'lou')
+    .querySelector('.rename input');
+  louName.value = 'louise';
+  louName.dispatchEvent(new dk1.window.Event('input', { bubbles: true }));
+  const dk1drafts = JSON.parse(
+    dk1.window.localStorage.getItem('tauction-drafts:draftkeep'));
+  ok(dk1drafts['bid:' + kimPid] === 'half a tho'
+     && dk1drafts.blurb === 'work in prog'
+     && dk1drafts.addrow === 'mel'
+     && dk1drafts['rename:pid-dk-lou'] === 'louise',
+     'every keystroke of an uncommitted draft is already in'
+     + ' tauction-drafts, keyed by slot');
+  // the tab closes; the same browser returns to the URL
+  const dk1keys = {};
+  for (let i = 0; i < dk1.window.localStorage.length; i++) {
+    const k = dk1.window.localStorage.key(i);
+    dk1keys[k] = dk1.window.localStorage.getItem(k);
+  }
+  const dk2 = await makePage('/draftkeep?api=' + API_URL, (w) => {
+    Object.entries(dk1keys).forEach(([k, v]) =>
+      w.localStorage.setItem(k, v));
+  });
+  await until(() => myEditor(dk2.window.document)
+    && myEditor(dk2.window.document).value === 'half a tho');
+  const dk2ed = myEditor(dk2.window.document);
+  ok(dk2ed.value === 'half a tho' && dk2ed.defaultValue === ''
+     && dk2ed.closest('.rebid').classList.contains('hot')
+     && dk2.window.document.getElementById('descedit').value
+          === 'work in prog'
+     && dk2.window.document.getElementById('roster-input').value
+          === 'mel'
+     && row(dk2.window.document, 'lou').querySelector('.rename input')
+          .value === 'louise'
+     && dk2.window.document.getElementById('banner').hidden,
+     'the returning tab holds every draft — hot, buttons standing,'
+     + ' and no false simultaneous-edits alarm');
+  submitBid(dk2);
+  await settled(dk2);
+  await until(() => !(('bid:' + kimPid) in JSON.parse(
+    dk2.window.localStorage.getItem('tauction-drafts:draftkeep'))));
+  ok(!(('bid:' + kimPid) in JSON.parse(
+      dk2.window.localStorage.getItem('tauction-drafts:draftkeep'))),
+     'a committed bid leaves the draft store: only unsubmitted words'
+     + ' persist');
+  const dk2lou = row(dk2.window.document, 'lou')
+    .querySelector('.rename input');
+  dk2lou.focus();
+  dk2lou.dispatchEvent(new dk2.window.KeyboardEvent('keydown',
+    { key: 'Escape', bubbles: true, cancelable: true }));
+  ok(dk2lou.value === 'lou'
+     && JSON.parse(dk2.window.localStorage
+          .getItem('tauction-drafts:draftkeep'))['rename:pid-dk-lou']
+        === undefined,
+     'Escape is still never-mind: the draft dies in storage too');
 
   /* --- 2p2. a rename that loses the race reddens the FIELD ------------
      Replicata: the local roster is a poll behind — someone else just
@@ -2618,15 +2895,14 @@ const cssBattles = [];
   dI.window.document.getElementById('descedit').value
     = '# Big News\n\nmuch **bold**';
   mockDelay = 500;  // a slow server must not delay the paint
-  dI.window.document.getElementById('descedit').dispatchEvent(
-    new dI.window.Event('blur'));
+  dI.window.document.getElementById('descgo').click();
   const instaView = dI.window.document.getElementById('descview');
   ok(dI.window.document.getElementById('desc').classList
        .contains('viewing')
      && instaView.querySelector('h1')
      && instaView.querySelector('h1').textContent === 'Big News'
      && instaView.querySelector('strong').textContent === 'bold',
-     'the rendered markdown appears the instant the toggle is clicked,'
+     'the rendered markdown appears the instant SAVE is pressed,'
      + ' not when the database answers');
   await settled(dI);
   mockDelay = 0;
@@ -2819,32 +3095,28 @@ const cssBattles = [];
      "the reveal takes the padlock's tip: the open tip vanishes"
      + ' instead of lingering as an empty bubble');
 
-  /* --- 2u. name, TAB, bid (dreev's add-self flow) ----------------------
-     Adding YOURSELF should leave the bid field one tab away: type
-     your name, tab, type your bid. Only when the fresh row is yours
-     (the gold star); a facilitator tab-adding others keeps the caret
-     in the + row for the next name. */
+  /* --- 2u. name, enter, bid (dreev's add-self flow) --------------------
+     [Tab retired as a commit 2026-07-27 — it wrote alice to the
+     database; Tab-adds-nobody is pinned in 2u3.] Adding YOURSELF
+     lands the caret in your fresh bid editor: type your name, enter,
+     type your bid. Only when the fresh row is yours (the gold star);
+     a facilitator adding others keeps the caret in the + row for
+     the next name. */
   const dSelf = await makePage('/tabflow?api=' + API_URL);
   await sleep(20);
   dSelf.window.document.getElementById('roster-input').focus();
-  type(dSelf, 'roster-input', 'dree');
-  dSelf.window.document.getElementById('roster-input').dispatchEvent(
-    new dSelf.window.KeyboardEvent('keydown',
-      { key: 'Tab', bubbles: true, cancelable: true }));
+  addName(dSelf, 'dree');
   ok(dSelf.window.document.activeElement
        === myEditor(dSelf.window.document)
      && row(dSelf.window.document, 'dree').classList.contains('mine'),
-     'add yourself, tab: the caret lands in YOUR fresh bid editor');
+     'add yourself, enter: the caret lands in YOUR fresh bid editor');
   dSelf.window.document.getElementById('roster-input').focus();
-  type(dSelf, 'roster-input', 'gwen');
-  dSelf.window.document.getElementById('roster-input').dispatchEvent(
-    new dSelf.window.KeyboardEvent('keydown',
-      { key: 'Tab', bubbles: true, cancelable: true }));
+  addName(dSelf, 'gwen');
   ok(row(dSelf.window.document, 'gwen') !== null
      && !row(dSelf.window.document, 'gwen').classList.contains('mine')
      && dSelf.window.document.activeElement
           === dSelf.window.document.getElementById('roster-input'),
-     "tab-adding someone ELSE books the row but doesn't jump: the"
+     "adding someone ELSE books the row but doesn't jump: the"
      + ' caret stays in the + row for the next name');
 
   /* --- 2p3. enter-then-blur on a RENAME fires once ---------------------
@@ -2874,9 +3146,8 @@ const cssBattles = [];
   ok(dRn.window.document.getElementById('banner').hidden
      && row(dRn.window.document, 'bob123') !== null
      && names(gas.handle({ action: 'state', aname: 'freshren' })).includes('bob123'),
-     'enter-then-blur renames ONCE: no false "taken" (the trailing'
-     + ' commit of a row already renamed away is a stale event, not'
-     + ' a request)');
+     'enter-then-blur renames ONCE: no false "taken" (structural now —'
+     + ' a blur commits nothing, so a trailing one cannot re-fire)');
 
   /* --- 2q2. a bid protects its seat, before and after the gavel -------
      [REWRITTEN 2026-07-19, dreev deleting the cut-flag model: a
@@ -2976,42 +3247,80 @@ const cssBattles = [];
      + ' seat is spoken for');
 
   /* --- 2u3. committing a typed name never needs enter (mobile) ---------
-     Blur commits the + row too now (dreev: frictionless self-add;
-     the old click-swallow that banned this died with keyed node
-     reuse), and an empty blur objects to nothing. --------------- */
+     The finger's gesture is the + row's SAVE now (dreev 2026-07-27:
+     blur commits nothing, anywhere — a tapped-away name waits in the
+     field with its button standing, the hallway fumble answered by a
+     visible control instead of a hidden write). ------------------- */
   const dAdd = await makePage('/blurauda?api=' + API_URL);
   await sleep(20);
   dAdd.window.document.getElementById('roster-input').focus();
   type(dAdd, 'roster-input', 'gala');
-  dAdd.window.document.getElementById('roster-input').dispatchEvent(
-    new dAdd.window.Event('blur'));
+  dAdd.window.document.getElementById('roster-input').blur();
+  await sleep(80);
+  ok(row(dAdd.window.document, 'gala') === null
+     && dAdd.window.document.getElementById('roster-input').value
+          === 'gala'
+     && dAdd.window.document.getElementById('roster-input')
+          .closest('.at-wrap').classList.contains('hot'),
+     'a tapped-away name is not yet anybody: it waits in the + row,'
+     + ' hot, its SAVE standing');
+  dAdd.window.document.getElementById('roster-go').click();
   await settled(dAdd);
   ok(row(dAdd.window.document, 'gala') !== null
      && row(dAdd.window.document, 'gala').classList.contains('mine')
      && dAdd.window.document.activeElement
           === myEditor(dAdd.window.document),
-     'tapping away commits the typed name — and a self-add lands the'
-     + ' caret in YOUR fresh bid editor, no enter anywhere (dreev:'
-     + ' show up, add your name, bid)');
-  dAdd.window.document.getElementById('roster-input').dispatchEvent(
-    new dAdd.window.Event('blur'));
+     'SAVE commits the typed name — and a self-add lands the caret in'
+     + ' YOUR fresh bid editor, no enter anywhere (dreev: show up,'
+     + ' add your name, bid)');
+  dAdd.window.document.getElementById('roster-input').focus();
+  dAdd.window.document.getElementById('roster-input').blur();
   ok(!dAdd.window.document.getElementById('roster-input').classList
        .contains('error'),
      'an empty blur of the + row objects to nothing');
+  // Tab is NAVIGATION, never a commit (dreev 2026-07-27, after Tab
+  // wrote alice to the database: the whole point of SAVE is that
+  // nothing but SAVE — or Enter, or the separators — writes)
+  dAdd.window.document.getElementById('roster-input').focus();
+  type(dAdd, 'roster-input', 'hank');
+  const tabAdds = apiCalls.filter((r) => r.action === 'add').length;
+  const tabFree = dAdd.window.document.getElementById('roster-input')
+    .dispatchEvent(new dAdd.window.KeyboardEvent('keydown',
+      { key: 'Tab', bubbles: true, cancelable: true }));
+  await sleep(80);
+  ok(tabFree
+     && apiCalls.filter((r) => r.action === 'add').length === tabAdds
+     && dAdd.window.document.getElementById('roster-input').value
+          === 'hank'
+     && row(dAdd.window.document, 'hank') === null,
+     'Tab adds NOBODY, uneaten: it moves focus like Tab should, and'
+     + ' the typed name waits with its SAVE');
 
-  /* --- 2v. clicking away from the bid editor SAVES (dreev, esp.
-     mobile: nobody expects enter) — and the enter-then-blur pair
+  /* --- 2v. the bid editor's SUBMIT is the finger's enter (dreev
+     2026-07-27: clicking away sends nothing) — and enter-then-blur
      (the mobile keyboard closing right after submit) fires ONCE. -- */
   const dBlur = await makePage('/blursave?api=' + API_URL);
   await sleep(20);
   addName(dBlur, 'bea');
   await settled(dBlur);
-  typeBid(dBlur, 'saved by blur');
+  typeBid(dBlur, 'saved by press');
   myEditor(dBlur.window.document).dispatchEvent(
-    new dBlur.window.Event('blur'));
+    new dBlur.window.Event('input', { bubbles: true }));
+  myEditor(dBlur.window.document).blur();
+  await sleep(80);
+  ok(bidderNamed(gas.handle(
+       { action: 'state', aname: 'blursave' }), 'bea') === undefined
+     && myEditor(dBlur.window.document).value === 'saved by press'
+     && myEditor(dBlur.window.document).closest('.rebid')
+          .classList.contains('hot'),
+     'clicking away places NOTHING: the draft waits, hot, SUBMIT'
+     + ' standing');
+  myEditor(dBlur.window.document).closest('.rebid')
+    .querySelector('.go').click();
+  submitBid(dBlur);  // (jsdom fires no implicit submit off the click)
   await until(() => (bidderNamed(gas.handle(
     { action: 'state', aname: 'blursave' }), 'bea') || {}).bcount === 1);
-  ok(true, 'clicking away places the bid: no enter required');
+  ok(true, 'pressing SUBMIT places the bid: no enter required');
   await settled(dBlur);
   typeBid(dBlur, 'enter then blur');
   submitBid(dBlur);
@@ -3020,8 +3329,8 @@ const cssBattles = [];
   await settled(dBlur);
   ok(bidderNamed(gas.handle(
        { action: 'state', aname: 'blursave' }), 'bea').bcount === 2,
-     'enter then blur is ONE submission, not two (the closing mobile'
-     + ' keyboard must not double-fire)');
+     'enter then blur is ONE submission, not two (structural now: the'
+     + ' closing mobile keyboard can no longer fire anything)');
   ok(myEditor(dBlur.window.document).value === 'enter then blur'
      && dBlur.window.document.getElementById('banner').hidden,
      'and an idle blur of a clean editor commits nothing');
@@ -3598,14 +3907,11 @@ const cssBattles = [];
   ok(myEditor(domD.window.document).selectionStart === 4,
      'caret position survives the poll rebuild');
 
-  /* --- 3j. long bids: the editor commits like a one-line field ----------
-     Replicata (dreev, 2026-07-21): a bid longer than its box gets
-     clipped. The cure is a WRAPPING editor whose box grows (the
-     layout truth lives in story-quals; jsdom does no layout). Here
-     live the structural facts that keep it semantically ONE LINE:
-     Enter commits through the editor's own keydown (a wrapping field
-     gets no implicit form submission, and the keystroke must never
-     become a newline), and a pasted newline lands as a space. */
+  /* --- 3j. long bids: a wrapping, MULTILINE editor ----------------------
+     [The one-line semantics retired 2026-07-27 on dreev's "sure to
+     newline thing": Enter still commits (42⏎ is sacred) and eats the
+     keystroke; Shift+Enter is the newline gesture; a pasted newline
+     stays a newline. Box-growth layout truths live in story-quals.] */
   const domW = await makePage('/wrap?api=' + API_URL);
   addName(domW, 'wes');  // self-claims (2j)
   typeBid(domW, 'a very fine bid');
@@ -3617,14 +3923,29 @@ const cssBattles = [];
      && gas.handle({ action: 'state', aname: 'wrap' }).bidders.length === 1,
      "Enter commits the bid via the editor's own keydown — and eats"
      + ' the keystroke (it must never become a newline)');
+  const wrapBids = () => apiCalls.filter((c) => c.action === 'bid'
+    && c.aname === 'wrap').length;
+  const wrapBids0 = wrapBids();
+  const passedThrough = myEditor(domW.window.document).dispatchEvent(
+    new domW.window.KeyboardEvent('keydown',
+      { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true }));
+  await sleep(60);
+  ok(passedThrough && wrapBids() === wrapBids0,
+     'Shift+Enter is no commit: the keystroke passes through to'
+     + ' become a newline (jsdom does no text editing; the Chrome'
+     + ' truth lives in story 7b)');
   typeBid(domW, 'line one\nline two');
   // a real paste is a value change plus one input event (typeBid
   // alone skips the event; nothing else in the suite needs it)
   myEditor(domW.window.document).dispatchEvent(
     new domW.window.Event('input', { bubbles: true }));
-  ok(myEditor(domW.window.document).value === 'line one line two',
-     'a pasted newline lands as a space: a bid is one line of text,'
-     + ' however many lines of box it wraps across');
+  ok(myEditor(domW.window.document).value === 'line one\nline two',
+     'a pasted newline STAYS a newline: bids are multiline now');
+  submitBid(domW);
+  await settled(domW);
+  ok(myEditor(domW.window.document).defaultValue === 'line one\nline two',
+     'the multiline bid is accepted verbatim: the newline reaches'
+     + ' the record');
   // [the maxLength clamp REPLACED same-day (dreev: "i don't like how
   // it abruptly cuts me off... it should make it obvious"): no
   // keystroke is ever eaten — past 160 the field objects live, and
@@ -3664,8 +3985,7 @@ const cssBattles = [];
   await until(() => !docY.getElementById('status').classList
     .contains('stale'));
   docY.getElementById('descedit').value = 'brunch rules';
-  docY.getElementById('descedit').dispatchEvent(
-    new domY.window.Event('blur'));
+  docY.getElementById('descgo').click();
   ok(docY.getElementById('desc').classList.contains('stale')
      && docY.querySelector('#desc .gavel.mini')
      && !docY.getElementById('status').classList.contains('stale'),
@@ -3943,16 +4263,16 @@ const cssBattles = [];
        .contains('committed'),
      'a real rename pulses its field');
   await settled(dPulse);
-  // the description: an untouched blur commits nothing; a dirty blur
-  // saves, and the card ring says so
+  // the description: an untouched blur commits nothing; SAVE
+  // commits, and the card ring says so
   const pedit = pdoc.getElementById('descedit');
   pedit.dispatchEvent(new dPulse.window.Event('blur'));
   ok(!pdoc.getElementById('desc').classList.contains('committed'),
      'an untouched description blur commits nothing and shows nothing');
   pedit.value = 'pulse notes';
-  pedit.dispatchEvent(new dPulse.window.Event('blur'));
+  pdoc.getElementById('descgo').click();
   ok(pdoc.getElementById('desc').classList.contains('committed'),
-     'a dirty description blur saves and pulses the card');
+     'SAVE commits the description and pulses the card');
   await settled(dPulse);
 
   /* --- 8. banners STICK (dreev's ruling, 2026-07-19): bad news stays

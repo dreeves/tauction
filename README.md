@@ -18,4 +18,13 @@ There's a bunch of setup info and deploy instructions currently in black hole of
 
 Next for the golems:
 
-can you think harder about alignment? like isn't it weird for the is-you star to be part of the participant column? what about having the name itself align with "PARTICIPANTS" and the star to the left of that, outside the field. i think there are a lot of subtleties like that to work through. but also use your own skill, don't just trust my aesthetic opinions.
+1. tell me if i'm thinking about this wrong but could this be more mobile-friendly just by making everything a little bigger? any better ideas for making it more mobile-friendly?
+
+2. maybe relatedly, i don't think i like these save/submit buttons beeing inside the field.
+
+3. command/ctrl-enter should work to submit/save.
+
+4. why do i get a gavelspinner just by clicking in an empty bid field? in general it seems like the gavelspinners far more often than it needs to.
+
+5. get the length limits to behave the same way for all field. and let's go with 20 characters for auction names and participant names
+

@@ -73,6 +73,17 @@ const moneyGlyphs = ['$', '¥', '£', '\u{1fa99}', '⚖️'];
 // Schelling's coordination game (see the help copy), won.
 const consensusStamp = 'CONSENSUS';
 
+// The commit buttons (dreev's copy, 2026-07-27): SAVE rides the blurb
+// and the participant-name fields (rename and the + row), SUBMIT rides
+// the bid editor. They appear only while a field is HOT — focused or
+// holding an uncommitted draft — because blur commits nothing.
+const saveCopy = 'SAVE';
+const submitCopy = 'SUBMIT';
+
+// TODO: the tip on a grayed SAVE/SUBMIT after the reveal — too late,
+// the auction closed; this draft was never sent
+const tooLateGoTip = 'Sero — auctio conclusa est';
+
 // The blurb's unknown-device fallback (when user-agent comes up empty)
 const mysteryDevice = 'mystery device';
 
