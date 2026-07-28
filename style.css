@@ -471,8 +471,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* One row per expected bidder: a star (the who-you-are radio), dashed
    breathing cells until they bid, solid green once they have (bid text
    if you may see it, a blurred decoy if not), a one-shot shimmer when
-   their bid changes, a struck-through name if their bid doesn't count
-   toward the reveal. Your own row's slot is an input; × removes
+   their bid changes. Your own row's slot is an input; × removes
    bidless rows; the + row at the bottom adds people to the roster. */
 
 /* Each ledger line is a FIELD and a CARD (dreev 2026-07-22, replacing

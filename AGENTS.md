@@ -130,13 +130,15 @@ Chrome installed) with layout assertions, dropping screenshots in
 ## Data model
 
 Vocabulary: an **aname** is an auction's name (also its URL slug); a
-**uname** is a bidder's username.
+**pid** is a person id (client-minted uuid) — the identity that seats,
+bids, and claims key on; a **uname** is a bidder's username, a display
+label hanging off a pid (see the shipped pid spec below).
 
 | tab | columns |
 |---|---|
 | `auctions` | aname, tini, tmod, tfin, blurb, tblurb |
-| `users` | aname, uname, deviceID, deviceBlurb, tini, tmod |
-| `bids` | aname, uname, bid, tbid |
+| `users` | aname, pid, uname, deviceID, deviceBlurb, tini, tmod |
+| `bids` | aname, pid, bid, tbid |
 
 The bids tab is an append-only LOG (2026-07-17): every submission is
 its own row, nothing is overwritten, and a person's standing bid is
@@ -156,8 +158,7 @@ A users row IS a roster seat (insertion order = display order). Roster
 edits are row-level `add`/`remove` actions — commutative, so concurrent
 edits from different people can't clobber each other. Future per-person
 attributes (weights/shares) append as columns on the right, which
-positional reads tolerate. Bids: one row per (aname, uname); re-bids
-overwrite and bump `bcount`.
+positional reads tolerate.
 
 ## Behavior
 
@@ -178,12 +179,15 @@ overwrite and bump `bcount`.
   reveal button: it unlocks (and pulses) once everyone on the roster — at
   least two people — has bid, and anyone may press it. Ending early =
   ex the straggler, then press.
-- Bidding claims a roster seat. The only road to a struck-through row is
-  being removed from the roster after bidding (the bid stays visible but
-  no longer gates the reveal); re-bidding takes the seat back.
+- Bidding claims a roster seat, and a bid protects it (2026-07-19,
+  deleting the struck-through-row state): remove refuses on a
+  bid-bearing seat, a bid rebuilds its seat if a raced removal took
+  it, so no row is ever crossed out; × is offered only on bidless rows.
 - Reveal is a one-way latch: nothing can ever reseal revealed bids.
-- Everything stays editable, even after reveal: re-bids and roster edits
-  are last-write-wins. Late bidders join publicly. Honor system throughout.
+- The gavel freezes everything but the blurb (2026-07-16, reversing
+  everything-stays-editable): after reveal, bid/add/remove/rename/
+  claim/release all refuse loudly, and bid log rows stamped after
+  `tfin` don't count. Honor system throughout.
 - Who-has-bid is public, with a per-bidder (re)submission counter; only bid
   contents are sealed (you always see the bids your own browser placed).
 - Sealing is honor-system: the sheet itself is link-visible.

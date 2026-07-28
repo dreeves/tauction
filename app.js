@@ -688,12 +688,10 @@ function knownBids() {
 
 // The BIDS box IS the app: one ledger line per roster member. Dashed,
 // breathing cells = no bid yet; solid green = bid in (text if you may
-// read it, a blurred decoy if not); struck-through name = bid doesn't
-// count toward the reveal (not on the roster — reachable only via roster
-// races, never via the UI). Your own row's bid slot is an editor: your bid
-// lives there, editable in place; enter (re)submits. × removes a row from
-// the roster, offered only while it has no bid to protect. Reveal lights
-// the 🎉 and glows the card, once.
+// read it, a blurred decoy if not). Your own row's bid slot is an
+// editor: your bid lives there, editable in place; enter (re)submits.
+// × removes a row from the roster, offered only while it has no bid
+// to protect. Reveal lights the 🎉 and glows the card, once.
 // The tab-title state glyph — dreev's ruled quadruple (2026-07-20) —
 // derived per-viewer from ANY snapshot: the adopted state, or a raw
 // glimpse the hidden peek never adopts. Disclosed ifs, one per ruled
@@ -863,8 +861,8 @@ function celebrate() {
   // THE SCHELLING JACKPOT (disclosed if): the help copy invites
   // playing Schelling's coordination game, and every-revealed-bid-
   // identical is that game won — the ceremony says so (the stamp)
-  // and shows it (the convergence, below). Exact string equality,
-  // cut rows included; two bids minimum (which reveal guarantees).
+  // and shows it (the convergence, below). Exact string equality;
+  // two bids minimum (which reveal guarantees).
   const bids = state.bids || [];
   const consensus = bids.length >= 2
     && bids.every((b) => b.bid === bids[0].bid);
