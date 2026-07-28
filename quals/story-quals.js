@@ -1463,6 +1463,10 @@ async function bid(page, bidText) {
         .display !== 'none');
     await p2.tap('.tile.mine .rebid .go');
     await p2.waitForSelector('.tile.mine.has-bid');
+    // park the caret back in the (clean) committed editor: hot by
+    // focus alone, SUBMIT standing — the gavel must cool even this,
+    // via Chrome's blur-on-the-disable (which jsdom can't exercise)
+    await p2.click('.tile.mine .rebid textarea');
     await p1.waitForFunction(() =>
       !document.getElementById('seal').disabled);
     await p1.tap('#seal');
@@ -1470,6 +1474,21 @@ async function bid(page, bidText) {
       document.getElementById('status').textContent
         .includes('my parking spot'));
     ok(true, 'and the game plays out: both bids in, revealed by thumb');
+    // The complement of the caught-draft case (dreev's old bug note
+    // "no submit button when the auction is closed"): both bids were
+    // COMMITTED, so no SUBMIT stands on the closed auction — phone 1's
+    // field went cold at its own seal tap, and phone 2's was hot by
+    // focus alone, cooled by Chrome blurring the editor it disabled.
+    // The computed style pins the CSS half (.go hides unless .hot)
+    // that the jsdom quals can't see.
+    await p2.waitForFunction(() =>
+      document.body.classList.contains('revealed'));
+    const goGone = (page) => page.evaluate(() =>
+      getComputedStyle(document.querySelector('.tile.mine .rebid .go'))
+        .display === 'none');
+    ok(await goGone(p1) && await goGone(p2),
+       'no draft, no button: on the closed auction both committed'
+       + " bids' SUBMITs are gone, not grayed");
 
     /* ====== the gavel catches a half-typed revision ==================
        [FLIPPED 2026-07-27: the emergent auto-submit (blessed

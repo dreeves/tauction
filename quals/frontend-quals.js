@@ -3774,6 +3774,10 @@ const cssBattles = [];
   mockDelay = 500;             // the revision is slow...
   typeBid(domSW, 'final answer');
   submitBid(domSW);
+  // a real reveal press blurs the editor first (any pointer gesture
+  // does — and Chrome blurs on the disable itself, which jsdom does
+  // not), so the qual supplies the blur the gesture implies
+  myEditor(domSW.window.document).blur();
   mockDelay = 0;               // ...and the reveal press is instant
   domSW.window.document.getElementById('seal').click();
   await settled(domSW);
@@ -3787,6 +3791,15 @@ const cssBattles = [];
   ok(myEditor(domSW.window.document).value === 'final answer'
      && myEditor(domSW.window.document).disabled,
      'and the frozen editor agrees with the revealed record');
+  // The complement of the draft-at-the-gavel case (dreev's old bug
+  // note "no submit button when the auction is closed"): a COMMITTED
+  // bid's field is clean, so once the caret leaves it's cold, and the
+  // reveal's repaints must not reheat it — no SUBMIT stands; only a
+  // caught draft keeps its grayed, tip-wearing button
+  ok(!myEditor(domSW.window.document).closest('.rebid')
+       .classList.contains('hot'),
+     'a clean frozen editor is cold: no SUBMIT on a closed auction'
+     + ' without a draft');
 
   // first window catches up via polling (jsdom timers run; wait for it)
   await until(() =>
