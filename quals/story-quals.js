@@ -46,6 +46,8 @@ const gas = makeGas();
 // frontend suite does
 const SCOPY = require('vm')
   .runInContext('({ gavelFellCopy, bidTooLongCopy })', gas);
+const SCOPY2 = require('vm')
+  .runInContext('({ simulEditsCopy })', gas);
 
 // Answer any request to the deployed API URL with the local Code.gs
 // logic; write ops can be artificially delayed for in-flight-race quals
@@ -357,7 +359,11 @@ async function bid(page, bidText) {
       const row = document.querySelector('#tiles .tile');
       const star = row.querySelector('.tu').getBoundingClientRect();
       const name = row.querySelector('.tile-name').getBoundingClientRect();
-      const who = row.querySelector('.rename').getBoundingClientRect();
+      const nameStyle = getComputedStyle(row.querySelector('.tile-name'));
+      // the box's own text edge (the .rename form is the whole
+      // column now, box + button row, since 2026-07-28)
+      const whoText = name.left + parseFloat(nameStyle.borderLeftWidth)
+        + parseFloat(nameStyle.paddingLeft);
       const mark = document.querySelector('.addrow .addmark');
       const plus = mark && mark.getBoundingClientRect();
       const addBox = document.querySelector('.addrow .at-wrap')
@@ -372,12 +378,12 @@ async function bid(page, bidText) {
       return row.firstElementChild.classList.contains('tu')
         && star.right < name.left
         && near(name.left - star.right, parseFloat(getComputedStyle(row).gap))
-        && near(textLeft(document.querySelector('.th-person')), who.left)
+        && near(textLeft(document.querySelector('.th-person')), whoText)
         && near(addBox.left, name.left)
         && near(addBox.right, name.right)
         && plus && near((plus.left + plus.right) / 2,
                         (star.left + star.right) / 2)
-        && near(addAt.left, who.left)
+        && near(addAt.left, whoText)
         && near(star.top, name.top) && near(star.bottom, name.bottom)
         && star.width >= 24 && star.height >= 24
         && near(textLeft(document.querySelector('.th-bid')), bidText);
@@ -514,7 +520,8 @@ async function bid(page, bidText) {
       return getComputedStyle(cell).outlineWidth === '2px'
         && getComputedStyle(cell).outlineStyle === 'solid'
         && getComputedStyle(inp).boxShadow === 'none'
-        && !cell.querySelector('.go')
+        && !document.querySelector(
+               '.tile[data-uname="bob"] .rename .go')
              .checkVisibility({ visibilityProperty: true });
     }), 'editing a name rings the person cell itself, star lassoed'
        + ' like the + row rings its @ — no underline — and no SAVE'
@@ -723,7 +730,9 @@ async function bid(page, bidText) {
       };
       const row = document.querySelector('#tiles .tile');
       const name = row.querySelector('.tile-name').getBoundingClientRect();
-      const who = row.querySelector('.rename').getBoundingClientRect();
+      const nameStyle = getComputedStyle(row.querySelector('.tile-name'));
+      const whoText = name.left + parseFloat(nameStyle.borderLeftWidth)
+        + parseFloat(nameStyle.paddingLeft);
       const add = document.querySelector('.addrow .at-wrap')
         .getBoundingClientRect();
       const bid = row.querySelector('.bid-card, .rebid textarea');
@@ -736,7 +745,7 @@ async function bid(page, bidText) {
         && thBid.scrollWidth <= thBid.clientWidth + 1
         && box.width >= 3 * parseFloat(getComputedStyle(
           document.documentElement).fontSize)
-        && near(textLeft(document.querySelector('.th-person')), who.left)
+        && near(textLeft(document.querySelector('.th-person')), whoText)
         && near(textLeft(thBid), bidText)
         && near(add.left, name.left) && near(add.right, name.right);
     }), 'at 320px the same text axes hold, both fields stay usable,'
@@ -1525,10 +1534,40 @@ async function bid(page, bidText) {
     const fresh = await makePage(browser, DESKTOP);
     await fresh.goto(BASE + '/', { waitUntil: 'networkidle0' });
     await fresh.evaluate(BELOW_JS);
+    // the landing affordances (dreev 2026-07-28): no red on arrival
+    // (touched validation), the one action visible but grayed
+    ok(await fresh.evaluate(() => {
+      const a = document.getElementById('aname');
+      const go = document.getElementById('namego');
+      return !a.classList.contains('visited')
+        && getComputedStyle(a).filter === 'none'
+        && go.checkVisibility({ visibilityProperty: true })
+        && go.disabled;
+    }), 'the landing page: no premature red, and its one action — Go'
+       + ' — already visible, grayed until there is a name');
+    await fresh.keyboard.press('Tab');  // wander off, name still blank
+    ok(await fresh.evaluate(() => {
+      const cs = getComputedStyle(document.getElementById('aname'));
+      return cs.filter.includes('drop-shadow')
+        && cs.outlineStyle === 'solid';
+    }), 'a blank name left behind GLOWS the objection (red only'
+       + ' after you have been and gone — the touched convention)');
+    await fresh.click('#aname');
     await fresh.type('#aname', 'gorows');
     ok((await fresh.evaluate(() =>
          window.__below('#aname', '#namego')))[1],
        "the auction name's Go sits below its field too");
+    // ...and the glow rides every field objection (dreev 2026-07-28:
+    // "glowy red, not just a red outline" — Bootstrap's convention)
+    await fresh.keyboard.press('Enter');
+    await fresh.waitForFunction(() => location.pathname === '/gorows');
+    await fresh.type('#roster-input', 'x'.repeat(21));
+    await fresh.keyboard.press('Enter');  // the overlong objection
+    ok(await fresh.evaluate(() =>
+      getComputedStyle(document.querySelector('.addrow .at-wrap'))
+        .filter.includes('drop-shadow')),
+       'the objection ring glows, not just outlines (on the + row it'
+       + ' rings the wrapper, where the ring lives)');
 
     /* ================= Story 6: two thumbs, one alice ==================
        Roommates both open /squabble on their phones; the roster lists
@@ -1671,10 +1710,12 @@ async function bid(page, bidText) {
        + ' resting paper and the Closed line gets its air');
 
     /* ====== cletus and winifred, in a real browser ===================
-       The frontend suite pins the logic; THIS pins the browser's
-       event order — the banner's × is a mousedown that blurs the
-       editor before the click lands, and that blur must write
-       nothing (pre-fix it committed the silently re-based draft). */
+       The mid-air-collision convention (dreev 2026-07-28, replacing
+       warn-and-rebase): NOTHING warns cletus mid-composition when
+       winifred's save lands under his draft; the conflict is found at
+       HIS save, refused in the server's words; and a fresh load
+       always shows the database's blurb — his unsaved words die with
+       the tab, exactly what the refusal banner told him to expect. */
     gas.handle({ action: 'describe', aname: 'clobstory',
       blurb: 'original', base: '' });
     const cle = await makePage(browser, DESKTOP);
@@ -1686,54 +1727,41 @@ async function bid(page, bidText) {
     gas.handle({ action: 'describe', aname: 'clobstory',
       blurb: 'per winifred',
       base: gas.handle({ action: 'state', aname: 'clobstory' }).tblurb });
+    // ...and the next polls say NOTHING to cletus: his words, his
+    // caret, no banner — conflicts are save-time business
+    await new Promise((r) => setTimeout(r, 6000));  // a full poll
+    ok(await cle.evaluate(() =>
+         document.getElementById('banner').hidden
+         && document.getElementById('descedit').value
+              === 'original plus cletus'),
+       'a foreign save mid-draft warns NOBODY mid-composition:'
+       + ' his words and his calm stand');
+    // his SAVE is where the collision surfaces, in the server's words
+    await cle.click('#descgo');
     await cle.waitForFunction(() =>
       !document.getElementById('banner').hidden);
-    // ...cletus ×es the warning — the real mousedown-blur-click
-    await cle.click('#banner-x');
-    await new Promise((r) => setTimeout(r, 400));  // a blur-commit
-                                    // would be on the wire by now
-    ok(gas.handle({ action: 'state', aname: 'clobstory' }).blurb
-         === 'per winifred'
-       && await cle.evaluate(() =>
-            document.getElementById('descedit').value
+    ok(await cle.evaluate((words) =>
+         document.getElementById('banner-msg').textContent === words
+         && document.getElementById('descedit').value
               === 'original plus cletus'
-            && getComputedStyle(document.getElementById('descgo'))
-                 .display !== 'none'),
-       "dismissing the warning writes NOTHING: winifred's words stand"
-       + " and cletus's draft waits beside its SAVE");
-    // ...and the tab closes (drafts survive it, 2026-07-27): the
-    // reload shows him winifred's version RENDERED — what the old
-    // clobber never let him see — while his draft waits behind the
-    // pencil, still his to insist on or abandon
+         && document.getElementById('descedit').classList
+              .contains('error'), SCOPY2.simulEditsCopy)
+       && gas.handle({ action: 'state', aname: 'clobstory' }).blurb
+            === 'per winifred',
+       "the collision surfaces at HIS save: refused in the server's"
+       + ' words, his draft red and copyable, her words standing');
+    // the banner says reload — and a fresh load shows the DATABASE,
+    // never a ghost of the dead draft (dreev's firefox haunting)
     await cle.reload({ waitUntil: 'networkidle0' });
     await cle.waitForFunction(() =>
       document.getElementById('desc').classList.contains('viewing'));
     ok(await cle.evaluate(() =>
       document.getElementById('descview').textContent
         .includes('per winifred')
-      && document.getElementById('descedit').value
-           === 'original plus cletus'
-      && !document.getElementById('descgo')
-           .checkVisibility({ visibilityProperty: true })
-      && getComputedStyle(document.getElementById('desctoggle'))
-           .display !== 'none'),
-       "the reload finally shows winifred's words, rendered — and"
-       + " cletus's draft came home with the tab, parked behind the"
-       + ' pencil (SAVE stays edit-mode-only)');
-    await cle.click('#desctoggle');  // back to the source: the draft
-    ok(await cle.evaluate(() =>
-      document.getElementById('descgo')
-        .checkVisibility({ visibilityProperty: true })),
-       'opening the source wakes the restored draft\'s SAVE');
-    // insisting is a deliberate press, and the button must survive
-    // its own mousedown's blur to take the click
-    await cle.click('#descgo');
-    await cle.waitForFunction(() =>
-      document.querySelector('#descview') !== null
-      && document.getElementById('desc').classList.contains('viewing'));
-    ok(gas.handle({ action: 'state', aname: 'clobstory' }).blurb
-         === 'original plus cletus',
-       'SAVE survives its own blur and lands the informed insist');
+      && document.getElementById('descedit').value === 'per winifred'
+      && document.getElementById('banner').hidden),
+       "the reload shows winifred's words and only winifred's words:"
+       + ' no restored draft, no banner, no haunting');
 
     /* ====== name, tab, enter (dreev's own fumble, verbatim) ==========
        He typed the auction name and hit Tab: pre-fix it either

@@ -38,5 +38,3 @@ Next for the golems:
 5. Maybe a little more vertical whitespace above the is-you footnote? 
 
 6. Why is the Save button for the participant still inside the field itself? It shouldn't be. Can you not see that?
-
-7. I forget your answer to this one: Shouldn't the submit button gray out upon successful submission and reeanble only when the field changes? Non-rhetorical question: is that the usual convention?

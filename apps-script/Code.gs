@@ -69,9 +69,10 @@ const notReadyCopy = 'not ready to reveal: everyone on the roster'
 // (reworded by dreev 2026-07-27; must match stringles.js
 // blurbTooLongBanner exactly, like its two name siblings)
 const blurbTooLongCopy = 'Description too long (max 2000 characters)';
-// must match stringles.js simulEditsBanner EXACTLY (a qual checks):
-// the client shows the same words for locally- and remotely-detected
-// simultaneous edits, so back-to-back banners read as one message
+// the edit-war refusal's ONE home (2026-07-28: the client no longer
+// detects collisions itself — the compare-and-swap here refuses at
+// save time, the wikis' mid-air-collision convention, and the client
+// banners these words verbatim)
 const simulEditsCopy =
   'Edit war! Copy your changes elsewhere for safekeeping and reload the page';
 const rosterClosedCopy = 'Auction complete — no new participants';

@@ -139,6 +139,10 @@ input::placeholder { color: var(--muted); opacity: 0.8; }
 
 .at-wrap:focus-within { outline: 2px solid var(--accent); outline-offset: -1px; }
 
+/* the + row's column: the bordered @-box on top, its .gorow below —
+   outside the border, like every button row (dreev 2026-07-28) */
+.fieldcol { display: flex; flex-direction: column; }
+
 .at-wrap .at { color: var(--muted); font-weight: 700; user-select: none; }
 
 .at-wrap input {
@@ -206,8 +210,13 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    than the border going away so nothing shifts by its 1px. */
 .desc.viewing { background: transparent; border-color: transparent; }
 
-/* the field objection recipe, same as the bid editor's */
-.descedit.error { outline: 2px solid var(--err-fg); outline-offset: -1px; }
+/* the field objection recipe, same as the bid editor's (glow and all) */
+.descedit.error {
+  outline: 2px solid var(--err-fg);
+  outline-offset: -1px;
+  filter: drop-shadow(0 0 0.25rem
+            color-mix(in srgb, var(--err-fg) 45%, transparent));
+}
 
 .desc.viewing .descedit { display: none; }
 
@@ -358,6 +367,23 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    corner is the pencil's, and the pencil is the whole affordance
    for "the source holds a draft" */
 .desc.viewing .gorow { display: none; }
+
+/* The auction name is the page's PREREQUISITE (nothing else works
+   unnamed), so it breaks two hot-law rules on researched convention
+   (dreev 2026-07-28): a blank name left behind glows the objection
+   via the platform's touched-validation pseudo-class (:user-invalid
+   — red only after interaction, never on arrival), and its Go stays
+   VISIBLE while the field is live — grayed until there is something
+   to commit — because the landing page's one primary action must be
+   discoverable, not hidden behind the first keystroke. */
+#aname.visited:placeholder-shown:not(:focus) {
+  outline: 2px solid var(--err-fg);
+  outline-offset: -1px;
+  filter: drop-shadow(0 0 0.25rem
+            color-mix(in srgb, var(--err-fg) 45%, transparent));
+}
+
+.field:has(#aname:enabled) .gorow { display: flex; }
 
 /* ----------------------------- BIDS box -------------------------------- */
 
@@ -805,7 +831,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* the star's footnote: whisper-quiet, tucked under the ledger — but
    its ★ wears the same gold as a lit one */
 .legend {
-  margin-top: 0.5rem;
+  margin-top: 0.9rem;
   padding-left: 0.65rem;
   font-size: 0.7rem;
   color: color-mix(in srgb, var(--muted) 75%, transparent);
@@ -859,15 +885,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .tile-name {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 0.3rem 0.65rem;
   font-weight: 700;
   font-size: 0.85rem;
   color: var(--muted);
-  flex: none;
-  min-width: calc(15ch + 1.1rem);
 }
 
 /* (the .tile.cut cancellation stroke lived here until 2026-07-19,
@@ -1006,9 +1029,18 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 
 /* every name is a live text field, like the + row's: click in, type,
-   enter or SAVE commits the rename; escape restores it (flex: 1 so
-   the form reaches the cell's far edge, where its SAVE anchors) */
-.rename { display: flex; align-items: center; flex: 1; }
+   enter or SAVE commits the rename; escape restores it. The FORM is
+   the row's name column (it took the cell's sizing when the .gorow
+   moved below the box, 2026-07-28): bordered cell on top, buttons
+   underneath. */
+.rename {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  font-size: 0.85rem;  /* the cell's size, HERE: the ch-based
+                          min-width must resolve against it */
+  min-width: calc(15ch + 1.1rem);
+}
 
 .rename input {
   width: 12ch;
@@ -1100,15 +1132,23 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* the field objection: the field itself reddens (outline beats the
    accent focus ring while it stands) — bids, names, and the auction
    name (whose length objects too, since 2026-07-27) */
+/* ...and it GLOWS (dreev 2026-07-28; Bootstrap's invalid-field
+   convention: a soft danger halo around the hard line). drop-shadow,
+   not box-shadow: the bid editor's box-shadow slot belongs to the
+   re-submission stack sheets. */
 .rebid textarea.error, .rename input.error, #aname.error {
   outline: 2px solid var(--err-fg);
   outline-offset: -1px;
+  filter: drop-shadow(0 0 0.25rem
+            color-mix(in srgb, var(--err-fg) 45%, transparent));
 }
 
 /* the + row's objection rings its wrapper, where its focus ring lives */
 .at-wrap:has(input.error) {
   outline: 2px solid var(--err-fg);
   outline-offset: -1px;
+  filter: drop-shadow(0 0 0.25rem
+            color-mix(in srgb, var(--err-fg) 45%, transparent));
 }
 
 
@@ -1445,7 +1485,7 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
      column letter-stacked the bids at 320px. The basis is rem, not
      ch: cells and header wear different font sizes and must share
      one column edge. */
-  .th-person, .tile-name {
+  .th-person, .rename {
     min-width: 0;
     flex: 0 1 8.1rem;
   }

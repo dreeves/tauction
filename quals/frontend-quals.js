@@ -108,7 +108,7 @@ const STYLE_CSS = fs.readFileSync(path.join(REPO, 'style.css'), 'utf8');
 // in the right state, not what the string says
 const STR = new Function(STRINGLES
   + '; return { needTwoTip, needOneMoreTip, waitingTip, youTag,'
-  + ' awaitingTip, auctionExistsBanner, simulEditsBanner, stampCopy,'
+  + ' awaitingTip, auctionExistsBanner, stampCopy,'
   + ' consensusStamp,'
   + ' claimedByTip, claimTip, mysteryDevice, nameTakenBanner,'
   + ' bidTooLongBanner,'
@@ -566,8 +566,10 @@ const cssBattles = [];
 
   /* Replicata: draft B waits behind another local write; another page
      saves A2, and this page has already begun newer draft C when B is
-     refused. Expectata: B's old refusal never restores over C.
-     Resultata pre-fix: the refusal closure replaced C with B. */
+     refused. Expectata: B's old refusal never restores over C — and
+     under the mid-air-collision convention (2026-07-28) C's own save
+     bounces too, in the server's words, rather than silently winning
+     an edit war C's author never saw. */
   gas.handle({ action: 'describe', aname: 'newerdesc', base: '',
     blurb: 'A version' });
   gas.handle({ action: 'add', aname: 'newerdesc',
@@ -595,22 +597,16 @@ const cssBattles = [];
      && gas.handle({ action: 'state', aname: 'newerdesc' }).blurb
           === 'A2 version',
      'an older refused description never overwrites a newer local draft');
-  await until(() => newerDoc.getElementById('descedit').dataset.base
-    === gas.handle({ action: 'state', aname: 'newerdesc' }).tblurb);
-  ok(newerDoc.getElementById('descedit').value === 'C version'
-     && newerDoc.getElementById('descedit').defaultValue === 'A2 version'
-     && newerDoc.getElementById('descedit').classList.contains('error'),
-     'recovery rebases the surviving C draft on the external A2 truth');
+  newerDoc.getElementById('banner-x').click();
   newerDoc.getElementById('descgo').click();
-  await until(() => gas.handle({ action: 'state', aname: 'newerdesc' })
-    .blurb === 'C version');
-  await until(() => !newerDoc.getElementById('status').classList
-    .contains('stale'));
-  ok(gas.handle({ action: 'state', aname: 'newerdesc' }).blurb
-       === 'C version'
-     && newerDoc.getElementById('descedit').value === 'C version'
-     && !newerDoc.getElementById('descedit').classList.contains('error'),
-     'saving the informed C draft again succeeds');
+  await until(() => !newerDoc.getElementById('banner').hidden);
+  ok(newerDoc.getElementById('banner-msg').textContent
+       === SCOPY.simulEditsCopy
+     && gas.handle({ action: 'state', aname: 'newerdesc' }).blurb
+          === 'A2 version'
+     && newerDoc.getElementById('descedit').value === 'C version',
+     "saving C bounces too — same collision, same server words: no"
+     + ' save ever silently wins an edit war its author never saw');
 
   /* Replicata: a fresh URL is opened and the visitor types in the
      blurb box before the first snapshot lands (dreev, 2026-07-27, on
@@ -669,10 +665,10 @@ const cssBattles = [];
 
   /* Replicata: the eager typist again, but at a URL where someone
      already left a description this browser has never seen (no cached
-     snapshot). Expectata: the warn-and-rebase machinery DOES speak —
-     a real description just landed under a real draft — the draft
-     survives, and saving again, now informed, wins. (Fences the fix
-     from overreaching: only the virgin case went quiet.) */
+     snapshot). Expectata (mid-air-collision convention, 2026-07-28):
+     the arrival says nothing — his words and the rendered pane both
+     stand — and HIS save is refused in the server's words, because
+     his draft was based on nothing. */
   gas.handle({ action: 'describe', aname: 'preexdesc', base: '',
     blurb: 'House rules.' });
   mockDelay = 300;
@@ -684,20 +680,54 @@ const cssBattles = [];
   mockDelay = 0;
   await until(() => !preexDoc.getElementById('status').classList
     .contains('stale'));
-  ok(!preexDoc.getElementById('banner').hidden
+  ok(preexDoc.getElementById('banner').hidden
      && preexEdit.value === 'my addendum'
-     && preexEdit.defaultValue === 'House rules.'
-     && preexEdit.dataset.base === gas.handle(
-          { action: 'state', aname: 'preexdesc' }).tblurb,
-     'an unseen pre-existing description landing under a pre-arrival'
-     + ' draft still warns and rebases, keeping the draft');
+     && preexDoc.getElementById('descview').textContent
+          .includes('House rules.'),
+     'an unseen pre-existing description arriving under a pre-arrival'
+     + ' draft warns nobody: the pane shows the record, the draft'
+     + ' waits');
   preexDoc.getElementById('desctoggle').click();
   preexDoc.getElementById('descgo').click();
-  await until(() => gas.handle({ action: 'state', aname: 'preexdesc' })
-    .blurb === 'my addendum');
-  ok(gas.handle({ action: 'state', aname: 'preexdesc' })
-       .blurb === 'my addendum',
-     'and the informed save wins');
+  await until(() => !preexDoc.getElementById('banner').hidden);
+  ok(preexDoc.getElementById('banner-msg').textContent
+       === SCOPY.simulEditsCopy
+     && gas.handle({ action: 'state', aname: 'preexdesc' })
+          .blurb === 'House rules.',
+     "and his save bounces in the server's words: a draft based on"
+     + ' nothing never silently overwrites the record');
+
+  /* Replicata (dreev's Firefox haunting, 2026-07-28): weeks ago this
+     browser typed in the blurb and never saved; the blurb has since
+     moved; the browser also holds a stale cached snapshot. Fresh
+     load. Expectata: the database's blurb, rendered; no banner; the
+     dead draft stays dead. Resultata pre-fix: the ghost draft came
+     home, met the moved blurb, and cried edit-war on a fresh page —
+     and again on every reload. */
+  gas.handle({ action: 'add', aname: 'ghost',
+    uname: 'ann', pid: 'pid-ghost-ann' });
+  gas.handle({ action: 'describe', aname: 'ghost', base: '',
+    blurb: 'first words' });
+  const ghostCache = JSON.stringify(
+    gas.handle({ action: 'state', aname: 'ghost' }));
+  gas.handle({ action: 'describe', aname: 'ghost',
+    base: gas.handle({ action: 'state', aname: 'ghost' }).tblurb,
+    blurb: 'moved on' });
+  const dGhost = await makePage('/ghost?api=' + API_URL, (w) => {
+    w.localStorage.setItem('tauction-state:ghost', ghostCache);
+    w.localStorage.setItem('tauction-drafts:ghost',
+      '{"blurb":"the ghost draft"}');
+  });
+  const ghostDoc = dGhost.window.document;
+  await until(() =>
+    ghostDoc.getElementById('descedit').value === 'moved on');
+  ok(ghostDoc.getElementById('banner').hidden
+     && ghostDoc.getElementById('descedit').value === 'moved on'
+     && ghostDoc.getElementById('desc').classList.contains('viewing')
+     && ghostDoc.getElementById('descview').textContent
+          .includes('moved on'),
+     'a fresh load always shows the database: the stale draft and'
+     + ' stale cache raise no banner and restore no ghost');
 
   /* Replicata: a description write reserved an auction without adding
      a participant or bid, and a bare page types that name. Expectata:
@@ -1592,7 +1622,7 @@ const cssBattles = [];
        t.firstElementChild === t.querySelector('.tu')
        && !t.querySelector('.tile-name .tu'))
      && doc.querySelector('.addrow > .addmark')
-     && doc.querySelector('.addrow > .at-wrap'),
+     && doc.querySelector('.addrow > .fieldcol > .at-wrap'),
      'stars and + occupy the identity gutter, outside the participant'
      + ' fields');
   ok(row(doc, 'alice').querySelector('.tu').classList.contains('selected'),
@@ -2244,12 +2274,6 @@ const cssBattles = [];
        .includes(SCOPY.simulEditsCopy),
      "the clobber bounces off the compare-and-swap, loudly, in dreev's"
      + ' words');
-  // the load-bearing cross-runtime pin: the client warns about a
-  // simultaneous edit in EXACTLY the server's words, so the locally-
-  // and remotely-detected banners read as one message
-  ok(STR.simulEditsBanner === SCOPY.simulEditsCopy,
-     'stringles.js and Code.gs agree verbatim on the simultaneous-edits'
-     + ' copy');
   ok(STR.mysteryDevice === SCOPY.mysteryDeviceCopy,
      'stringles.js and Code.gs agree verbatim on the nameless-rig'
      + " fallback (both ends decorate tooltips with the holder's rig)");
@@ -2287,21 +2311,23 @@ const cssBattles = [];
   // winifred's save lands from her own machine...
   gas.handle({ action: 'describe', aname: 'clob', blurb: 'per winifred',
     base: gas.handle({ action: 'state', aname: 'clob' }).tblurb });
-  // ...and the next poll warns cletus, re-basing his dirty draft
-  await until(() => !cw.window.document.getElementById('banner').hidden);
-  ok(!cw.window.document.getElementById('banner').hidden,
-     "cletus is warned about winifred's simultaneous edit");
+  // ...and the next poll says NOTHING to cletus (dreev 2026-07-28,
+  // the mid-air-collision convention: conflicts surface at SAVE,
+  // never mid-composition) — wait for her words to be ingested (the
+  // chronicle narrates the change), then check the calm
+  await until(() => cw.window.__logs.some((l) => typeof l === 'string'
+    && l.includes('\u270e description')));
+  ok(cw.window.document.getElementById('banner').hidden,
+     "winifred's edit landing under cletus's open draft warns nobody");
   const cwWrites = () =>
     apiCalls.filter((r) => r.action === 'describe').length;
   const cwBefore = cwWrites();
-  // the × is a click, and a click anywhere else blurs the editor
+  // a click anywhere else blurs the editor
   // (jsdom moves no focus on click, so the focus loss is explicit)
   cwEd.blur();
-  cw.window.document.getElementById('banner-x').click();
   await sleep(150);  // an outbound write would be in apiCalls by now
   ok(cwWrites() === cwBefore,
-     'dismissing the banner — the blur — writes NOTHING: blur is not'
-     + ' a gesture');
+     'the blur writes NOTHING: blur is not a gesture');
   ok(gas.handle({ action: 'state', aname: 'clob' }).blurb
        === 'per winifred',
      "winifred's words stand on the sheet");
@@ -2320,12 +2346,20 @@ const cssBattles = [];
   ok(cw2.window.document.getElementById('descedit').value
        === 'per winifred',
      'the reload shows cletus what winifred actually wrote');
-  // ...and a deliberate SAVE is the one way to insist, now informed
+  // ...and cletus's own SAVE is where the collision surfaces:
+  // refused by the compare-and-swap in the server's words, his
+  // draft kept red and copyable, winifred's words standing
   cw.window.document.querySelector('#desc .go').click();
   await until(() =>
-    gas.handle({ action: 'state', aname: 'clob' }).blurb === 'per cletus');
-  ok(gas.handle({ action: 'state', aname: 'clob' }).blurb === 'per cletus',
-     'pressing SAVE is how insisting works: a click, never a blur');
+    !cw.window.document.getElementById('banner').hidden);
+  ok(cw.window.document.getElementById('banner-msg').textContent
+       === SCOPY.simulEditsCopy
+     && cwEd.value === 'per cletus'
+     && cwEd.classList.contains('error')
+     && gas.handle({ action: 'state', aname: 'clob' }).blurb
+          === 'per winifred',
+     'his save bounces off the compare-and-swap: refused in the'
+     + " server's words, draft red for copying, her words standing");
 
   // The same law for the bid editor: clicking away sends nothing
   const nb = await makePage('/noblur?api=' + API_URL);
@@ -2399,7 +2433,7 @@ const cssBattles = [];
   await sleep(150);
   ok(nbAdds() === nbAddsBefore && nbPlus.value === 'carol',
      'a tapped-away + row adds nobody; the name and its SAVE wait');
-  ok(nbPlus.closest('.at-wrap').classList.contains('hot'),
+  ok(nbPlus.closest('.fieldcol').classList.contains('hot'),
      "the + row is hot while it holds an uncommitted name");
   submitName(nb);
   await until(() => row(nb.window.document, 'carol') !== null);
@@ -2412,7 +2446,7 @@ const cssBattles = [];
   nbPlus.dispatchEvent(new nb.window.KeyboardEvent('keydown',
     { key: 'Escape', bubbles: true, cancelable: true }));
   ok(nbPlus.value === '' &&
-       !nbPlus.closest('.at-wrap').classList.contains('hot'),
+       !nbPlus.closest('.fieldcol').classList.contains('hot'),
      'Escape reverts and cools the field: no button left standing');
 
   // At the gavel, a half-typed revision just STAYS — no phantom
@@ -2462,7 +2496,9 @@ const cssBattles = [];
   const dk1ed = myEditor(dk1.window.document);
   dk1ed.value = 'half a tho';
   dk1ed.dispatchEvent(new dk1.window.Event('input', { bubbles: true }));
-  type(dk1, 'descedit', 'work in prog');
+  type(dk1, 'descedit', 'work in prog');  // the one field whose draft
+                                          // deliberately DIES with the
+                                          // tab (2026-07-28)
   type(dk1, 'roster-input', 'mel');
   const louName = row(dk1.window.document, 'lou')
     .querySelector('.rename input');
@@ -2471,11 +2507,13 @@ const cssBattles = [];
   const dk1drafts = JSON.parse(
     dk1.window.localStorage.getItem('tauction-drafts:draftkeep'));
   ok(dk1drafts['bid:' + kimPid] === 'half a tho'
-     && dk1drafts.blurb === 'work in prog'
+     && !('blurb' in dk1drafts)
      && dk1drafts.addrow === 'mel'
      && dk1drafts['rename:pid-dk-lou'] === 'louise',
-     'every keystroke of an uncommitted draft is already in'
-     + ' tauction-drafts, keyed by slot');
+     'every keystroke of an uncommitted PERSONAL draft is already in'
+     + ' tauction-drafts, keyed by slot — and the shared blurb is'
+     + ' deliberately not among them (2026-07-28: its ghosts read as'
+     + ' mid-air collisions)');
   // the tab closes; the same browser returns to the URL
   const dk1keys = {};
   for (let i = 0; i < dk1.window.localStorage.length; i++) {
@@ -2491,15 +2529,15 @@ const cssBattles = [];
   const dk2ed = myEditor(dk2.window.document);
   ok(dk2ed.value === 'half a tho' && dk2ed.defaultValue === ''
      && dk2ed.closest('.rebid').classList.contains('hot')
-     && dk2.window.document.getElementById('descedit').value
-          === 'work in prog'
+     && dk2.window.document.getElementById('descedit').value === ''
      && dk2.window.document.getElementById('roster-input').value
           === 'mel'
      && row(dk2.window.document, 'lou').querySelector('.rename input')
           .value === 'louise'
      && dk2.window.document.getElementById('banner').hidden,
-     'the returning tab holds every draft — hot, buttons standing,'
-     + ' and no false simultaneous-edits alarm');
+     'the returning tab holds every personal draft — hot, buttons'
+     + ' standing — while the blurb editor shows the database, no'
+     + ' ghost and no alarm');
   submitBid(dk2);
   await settled(dk2);
   await until(() => !(('bid:' + kimPid) in JSON.parse(
@@ -2641,15 +2679,16 @@ const cssBattles = [];
   const dCrea = await makePage('/?api=' + API_URL);
   const creaDoc = dCrea.window.document;
   ok(creaDoc.activeElement === creaDoc.getElementById('aname')
-     && !creaDoc.querySelector('.field').classList.contains('hot'),
-     'the landing page parks the caret in the name field (the'
-     + ' arrival-caret law) — no button yet: an empty name has'
-     + ' nothing to commit (hot = dirty, 2026-07-27)');
-  type(dCrea, 'aname', 'poker');
-  ok(creaDoc.querySelector('.field').classList.contains('hot')
+     && creaDoc.getElementById('namego').disabled
      && creaDoc.getElementById('namego').textContent === STR.creaCopy,
-     'the first typed character wakes the commit button, wearing'
-     + " dreev's copy");
+     'the landing page parks the caret in the name field (the'
+     + " arrival-caret law) beside its one visible action: Go, in"
+     + " dreev's copy, grayed until there is a name to commit"
+     + ' (2026-07-28, the discoverability ruling)');
+  type(dCrea, 'aname', 'poker');
+  ok(!creaDoc.getElementById('namego').disabled
+     && creaDoc.querySelector('.field').classList.contains('hot'),
+     'the first typed character arms it');
   creaDoc.getElementById('namego').click();
   await until(() => dCrea.window.location.pathname === '/poker');
   // disabling a focused field blurs it in real Chrome but not in
@@ -3218,7 +3257,7 @@ const cssBattles = [];
   ok([...dTab.window.document.querySelectorAll('input, textarea')]
        .every((f) => {
          const home = f.closest(
-           '.rebid, .rename, .at-wrap, .desc, .field');
+           '.rebid, .rename, .fieldcol, .desc, .field');
          return home !== null && home.querySelector('.go') !== null;
        }),
      'EVERY text field has a commit button riding its wrapper: the'
@@ -3554,7 +3593,7 @@ const cssBattles = [];
      && dAdd.window.document.getElementById('roster-input').value
           === 'gala'
      && dAdd.window.document.getElementById('roster-input')
-          .closest('.at-wrap').classList.contains('hot'),
+          .closest('.fieldcol').classList.contains('hot'),
      'a tapped-away name is not yet anybody: it waits in the + row,'
      + ' hot, its SAVE standing');
   dAdd.window.document.getElementById('roster-go').click();

@@ -485,7 +485,7 @@ function render() {
 // focused field's button would be a grayed stub anyway: nothing to
 // send.)
 function syncHot(f) {
-  const home = f.closest('.rebid, .rename, .at-wrap, .desc, .field');
+  const home = f.closest('.rebid, .rename, .fieldcol, .desc, .field');
   if (home === null) return;
   const dirty = f.value !== f.defaultValue;
   home.classList.toggle('hot', dirty);
@@ -510,7 +510,13 @@ function syncHot(f) {
 // there is no second bookkeeping to drift. Per-auction keys linger
 // for auctions never revisited — the tauction-mybids precedent.
 function draftSlot(f) {
-  if (f.id === 'descedit') return 'blurb';
+  // The BLURB deliberately has no slot (dreev 2026-07-28): a SHARED
+  // field's draft outliving its tab manufactured ghost mid-air
+  // collisions — a stale draft restored weeks later met a moved
+  // blurb and cried edit-war on a fresh load. A fresh load always
+  // shows the database's blurb; only PERSONAL fields (your bid, a
+  // half-typed name) survive the tab.
+  if (f.id === 'descedit') return null;
   if (f.id === 'roster-input') return 'addrow';
   const t = f.closest('.tile');  // a row field: keyed by its pid
   if (t === null) return null;   // #aname: chosen once, no drafts
@@ -547,8 +553,7 @@ function restoreDrafts() {
   Object.entries(all).forEach(([slot, draft]) => {
     const [kind, pid] = slot.split(':');
     const t = rowNodes[pid];
-    const f = slot === 'blurb' ? $('descedit')
-      : slot === 'addrow' ? $('roster-input')
+    const f = slot === 'addrow' ? $('roster-input')
       : t === undefined ? null
       : t.querySelector(kind === 'bid' ? '.rebid textarea'
                                        : '.rename input');
@@ -569,10 +574,11 @@ function sweepHot() {
 
 // The description block: the view pane always mirrors server truth;
 // the editor syncs only when you're not mid-edit (never-clobber, same
-// as the bid editor). If someone else's edit lands while yours is in
-// progress, warn once and RE-BASE the draft — your next save, made
-// informed, wins (the server's compare-and-swap remains the backstop
-// for sub-poll races).
+// as the bid editor). A dirty or focused editor is left ENTIRELY
+// alone — words AND base stamp: a conflicting edit is refused by the
+// server's compare-and-swap at SAVE time, the wikis' mid-air-
+// collision convention (dreev 2026-07-28, replacing the warn-and-
+// rebase-at-poll-time scheme whose every subtlety read as broken).
 function renderDesc() {
   const view = $('descview');
   const edit = $('descedit');
@@ -586,12 +592,6 @@ function renderDesc() {
     edit.value = state.blurb;
     edit.defaultValue = state.blurb;
     edit.dataset.base = state.tblurb;
-  } else if (edit.dataset.base !== state.tblurb) {
-    edit.defaultValue = state.blurb;
-    edit.dataset.base = state.tblurb;
-    banner(simulEditsBanner);
-    edit.classList.add('error');  // the banner is global; the problem
-                                  // is this field (cleared on input)
   }
   if (!adopted) {  // the arrival picks the mode, once per auction
     $('desc').classList.toggle('viewing', state.blurb !== '');
@@ -628,10 +628,12 @@ function commitDesc() {
     queueLazyOp(() => ({ action: 'describe', aname: aname, blurb: draft,
                          base: edit.dataset.base }), () => {
       if (edit.value !== draft || edit.defaultValue !== draft) return;
-      // The commit bounced (someone's edit beat ours): back into the
-      // editor, your words intact and the field red — the recovery
-      // snapshot re-bases the (again-dirty) draft, so saving again,
-      // now informed, wins.
+      // The commit bounced off the compare-and-swap (someone's edit
+      // beat ours): back into the editor, your words intact and the
+      // field red — visible for copying elsewhere, exactly what the
+      // banner (the server's words) instructs. No silent informed-
+      // retry: the base stays the edit's own, so mashing SAVE keeps
+      // bouncing loudly rather than clobbering theirs.
       edit.value = draft;
       edit.defaultValue = cleanBase;
       edit.classList.add('error');
@@ -964,8 +966,8 @@ function buildRow(pid) {
   const star = el('button', 'tu', '★');
   star.type = 'button';
   star.addEventListener('click', () => toggleTu(pid));
-  const nameEl = el('div', 'tile-name');
-  nameEl.append(buildNameField(pid));
+  const nameEl = buildNameField(pid);  // form.rename: the bordered
+                                       // cell + its .gorow below
   const bidEl = el('div', 'tile-bid');
   // The empty bid box of a takeable row is where dreev's hallway
   // tester kept tapping ("clicking on this box doesn't work"), so it
@@ -1310,7 +1312,11 @@ function bidTip(pid) {
 // updateRow syncs the label under never-clobber like any field.
 function buildNameField(pid) {
   const form = el('form', 'rename');
-  form.append('@');
+  // the bordered person cell is the form's FIRST LINE; the .gorow
+  // hangs below the box (dreev 2026-07-28: a SAVE inside the field's
+  // own border still read as inside the field)
+  const box = el('div', 'tile-name');
+  box.append('@');
   const input = el('input');
   input.autocomplete = 'off';
   // the mobile return key names the deed
@@ -1327,11 +1333,12 @@ function buildNameField(pid) {
     e.preventDefault();
     commitRename(pid, input.value, input);
   });
-  form.append(input);
+  box.append(input);
+  form.append(box);
   // SAVE (dreev's copy), on duty while the field is hot — the phone's
   // gesture, as Enter is the keyboard's (dreev 2026-07-27, re-reversing
   // his 07-17 tap-away-saves: blur commits nothing, anywhere) — in the
-  // .gorow below the words, like every commit button
+  // .gorow below the box, like every commit button
   const go = el('button', 'go', saveCopy);
   go.type = 'submit';
   const row = el('div', 'gorow');
@@ -1964,6 +1971,14 @@ function wireUp() {
   };
   $('namego').textContent = creaCopy;
   $('namego').addEventListener('click', commitAname);
+  // the touched-validation mark (research convention: a field may
+  // only object AFTER the user has been and gone — never on arrival;
+  // and :user-invalid won't do, it needs an actual edit, missing the
+  // visited-blank case dreev named): one class, stamped at the first
+  // leave, drives the pure-CSS blank-name objection
+  $('aname').addEventListener('focusout', () => {
+    $('aname').classList.add('visited');
+  });
   $('aname').addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
