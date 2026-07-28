@@ -112,13 +112,15 @@ const STR = new Function(STRINGLES
   + ' moneyGlyphs, revealTip, needNameTip, removeTip,'
   + ' tooLateRemoveTip, resubmittedTip, nameStoneTip,'
   + ' waitingGlyph, yourMoveGlyph, readyGlyph, revealedGlyph,'
-  + ' tabTitle, saveCopy, submitCopy, tooLateGoTip };')();
+  + ' tabTitle, saveCopy, submitCopy, tooLateGoTip, creaCopy,'
+  + ' anameTooLongBanner, unameTooLongBanner, blurbTooLongBanner };')();
 const STAMP = STR.stampCopy;
 
 // ...and the server's half, out of the vm context hosting Code.gs
 const SCOPY = require('vm')
   .runInContext('({ gavelFellCopy, simulEditsCopy, mysteryDeviceCopy,'
-    + ' nameTakenCopy, removeBidderCopy, bidTooLongCopy })', gas);
+    + ' nameTakenCopy, removeBidderCopy, bidTooLongCopy,'
+    + ' blurbTooLongCopy, anameTooLongCopy, unameTooLongCopy })', gas);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -2143,6 +2145,12 @@ const cssBattles = [];
      'stringles.js and Code.gs agree verbatim on the bid-too-long copy'
      + ' (the client refuses before the wire; the server clamps the'
      + ' races and the hand-rolled requests)');
+  ok(STR.anameTooLongBanner === SCOPY.anameTooLongCopy
+     && STR.unameTooLongBanner === SCOPY.unameTooLongCopy
+     && STR.blurbTooLongBanner === SCOPY.blurbTooLongCopy,
+     'stringles.js and Code.gs agree verbatim on all three too-long'
+     + ' copies (same pattern as the bid: local refusal and server'
+     + ' backstop read as one message)');
 
   /* --- 2q. BLUR COMMITS NOTHING, anywhere (dreev 2026-07-27) ----------
      Cletus's clobber, verbatim from the bug report: winifred and
@@ -2394,6 +2402,141 @@ const cssBattles = [];
           .getItem('tauction-drafts:draftkeep'))['rename:pid-dk-lou']
         === undefined,
      'Escape is still never-mind: the draft dies in storage too');
+
+  /* --- 2q3. every limit OBJECTS, never chops (dreev 2026-07-27:
+     20 characters for both name kinds; the bid's no-clamp ruling
+     goes universal) — keystrokes always land, the field reddens
+     live, and the commit is refused before the wire in the server's
+     exact words, the draft kept for trimming. ---------------------- */
+  const LONGA = 'a'.repeat(21);
+  const dLim = await makePage('/?api=' + API_URL);
+  const limDoc = dLim.window.document;
+  type(dLim, 'aname', LONGA);
+  ok(limDoc.getElementById('aname').value === LONGA
+     && limDoc.getElementById('aname').classList.contains('error'),
+     'all 21 characters of an overlong auction name land, ringed red');
+  const limProbes = () => apiCalls.filter((c) =>
+    c.aname === LONGA).length;
+  commitName(dLim);
+  await sleep(80);
+  ok(dLim.window.location.pathname === '/'
+     && !limDoc.getElementById('banner').hidden
+     && limDoc.getElementById('banner').textContent
+          .includes(STR.anameTooLongBanner)
+     && limProbes() === 0,
+     "enter on it is refused before the wire, in the server's words");
+  type(dLim, 'aname', 'a'.repeat(20));
+  ok(!limDoc.getElementById('aname').classList.contains('error'),
+     'trimmed to 20, the objection withdraws live');
+  commitName(dLim);
+  await until(() => dLim.window.location.pathname !== '/');
+  ok(dLim.window.location.pathname === '/' + 'a'.repeat(20),
+     'a 20-character auction name commits: the boundary is exact');
+
+  const dLim2 = await makePage('/limits?api=' + API_URL);
+  await sleep(20);
+  const lim2Doc = dLim2.window.document;
+  type(dLim2, 'roster-input', LONGA);
+  ok(lim2Doc.getElementById('roster-input').value === LONGA
+     && lim2Doc.getElementById('roster-input').classList
+          .contains('error'),
+     'an overlong participant name lands whole, ringed red live');
+  const limAdds = () => apiCalls.filter((c) => c.action === 'add'
+    && c.aname === 'limits').length;
+  const limAdds0 = limAdds();
+  submitName(dLim2);
+  await sleep(80);
+  ok(limAdds() === limAdds0
+     && lim2Doc.getElementById('roster-input').value === LONGA
+     && lim2Doc.getElementById('banner').textContent
+          .includes(STR.unameTooLongBanner),
+     "enter is refused before the wire, in the server's words, text"
+     + ' kept for trimming');
+  type(dLim2, 'roster-input', 'a'.repeat(20));
+  ok(!lim2Doc.getElementById('roster-input').classList
+       .contains('error'), 'at 20 the ring withdraws');
+  submitName(dLim2);
+  await until(() => row(lim2Doc, 'a'.repeat(20)) !== null);
+  ok(row(lim2Doc, 'a'.repeat(20)) !== null,
+     'a 20-character participant name commits');
+  const limName = row(lim2Doc, 'a'.repeat(20))
+    .querySelector('.rename input');
+  limName.focus();
+  limName.value = 'b'.repeat(21);
+  limName.dispatchEvent(new dLim2.window.Event('input',
+    { bubbles: true }));
+  ok(limName.value === 'b'.repeat(21)
+     && limName.classList.contains('error'),
+     'an overlong RENAME draft also lands whole, ringed live');
+  const limRens = () => apiCalls.filter((c) =>
+    c.action === 'rename').length;
+  const limRens0 = limRens();
+  limName.form.dispatchEvent(new dLim2.window.Event('submit',
+    { bubbles: true, cancelable: true }));
+  await sleep(80);
+  ok(limRens() === limRens0 && limName.value === 'b'.repeat(21)
+     && lim2Doc.getElementById('banner').textContent
+          .includes(STR.unameTooLongBanner),
+     'the rename is refused before the wire, in the same words');
+  limName.dispatchEvent(new dLim2.window.KeyboardEvent('keydown',
+    { key: 'Escape', bubbles: true, cancelable: true }));
+  const bigBlurb = 'x'.repeat(2001);
+  lim2Doc.getElementById('descedit').value = bigBlurb;
+  lim2Doc.getElementById('descedit').dispatchEvent(
+    new dLim2.window.Event('input', { bubbles: true }));
+  ok(lim2Doc.getElementById('descedit').value.length === 2001
+     && lim2Doc.getElementById('descedit').classList.contains('error'),
+     'all 2001 blurb characters land (the silent maxlength clamp is'
+     + ' dead), ringed red live');
+  const limDescs = () => apiCalls.filter((c) =>
+    c.action === 'describe').length;
+  const limDescs0 = limDescs();
+  lim2Doc.getElementById('descgo').click();
+  await sleep(80);
+  ok(limDescs() === limDescs0
+     && lim2Doc.getElementById('descedit').value === bigBlurb
+     && !lim2Doc.getElementById('desc').classList.contains('viewing')
+     && lim2Doc.getElementById('banner').textContent
+          .includes(STR.blurbTooLongBanner),
+     "SAVE is refused before the wire in the server's words; the"
+     + ' draft stays in the open editor');
+  // Cmd/Ctrl+Enter commits the blurb from the keyboard (the textarea
+  // convention; plain Enter stays a newline)
+  lim2Doc.getElementById('descedit').value = 'shipshape';
+  lim2Doc.getElementById('descedit').dispatchEvent(
+    new dLim2.window.Event('input', { bubbles: true }));
+  lim2Doc.getElementById('descedit').dispatchEvent(
+    new dLim2.window.KeyboardEvent('keydown',
+      { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }));
+  await until(() => gas.handle({ action: 'state', aname: 'limits' })
+    .blurb === 'shipshape');
+  ok(gas.handle({ action: 'state', aname: 'limits' })
+       .blurb === 'shipshape'
+     && lim2Doc.getElementById('desc').classList.contains('viewing'),
+     'Cmd/Ctrl+Enter commits the blurb from the keyboard');
+
+  /* --- 2q4. the auction name wears its button too (dreev, after
+     finding it buttonless: the ONE irreversible field must show its
+     commit, not hide it behind an invisible Enter) ----------------- */
+  const dCrea = await makePage('/?api=' + API_URL);
+  const creaDoc = dCrea.window.document;
+  ok(creaDoc.querySelector('.field').classList.contains('hot')
+     && creaDoc.getElementById('namego').textContent === STR.creaCopy,
+     'the landing page parks the caret in the name field (the'
+     + ' arrival-caret law), so its commit button is already on'
+     + " duty — the page's one action, visible");
+  type(dCrea, 'aname', 'poker');
+  creaDoc.getElementById('namego').click();
+  await until(() => dCrea.window.location.pathname === '/poker');
+  // disabling a focused field blurs it in real Chrome but not in
+  // jsdom (the long-known gap, and jsdom won't blur() a disabled
+  // element either) — moving focus on models the browser truth
+  creaDoc.getElementById('roster-input').focus();
+  ok(dCrea.window.location.pathname === '/poker'
+     && creaDoc.getElementById('aname').disabled
+     && !creaDoc.querySelector('.field').classList.contains('hot'),
+     'pressing it commits exactly like Enter: the auction exists,'
+     + ' the name is stone, the button stands down');
 
   /* --- 2p2. a rename that loses the race reddens the FIELD ------------
      Replicata: the local roster is a poll behind — someone else just
@@ -2912,28 +3055,48 @@ const cssBattles = [];
      '...and the background write lands the same text; the settle'
      + ' repaints nothing');
 
-  /* --- 2t. tab walks EDITABLE FIELDS only (dreev): buttons act on
-     click or tap; none of them is a tab stop. ----------------------- */
+  /* --- 2t. every CONTROL is a tab stop (dreev 2026-07-27, reversing
+     his 07-16 tab law after the conventions audit: keyboard-only
+     users could not claim a star, remove a row, press the reveal
+     padlock, share, or reopen a rendered blurb). Buttons and links
+     are tabbable, per convention; only the auction LABEL keeps
+     tabindex -1 (focusable for tap-tips, never a stop — a label is
+     not a control). This is a structural fence: it sweeps every
+     button and link on a live page, built rows included. ----------- */
   const dTab = await makePage('/taborder?api=' + API_URL);
   addName(dTab, 'tia');
   await settled(dTab);
-  const allButtons
-    = Array.from(dTab.window.document.querySelectorAll('button'));
-  ok(allButtons.length >= 8 && allButtons.every((b) => b.tabIndex === -1),
-     'no button is a tab stop (stars, ×s, desc toggle, share, help,'
-     + ' seal, copy, dialog ×s) — tab is for editable fields');
+  const allControls = Array.from(
+    dTab.window.document.querySelectorAll('button, a'));
+  ok(allControls.length >= 10
+     && allControls.every((b) => b.tabIndex !== -1),
+     'every button and link is a tab stop (stars, ×s, SAVE/SUBMIT,'
+     + ' pencil, share, help, seal, copy, dialog ×s, footer link):'
+     + ' no keyboard dead ends');
   ok(dTab.window.document.getElementById('descedit').tabIndex === 0
      && dTab.window.document.getElementById('roster-input').tabIndex === 0
      && dTab.window.document.getElementById('aname').tabIndex === 0,
-     '...which all remain tab stops themselves');
+     '...and the editable fields remain tab stops themselves');
   ok(dTab.window.document.querySelector(
        '.tile[data-uname="tia"] .rebid textarea').tabIndex === 0,
-     "your own bid editor is an editable field: in the ring (dreev's"
-     + ' checklist pinned it)');
-  ok(dTab.window.document.querySelector('footer a').tabIndex === -1,
-     'the footer github link is not a tab stop (the help dialog\'s'
-     + ' inner links stay tabbable: an open dialog is navigated by'
-     + ' them)');
+     'your own bid editor included');
+  ok(dTab.window.document.querySelector('label[for="aname"]')
+       .tabIndex === -1,
+     'the auction label alone stays out of the ring: tap-focusable'
+     + ' for its tip, but not a control');
+  // THE COMMIT-BUTTON FENCE (dreev, after the auction name turned
+  // up buttonless: consistency by construction, not by remembering):
+  // every text field in the app sits in a wrapper that carries its
+  // own .go — a field without a visible commit gesture can no
+  // longer exist, it fails this sweep
+  ok([...dTab.window.document.querySelectorAll('input, textarea')]
+       .every((f) => {
+         const home = f.closest(
+           '.rebid, .rename, .at-wrap, .desc, .field');
+         return home !== null && home.querySelector('.go') !== null;
+       }),
+     'EVERY text field has a commit button riding its wrapper: the'
+     + ' gesture table is closed by construction');
 
   /* --- 2t2. dead ends are STICKY and walkable (dreev's PWA report:
      an installed app has no URL bar, so "use the URL" must BE the
@@ -3009,7 +3172,11 @@ const cssBattles = [];
     w.FloatingUIDOM.computePosition = (host) =>
       new w.Promise((res) => held.push([host, res]));
     w.document.querySelector('label[for="aname"]').focus();  // summons 1
-    w.document.getElementById('seal').focus();               // summons 2
+    // summons 2: the resting seal is DISABLED, which jsdom won't
+    // focus() since it lost its tabindex (2t) — the focusin dispatch
+    // is the summons the app actually listens for (3095's pattern)
+    w.document.getElementById('seal').dispatchEvent(
+      new w.FocusEvent('focusin', { bubbles: true }));
     held[1][1]({ x: 222, y: 22 });   // newest resolves first...
     await sleep(10);
     held[0][1]({ x: 111, y: 11 });   // ...stale one limps in late
@@ -3295,6 +3462,24 @@ const cssBattles = [];
      && row(dAdd.window.document, 'hank') === null,
      'Tab adds NOBODY, uneaten: it moves focus like Tab should, and'
      + ' the typed name waits with its SAVE');
+  // ...and the separators died with it (dreev 2026-07-27,
+  // uniformity): comma and space commit nothing — the live charset
+  // constraint just declines the character, exactly as the rename
+  // fields always have. Enter and SAVE are the + row's only commits.
+  for (const sep of [',', ' ']) {
+    const sepAdds = apiCalls.filter((r) => r.action === 'add').length;
+    const sepFree = dAdd.window.document.getElementById('roster-input')
+      .dispatchEvent(new dAdd.window.KeyboardEvent('keydown',
+        { key: sep, bubbles: true, cancelable: true }));
+    await sleep(60);
+    ok(sepFree
+       && apiCalls.filter((r) => r.action === 'add').length === sepAdds
+       && dAdd.window.document.getElementById('roster-input').value
+            === 'hank'
+       && row(dAdd.window.document, 'hank') === null,
+       'typing "' + sep + '" commits nobody: separators are not'
+       + ' gestures anymore');
+  }
 
   /* --- 2v. the bid editor's SUBMIT is the finger's enter (dreev
      2026-07-27: clicking away sends nothing) — and enter-then-blur

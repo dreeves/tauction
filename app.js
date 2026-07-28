@@ -37,15 +37,23 @@ function el(tag, cls, text) {
   return e;
 }
 
-const sanAname = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 40);
+// The sanitizers rewrite CHARSET only (the live-constraint pattern:
+// an illegal character just never lands). Length is never their
+// business — the old silent .slice() clamps died 2026-07-27 when
+// every limit became an objection.
+const sanAname = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 const sanUname = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
-                         .replace(/^[0-9]+/, '').slice(0, 30);
+                         .replace(/^[0-9]+/, '');
 
-// The bid-length objection, everywhere it's judged (the live ring,
-// the render resync, the submit refusal): a pure function of the
-// draft. The server clamps at the same 160 — no keystroke is ever
-// eaten client-side (dreev); the limit OBJECTS, never chops.
+// The length objections, everywhere they're judged (the live ring,
+// the render resync, the commit refusal): pure functions of the
+// draft. The server refuses at the same numbers — no keystroke is
+// ever eaten client-side (dreev); a limit OBJECTS, never chops.
+// 160 for bids, 20 for both name kinds (dreev 2026-07-27), 2000
+// for the blurb.
 const overlong = (s) => s.trim().length > 160;
+const overlongName = (s) => s.length > 20;
+const overlongBlurb = (s) => s.length > 2000;
 
 // A umap is a prototype-less dictionary keyed by uname
 const umap = (src = {}) => Object.assign(Object.create(null), src);
@@ -463,11 +471,13 @@ function render() {
 // buttons ride this class: SAVE/SUBMIT stand exactly while the field
 // is hot, because blur commits NOTHING (dreev 2026-07-27, cletus's
 // clobber: a blur is a side effect of every OTHER gesture — banner
-// ×es, star taps, reloads — never a decision to save). The auction-
-// name field has no button (Enter, dreev's chosen-once gesture),
-// so closest() finding no button home is its normal case.
+// ×es, star taps, reloads — never a decision to save). EVERY text
+// field has a button home — the auction name included, since
+// 2026-07-27 later (it was the one buttonless field, and its
+// invisible Enter-only commit was exactly the inconsistency dreev
+// caught; a fence qual now closes the class).
 function syncHot(f) {
-  const home = f.closest('.rebid, .rename, .at-wrap, .desc');
+  const home = f.closest('.rebid, .rename, .at-wrap, .desc, .field');
   if (home === null) return;
   const dirty = f.value !== f.defaultValue;
   home.classList.toggle('hot', f === document.activeElement || dirty);
@@ -533,7 +543,8 @@ function restoreDrafts() {
 // everything else: idempotent sweep, zero bookkeeping.
 function sweepHot() {
   document.querySelectorAll(
-    '.rebid textarea, .rename input, .at-wrap input, .descedit')
+    '.rebid textarea, .rename input, .at-wrap input, .descedit,'
+    + ' #aname')
     .forEach(syncHot);
 }
 
@@ -585,6 +596,13 @@ function editDesc() {
 // the placeholder for an invisible empty pane).
 function commitDesc() {
   const edit = $('descedit');
+  // the length objection: refused before the wire, in the server's
+  // words, the draft kept in the open editor for trimming
+  if (overlongBlurb(edit.value)) {
+    banner(blurbTooLongBanner);
+    edit.classList.add('error');
+    return;
+  }
   if (edit.value !== edit.defaultValue) {
     const draft = edit.value;
     const cleanBase = edit.defaultValue;  // pre-edit server truth
@@ -923,10 +941,10 @@ function buildRow(pid) {
   const t = el('div', 'tile');
   t.dataset.pid = pid;
   // one solid glyph for every star: CSS draws it hollow (outline)
-  // until .selected fills it gold — a real radio button
-  // buttons act on click or tap; tab is for editable fields (dreev)
+  // until .selected fills it gold — a real radio button, and a tab
+  // stop like every control (the 07-16 tab law died 2026-07-27:
+  // keyboard users must be able to claim)
   const star = el('button', 'tu', '★');
-  star.tabIndex = -1;
   star.type = 'button';
   star.addEventListener('click', () => toggleTu(pid));
   const nameEl = el('div', 'tile-name');
@@ -963,7 +981,6 @@ function buildRow(pid) {
   // in, because a sealed bid is never deletable (its tip is bid-state-
   // dependent, so updateRow owns it)
   const x = el('button', 'x', '×');
-  x.tabIndex = -1;
   x.type = 'button';
   x.addEventListener('click', () => {
     // the × only lives on bidless rows (a bid protects its seat, and
@@ -1026,7 +1043,6 @@ function buildBidContent(kind, pid) {
     // clicking/tapping away commits NOTHING (dreev 2026-07-27)
     const go = el('button', 'go', submitCopy);
     go.type = 'submit';
-    go.tabIndex = -1;  // tab is for editable fields (dreev's tab law)
     form.append(go);
     // the row-local busy sign, shown by .rebid.busy
     form.append(miniGavel());
@@ -1284,14 +1300,16 @@ function buildNameField(pid) {
   const form = el('form', 'rename');
   form.append('@');
   const input = el('input');
-  input.maxLength = 30;
   input.autocomplete = 'off';
   // the mobile return key names the deed
   input.setAttribute('enterkeyhint', 'done');
   input.addEventListener('input', () => {
-    input.classList.remove('error');  // objection acknowledged
     const v = sanUname(input.value);
     if (v !== input.value) input.value = v;
+    // one toggle serves both: past 20 the ring is live, and any
+    // acknowledged objection (taken, refused) clears on the next
+    // keystroke, as before
+    input.classList.toggle('error', overlongName(v));
   });
   form.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -1303,7 +1321,6 @@ function buildNameField(pid) {
   // his 07-17 tap-away-saves: blur commits nothing, anywhere)
   const go = el('button', 'go', saveCopy);
   go.type = 'submit';
-  go.tabIndex = -1;  // tab is for editable fields (dreev's tab law)
   form.append(go);
   return form;
 }
@@ -1319,6 +1336,13 @@ function buildNameField(pid) {
 // label is refused, locally and server-side, in the same words.
 function commitRename(pid, raw, field) {
   const to = sanUname(raw);
+  // the length objection: refused before the wire, in the server's
+  // words, the draft kept for trimming
+  if (overlongName(to)) {
+    banner(unameTooLongBanner);
+    field.classList.add('error');
+    return;
+  }
   const seat = seats.find((s) => s.pid === pid);
   // nothing usable, or nothing changed: the field just snaps back
   if (seat === undefined || !to || to === seat.uname) {
@@ -1582,7 +1606,11 @@ function settleWrite(res, at, onRefusal) {
 }
 
 function pressReveal() {
-  $('seal').disabled = true;  // no double-fire; render recomputes it
+  // (the press does NOT disable the seal: the reveal is idempotent
+  // server-side and rides the op chain, so a double press is a
+  // harmless no-op — and disabling a focused button BLURS it in
+  // real Chrome, which would eject a keyboard user at the moment
+  // of their reveal. Deleted 2026-07-27 with the tab law.)
   // the reveal is the most table-wide op there is: the big gavel
   // hammers over the grayed ledger while it round-trips (the settle's
   // render lifts the stale)
@@ -1606,6 +1634,13 @@ function pressReveal() {
 function addName() {  // returns the added seat's pid ('' if refused)
   const uname = sanUname($('roster-input').value);
   if (!uname) {
+    $('roster-input').classList.add('error');
+    return '';
+  }
+  // the length objection: refused before the wire, in the server's
+  // words, the text kept for trimming
+  if (overlongName(uname)) {
+    banner(unameTooLongBanner);
     $('roster-input').classList.add('error');
     return '';
   }
@@ -1738,9 +1773,15 @@ function wireUp() {
   // and, in capture phase, lands before showModal records its
   // focus-restore target (dialog-close used to re-stick the opener's
   // tip). Word-hosts (the auction label) keep their tap-to-focus tips.
+  // Buttons shed POINTER focus on activation (tooltip hygiene: a
+  // clicked button must not park its focus-leg tip). Keyboard
+  // activation keeps focus where the keyboard put it — e.detail is
+  // the click count, 0 for Enter/Space-synthesized clicks. Disclosed
+  // if: was unconditional until buttons joined the tab ring
+  // (2026-07-27, the conventions audit).
   document.addEventListener('click', (e) => {
     const b = e.target.closest('button');
-    if (b) b.blur();
+    if (b && e.detail > 0) b.blur();
   }, true);
 
   // Universal field hygiene, part two: Escape means "never mind" —
@@ -1810,7 +1851,18 @@ function wireUp() {
     }
   });
   $('descedit').addEventListener('input', () => {
-    $('descedit').classList.remove('error');  // objection acknowledged
+    // one toggle: the live length ring past 2000 (the silent
+    // maxlength clamp died 2026-07-27), and any acknowledged
+    // objection clears on the next keystroke, as before
+    $('descedit').classList.toggle('error',
+      overlongBlurb($('descedit').value));
+  });
+  // Cmd/Ctrl+Enter commits from the keyboard — the textarea
+  // convention (plain Enter stays a newline)
+  $('descedit').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey)) return;
+    e.preventDefault();
+    commitDesc();
   });
 
   // Hotness listens once, delegated: typing (bubble phase, so the
@@ -1840,37 +1892,49 @@ function wireUp() {
   $('aname').addEventListener('input', () => {
     const v = sanAname($('aname').value);
     if (v !== $('aname').value) $('aname').value = v;
+    // the live length objection, the bid editor's exact pattern
+    $('aname').classList.toggle('error', overlongName(v));
   });
-  // NAMES COMMIT ON ENTER — only. Never a timer (dreev's mid-typing
-  // lockout, 2026-07-18: a 500ms debounce committed his half-typed
-  // name and froze the field), never blur (a stray tap must not name
-  // an auction), and since 2026-07-27 never Tab either (Tab is
-  // navigation, everywhere — dreev, after Tab wrote a participant to
-  // the database). Committing a name is IRREVERSIBLE (names are
-  // chosen once), so a thinking pause or a wandering click costs
-  // nothing: the typed text just waits in the live field. The old
-  // name-tab-describe flow survives by convention: the committed
-  // name DISABLES its field, so native Tab lands in the description.
+  // NAMES COMMIT ON ENTER OR THEIR BUTTON — nothing else. Never a
+  // timer (dreev's mid-typing lockout, 2026-07-18: a 500ms debounce
+  // committed his half-typed name and froze the field), never blur
+  // (a stray tap must not name an auction), never Tab (navigation,
+  // everywhere — since 2026-07-27). Committing a name is
+  // IRREVERSIBLE (names are chosen once), so a thinking pause or a
+  // wandering click costs nothing: the typed text just waits, its
+  // button standing. Tab from a hot name lands ON the button (the
+  // next control), so name-tab-enter commits by pure convention.
   // Disclosed ifs: only a nonempty name commits, and the pulse fires
   // only if the name TOOK (a gate refusal keeps the field pulseless
   // beside its banner).
-  $('aname').addEventListener('keydown', async (e) => {
-    if (e.key !== 'Enter' || $('aname').value === '') return;
-    e.preventDefault();
+  const commitAname = async () => {
+    if ($('aname').value === '') return;
     const want = sanAname($('aname').value);
+    // refused before the wire, in the server's words, text kept
+    if (overlongName(want)) {
+      banner(anameTooLongBanner);
+      $('aname').classList.add('error');
+      return;
+    }
     await switchAuction(want);
     if (aname === want) flashCommit($('aname'));
+  };
+  $('namego').textContent = creaCopy;
+  $('namego').addEventListener('click', commitAname);
+  $('aname').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    commitAname();
   });
 
-  // Enter/comma/space or SAVE commit; NO commit-on-blur — a blur is
-  // a side effect of every other gesture (it used to fire mid-click
-  // and destroy the very button being clicked, and it briefly saved
-  // anyway, 07-17 to 07-27) — and NO commit-on-Tab either (dreev
-  // 2026-07-27, after Tab wrote alice to the database: Tab is
-  // navigation; nothing but the deliberate gestures writes). A
-  // tapped-away name just stays visible in the + row, its SAVE
-  // standing (the hallway fumble — type, tap away, expect it added —
-  // is answered by the visible button now).
+  // Enter or SAVE commit — nothing else (dreev 2026-07-27,
+  // uniformity): no blur (a side effect of every other gesture), no
+  // Tab (navigation — it wrote alice to the database), and no
+  // comma/space separators anymore either (the live charset
+  // constraint just declines those characters, exactly as the
+  // rename fields always have). A tapped-away name stays visible in
+  // the + row, its SAVE standing (the hallway fumble — type, tap
+  // away, expect it added — is answered by the visible button).
   // Commit the + row and — iff the fresh row is YOURS (the gold
   // star: you just added yourself) — land in its bid editor: name,
   // enter (or SAVE), bid. Frictionless self-add is the whole game
@@ -1889,16 +1953,17 @@ function wireUp() {
   };
   $('roster-go').addEventListener('click', commitAdd);
   $('roster-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ',' || e.key === ' ') {
-      e.preventDefault();
-      commitAdd();
-    }
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    commitAdd();
   });
   $('roster-input').addEventListener('input', () => {
-    $('roster-input').classList.remove('error');  // objection withdrawn
     const v = $('roster-input').value;
     const s = sanUname(v);
     if (s !== v) $('roster-input').value = s;
+    // one toggle: the live length ring, and any acknowledged
+    // objection clears on the next keystroke, as before
+    $('roster-input').classList.toggle('error', overlongName(s));
   });
 }
 

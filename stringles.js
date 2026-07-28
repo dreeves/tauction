@@ -80,6 +80,8 @@ const consensusStamp = 'CONSENSUS';
 const saveCopy = 'SAVE';
 const submitCopy = 'SUBMIT';
 
+const creaCopy = 'Go';
+
 // TODO: the tip on a grayed SAVE/SUBMIT after the reveal — too late,
 // the auction closed; this draft was never sent
 const tooLateGoTip = 'Sero — auctio conclusa est';
@@ -104,6 +106,10 @@ const nameTakenBanner = 'That name is taken';
 // (Code.gs clamps too, for races and hand-rolled requests; a qual
 // pins the verbatim match so both read as one message)
 const bidTooLongBanner = 'bid too long (160 characters max)';
+
+const anameTooLongBanner = 'Auction name too long (max 20 characters)';
+const unameTooLongBanner = 'Name too long (max 20 characters)';
+const blurbTooLongBanner = 'Description too long (max 2000 characters)';
 
 // Someone saved the description while you were editing yours (also
 // thrown by the server's compare-and-swap; must match it exactly so

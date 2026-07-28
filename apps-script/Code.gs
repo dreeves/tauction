@@ -54,12 +54,21 @@ const ARMOR_ROWS = 10000;
 // claim lock, 2026-07-21: claims TAKE the seat, last write wins).
 const badAnameCopy = 'auction name must be alphanumeric';
 const badUnameCopy = 'username must be alphanumeric and start with a letter';
+// The name-length refusals (limits are 20, dreev 2026-07-27; his
+// copy). Must match stringles.js anameTooLongBanner /
+// unameTooLongBanner EXACTLY (quals check): the client refuses
+// before the wire in the same words, so local and server refusals
+// read as one message.
+const anameTooLongCopy = 'Auction name too long (max 20 characters)';
+const unameTooLongCopy = 'Name too long (max 20 characters)';
 const badDeviceCopy = 'bad deviceID';
 const badDevBlurbCopy = 'bad deviceBlurb';
 const unknownActionCopy = (action) => 'unknown action: ' + action;
 const notReadyCopy = 'not ready to reveal: everyone on the roster'
   + ' (at least two people) must bid first';
-const blurbTooLongCopy = 'blurb too long (2000 chars max)';
+// (reworded by dreev 2026-07-27; must match stringles.js
+// blurbTooLongBanner exactly, like its two name siblings)
+const blurbTooLongCopy = 'Description too long (max 2000 characters)';
 // must match stringles.js simulEditsBanner EXACTLY (a qual checks):
 // the client shows the same words for locally- and remotely-detected
 // simultaneous edits, so back-to-back banners read as one message
@@ -159,13 +168,16 @@ function withLock(fn) {
 
 function cleanAname(s) {
   s = String(s || '').toLowerCase();
-  if (!/^[a-z0-9]{1,40}$/.test(s)) throw badAnameCopy;
+  // length first, for the specific words (20 max, dreev 2026-07-27)
+  if (s.length > 20) throw anameTooLongCopy;
+  if (!/^[a-z0-9]{1,20}$/.test(s)) throw badAnameCopy;
   return s;
 }
 
 function cleanUname(s) {
   s = String(s || '').toLowerCase();
-  if (!/^[a-z][a-z0-9]{0,29}$/.test(s)) {
+  if (s.length > 20) throw unameTooLongCopy;
+  if (!/^[a-z][a-z0-9]{0,19}$/.test(s)) {
     throw badUnameCopy;
   }
   return s;

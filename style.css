@@ -340,6 +340,16 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   cursor: default;
 }
 
+/* the auction name's commit button (2026-07-27 later, closing the
+   one buttonless field): same recipe, pinned to the input's own
+   band — the .field wrapper includes the label above, so a
+   vertical-center anchor would miss the input */
+.field { position: relative; }
+
+.field .go { top: auto; bottom: 0.55rem; transform: none; }
+
+.field.hot #aname { padding-right: 3.6rem; }
+
 /* the blurb's SAVE takes the pencil's corner (they never coexist:
    the pencil is rendered-mode's, SAVE is edit-mode's) and its words
    stay clear of the button, as they already were of the pencil */
@@ -1105,9 +1115,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 
 
-/* the empty-bid objection: the field itself reddens (outline beats
-   the accent focus ring while it stands) */
-.rebid textarea.error, .rename input.error {
+/* the field objection: the field itself reddens (outline beats the
+   accent focus ring while it stands) — bids, names, and the auction
+   name (whose length objects too, since 2026-07-27) */
+.rebid textarea.error, .rename input.error, #aname.error {
   outline: 2px solid var(--err-fg);
   outline-offset: -1px;
 }

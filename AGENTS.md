@@ -161,12 +161,19 @@ overwrite and bump `bcount`.
 
 ## Behavior
 
-- Commits are deliberate gestures only (2026-07-27, cletus's clobber):
-  Enter on one-line fields, the SAVE/SUBMIT buttons (which appear
-  while a field is hot — focused or holding an uncommitted draft),
-  and the + row's comma/space/Tab. Blur commits NOTHING, anywhere;
-  Escape reverts and leaves. The auction-name field commits on
-  Enter/Tab only (chosen once, irreversible, no button).
+- Commits are deliberate gestures only (2026-07-27, cletus's clobber
+  + the consistency purge): Enter, or the SAVE/SUBMIT buttons (which
+  appear while a field is hot — focused or holding an uncommitted
+  draft), plus Cmd/Ctrl+Enter on the blurb. Blur, Tab, separators,
+  and timers commit NOTHING, anywhere; Escape reverts and leaves.
+  The auction-name field is Enter-only (chosen once, irreversible,
+  no button). Every limit OBJECTS, never chops: 20 chars for both
+  name kinds, 160 for bids, 2000 for the blurb — live red ring,
+  local refusal in the server's exact words.
+- Every control is a tab stop (2026-07-27, reversing the 07-16
+  tab law: keyboard users must be able to claim/remove/reveal).
+  Pointer clicks blur buttons (tooltip hygiene); keyboard clicks
+  (e.detail 0) keep focus.
 - Nothing ever reveals automatically. The padlock on the BIDS box is the
   reveal button: it unlocks (and pulses) once everyone on the roster — at
   least two people — has bid, and anyone may press it. Ending early =

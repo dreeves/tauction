@@ -41,7 +41,8 @@ const COPY = require('vm').runInContext('({ gavelFellCopy,'
   + ' simulEditsCopy, bidSeatHeldCopy, unknownActionCopy,'
   + ' mysteryDeviceCopy, schemaDriftCopy, auctionClosedCopy,'
   + ' rosterClosedCopy, badDevBlurbCopy, badPidCopy, nameTakenCopy,'
-  + ' removeBidderCopy })', ctx);
+  + ' removeBidderCopy, anameTooLongCopy, unameTooLongCopy,'
+  + ' blurbTooLongCopy })', ctx);
 // Real Apps Script resets globals every execution; one shared vm
 // context hosts the whole qual run, so drift quals empty the
 // header-check memo by hand to simulate a fresh execution
@@ -903,5 +904,27 @@ const SHEETY = ['SpreadsheetApp', 'openById', 'getSheetByName',
 ok(fenceAt !== -1 && SHEETY.every((w) => !business.includes(w)),
    'no Sheets vocabulary below the storage fence; leaked: '
      + SHEETY.filter((w) => business.includes(w)).join(', '));
+
+// 17. length limits refuse with the specific words, never clamp
+//     (names 20 per dreev 2026-07-27, blurb 2000) — exact boundaries
+//     (last, on a throwaway auction: earlier sections pin absolute
+//     sheet-row positions)
+ok(call({ action: 'state', aname: 'a'.repeat(21) }).error
+     === COPY.anameTooLongCopy,
+   'a 21-character auction name is refused with the length words');
+ok(!call({ action: 'state', aname: 'a'.repeat(20) }).error,
+   'a 20-character auction name is legal: the boundary is exact');
+ok(call({ action: 'add', aname: 'limits', uname: 'b'.repeat(21),
+          pid: 'pid-limits-b21' }).error === COPY.unameTooLongCopy,
+   'a 21-character participant name is refused with the length words');
+ok(!call({ action: 'add', aname: 'limits', uname: 'b'.repeat(20),
+           pid: 'pid-limits-b20' }).error,
+   'a 20-character participant name is legal');
+ok(call({ action: 'describe', aname: 'limits', base: '',
+          blurb: 'x'.repeat(2001) }).error === COPY.blurbTooLongCopy,
+   'a 2001-character blurb is refused with the length words');
+ok(!call({ action: 'describe', aname: 'limits', base: '',
+           blurb: 'x'.repeat(2000) }).error,
+   'a 2000-character blurb is legal');
 
 console.log('gas-quals: all ' + passed + ' assertions passed');

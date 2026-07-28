@@ -1554,6 +1554,29 @@ async function bid(page, bidText) {
          === 'original plus cletus',
        'SAVE survives its own blur and lands the informed insist');
 
+    /* ====== name, tab, enter (dreev's own fumble, verbatim) ==========
+       He typed the auction name and hit Tab: pre-fix it either
+       committed irreversibly (the Tab-commit era) or threw him into
+       the browser chrome (the buttonless era). Expectata: Tab lands
+       on the name's own commit button — the next control — and
+       Enter presses it. */
+    const crea = await makePage(browser, DESKTOP);
+    await crea.goto(BASE + '/', { waitUntil: 'networkidle0' });
+    await crea.type('#aname', 'tabname');
+    await crea.keyboard.press('Tab');
+    ok(await crea.evaluate(() =>
+      document.activeElement === document.getElementById('namego')
+      && getComputedStyle(document.getElementById('namego')).display
+           !== 'none'),
+       'tab out of a typed name lands on its visible commit button,'
+       + ' not in the browser chrome');
+    await crea.keyboard.press('Enter');
+    await crea.waitForFunction(() => location.pathname === '/tabname');
+    ok(await crea.evaluate(() =>
+      document.getElementById('aname').disabled),
+       'enter presses it: name, tab, enter — commit by convention,'
+       + ' no hidden gesture');
+
     /* ---- tooltips outrank the banner --------------------------------
        Replicata (dreev: "tooltips appearing behind other elements" —
        again, but NOT the old stacking-context class; those quals
@@ -1685,9 +1708,19 @@ async function bid(page, bidText) {
       document.getElementById('banner').hidden),
        'and the successful settle retires the stale objection banner');
     await mo.waitForFunction(() => !document.getElementById('seal').disabled);
-    await mo.click('#seal');
+    // the reveal, BY KEYBOARD (the 07-16 tab law died 2026-07-27:
+    // every control is a tab stop and Enter activates it) — and the
+    // keyboard's click must not trip the pointer blur-on-activation
+    // rule: focus stays on the seal
+    await mo.evaluate(() => document.getElementById('seal').focus());
+    await mo.keyboard.press('Enter');
     await mo.waitForFunction((t) => document.getElementById('status')
       .textContent.includes(t), {}, LONGBID);
+    ok(await mo.evaluate(() =>
+      document.activeElement === document.getElementById('seal')
+      && document.getElementById('seal').tabIndex !== -1),
+       'the padlock answers the keyboard and keeps its focus: a'
+       + ' keyboard-driven auction can actually close');
     ok(await mo.evaluate(() => {
       const long = document.querySelector(
         '.tile[data-uname="leo"] .bid-card');

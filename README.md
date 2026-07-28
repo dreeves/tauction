@@ -18,13 +18,12 @@ There's a bunch of setup info and deploy instructions currently in black hole of
 
 Next for the golems:
 
-1. tell me if i'm thinking about this wrong but could this be more mobile-friendly just by making everything a little bigger? any better ideas for making it more mobile-friendly?
+1. Bug: there should be no submit button when the auction is closed.
 
-2. maybe relatedly, i don't think i like these save/submit buttons beeing inside the field.
+2. tell me if i'm thinking about this wrong but could this be more mobile-friendly just by making everything a little bigger? any better ideas for making it more mobile-friendly?
 
-3. command/ctrl-enter should work to submit/save.
+3. maybe relatedly, i don't think i like these save/submit buttons beeing inside the field.
 
-4. why do i get a gavelspinner just by clicking in an empty bid field? in general it seems like the gavelspinners far more often than it needs to.
+4. command/ctrl-enter should work to submit/save.
 
-5. get the length limits to behave the same way for all field. and let's go with 20 characters for auction names and participant names
-
+5. why do i get a gavelspinner just by clicking in an empty bid field? in general it seems like the gavelspinners far more often than it needs to. can you do a thorough audit?
