@@ -229,17 +229,16 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    save spins its mini gavel here (dreev: saving JUST the
    description must not gray the bid table) */
 .desc .gavel.mini {
-  display: none;
+  display: block;
   position: absolute;
   left: auto;
   right: 0.5rem;
   top: 50%;
   zoom: 0.45;
   transform: translateY(-50%);
-  opacity: 1;
 }
 
-.desc.stale .gavel.mini { display: block; }
+.desc.stale .gavel.mini { opacity: 1; transition-delay: 0.3s; }
 
 .descview {
   font-size: 0.85rem;
@@ -302,18 +301,45 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* -------------------------- commit buttons ----------------------------- */
 /* SAVE/SUBMIT (dreev's copy, via stringles): the finger's Enter. Each
-   rides its field's wrapper and shows only while the field is HOT —
+   rides its field's .gorow and shows only while the field is HOT —
    focused or holding an uncommitted draft (the .hot class, app.js's
    never-clobber predicate) — because clicking away commits nothing,
    anywhere. Hidden-not-grayed when cold, per dreev's "appears while
    editing" spec: a permanent button on every row would be clutter,
    and a cold field has nothing the button could say. */
-.go {
+/* The .gorow sits in flow BELOW the words, right-aligned (dreev
+   2026-07-27: "i don't think i like these save/submit buttons beeing
+   inside the field" — and the old overlay blanketed a phone-narrowed
+   bid box, eating the taps meant for its words). In flow means
+   hotness has geometry, which is why hot = DIRTY ONLY (see syncHot):
+   the row opens at your keystroke and closes at your commit or
+   Escape, never at a blur — a blur-time collapse moved whatever the
+   blurring click was aimed at between mousedown and mouseup, and the
+   click died. (Both alternatives were tried and ate clicks: an
+   absolutely-overlaid row COVERED live controls below a hot field,
+   and a delayed in-flow collapse just narrowed the straddle window.) */
+.gorow {
   display: none;
-  position: absolute;
-  right: 0.3rem;
-  top: 50%;
-  transform: translateY(-50%);
+  flex-basis: 100%;  /* in the flex wrappers: a full line of its own */
+  flex-wrap: wrap;   /* a cramped cell stacks its buttons instead of
+                        letter-mangling them */
+  justify-content: flex-end;
+  gap: 0.4rem;
+  /* intrinsic width zero: flex max-content sizing ignores wrapping,
+     so without this the person cell widens by a button's width to
+     make one-line room for a row that never shares its line */
+  contain: inline-size;
+}
+
+.hot .gorow {
+  display: flex;
+  margin-top: 0.3rem;
+}
+
+/* the flex field wrappers wrap, so the .gorow lands under the words */
+.rebid, .rename, .at-wrap { flex-wrap: wrap; }
+
+.go {
   font: inherit;
   font-size: 0.6rem;
   font-weight: 700;
@@ -325,8 +351,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   color: var(--accent);
   background: var(--card);
 }
-
-.hot > .go { display: block; }
 
 .go:hover:not(:disabled) { background: var(--accent-soft); }
 
@@ -340,38 +364,15 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   cursor: default;
 }
 
-/* the auction name's commit button (2026-07-27 later, closing the
-   one buttonless field): same recipe, pinned to the input's own
-   band — the .field wrapper includes the label above, so a
-   vertical-center anchor would miss the input */
-.field { position: relative; }
+/* CANCEL: SAVE's quiet twin (Escape for fingers) — muted chrome, so
+   each row keeps exactly one accent-primary */
+.go.cancel { color: var(--muted); border-color: var(--border); }
 
-.field .go { top: auto; bottom: 0.55rem; transform: none; }
-
-.field.hot #aname { padding-right: 3.6rem; }
-
-/* the blurb's SAVE takes the pencil's corner (they never coexist:
-   the pencil is rendered-mode's, SAVE is edit-mode's) and its words
-   stay clear of the button, as they already were of the pencil */
-.desc .go { top: 0.5rem; right: 0.6rem; transform: none; }
-
-/* ...and edit-mode's ONLY: a restored draft (drafts survive the tab,
+/* edit-mode's ONLY: a restored draft (drafts survive the tab,
    2026-07-27) can make the card hot while rendered — there the
    corner is the pencil's, and the pencil is the whole affordance
    for "the source holds a draft" */
-.desc.viewing .go { display: none; }
-
-.desc.hot .descedit { padding-right: 3.2rem; }
-
-/* the bid's SUBMIT overlays the box's right end, words padded clear,
-   so the sacred uniform right edge never moves; the busy mini gavel
-   steps left of it while both are on duty */
-.rebid.hot textarea { padding-right: 3.9rem; }
-
-.rebid.hot .gavel.mini { right: 3.9rem; }
-
-/* the name fields' SAVE: same overlay, anchored to each wrapper */
-.rename { position: relative; }
+.desc.viewing .gorow { display: none; }
 
 /* ----------------------------- BIDS box -------------------------------- */
 
@@ -411,9 +412,13 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 #banner.err { background: var(--err-bg); color: var(--err-fg); }
 #banner.ok { background: var(--ok-bg); color: var(--ok-fg); }
 
-/* grayed while a different auction is loading; never hidden */
+/* grayed while a different auction is loading; never hidden.
+   The 0.3s appearance delay (here and on every busy gavel below):
+   a sub-0.3s settle never flashes any busy sign at all (dreev's
+   gavelspinner audit, 2026-07-27) — the delay rides the SHOWN state,
+   so retiring the sign stays instant. */
 #status .tiles { transition: opacity 0.25s; }
-#status.stale .tiles { opacity: 0.35; }
+#status.stale .tiles { opacity: 0.35; transition-delay: 0.3s; }
 
 /* One icon, three states: a 🔒 while bids are sealed (full-strength:
    it states a fact, it isn't a disabled control), the same 🔒 pulsing
@@ -531,7 +536,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   filter: drop-shadow(0 1px 5px rgba(0, 0, 0, 0.3));
 }
 
-#status.stale .gavel { opacity: 1; }
+#status.stale .gavel { opacity: 1; transition-delay: 0.3s; }
 
 .gavel .mallet {
   position: absolute;
@@ -635,15 +640,15 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .gavel .bang::after { transform: rotate(-8deg); }
 
 #status.stale .gavel .mallet, .rebid.busy .gavel.mini .mallet,
-.desc.stale .gavel.mini .mallet {
+.desc.stale .gavel.mini .mallet, .tile.stale > .gavel.mini .mallet {
   animation: gavel 1.15s infinite;
 }
 #status.stale .gavel .bang, .rebid.busy .gavel.mini .bang,
-.desc.stale .gavel.mini .bang {
+.desc.stale .gavel.mini .bang, .tile.stale > .gavel.mini .bang {
   animation: gavel-bang 1.15s infinite;
 }
 #status.stale .gavel .block, .rebid.busy .gavel.mini .block,
-.desc.stale .gavel.mini .block {
+.desc.stale .gavel.mini .block, .tile.stale > .gavel.mini .block {
   animation: gavel-thud 1.15s infinite;
 }
 
@@ -786,6 +791,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 
 .tile {
+  position: relative;  /* anchors the row's own mini gavel */
   display: flex;
   /* flex-start, not stretch: a wrapped bid grows its own card, and
      the bare name holds its first line instead of inflating with it */
@@ -1134,18 +1140,33 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .rebid { position: relative; }
 
 .rebid .gavel.mini {
-  display: none;
+  display: block;
   position: absolute;
   left: auto;
   right: 0.15rem;
-  top: 50%;
+  /* pinned to the words' first line, not the wrapper's middle: when
+     the field is hot the .gorow is a second line below */
+  top: 1.05rem;
   zoom: 0.45;
   transform: translateY(-50%);
-  opacity: 1;
   z-index: 1;
 }
 
-.rebid.busy .gavel.mini { display: block; }
+.rebid.busy .gavel.mini { opacity: 1; transition-delay: 0.3s; }
+
+/* the row's own busy sign (roster ops went row-local, 2026-07-27,
+   dreev's gavelspinner audit): the same mini gavel, perched at the
+   bid cell's right end, clear of the x */
+.tile > .gavel.mini {
+  display: block;
+  left: auto;
+  right: 1.8rem;
+  top: 1.05rem;
+  zoom: 0.45;
+  transform: translateY(-50%);
+}
+
+.tile.stale > .gavel.mini { opacity: 1; transition-delay: 0.3s; }
 
 /* the incoming shimmer sweeps the CARD — the thing that changed (it
    rode the name box until the box died, 2026-07-22) */
@@ -1398,3 +1419,75 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
 .help-body h2 { font-size: 1rem; margin: 1.4rem 0 0.5rem; }
 
 .help-body a { color: var(--accent); }
+
+/* -------------------------- touch ergonomics ---------------------------
+   Fingers, not cursors (dreev 2026-07-27: "could this be more mobile-
+   friendly just by making everything a little bigger?"). Two laws on
+   coarse pointers: every text field reads at 16px — below that, iOS
+   Safari zoom-jumps into any focused field — and every control offers
+   a ~44px hit box (Apple's HIG floor). Hit boxes grow via padding or
+   width/height with negative margins handing the growth back to the
+   layout, so column alignment and row rhythm stay put and the glyphs
+   themselves only swell a little. A fine pointer sees none of this. */
+@media (pointer: coarse) {
+  .descedit, .descview, .rebid textarea, .tile-name, .tile-bid, .th,
+  .addrow .at-wrap, .addrow .at-wrap input { font-size: 1rem; }
+
+  /* the star: the same 1.5rem column, a 44px reach around it */
+  .tu {
+    width: 2.75rem;
+    height: 2.75rem;
+    margin: -0.375rem -0.625rem;
+    font-size: 1.3rem;
+  }
+
+  /* the ×: an explicit 44px box, glyph centered where the old
+     first-line pin inked it (the negative margins re-shrink its
+     footprint to the old ~18x29 so the row doesn't shift) */
+  .tile .x {
+    display: grid;
+    place-items: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    padding: 0;
+    margin: -0.4rem -0.87rem -0.53rem -0.76rem;
+  }
+
+  /* the padlock sits a thumb's width from the card's right edge, so
+     its hit box grows LEFTWARD over the dead "BIDS" label — symmetric
+     growth poked past a 320px viewport and made the page scroll
+     sideways */
+  .seal {
+    font-size: 1.1rem;
+    padding: 0.85rem 0.4rem 0.85rem 1.45rem;
+    margin: -0.85rem -0.4rem -0.85rem -1.45rem;
+  }
+
+  .desctoggle {
+    font-size: 1.3rem;
+    padding: 0.7rem 1rem;
+    margin: -0.7rem -1rem;
+  }
+
+  .corner .icon { width: 2.75rem; height: 2.75rem; font-size: 1rem; }
+
+  .corner .icon svg { width: 1.2rem; height: 1.2rem; }
+
+  #banner-x {
+    font-size: 1.2rem;
+    padding: 0.55rem;
+    margin: -0.55rem;
+  }
+
+  /* the commit buttons: full 44px thumb targets while on duty */
+  .go { font-size: 0.75rem; padding: 0.95rem 0.55rem; }
+
+  /* the name column keeps its desktop FOOTPRINT (12ch of 1rem is the
+     old 15ch of 0.85rem): bigger glyphs must not starve the bid
+     column, which owns the row on a phone */
+  .th-person { min-width: calc(12ch + 1.1rem); }
+
+  .tile-name { min-width: calc(12ch + 1.1rem); }
+
+  .addrow .at-wrap { width: calc(12ch + 1.1rem); }
+}

@@ -460,27 +460,51 @@ function render() {
   renderDesc();
   if (!adopted) restoreDrafts();  // the tab's drafts come home, once
   adopted = true;  // the arrival edge is consumed exactly once
-  // server truth is on screen: both cards' in-flight signs retire
+  // server truth is on screen: every in-flight sign retires — the
+  // cards' and the row-local ones alike
   $('status').classList.remove('stale');
   $('desc').classList.remove('stale');
+  document.querySelectorAll('#tiles .tile.stale')
+    .forEach((t) => t.classList.remove('stale'));
 }
 
-// A field is HOT — focused, or holding words that differ from its
-// committed baseline (defaultValue, the never-clobber truth) — iff
-// walking away now would leave something uncommitted. The commit
-// buttons ride this class: SAVE/SUBMIT stand exactly while the field
-// is hot, because blur commits NOTHING (dreev 2026-07-27, cletus's
-// clobber: a blur is a side effect of every OTHER gesture — banner
-// ×es, star taps, reloads — never a decision to save). EVERY text
-// field has a button home — the auction name included, since
-// 2026-07-27 later (it was the one buttonless field, and its
-// invisible Enter-only commit was exactly the inconsistency dreev
-// caught; a fence qual now closes the class).
+// A field is HOT iff it holds words that differ from its committed
+// baseline (defaultValue, the never-clobber truth) — iff walking away
+// now would leave something uncommitted. The commit buttons ride this
+// class: SAVE/SUBMIT stand exactly while the field is hot, because
+// blur commits NOTHING (dreev 2026-07-27, cletus's clobber: a blur is
+// a side effect of every OTHER gesture — banner ×es, star taps,
+// reloads — never a decision to save). EVERY text field has a button
+// home — the auction name included, since 2026-07-27 later (it was
+// the one buttonless field, and its invisible Enter-only commit was
+// exactly the inconsistency dreev caught; a fence qual now closes the
+// class).
+// DIRTY ONLY, not focused-or-dirty (2026-07-27, the button row's move
+// below the fields): hotness now has geometry — the .gorow opens a
+// line under the field — so it may only ever change at the user's own
+// keystroke, commit, or Escape, moments when nothing else is
+// mid-gesture. Focus-hot changed geometry at BLUR — which fires
+// mid-click on whatever the click was aimed at, moving the target
+// between mousedown and mouseup and killing the click. (A clean
+// focused field's button would be a grayed stub anyway: nothing to
+// send.)
 function syncHot(f) {
   const home = f.closest('.rebid, .rename, .at-wrap, .desc, .field');
   if (home === null) return;
   const dirty = f.value !== f.defaultValue;
-  home.classList.toggle('hot', f === document.activeElement || dirty);
+  home.classList.toggle('hot', dirty);
+  // A standing commit button is live only when pressing it would
+  // SEND something (dreev 2026-07-27: "shouldn't the submit button
+  // gray out...?"): against a flying volley the effective baseline
+  // is the text already on the wire (placeBid's lastBid — its silent
+  // no-op gets a visible gray), and a frozen field's button stays
+  // frozen with it (updateRow's too-late tip rides that same
+  // disabled). The cancel is exempt: dismissing a draft — even a
+  // dead one — writes nothing, so it is never a no-op.
+  const base = home.classList.contains('busy')
+    ? f.dataset.sent : f.defaultValue;
+  const go = home.querySelector('.gorow .go:not(.cancel)');
+  if (go) go.disabled = f.disabled || f.value === base;
   saveDraft(f, dirty);
 }
 
@@ -536,6 +560,42 @@ function restoreDrafts() {
     if (f && f.value === f.defaultValue) f.value = draft;
   });
   sweepHot();
+}
+
+// Escape's whole body, shared with every .gorow's CANCEL button (the
+// button twin — touch keyboards have no Escape key; dreev 2026-07-27,
+// wanting an edit-war exit that needs no reload): revert to the
+// committed baseline and leave. The focus() first makes a cancel
+// from ANYWHERE exactly "enter the field and Escape", so the blur
+// always fires for a focusable field and runs the one ordinary
+// leave-a-clean-field path (cooling sweep, draft prune, the desc
+// card's flip back to rendered). A frozen (disabled) field refuses
+// focus and blur alike — there the explicit syncHot still cools its
+// dismissed draft.
+function revertField(f) {
+  f.focus();
+  f.value = f.defaultValue;
+  f.blur();
+  syncHot(f);
+}
+
+// A CANCEL button: .go's quiet twin, wired to revertField. Its
+// mousedown NEVER steals focus (preventDefault), so a pointer press
+// leaves the field focused until revertField's own blur — one code
+// path with Escape, no special cases per field. wireCancel dresses
+// the three static buttons from index.html; buildCancel mints the
+// row builders' own.
+function wireCancel(c, field) {
+  c.textContent = cancelCopy;
+  c.addEventListener('mousedown', (e) => e.preventDefault());
+  c.addEventListener('click', () => revertField(field));
+  return c;
+}
+
+function buildCancel(field) {
+  const c = el('button', 'go cancel');
+  c.type = 'button';
+  return wireCancel(c, field);
 }
 
 // Programmatic value/baseline writes fire no input events, so every
@@ -622,7 +682,7 @@ function commitDesc() {
       // is idle (the arrival-caret law) — if you've moved on to
       // another field, the red editor waits its turn
       if (document.activeElement === document.body) edit.focus();
-    }, (res) => { edit.dataset.base = res.tblurb; }, $('desc'));
+    }, (res) => { edit.dataset.base = res.tblurb; }, () => $('desc'));
     edit.defaultValue = draft;  // ours is the working base now
     edit.classList.remove('error');
     // paint the draft NOW — rendering is pure client work; the write
@@ -987,7 +1047,8 @@ function buildRow(pid) {
     seats = seats.filter((z) => z.pid !== pid);
     queueOp({ action: 'remove', aname: aname, pid: pid });
   });
-  t.append(star, nameEl, bidEl, x);
+  t.append(star, nameEl, bidEl, x, miniGavel());  // the row's own
+                                  // busy sign, shown by .tile.stale
   return t;
 }
 
@@ -1039,9 +1100,15 @@ function buildBidContent(kind, pid) {
     // SUBMIT (dreev's copy), on duty while the field is hot: the
     // deliberate gesture for fingers, as Enter is for keyboards —
     // clicking/tapping away commits NOTHING (dreev 2026-07-27)
+    // It rides the .gorow BELOW the words (dreev 2026-07-27 later:
+    // "i don't think i like these save/submit buttons beeing inside
+    // the field" — the old overlay also blanketed a phone-narrowed
+    // editor, eating the taps meant for it)
     const go = el('button', 'go', submitCopy);
     go.type = 'submit';
-    form.append(go);
+    const row = el('div', 'gorow');
+    row.append(go, buildCancel(editor));
+    form.append(row);
     // the row-local busy sign, shown by .rebid.busy
     form.append(miniGavel());
     form.addEventListener('submit', (e) => {
@@ -1316,10 +1383,13 @@ function buildNameField(pid) {
   form.append(input);
   // SAVE (dreev's copy), on duty while the field is hot — the phone's
   // gesture, as Enter is the keyboard's (dreev 2026-07-27, re-reversing
-  // his 07-17 tap-away-saves: blur commits nothing, anywhere)
+  // his 07-17 tap-away-saves: blur commits nothing, anywhere) — in the
+  // .gorow below the words, like every commit button
   const go = el('button', 'go', saveCopy);
   go.type = 'submit';
-  form.append(go);
+  const row = el('div', 'gorow');
+  row.append(go, buildCancel(input));
+  form.append(row);
   return form;
 }
 
@@ -1449,6 +1519,8 @@ async function placeBid(pid, form) {
   // when the whole volley has settled.
   form.classList.add('busy');
   bidsAloft++;
+  syncHot(editor);  // the effective baseline just moved to the wire:
+                    // SUBMIT grays until the words diverge again
   // the radio locks the moment you commit: a mid-flight identity hop
   // orphaned the bid under the old name and left a blank editor (the
   // settle's render recomputes the lock from state truth)
@@ -1556,21 +1628,30 @@ async function copyUrl() {
 
 // Roster and claim writes are row-level ops, serialized client-side so
 // a burst of adds can't pile onto the server's script lock. The UI is
-// optimistic (the local roster already changed); the box grays until
-// the server confirms. Only the NEWEST op's snapshot is adopted —
-// earlier ones predate later local edits.
+// optimistic (the local roster already changed); the affected ROW
+// wears the busy sign until the server confirms (dreev's gavelspinner
+// audit, 2026-07-27: "it seems like the gavelspinners far more often
+// than it needs to" — the whole-ledger gray + big gavel now mean a
+// whole-TABLE moment: arrival, transport failure, the typed-name
+// probe, the reveal). A removed row has no sign to wear: the thunk
+// finds nothing, and the op flies signless — its failure path is the
+// banner + recovery refresh either way. Only the NEWEST op's snapshot
+// is adopted — earlier ones predate later local edits.
 let opChain = Promise.resolve();
 function queueOp(body, onRefusal, onSuccess) {
-  queueLazyOp(() => body, onRefusal, onSuccess, $('status'));
+  queueLazyOp(() => body, onRefusal, onSuccess,
+              () => rowNodes[body.pid]);
 }
 
-// host: the card that wears the in-flight sign while this op flies —
-// stale grays the ledger under its hammering gavel for table ops;
-// the desc card spins its own mini gavel for blurb saves (dreev,
-// 2026-07-21: saving JUST the blurb must not gray the bid table)
+// host: a THUNK for the element that wears the in-flight sign while
+// this op flies — the op's own row, or the desc card for blurb saves
+// (dreev, 2026-07-21: saving JUST the blurb must not gray the bid
+// table). A thunk because the optimistic paint below is what mints a
+// fresh add's row in the first place.
 function queueLazyOp(request, onRefusal, onSuccess = () => {}, host) {
-  host.classList.add('stale');
   if (state) renderStatus();
+  const h = host();
+  if (h) h.classList.add('stale');
   if (!configured) return;
   const at = startWrite();
   opChain = opChain.then(async () => {
@@ -1812,7 +1893,7 @@ function wireUp() {
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     const f = e.target.closest('input, textarea');
-    if (f) { f.value = f.defaultValue; f.blur(); }
+    if (f) revertField(f);
   }, true);
 
   // The singleton tip's reasons: pointer and focus, tracked globally.
@@ -1858,6 +1939,10 @@ function wireUp() {
   // constants)
   $('descgo').textContent = saveCopy;
   $('descgo').addEventListener('click', commitDesc);
+  // the static cancels, dressed like the row builders' own
+  wireCancel($('desccancel'), $('descedit'));
+  wireCancel($('roster-cancel'), $('roster-input'));
+  wireCancel($('namecancel'), $('aname'));
   $('roster-go').textContent = saveCopy;
   // The blurb's compare-and-swap base is BORN '', matching the
   // server's tblurb for a never-described auction: a page that has

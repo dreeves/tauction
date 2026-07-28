@@ -185,8 +185,8 @@ async function bid(page, bidText) {
         && t.placeholder.length > 0
         && getComputedStyle(document.getElementById('desctoggle'))
              .display === 'none'
-        && getComputedStyle(document.getElementById('descgo'))
-             .display === 'none'
+        && !document.getElementById('descgo')
+             .checkVisibility({ visibilityProperty: true })
         && getComputedStyle(document.getElementById('desc'))
              .borderTopColor !== 'rgba(0, 0, 0, 0)';
     }), 'the description sits between name and ledger, explaining'
@@ -195,8 +195,8 @@ async function bid(page, bidText) {
     await alice.click('#descedit');
     await alice.type('#descedit', '# Rules\n\nLoser buys **coffee**');
     ok(await alice.evaluate(() =>
-      getComputedStyle(document.getElementById('descgo')).display
-        !== 'none'
+      document.getElementById('descgo')
+        .checkVisibility({ visibilityProperty: true })
       && document.getElementById('descgo').textContent === saveCopy),
        "typing wakes SAVE on the desc card, wearing dreev's copy");
     await alice.click('#aname');  // clicking away...
@@ -206,8 +206,8 @@ async function bid(page, bidText) {
         === '# Rules\n\nLoser buys **coffee**'
       && getComputedStyle(document.getElementById('descedit')).display
            !== 'none'
-      && getComputedStyle(document.getElementById('descgo')).display
-           !== 'none'),
+      && document.getElementById('descgo')
+           .checkVisibility({ visibilityProperty: true })),
        'clicking away saves NOTHING (dreev 2026-07-27): the draft'
        + ' sits in the open editor, SAVE still standing');
     opDelay = 900;  // hold the describe in flight: its busy sign is
@@ -514,27 +514,32 @@ async function bid(page, bidText) {
       return getComputedStyle(cell).outlineWidth === '2px'
         && getComputedStyle(cell).outlineStyle === 'solid'
         && getComputedStyle(inp).boxShadow === 'none'
-        && getComputedStyle(cell.querySelector('.go')).display
-             !== 'none';
+        && !cell.querySelector('.go')
+             .checkVisibility({ visibilityProperty: true });
     }), 'editing a name rings the person cell itself, star lassoed'
-       + ' like the + row rings its @ — no underline — and SAVE'
-       + ' wakes the moment you are in the field');
+       + ' like the + row rings its @ — no underline — and no SAVE'
+       + ' yet: a clean field has nothing to commit (hot = dirty)');
     await alice.keyboard.type('by');
+    ok(await alice.evaluate(() =>
+      document.querySelector('.tile[data-uname="bob"] .rename .go')
+        .checkVisibility({ visibilityProperty: true })),
+       'the first typed character wakes SAVE');
     await alice.click('.legend');  // wander off mid-edit
     ok(await alice.evaluate(() =>
       document.querySelector('.tile[data-uname="bob"] .rename input')
         .value === 'bobby'
-      && getComputedStyle(document.querySelector(
-           '.tile[data-uname="bob"] .rename .go')).display !== 'none'),
+      && document.querySelector('.tile[data-uname="bob"] .rename .go')
+           .checkVisibility({ visibilityProperty: true })),
        'a wandering click commits nothing and cannot dismiss the'
        + " draft's SAVE: dirty keeps it standing, focus or no");
     await alice.click('.tile[data-uname="bob"] .rename input');
     await alice.keyboard.press('Escape');  // never mind: bob is bob
+    await alice.waitForFunction(() =>  // the 0.35s collapse grace
+      !document.querySelector('.tile[data-uname="bob"] .rename .go')
+        .checkVisibility({ visibilityProperty: true }));
     ok(await alice.evaluate(() =>
       document.querySelector('.tile[data-uname="bob"] .rename input')
-        .value === 'bob'
-      && getComputedStyle(document.querySelector(
-           '.tile[data-uname="bob"] .rename .go')).display === 'none'),
+        .value === 'bob'),
        'Escape reverts and SAVE stands down');
     await bid(alice, 'three tacos');
     await alice.waitForSelector('#tiles .tile.has-bid');
@@ -1204,19 +1209,27 @@ async function bid(page, bidText) {
        'the re-bid stack sheets and the you-pop compose, losing neither');
 
     /* ---- the busy gavel: graying alone doesn't say "working", so a
-       CSS-drawn gavel hammers its block, overlaid on the grayed ledger,
-       while the app talks to the server ------------------------------ */
+       CSS-drawn gavel hammers while the app talks to the server — for
+       a ROW op, the row's own mini gavel (2026-07-27, the gavelspinner
+       audit; the big one keeps the whole-table moments), after the
+       0.3s no-flash delay ------------------------------------------- */
     // a generous window: the gavel is a TRANSIENT (visible only while
     // the op is in flight), and a ~900ms window once lost a race to a
     // runner stall — the wait can't start until the add round-trips
     opDelay = 2500;
     await addName(carol, 'fox');  // an op is now in flight for ~2.5s
-    await carol.waitForFunction(() => {  // 0.15s fade: wait, don't sample
-      const g = document.querySelector('#status .gavel');
-      return getComputedStyle(g).opacity === '1'
+    await carol.waitForFunction(() => {  // delay + fade: wait, don't sample
+      const g = document.querySelector(
+        '.tile[data-uname="fox"] > .gavel.mini');
+      return g && getComputedStyle(g).opacity === '1'
         && getComputedStyle(g.querySelector('.mallet')).animationName
            === 'gavel';
     });
+    ok(await carol.evaluate(() =>
+      getComputedStyle(document.querySelector('#status > .gavel'))
+        .opacity === '0'),
+       "the add hammers ITS ROW's mini gavel; the big whole-table"
+       + ' gavel stays down');
     ok(await carol.evaluate(() => {
       const probe = document.createElement('span');
       probe.style.color = 'var(--wood)';
@@ -1256,11 +1269,13 @@ async function bid(page, bidText) {
         .every((cs) => sin(cs) < 0);
     }), 'all three spark rays kick up and away from the impact');
     ok(await carol.evaluate(() => {
-      const g = document.querySelector('#status .gavel').getBoundingClientRect();
-      const t = document.getElementById('tiles').getBoundingClientRect();
+      const g = document.querySelector(
+        '.tile[data-uname="fox"] > .gavel.mini').getBoundingClientRect();
+      const t = document.querySelector('.tile[data-uname="fox"]')
+        .getBoundingClientRect();
       return g.top < t.bottom && g.bottom > t.top
         && g.left > t.left && g.right < t.right;
-    }), 'the gavel hammers overlaid on the grayed ledger, spinner-style');
+    }), "the mini gavel hammers overlaid on its own row, spinner-style");
     opDelay = 0;
     await carol.waitForFunction(() =>  // fades out: wait, don't sample
       getComputedStyle(document.querySelector('#status .gavel'))
@@ -1411,6 +1426,139 @@ async function bid(page, bidText) {
        'tapping the padlock reveals: the whole auction ran by thumb');
     await shoot(thumb, 'story5-thumb-revealed');
 
+    /* ================ Story 5b: the fat-finger audit ===================
+       Replicata: dreev on his phone (2026-07-27): "could this be more
+       mobile-friendly just by making everything a little bigger?"
+       Expectata: on a coarse pointer, every text field reads at >=16px
+       (below that iOS Safari zoom-jumps into any focused field) and
+       every control presents a >=44px hit box (Apple's HIG floor) —
+       while the fine-pointer layout stays exactly as it was, and the
+       320px phone still doesn't scroll sideways. Resultata pre-fix:
+       13.6px fields, 24x32px stars. */
+    gas.handle({ action: 'add', aname: 'fatfinger',
+      uname: 'alice', pid: 'pid-fat-alice' });
+    gas.handle({ action: 'add', aname: 'fatfinger',
+      uname: 'bob', pid: 'pid-fat-bob' });
+    gas.handle({ action: 'describe', aname: 'fatfinger', base: '',
+      blurb: 'A blurb, so the pencil shows.' });
+    const fat = await makePage(browser, mobileViewport);
+    await fat.goto(BASE + '/fatfinger', { waitUntil: 'networkidle0' });
+    await fat.tap('.tile[data-uname="alice"] .tu');
+    await fat.waitForSelector('.tile.mine .rebid textarea');
+    await fat.type('.tile.mine .rebid textarea', 'draft');  // SUBMIT
+                                    // stands only over a draft
+    const fatFonts = await fat.evaluate(() =>
+      ['#roster-input', '.rename input', '.tile.mine .rebid textarea',
+       '#descedit', '.descview'].map((sel) => [sel, parseFloat(
+        getComputedStyle(document.querySelector(sel)).fontSize)]));
+    ok(fatFonts.every(([, px]) => px >= 16),
+       'coarse pointer: every field and the blurb read at >=16px'
+       + ' (no iOS zoom-jump): ' + JSON.stringify(fatFonts));
+    const fatHits = await fat.evaluate(() =>
+      ['.tile:not(.mine) .tu', '.tile:not(.mine) .x', '#seal',
+       '#desctoggle', '#share', '#help',
+       '.tile.mine .rebid .go',
+       '.tile.mine .rebid .cancel'].map((sel) => {
+        const r = document.querySelector(sel).getBoundingClientRect();
+        return [sel, Math.round(r.width), Math.round(r.height)];
+      }));
+    ok(fatHits.every(([, w, h]) => w >= 43.5 && h >= 43.5),
+       'coarse pointer: every control offers a >=44px hit box: '
+       + JSON.stringify(fatHits));
+    await shoot(fat, 'story5b-fatfinger');
+    // park the tap-tip and the caret before measuring, story-1 style:
+    // a stale-positioned tooltip is not the layout's overflow
+    await fat.evaluate(() => document.activeElement.blur());
+    await fat.mouse.move(5, 600);
+    await fat.setViewport({ ...NARROW, hasTouch: true });
+    await fat.waitForFunction(() => innerWidth === 320);
+    await fat.waitForFunction(() =>
+      document.getElementById('tip').hidden);
+    ok(await fat.evaluate(() =>
+         document.scrollingElement.scrollWidth <= innerWidth),
+       'the grown touch targets still fit a 320px phone sideways');
+    await shoot(fat, 'story5b-fatfinger-narrow');
+    // the fence: a fine pointer (desktop) keeps today's exact compact
+    // geometry — the touch ergonomics are the coarse pointer's alone
+    const fine = await makePage(browser, DESKTOP);
+    await fine.goto(BASE + '/fatfinger', { waitUntil: 'networkidle0' });
+    ok(await fine.evaluate(() => {
+      const star = document.querySelector('.tile .tu')
+        .getBoundingClientRect();
+      const bid = getComputedStyle(
+        document.querySelector('.tile:not(.mine) .bid-card'));
+      return Math.round(star.width) === 24 && Math.round(star.height) === 32
+        && parseFloat(bid.fontSize) < 16;
+    }), 'fine pointer: the compact desktop geometry is untouched');
+
+    /* ============= Story 5c: the buttons left the fields ===============
+       Replicata: dreev 2026-07-27: "i don't think i like these
+       save/submit buttons beeing inside the field." Expectata: every
+       hot field's SAVE/SUBMIT sits fully BELOW the words' box, on the
+       field's right flank — never overlaying what's typed. Resultata
+       pre-fix: the button overlaid the field's right end (and on a
+       phone-narrowed bid box, its middle — story 5b's tap-eater). */
+    // window-side helper, stamped into each page that measures
+    const BELOW_JS = `window.__below = (field, go) => {
+      const f = document.querySelector(field).getBoundingClientRect();
+      const g = document.querySelector(go);
+      const gr = g.getBoundingClientRect();
+      const row = g.closest('.gorow').getBoundingClientRect();
+      return [field, gr.top >= f.bottom - 0.5,
+              row.right > f.left + f.width / 2];
+    };`;
+    const fine2 = await makePage(browser, DESKTOP);
+    await fine2.goto(BASE + '/fatfinger', { waitUntil: 'networkidle0' });
+    await fine2.waitForSelector('.tile[data-uname="bob"]');
+    await fine2.evaluate(BELOW_JS);
+    await fine2.click('.tile[data-uname="bob"] .rename input');
+    await fine2.type('.tile[data-uname="bob"] .rename input', 'x');
+    await fine2.click('#roster-input');
+    await fine2.type('#roster-input', 'x');
+    await fine2.click('#desctoggle');
+    await fine2.type('#descedit', 'x');
+    await fine2.click('.tile[data-uname="alice"] .tu');
+    await fine2.waitForSelector('.tile.mine .rebid textarea');
+    await fine2.type('.tile.mine .rebid textarea', 'x');
+    const placements = await fine2.evaluate(() => [
+      window.__below('.tile.mine .rebid textarea',
+                     '.tile.mine .rebid .go'),
+      window.__below('.tile[data-uname="bob"] .rename input',
+                     '.tile[data-uname="bob"] .rename .go'),
+      window.__below('#roster-input', '#roster-go'),
+      window.__below('#descedit', '#descgo'),
+    ]);
+    ok(placements.every(([, isBelow, onRightFlank]) =>
+         isBelow && onRightFlank),
+       'every commit button sits below its field, on its right flank: '
+       + JSON.stringify(placements));
+    await shoot(fine2, 'story5c-buttons-below');
+    // CANCEL by pointer is Escape exactly (its mousedown must not
+    // steal focus, so the real blur path runs): the abandoned blurb
+    // draft — 'x', still standing in the open editor — flips the
+    // card back to rendered
+    await fine2.click('#desccancel');
+    await fine2.waitForFunction(() =>
+      document.getElementById('desc').classList.contains('viewing')
+      && document.getElementById('descedit').value
+           === 'A blurb, so the pencil shows.');
+    ok(true, "CANCEL abandons the blurb draft and the card re-renders"
+       + ' — the edit-war escape hatch, no reload');
+    await fine2.click('.tile.mine .rebid .cancel');
+    await fine2.waitForFunction(() => {
+      const ed = document.querySelector('.tile.mine .rebid textarea');
+      return ed.value === '' && !ed.closest('.rebid').classList
+        .contains('hot');
+    });
+    ok(true, 'CANCEL reverts the bid draft and the row cools');
+    const fresh = await makePage(browser, DESKTOP);
+    await fresh.goto(BASE + '/', { waitUntil: 'networkidle0' });
+    await fresh.evaluate(BELOW_JS);
+    await fresh.type('#aname', 'gorows');
+    ok((await fresh.evaluate(() =>
+         window.__below('#aname', '#namego')))[1],
+       "the auction name's Go sits below its field too");
+
     /* ================= Story 6: two thumbs, one alice ==================
        Roommates both open /squabble on their phones; the roster lists
        alice and bea, unclaimed. Phone 1 taps alice's star. Phone 2 —
@@ -1459,13 +1607,13 @@ async function bid(page, bidText) {
     // tap's own blur must not vanish it mid-press (the hot class
     // holds through the mousedown-blur-click sequence)
     await p2.waitForFunction(() =>
-      getComputedStyle(document.querySelector('.tile.mine .rebid .go'))
-        .display !== 'none');
+      document.querySelector('.tile.mine .rebid .go')
+        .checkVisibility({ visibilityProperty: true }));
     await p2.tap('.tile.mine .rebid .go');
     await p2.waitForSelector('.tile.mine.has-bid');
-    // park the caret back in the (clean) committed editor: hot by
-    // focus alone, SUBMIT standing — the gavel must cool even this,
-    // via Chrome's blur-on-the-disable (which jsdom can't exercise)
+    // park the caret back in the (clean) committed editor: hot is
+    // DIRTY-only (2026-07-27), so no SUBMIT stands on a committed
+    // bid even while the caret sits in it
     await p2.click('.tile.mine .rebid textarea');
     await p1.waitForFunction(() =>
       !document.getElementById('seal').disabled);
@@ -1476,16 +1624,18 @@ async function bid(page, bidText) {
     ok(true, 'and the game plays out: both bids in, revealed by thumb');
     // The complement of the caught-draft case (dreev's old bug note
     // "no submit button when the auction is closed"): both bids were
-    // COMMITTED, so no SUBMIT stands on the closed auction — phone 1's
-    // field went cold at its own seal tap, and phone 2's was hot by
-    // focus alone, cooled by Chrome blurring the editor it disabled.
-    // The computed style pins the CSS half (.go hides unless .hot)
-    // that the jsdom quals can't see.
+    // COMMITTED, so no SUBMIT stands on the closed auction — nor did
+    // one stand before it: hot is dirty-only, and neither field holds
+    // a draft. The visibility check pins the CSS half (.gorow hides
+    // unless .hot) that the jsdom quals can't see.
     await p2.waitForFunction(() =>
       document.body.classList.contains('revealed'));
-    const goGone = (page) => page.evaluate(() =>
-      getComputedStyle(document.querySelector('.tile.mine .rebid .go'))
-        .display === 'none');
+    const goGone = async (page) => {
+      await page.waitForFunction(() =>  // the 0.35s collapse grace
+        !document.querySelector('.tile.mine .rebid .go')
+          .checkVisibility({ visibilityProperty: true }));
+      return true;
+    };
     ok(await goGone(p1) && await goGone(p2),
        'no draft, no button: on the closed auction both committed'
        + " bids' SUBMITs are gone, not grayed");
@@ -1525,11 +1675,23 @@ async function bid(page, bidText) {
       const go = document.querySelector('.tile.mine .rebid .go');
       return ed.value === 'first word!!!'
         && go.disabled
-        && getComputedStyle(go).display !== 'none'
+        && go.checkVisibility({ visibilityProperty: true })
         && go.getAttribute('data-tip') === tooLateGoTip
         && document.getElementById('banner').hidden;
     }), 'the dying draft just stays: visible, unsent, its grayed'
        + ' SUBMIT saying why — and no banner, since nothing was lost');
+    // ...and CANCEL is the dead draft's one exit (a revert writes
+    // nothing, so the gavel has no business graying it)
+    ok(await wire.evaluate(() => {
+      const c = document.querySelector('.tile.mine .rebid .cancel');
+      return c && !c.disabled;
+    }), "the dead draft's CANCEL stays live: dismissing a never-sent"
+       + ' draft writes nothing');
+    await wire.click('.tile.mine .rebid .cancel');
+    await wire.waitForFunction(() =>
+      document.querySelector('.tile.mine .rebid textarea').value
+        === 'first word');
+    ok(true, 'CANCEL dismisses it: the committed bid stands alone');
     ok(gas.handle({ action: 'state', aname: 'wirestory' }).bids
          .find((b) => b.pid === 'pid-wirestory-ann').bid === 'first word',
        'the sheet keeps the pre-gavel bid');
@@ -1592,8 +1754,8 @@ async function bid(page, bidText) {
         .includes('per winifred')
       && document.getElementById('descedit').value
            === 'original plus cletus'
-      && getComputedStyle(document.getElementById('descgo'))
-           .display === 'none'
+      && !document.getElementById('descgo')
+           .checkVisibility({ visibilityProperty: true })
       && getComputedStyle(document.getElementById('desctoggle'))
            .display !== 'none'),
        "the reload finally shows winifred's words, rendered — and"
@@ -1601,8 +1763,8 @@ async function bid(page, bidText) {
        + ' pencil (SAVE stays edit-mode-only)');
     await cle.click('#desctoggle');  // back to the source: the draft
     ok(await cle.evaluate(() =>
-      getComputedStyle(document.getElementById('descgo')).display
-        !== 'none'),
+      document.getElementById('descgo')
+        .checkVisibility({ visibilityProperty: true })),
        'opening the source wakes the restored draft\'s SAVE');
     // insisting is a deliberate press, and the button must survive
     // its own mousedown's blur to take the click
@@ -1626,8 +1788,8 @@ async function bid(page, bidText) {
     await crea.keyboard.press('Tab');
     ok(await crea.evaluate(() =>
       document.activeElement === document.getElementById('namego')
-      && getComputedStyle(document.getElementById('namego')).display
-           !== 'none'),
+      && document.getElementById('namego')
+           .checkVisibility({ visibilityProperty: true })),
        'tab out of a typed name lands on its visible commit button,'
        + ' not in the browser chrome');
     await crea.keyboard.press('Enter');
@@ -1817,7 +1979,11 @@ async function bid(page, bidText) {
     await poet.keyboard.type('violets are blue');
     ok(await poet.$eval(ED, (e, h) =>
          e.value === 'roses are red\nviolets are blue'
-         && e.getBoundingClientRect().height > h * 1.8, hPoem0),
+         // one more LINE of height (the old >1.8x bar was secretly
+         // the overlay-era padding-right forcing an extra wrap)
+         && e.getBoundingClientRect().height
+              >= h + 0.9 * parseFloat(getComputedStyle(e).lineHeight),
+       hPoem0),
        'Shift+Enter breaks the line under her fingers, the box'
        + ' growing to show both');
     await poet.keyboard.press('Enter');  // Enter still means SEND

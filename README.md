@@ -28,4 +28,15 @@ Next for the golems:
 
 5. shouldn't the submit button gray out upon successful submission and reeanble only when the field changes? non-rhetorical question: is that the usual convention?
 
-6. i'm thinking i should have you rewrite this whole thing from scratch. it really seems like a disaster at this point. look at the sheer length of sourcery.html for such a simple app. either i, the human, or you, the ai, are really bad at this. or both, i suppose.
+6. i'm wondering if i should have you rewrite this thing from scratch. look at the sheer length of sourcery.html for such a simple app. either i, the human, or you, the ai, are really bad at this. or both, i suppose.
+
+7. can you change the favicon to gavelcoins.png
+
+8. is there a good reason to prevent the user from adding blurb / participants / bids before giving the auction a name?
+maybe the aname field should glow red if it's blank but not active, since blank isn't a valid name, same as it does for being too long.
+and then maybe the share button should be grayed out until the auction has a valid name.
+but other than the conditional graying out of the share button, can we remove a bunch of if-statements by dropping the requirement that the auction be named before anything else happens? or is it the opposite, and the rest of the code gets messier without that restriction?
+what if nothing gets sent to the server until the auction has a name?
+another advantage: i don't think we need an explicit cancel button for the aname field if you can just tab to other fields and not save it until you're ready.
+
+9. the red for errors should be brighter red

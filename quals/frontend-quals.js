@@ -113,7 +113,8 @@ const STR = new Function(STRINGLES
   + ' tooLateRemoveTip, resubmittedTip, nameStoneTip,'
   + ' waitingGlyph, yourMoveGlyph, readyGlyph, revealedGlyph,'
   + ' tabTitle, saveCopy, submitCopy, tooLateGoTip, creaCopy,'
-  + ' anameTooLongBanner, unameTooLongBanner, blurbTooLongBanner };')();
+  + ' anameTooLongBanner, unameTooLongBanner, blurbTooLongBanner,'
+  + ' cancelCopy };')();
 const STAMP = STR.stampCopy;
 
 // ...and the server's half, out of the vm context hosting Code.gs
@@ -241,7 +242,9 @@ const settled = (dom) => until(() => {
   const doc = dom.window.document;
   const f = doc.querySelector('#tiles .rebid');
   return f && !f.classList.contains('busy')
-    && !doc.getElementById('status').classList.contains('stale');
+    && !doc.getElementById('status').classList.contains('stale')
+    && !doc.querySelector('#tiles .tile.stale');  // row ops wear
+                       // row-local signs now (2026-07-27)
 });
 
 const myEditor = (doc) => doc.querySelector('#tiles .tile.mine .rebid textarea');
@@ -526,9 +529,13 @@ const cssBattles = [];
   mockDelay = 300;
   rapidDoc.getElementById('desctoggle').click();
   rapidDoc.getElementById('descedit').value = 'B version';
+  rapidDoc.getElementById('descedit').dispatchEvent(
+    new dRapidDesc.window.Event('input', { bubbles: true }));
   rapidDoc.getElementById('descgo').click();
   rapidDoc.getElementById('desctoggle').click();
   rapidDoc.getElementById('descedit').value = 'C version';
+  rapidDoc.getElementById('descedit').dispatchEvent(
+    new dRapidDesc.window.Event('input', { bubbles: true }));
   rapidDoc.getElementById('descgo').click();
   await until(() => gas.handle({ action: 'state', aname: 'rapiddesc' })
     .blurb === 'C version'
@@ -558,9 +565,13 @@ const cssBattles = [];
   addName(dNewerDesc, 'bob');
   newerDoc.getElementById('desctoggle').click();
   newerDoc.getElementById('descedit').value = 'B version';
+  newerDoc.getElementById('descedit').dispatchEvent(
+    new dNewerDesc.window.Event('input', { bubbles: true }));
   newerDoc.getElementById('descgo').click();
   newerDoc.getElementById('desctoggle').click();
   newerDoc.getElementById('descedit').value = 'C version';
+  newerDoc.getElementById('descedit').dispatchEvent(
+    new dNewerDesc.window.Event('input', { bubbles: true }));
   newerDoc.getElementById('descedit').focus();
   const beforeA2 = gas.handle({ action: 'state', aname: 'newerdesc' });
   gas.handle({ action: 'describe', aname: 'newerdesc',
@@ -674,6 +685,74 @@ const cssBattles = [];
   ok(gas.handle({ action: 'state', aname: 'preexdesc' })
        .blurb === 'my addendum',
      'and the informed save wins');
+
+  /* Replicata: dreev 2026-07-27: "maybe there should be a button to
+     abandon your changes so you don't have to reload the page if you
+     get the edit-war banner?" (and touch keyboards have no Escape).
+     Expectata: every .gorow seats a CANCEL beside its commit button —
+     the button twin of Escape: revert to the committed baseline,
+     cool the field, prune the draft, send NOTHING. Resultata
+     pre-fix: no such button existed anywhere. */
+  gas.handle({ action: 'add', aname: 'nvm',
+    uname: 'ann', pid: 'pid-nvm-ann' });
+  gas.handle({ action: 'add', aname: 'nvm',
+    uname: 'bob', pid: 'pid-nvm-bob' });
+  gas.handle({ action: 'describe', aname: 'nvm', base: '',
+    blurb: 'The house rules.' });
+  const dNvm = await makePage('/nvm?api=' + API_URL, (w) => {
+    w.localStorage.setItem('tauction-pids', '{"nvm":"pid-nvm-ann"}');
+  });
+  const nvmDoc = dNvm.window.document;
+  const nvmEd = myEditor(nvmDoc);
+  const nvmCancel = nvmDoc.querySelector('.tile.mine .rebid .cancel');
+  ok(nvmCancel !== null
+     && nvmCancel.textContent === STR.cancelCopy
+     && nvmCancel.type === 'button',
+     "the bid row seats a CANCEL beside SUBMIT, wearing stringles'"
+     + ' copy, never a submit type');
+  nvmEd.focus();
+  nvmEd.value = 'a rash promise';
+  nvmEd.dispatchEvent(new dNvm.window.Event('input', { bubbles: true }));
+  const nvmCalls = apiCalls.length;
+  nvmCancel.click();
+  await sleep(80);
+  ok(nvmEd.value === '' && nvmEd.defaultValue === ''
+     && !nvmEd.closest('.rebid').classList.contains('hot')
+     && apiCalls.length === nvmCalls
+     && !('bid:pid-nvm-ann' in JSON.parse(dNvm.window.localStorage
+          .getItem('tauction-drafts:nvm') || '{}')),
+     'CANCEL on a bid draft is Escape: reverted, cooled, no wire'
+     + ' call, the draft slot pruned');
+  const nvmName = nvmDoc.querySelector(
+    '.tile[data-uname="bob"] .rename input');
+  nvmName.focus();
+  nvmName.value = 'robert';
+  nvmName.dispatchEvent(new dNvm.window.Event('input', { bubbles: true }));
+  nvmDoc.querySelector('.tile[data-uname="bob"] .rename .cancel').click();
+  await sleep(80);
+  ok(nvmName.value === 'bob'
+     && !nvmName.closest('.rename').classList.contains('hot'),
+     'CANCEL on a rename draft restores the committed name');
+  type(dNvm, 'roster-input', 'stray');
+  nvmDoc.getElementById('roster-cancel').click();
+  await sleep(80);
+  ok(nvmDoc.getElementById('roster-input').value === ''
+     && !nvmDoc.getElementById('roster-input').closest('.at-wrap')
+          .classList.contains('hot'),
+     'CANCEL on the + row clears the never-added name');
+  // the edit-war abandon itself: a stale draft under a moved blurb
+  nvmDoc.getElementById('desctoggle').click();
+  const nvmBlurb = nvmDoc.getElementById('descedit');
+  nvmBlurb.value = 'The house rules. Plus mine.';
+  nvmBlurb.dispatchEvent(new dNvm.window.Event('input', { bubbles: true }));
+  nvmDoc.getElementById('desccancel').click();
+  await sleep(80);
+  ok(nvmBlurb.value === 'The house rules.'
+     && !nvmDoc.getElementById('desc').classList.contains('hot')
+     && gas.handle({ action: 'state', aname: 'nvm' }).blurb
+          === 'The house rules.',
+     'CANCEL on the blurb abandons the draft in place: server truth'
+     + ' back in the editor, nothing on the wire — no reload needed');
 
   /* Replicata: a description write reserved an auction without adding
      a participant or bid, and a bare page types that name. Expectata:
@@ -1156,7 +1235,7 @@ const cssBattles = [];
      'arrival: the auction named, the roster tabled as found');
   addName(dDiary, 'me');
   await until(() => row(diaryDoc, 'me')
-    && !diaryDoc.getElementById('status').classList.contains('stale'));
+    && !row(diaryDoc, 'me').classList.contains('stale'));
   ok(has('→ add @me'),
      'an outbound write announces itself at the send');
   ok(has('+ @me'),
@@ -1170,13 +1249,14 @@ const cssBattles = [];
   ok(has('+ @bob') && has('+ @tmp'),
      'remote joins narrate on the poll that shows them');
   row(diaryDoc, 'tmp').querySelector('.x').click();
-  await until(() =>
-    !diaryDoc.getElementById('status').classList.contains('stale'));
+  await until(() => has('− @tmp'));  // a removal wears no busy sign
+                                     // (its row is already gone), so
+                                     // the narration IS the settle
   ok(has('→ remove') && has('− @tmp'),
      'a removal: announced outbound, narrated at the settle');
   renameTo(dDiary, 'bob', 'rob');
   await until(() => row(diaryDoc, 'rob')
-    && !diaryDoc.getElementById('status').classList.contains('stale'));
+    && !row(diaryDoc, 'rob').classList.contains('stale'));
   ok(has('→ rename → @rob') && has('@bob → @rob'),
      'a rename narrates as old → new');
   const warned = (s) => dDiary.window.__warns.some((w) => w.includes(s));
@@ -1211,7 +1291,7 @@ const cssBattles = [];
   addName(dDiary, 'zed');  // the 2d2 race: this page loses, quietly
   await until(() => row(diaryDoc, 'zed')
     && row(diaryDoc, 'zed').dataset.pid === 'pid-diary-zed-remote'
-    && !diaryDoc.getElementById('status').classList.contains('stale'));
+    && !diaryDoc.querySelector('#tiles .tile.stale'));
   ok(diaryDoc.getElementById('banner').hidden && has('+ @zed'),
      'a lost add race converges quietly: one + entry, no error — the'
      + ' loser is an ordinary latecomer (dreev 2026-07-21)');
@@ -1221,7 +1301,7 @@ const cssBattles = [];
                                    // blind, the server refuses
   await until(() => !diaryDoc.getElementById('banner').hidden);
   await until(() => row(diaryDoc, 'rob')
-    && !diaryDoc.getElementById('status').classList.contains('stale'));
+    && !diaryDoc.querySelector('#tiles .tile.stale'));
   ok(warned('✗ ' + SCOPY.nameTakenCopy) && row(diaryDoc, 'rob') !== null,
      "a server refusal warns ✗ with the server's words (a rename onto"
      + ' a live label is a real error: the requested CHANGE did not'
@@ -1385,8 +1465,8 @@ const cssBattles = [];
   // to wait — the ⭐ needs at least one actual waiter
   const dSolo = await makePage('/solome?api=' + API_URL);
   addName(dSolo, 'me');
-  await until(() => !dSolo.window.document.getElementById('status')
-    .classList.contains('stale'));
+  await until(() => !dSolo.window.document
+    .querySelector('#tiles .tile.stale'));
   ok(dSolo.window.document.title === STR.tabTitle(STR.waitingGlyph, 'solome'),
      'alone on the roster, bidless: waiting, never the ⭐');
 
@@ -1408,7 +1488,7 @@ const cssBattles = [];
      'a spectator over a bidless pair-less roster: plain waiting');
   addName(dPeek, 'me');
   await until(() => row(peekDoc, 'me')
-    && !peekDoc.getElementById('status').classList.contains('stale'));
+    && !row(peekDoc, 'me').classList.contains('stale'));
   const peek = dPeek.window.__intervals.find((i) => i.ms === 60000);
   ok(peek !== undefined,
      'the hidden peek is registered at its explicit minute cadence'
@@ -1680,7 +1760,9 @@ const cssBattles = [];
      'solo bidder: bidding cannot unlock a roster of one, and the tip'
      + ' says so instead of inventing someone to wait for');
 
-  /* --- 2c. roster edits register instantly; grayed until confirmed ------ */
+  /* --- 2c. roster edits register instantly; the ROW busy until
+     confirmed (2026-07-27, the gavelspinner audit: the box-wide gray
+     retired for row ops) --------------------------------------------- */
   const domO = await makePage('/optimist?api=' + API_URL);
   mockDelay = 300;
   addName(domO, 'pam');
@@ -1688,17 +1770,22 @@ const cssBattles = [];
   ok(tiles(domO.window.document).length === 1
      && row(domO.window.document, 'pam'),
      'added person appears in the BIDS box immediately');
-  ok(domO.window.document.getElementById('status').classList.contains('stale'),
-     'box grayed while the server has not confirmed');
+  ok(row(domO.window.document, 'pam').classList.contains('stale')
+     && !domO.window.document.getElementById('status').classList
+          .contains('stale'),
+     'her row wears the busy sign while the server has not confirmed'
+     + ' — the box itself neither grays nor gavels');
   await sleep(2000);
-  ok(!domO.window.document.getElementById('status').classList.contains('stale'),
-     'ungrays once the server confirms');
+  ok(!row(domO.window.document, 'pam').classList.contains('stale'),
+     'the sign retires once the server confirms');
   row(domO.window.document, 'pam').querySelector('.x').click();
   await sleep(30);  // the remove op is still in flight (mockDelay 300)
   ok(tiles(domO.window.document).length === 0,
      'removal empties the row immediately');
-  ok(domO.window.document.getElementById('status').classList.contains('stale'),
-     'grayed again until the removal is confirmed');
+  ok(!domO.window.document.getElementById('status').classList
+       .contains('stale'),
+     'and flies signless: its row is already gone, and the box has'
+     + ' no business graying');
   await sleep(600);
   mockDelay = 0;
   await sleep(2000);
@@ -2014,6 +2101,8 @@ const cssBattles = [];
      && dsDoc.getElementById('descedit').placeholder.length > 0,
      'an undescribed auction opens in edit mode, placeholder explaining');
   dsDoc.getElementById('descedit').value = '# Brunch\n\n**bring** cash';
+  dsDoc.getElementById('descedit').dispatchEvent(
+    new domDs.window.Event('input', { bubbles: true }));
   ok(!dsDoc.getElementById('desctoggle').hasAttribute('data-tip'),
      'the pencil explains itself by icon: no tooltip [dreev retired'
      + ' his toggle-tip copy 2026-07-17]');
@@ -2045,6 +2134,8 @@ const cssBattles = [];
   dsDoc.getElementById('desctoggle').click();
   dsDoc.getElementById('descedit').focus();
   dsDoc.getElementById('descedit').value = '# Brunch\n\nno wait';
+  dsDoc.getElementById('descedit').dispatchEvent(
+    new domDs.window.Event('input', { bubbles: true }));
   dsDoc.getElementById('descedit').dispatchEvent(
     new domDs.window.KeyboardEvent('keydown',
       { key: 'Escape', bubbles: true }));
@@ -2201,11 +2292,15 @@ const cssBattles = [];
   const dB = await makePage('/descy?api=' + API_URL);
   dA.window.document.getElementById('desctoggle').click();  // to edit
   dA.window.document.getElementById('descedit').value = 'A version';
+  dA.window.document.getElementById('descedit').dispatchEvent(
+    new dA.window.Event('input', { bubbles: true }));
   dA.window.document.getElementById('descgo').click();  // SAVE
   await until(() => gas.handle({ action: 'state', aname: 'descy' })
     .blurb === 'A version');
   dB.window.document.getElementById('desctoggle').click();  // stale base
   dB.window.document.getElementById('descedit').value = 'B version';
+  dB.window.document.getElementById('descedit').dispatchEvent(
+    new dB.window.Event('input', { bubbles: true }));
   dB.window.document.getElementById('descgo').click();  // SAVE, stale
   // ...and B moves on: clicks into the + row and starts thinking
   dB.window.document.getElementById('roster-input').focus();
@@ -2571,6 +2666,8 @@ const cssBattles = [];
   lim2Doc.getElementById('descedit').value = bigBlurb;
   lim2Doc.getElementById('descedit').dispatchEvent(
     new dLim2.window.Event('input', { bubbles: true }));
+  lim2Doc.getElementById('descedit').dispatchEvent(
+    new dLim2.window.Event('input', { bubbles: true }));
   ok(lim2Doc.getElementById('descedit').value.length === 2001
      && lim2Doc.getElementById('descedit').classList.contains('error'),
      'all 2001 blurb characters land (the silent maxlength clamp is'
@@ -2593,6 +2690,8 @@ const cssBattles = [];
   lim2Doc.getElementById('descedit').dispatchEvent(
     new dLim2.window.Event('input', { bubbles: true }));
   lim2Doc.getElementById('descedit').dispatchEvent(
+    new dLim2.window.Event('input', { bubbles: true }));
+  lim2Doc.getElementById('descedit').dispatchEvent(
     new dLim2.window.KeyboardEvent('keydown',
       { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }));
   await until(() => gas.handle({ action: 'state', aname: 'limits' })
@@ -2607,12 +2706,16 @@ const cssBattles = [];
      commit, not hide it behind an invisible Enter) ----------------- */
   const dCrea = await makePage('/?api=' + API_URL);
   const creaDoc = dCrea.window.document;
+  ok(creaDoc.activeElement === creaDoc.getElementById('aname')
+     && !creaDoc.querySelector('.field').classList.contains('hot'),
+     'the landing page parks the caret in the name field (the'
+     + ' arrival-caret law) — no button yet: an empty name has'
+     + ' nothing to commit (hot = dirty, 2026-07-27)');
+  type(dCrea, 'aname', 'poker');
   ok(creaDoc.querySelector('.field').classList.contains('hot')
      && creaDoc.getElementById('namego').textContent === STR.creaCopy,
-     'the landing page parks the caret in the name field (the'
-     + ' arrival-caret law), so its commit button is already on'
-     + " duty — the page's one action, visible");
-  type(dCrea, 'aname', 'poker');
+     'the first typed character wakes the commit button, wearing'
+     + " dreev's copy");
   creaDoc.getElementById('namego').click();
   await until(() => dCrea.window.location.pathname === '/poker');
   // disabling a focused field blurs it in real Chrome but not in
@@ -3124,6 +3227,8 @@ const cssBattles = [];
   await sleep(20);
   dI.window.document.getElementById('descedit').value
     = '# Big News\n\nmuch **bold**';
+  dI.window.document.getElementById('descedit').dispatchEvent(
+    new dI.window.Event('input', { bubbles: true }));
   mockDelay = 500;  // a slow server must not delay the paint
   dI.window.document.getElementById('descgo').click();
   const instaView = dI.window.document.getElementById('descview');
@@ -3662,6 +3767,41 @@ const cssBattles = [];
      && bidderNamed(dupeState, 'dot').bcount === 1
      && myEditor(dDupe.window.document).style.boxShadow === settledShadow,
      'settled same→same sends no POST and changes no count or card layer');
+
+  /* Replicata: dreev 2026-07-27: "shouldn't the submit button gray
+     out upon successful submission and reenable only when the field
+     changes?" Expectata: the button is never live when pressing it
+     would send nothing — mid-flight, holding exactly the words
+     already on the wire, it grays (the same lastBid test placeBid's
+     silent no-op uses); diverge and it wakes; and after a successful
+     settle it doesn't merely gray, it RETIRES with the cooling field
+     (hot = dirty). Resultata pre-fix: the visible button was always
+     enabled, a live-looking control whose press did nothing. */
+  const dRegray = await makePage('/regray?api=' + API_URL);
+  addName(dRegray, 'ree');  // self-claims (2j)
+  await settled(dRegray);
+  mockDelay = 150;
+  typeBid(dRegray, 'regrayed bid');
+  submitBid(dRegray);
+  ok(dRegray.window.document.querySelector('#tiles .rebid .go').disabled,
+     'mid-flight, holding the words already on the wire: SUBMIT'
+     + ' grays — pressing it would send nothing');
+  typeBid(dRegray, 'regrayed bid!!');
+  myEditor(dRegray.window.document).dispatchEvent(
+    new dRegray.window.Event('input', { bubbles: true }));
+  ok(!dRegray.window.document.querySelector('#tiles .rebid .go').disabled,
+     'diverge from the flying text and SUBMIT wakes');
+  typeBid(dRegray, 'regrayed bid');
+  myEditor(dRegray.window.document).dispatchEvent(
+    new dRegray.window.Event('input', { bubbles: true }));
+  ok(dRegray.window.document.querySelector('#tiles .rebid .go').disabled,
+     'return to the flying text and it grays again');
+  await settled(dRegray);
+  mockDelay = 0;
+  ok(!dRegray.window.document.querySelector('#tiles .rebid')
+       .classList.contains('hot'),
+     'a successful settle retires the button outright: clean field,'
+     + ' no dead control left standing');
 
   // Only CONSECUTIVE equality disappears. Returning to the standing
   // words while a different revision flies must queue the return;
@@ -4258,18 +4398,55 @@ const cssBattles = [];
   ok(!myEditor(domW.window.document).classList.contains('error'),
      'trimmed back under the limit, the objection withdraws itself');
 
-  /* --- 3k. the busy sign is op-local (dreev, 2026-07-21): saving
-     JUST the blurb must not gray the bid table — the desc card wears
-     its own mini gavel; roster ops still gray the ledger ----------- */
+  /* --- 3k. the busy sign is op-local (dreev, 2026-07-21: saving
+     JUST the blurb must not gray the bid table; extended 2026-07-27,
+     dreev's gavelspinner audit — "it seems like the gavelspinners far
+     more often than it needs to"): a roster op's busy sign rides the
+     affected ROW, and the whole-ledger gray + big gavel are reserved
+     for whole-table moments (arrival, transport failure, the
+     typed-name probe, the reveal) ---------------------------------- */
   const domY = await makePage('/descbusy?api=' + API_URL);
+  mockDelay = 250;
   addName(domY, 'gia');  // self-claims (2j)
   const docY = domY.window.document;
-  ok(docY.getElementById('status').classList.contains('stale')
+  ok(!docY.getElementById('status').classList.contains('stale')
+     && row(docY, 'gia').classList.contains('stale')
+     && row(docY, 'gia').querySelector('.gavel.mini') !== null
      && !docY.getElementById('desc').classList.contains('stale'),
-     'a roster op grays the ledger, never the description');
-  await until(() => !docY.getElementById('status').classList
-    .contains('stale'));
+     'an add marks ITS OWN row busy (the mini gavel) — never the'
+     + ' whole ledger, never the description');
+  await until(() => !row(docY, 'gia').classList.contains('stale'));
+  ok(!row(docY, 'gia').classList.contains('stale'),
+     "the settle clears the row's busy sign");
+  addName(domY, 'hal');
+  await until(() => !row(docY, 'hal').classList.contains('stale'));
+  renameTo(domY, 'hal', 'harold');
+  ok(row(docY, 'harold').classList.contains('stale')
+     && !docY.getElementById('status').classList.contains('stale'),
+     'a rename marks its row busy, never the ledger');
+  await until(() => !row(docY, 'harold').classList.contains('stale'));
+  row(docY, 'harold').querySelector('.x').click();
+  ok(!docY.getElementById('status').classList.contains('stale')
+     && !docY.querySelector('#tiles .tile.stale'),
+     'a remove flies signless: its row is already gone, and nothing'
+     + ' grays');
+  await until(() => names(gas.handle(
+    { action: 'state', aname: 'descbusy' })) === 'gia');
+  row(docY, 'gia').querySelector('.tu').click();  // release the seat
+  ok(row(docY, 'gia').classList.contains('stale')
+     && !docY.getElementById('status').classList.contains('stale'),
+     'a release marks its row busy, never the ledger');
+  await until(() => !row(docY, 'gia').classList.contains('stale'));
+  row(docY, 'gia').querySelector('.tu').click();  // claim it back
+  ok(row(docY, 'gia').classList.contains('stale')
+     && !docY.getElementById('status').classList.contains('stale'),
+     'a claim marks its row busy, never the ledger — clicking into'
+     + ' an empty bid cell no longer hammers the whole table');
+  mockDelay = 0;
+  await until(() => !row(docY, 'gia').classList.contains('stale'));
   docY.getElementById('descedit').value = 'brunch rules';
+  docY.getElementById('descedit').dispatchEvent(
+    new domY.window.Event('input', { bubbles: true }));
   docY.getElementById('descgo').click();
   ok(docY.getElementById('desc').classList.contains('stale')
      && docY.querySelector('#desc .gavel.mini')
@@ -4555,6 +4732,7 @@ const cssBattles = [];
   ok(!pdoc.getElementById('desc').classList.contains('committed'),
      'an untouched description blur commits nothing and shows nothing');
   pedit.value = 'pulse notes';
+  pedit.dispatchEvent(new dPulse.window.Event('input', { bubbles: true }));
   pdoc.getElementById('descgo').click();
   ok(pdoc.getElementById('desc').classList.contains('committed'),
      'SAVE commits the description and pulses the card');
