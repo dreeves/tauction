@@ -16,27 +16,27 @@ Programmatic writes require oAuth.
 There's a bunch of setup info and deploy instructions currently in black hole of AI-generated text at the bottom of [AGENTS.md](AGENTS.md).
 
 
-Next for the golems:
+Previously for the golems:
 
 1. tell me if i'm thinking about this wrong but could this be more mobile-friendly just by making everything a little bigger? any better ideas for making it more mobile-friendly?
 
-2. maybe relatedly, i don't think i like these save/submit buttons beeing inside the field.
+2. i'm wondering if i should have you rewrite this thing from scratch. look at the sheer length of sourcery.html for such a simple app. either i, the human, or you, the ai, are really bad at this. or both, i suppose.
 
-3. and maybe there should be a button to abandon your changes so you don't have to reload the page if you get the edit-war banner? i'm not sure if that's worth it though.
 
-4. why do i get a gavelspinner just by clicking in an empty bid field? in general it seems like the gavelspinners far more often than it needs to. can you do a thorough audit?
+Next for the golems:
 
-5. shouldn't the submit button gray out upon successful submission and reeanble only when the field changes? non-rhetorical question: is that the usual convention?
+1. Can it be made more obvious that the auction has to be named before anything else happens? do some research on the right way to do this. one idea (don't just rush to implement my first idea) is the field glows red if you click away from it.
 
-6. i'm wondering if i should have you rewrite this thing from scratch. look at the sheer length of sourcery.html for such a simple app. either i, the human, or you, the ai, are really bad at this. or both, i suppose.
+2. Similarly, if you type an aname you might not notice the "Go" button and be confused why you can't click on the other fields.
 
-7. can you change the favicon to gavelcoins.png
+3. Also I think the red outline on fields should be glowy red, not just a red outline. More research on this, too, please. Following convention is key for this kind of thing.
 
-8. is there a good reason to prevent the user from adding blurb / participants / bids before giving the auction a name?
-maybe the aname field should glow red if it's blank but not active, since blank isn't a valid name, same as it does for being too long.
-and then maybe the share button should be grayed out until the auction has a valid name.
-but other than the conditional graying out of the share button, can we remove a bunch of if-statements by dropping the requirement that the auction be named before anything else happens? or is it the opposite, and the rest of the code gets messier without that restriction?
-what if nothing gets sent to the server until the auction has a name?
-another advantage: i don't think we need an explicit cancel button for the aname field if you can just tab to other fields and not save it until you're ready.
+3. On the question of allowing the auction to be named after (locally) adding a blurb/participants/own-bid: Why is it so hard to re-key localstorage? Or, hmm, I guess what's hard is changing the name once you've picked one, and if you're going to disallow that, which you probably should, then it becomes simpler to just say you have pick the name once and that's it.
 
-9. the red for errors should be brighter red
+4. There's something wrong with the blurb edit feature. More research on best practices here too. If I get the "Edit war" notification... ugh, it's too hard to explain all the ways this is subtly broken. Can you just find something more off-the-shelf and redo it? Maybe one concrete thing to add quals for: I'm finding that on Firefox I can get the edit-war banner even not editing the blurb. And reloading the page leaves the edit-war banner in place, which seems like it should be impossible, right? If you're doing a fresh load of the page then you should always see the blurb that's in the database. Man, the amount QA I'm having to do as the human here is so extreme. Some kind of rethinking is sorely needed on the whole architecture.
+
+5. Maybe a little more vertical whitespace above the is-you footnote? 
+
+6. Why is the Save button for the participant still inside the field itself? It shouldn't be. Can you not see that?
+
+7. I forget your answer to this one: Shouldn't the submit button gray out upon successful submission and reeanble only when the field changes? Non-rhetorical question: is that the usual convention?

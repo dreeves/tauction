@@ -82,8 +82,6 @@ const submitCopy = 'SUBMIT';
 
 const creaCopy = 'Go';
 
-const cancelCopy = 'CANCEL';
-
 const tooLateGoTip = 'Auction closed — too late to submit your revised bid';
 
 // The blurb's unknown-device fallback (when user-agent comes up empty)

@@ -210,20 +210,20 @@ async function bid(page, bidText) {
            .checkVisibility({ visibilityProperty: true })),
        'clicking away saves NOTHING (dreev 2026-07-27): the draft'
        + ' sits in the open editor, SAVE still standing');
-    opDelay = 900;  // hold the describe in flight: its busy sign is
-                    // the DESC card's own mini gavel (dreev: saving
-                    // just the blurb must not gray the bid table)
+    opDelay = 900;  // hold the describe in flight: a WRITE shows no
+                    // busy sign at all (dreev 2026-07-28, the
+                    // no-spinners ruling: the commit pulse is the
+                    // feedback; failures banner; the gavel is for
+                    // untrusted PICTURES, not writes)
     await alice.click('#descgo');  // SAVE
-    ok(await alice.evaluate(() => {
-      const mini = document.querySelector('#desc .gavel.mini');
-      return getComputedStyle(mini).display === 'block'
-        && getComputedStyle(mini.querySelector('.mallet'))
-             .animationName === 'gavel'
-        && !document.getElementById('status').classList.contains('stale')
-        && getComputedStyle(document.querySelector('#status > .gavel'))
-             .opacity === '0';
-    }), 'the blurb save spins a mini gavel on the desc card itself —'
-       + ' the ledger neither grays nor gavels');
+    ok(await alice.evaluate(() =>
+      !document.querySelector('.gavel.mini')
+      && !document.getElementById('desc').classList.contains('stale')
+      && !document.getElementById('status').classList.contains('stale')
+      && getComputedStyle(document.querySelector('#status > .gavel'))
+           .opacity === '0'),
+       'the in-flight blurb save shows NO busy sign anywhere: no'
+       + ' gavel spins for a write');
     opDelay = 0;
     await alice.waitForFunction(() =>
       document.querySelector('#descview h1'));
@@ -1208,28 +1208,24 @@ async function bid(page, bidText) {
         .boxShadow.match(/rgba?\(/g) || []).length >= 3),
        'the re-bid stack sheets and the you-pop compose, losing neither');
 
-    /* ---- the busy gavel: graying alone doesn't say "working", so a
-       CSS-drawn gavel hammers while the app talks to the server — for
-       a ROW op, the row's own mini gavel (2026-07-27, the gavelspinner
-       audit; the big one keeps the whole-table moments), after the
-       0.3s no-flash delay ------------------------------------------- */
-    // a generous window: the gavel is a TRANSIENT (visible only while
-    // the op is in flight), and a ~900ms window once lost a race to a
-    // runner stall — the wait can't start until the add round-trips
+    /* ---- the busy gavel is for untrusted PICTURES only (dreev
+       2026-07-28, the no-spinners ruling): a write in flight spins
+       NOTHING — the commit pulse already said "yours is away", and
+       failures banner. The one gavel hammers over the table only at
+       arrival, transport failure, the name probe, and the reveal. */
     opDelay = 2500;
     await addName(carol, 'fox');  // an op is now in flight for ~2.5s
-    await carol.waitForFunction(() => {  // delay + fade: wait, don't sample
-      const g = document.querySelector(
-        '.tile[data-uname="fox"] > .gavel.mini');
-      return g && getComputedStyle(g).opacity === '1'
-        && getComputedStyle(g.querySelector('.mallet')).animationName
-           === 'gavel';
-    });
+    await new Promise((r) => setTimeout(r, 600));  // past the 0.3s
+                                    // appearance delay, mid-flight
     ok(await carol.evaluate(() =>
-      getComputedStyle(document.querySelector('#status > .gavel'))
-        .opacity === '0'),
-       "the add hammers ITS ROW's mini gavel; the big whole-table"
-       + ' gavel stays down');
+      !document.querySelector('.gavel.mini')
+      && !document.querySelector('#tiles .tile.stale')
+      && !document.getElementById('status').classList.contains('stale')
+      && getComputedStyle(document.querySelector('#status > .gavel'))
+        .opacity === '0'
+      && document.querySelector('.tile[data-uname="fox"]') !== null),
+       'a slow add spins NO gavel and grays nothing: the optimistic'
+       + ' row just stands');
     ok(await carol.evaluate(() => {
       const probe = document.createElement('span');
       probe.style.color = 'var(--wood)';
@@ -1268,37 +1264,31 @@ async function bid(page, bidText) {
               getComputedStyle(bang, '::after')]
         .every((cs) => sin(cs) < 0);
     }), 'all three spark rays kick up and away from the impact');
-    ok(await carol.evaluate(() => {
-      const g = document.querySelector(
-        '.tile[data-uname="fox"] > .gavel.mini').getBoundingClientRect();
-      const t = document.querySelector('.tile[data-uname="fox"]')
-        .getBoundingClientRect();
-      return g.top < t.bottom && g.bottom > t.top
-        && g.left > t.left && g.right < t.right;
-    }), "the mini gavel hammers overlaid on its own row, spinner-style");
+
     opDelay = 0;
     await carol.waitForFunction(() =>  // fades out: wait, don't sample
       getComputedStyle(document.querySelector('#status .gavel'))
         .opacity === '0');
     ok(true, 'the gavel rests once the server has confirmed everything');
-    /* ---- a bid gets a row-local mini gavel, not the table-wide one ---- */
+    /* ---- a bid in flight likewise spins nothing (no-spinners): its
+       volley bookkeeping (.busy) stays, invisible, for the A-B-A
+       resubmit semantics and the grayed same-text SUBMIT ---- */
     opDelay = 1200;
     await carol.$eval('.tile.mine .rebid textarea', (e) => { e.value = ''; });
     await bid(carol, 'three fish');
-    await carol.waitForFunction(() => {
-      const m = document.querySelector('.rebid.busy .gavel.mini');
-      return m && getComputedStyle(m).display !== 'none'
-        && getComputedStyle(m.querySelector('.mallet')).animationName
-             === 'gavel'
-        && getComputedStyle(document.querySelector('#status > .gavel'))
-             .opacity === '0';
-    });
-    ok(true, 'a bid in flight: the mini gavel hammers at YOUR row while'
-       + ' the big one (whole-table ops only) sits out');
+    await new Promise((r) => setTimeout(r, 500));  // mid-flight
+    ok(await carol.evaluate(() =>
+      document.querySelector('.rebid.busy')
+      && !document.querySelector('.gavel.mini')
+      && getComputedStyle(document.querySelector('#status > .gavel'))
+           .opacity === '0'
+      && document.querySelector('.tile.mine .rebid .go').disabled),
+       'a bid in flight: no gavel anywhere — just the quietly grayed'
+       + ' SUBMIT holding the words already on the wire');
     opDelay = 0;
     await carol.waitForFunction(() =>
       !document.querySelector('.rebid.busy'));
-    ok(true, 'the mini gavel rests when the bid lands');
+    ok(true, 'the volley settles invisibly');
     /* ---- names are live text fields: click in, type, enter ------------ */
     await carol.click('.tile[data-uname="fox"] .rename input');
     ok(await carol.evaluate(() => {
@@ -1457,8 +1447,7 @@ async function bid(page, bidText) {
     const fatHits = await fat.evaluate(() =>
       ['.tile:not(.mine) .tu', '.tile:not(.mine) .x', '#seal',
        '#desctoggle', '#share', '#help',
-       '.tile.mine .rebid .go',
-       '.tile.mine .rebid .cancel'].map((sel) => {
+       '.tile.mine .rebid .go'].map((sel) => {
         const r = document.querySelector(sel).getBoundingClientRect();
         return [sel, Math.round(r.width), Math.round(r.height)];
       }));
@@ -1533,24 +1522,6 @@ async function bid(page, bidText) {
        'every commit button sits below its field, on its right flank: '
        + JSON.stringify(placements));
     await shoot(fine2, 'story5c-buttons-below');
-    // CANCEL by pointer is Escape exactly (its mousedown must not
-    // steal focus, so the real blur path runs): the abandoned blurb
-    // draft — 'x', still standing in the open editor — flips the
-    // card back to rendered
-    await fine2.click('#desccancel');
-    await fine2.waitForFunction(() =>
-      document.getElementById('desc').classList.contains('viewing')
-      && document.getElementById('descedit').value
-           === 'A blurb, so the pencil shows.');
-    ok(true, "CANCEL abandons the blurb draft and the card re-renders"
-       + ' — the edit-war escape hatch, no reload');
-    await fine2.click('.tile.mine .rebid .cancel');
-    await fine2.waitForFunction(() => {
-      const ed = document.querySelector('.tile.mine .rebid textarea');
-      return ed.value === '' && !ed.closest('.rebid').classList
-        .contains('hot');
-    });
-    ok(true, 'CANCEL reverts the bid draft and the row cools');
     const fresh = await makePage(browser, DESKTOP);
     await fresh.goto(BASE + '/', { waitUntil: 'networkidle0' });
     await fresh.evaluate(BELOW_JS);
@@ -1680,18 +1651,6 @@ async function bid(page, bidText) {
         && document.getElementById('banner').hidden;
     }), 'the dying draft just stays: visible, unsent, its grayed'
        + ' SUBMIT saying why — and no banner, since nothing was lost');
-    // ...and CANCEL is the dead draft's one exit (a revert writes
-    // nothing, so the gavel has no business graying it)
-    ok(await wire.evaluate(() => {
-      const c = document.querySelector('.tile.mine .rebid .cancel');
-      return c && !c.disabled;
-    }), "the dead draft's CANCEL stays live: dismissing a never-sent"
-       + ' draft writes nothing');
-    await wire.click('.tile.mine .rebid .cancel');
-    await wire.waitForFunction(() =>
-      document.querySelector('.tile.mine .rebid textarea').value
-        === 'first word');
-    ok(true, 'CANCEL dismisses it: the committed bid stands alone');
     ok(gas.handle({ action: 'state', aname: 'wirestory' }).bids
          .find((b) => b.pid === 'pid-wirestory-ann').bid === 'first word',
        'the sheet keeps the pre-gavel bid');

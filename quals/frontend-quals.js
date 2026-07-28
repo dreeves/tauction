@@ -39,6 +39,7 @@ let mockDelay = 0;  // artificial latency, for in-flight race quals
 const OPS = ['add', 'remove', 'claim', 'release'];
 let opsInFlight = 0;
 let opsOverlapped = false;
+let writesInFlight = 0;  // ALL writes on the wire (drained() below)
 
 const WRITES = [
   'add', 'remove', 'rename', 'claim', 'release', 'bid', 'describe', 'reveal',
@@ -75,12 +76,14 @@ function mockFetch(url, opts) {
     opsInFlight++;
     if (opsInFlight > 1) opsOverlapped = true;
   }
+  if (WRITES.includes(req.action)) writesInFlight++;
   // Fidelity matters here: reads snapshot the moment they're requested
   // (a slow response still shows old state), but writes only commit
   // when they land — like the real locked server working its queue.
   const read = WRITES.includes(req.action) ? null : gas.handle(req);
   return new Promise((resolve) => setTimeout(() => {
     if (OPS.includes(req.action)) opsInFlight--;
+    if (WRITES.includes(req.action)) writesInFlight--;
     const res = read !== null ? read : gas.handle(req);
     if (stripTini && res.bidders) {
       res.bidders.forEach((b) => { delete b.tini; });
@@ -113,8 +116,7 @@ const STR = new Function(STRINGLES
   + ' tooLateRemoveTip, resubmittedTip, nameStoneTip,'
   + ' waitingGlyph, yourMoveGlyph, readyGlyph, revealedGlyph,'
   + ' tabTitle, saveCopy, submitCopy, tooLateGoTip, creaCopy,'
-  + ' anameTooLongBanner, unameTooLongBanner, blurbTooLongBanner,'
-  + ' cancelCopy };')();
+  + ' anameTooLongBanner, unameTooLongBanner, blurbTooLongBanner };')();
 const STAMP = STR.stampCopy;
 
 // ...and the server's half, out of the vm context hosting Code.gs
@@ -130,6 +132,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // which made fixed-sleep asserts flake ~1 run in 5. The caller re-asserts
 // the condition right after, so a timeout still fails loudly there.
 async function until(fn, ms = 10000) {
+  await sleep(0);  // flush the microtask queue first: a just-queued
+                   // op has not hit the fetch bridge yet, and a
+                   // synchronous first check would see a drained wire
   const t0 = Date.now();
   while (!fn() && Date.now() - t0 < ms) await sleep(25);
 }
@@ -243,9 +248,15 @@ const settled = (dom) => until(() => {
   const f = doc.querySelector('#tiles .rebid');
   return f && !f.classList.contains('busy')
     && !doc.getElementById('status').classList.contains('stale')
-    && !doc.querySelector('#tiles .tile.stale');  // row ops wear
-                       // row-local signs now (2026-07-27)
+    && drained(dom);
 });
+
+// Writes show no busy sign at all (dreev 2026-07-28, the no-spinners
+// ruling), so the quals watch the wire instead of the DOM: the fetch
+// bridge counts write requests in flight. (Zero here can precede the
+// app's own settle only by a microtask flush, and until() polls on
+// macrotasks, so a passing check always sees the settled world.)
+const drained = () => writesInFlight === 0;
 
 const myEditor = (doc) => doc.querySelector('#tiles .tile.mine .rebid textarea');
 
@@ -298,7 +309,6 @@ const Z_LADDER = {
   '#banner': 4,              // ambient news over content
   '.gavel': 2,               // the busy sign over the grayed ledger
   '.corner': 2,              // share/help float over the aname card
-  '.rebid .gavel.mini': 1,   // the row-local busy sign
 };                           // (the confetti canvas is fired at
                              // zIndex 5: above the page, below the
                              // summoned tips at 6)
@@ -362,7 +372,10 @@ const cssBattles = [];
       fs.readFileSync(path.join(REPO, 'manifest.json'), 'utf8'));
   ok(MANIFEST.name === 'tauction' && MANIFEST.start_url === '/'
      && MANIFEST.display === 'standalone'
-     && MANIFEST.icons.length >= 3
+     && MANIFEST.icons.length >= 1  // the 192/512/maskable trio died
+     // with the handle-down art (dreev 2026-07-28, "just kill the
+     // one where the handle points down"); gavelcoins.png stands
+     // alone until maskable/size variants exist
      && MANIFEST.icons.every((i) =>
           fs.existsSync(path.join(REPO, i.src.replace(/^\//, '')))),
      'manifest.json: a standalone app whose every icon file exists'
@@ -375,7 +388,7 @@ const cssBattles = [];
   const og = (p) => (INDEX_HTML.match(
     new RegExp('property="og:' + p + '" content="([^"]*)"')) || [])[1];
   ok(og('title') === 'tauction'
-     && og('image') === 'https://tauction.dreev.es/icons/icon-512.png'
+     && og('image') === 'https://tauction.dreev.es/icons/gavelcoins.png'
      && og('url') === 'https://tauction.dreev.es/',
      'open graph card: title, ABSOLUTE gavel image (crawlers resolve'
      + ' nothing), canonical url');
@@ -685,74 +698,6 @@ const cssBattles = [];
   ok(gas.handle({ action: 'state', aname: 'preexdesc' })
        .blurb === 'my addendum',
      'and the informed save wins');
-
-  /* Replicata: dreev 2026-07-27: "maybe there should be a button to
-     abandon your changes so you don't have to reload the page if you
-     get the edit-war banner?" (and touch keyboards have no Escape).
-     Expectata: every .gorow seats a CANCEL beside its commit button —
-     the button twin of Escape: revert to the committed baseline,
-     cool the field, prune the draft, send NOTHING. Resultata
-     pre-fix: no such button existed anywhere. */
-  gas.handle({ action: 'add', aname: 'nvm',
-    uname: 'ann', pid: 'pid-nvm-ann' });
-  gas.handle({ action: 'add', aname: 'nvm',
-    uname: 'bob', pid: 'pid-nvm-bob' });
-  gas.handle({ action: 'describe', aname: 'nvm', base: '',
-    blurb: 'The house rules.' });
-  const dNvm = await makePage('/nvm?api=' + API_URL, (w) => {
-    w.localStorage.setItem('tauction-pids', '{"nvm":"pid-nvm-ann"}');
-  });
-  const nvmDoc = dNvm.window.document;
-  const nvmEd = myEditor(nvmDoc);
-  const nvmCancel = nvmDoc.querySelector('.tile.mine .rebid .cancel');
-  ok(nvmCancel !== null
-     && nvmCancel.textContent === STR.cancelCopy
-     && nvmCancel.type === 'button',
-     "the bid row seats a CANCEL beside SUBMIT, wearing stringles'"
-     + ' copy, never a submit type');
-  nvmEd.focus();
-  nvmEd.value = 'a rash promise';
-  nvmEd.dispatchEvent(new dNvm.window.Event('input', { bubbles: true }));
-  const nvmCalls = apiCalls.length;
-  nvmCancel.click();
-  await sleep(80);
-  ok(nvmEd.value === '' && nvmEd.defaultValue === ''
-     && !nvmEd.closest('.rebid').classList.contains('hot')
-     && apiCalls.length === nvmCalls
-     && !('bid:pid-nvm-ann' in JSON.parse(dNvm.window.localStorage
-          .getItem('tauction-drafts:nvm') || '{}')),
-     'CANCEL on a bid draft is Escape: reverted, cooled, no wire'
-     + ' call, the draft slot pruned');
-  const nvmName = nvmDoc.querySelector(
-    '.tile[data-uname="bob"] .rename input');
-  nvmName.focus();
-  nvmName.value = 'robert';
-  nvmName.dispatchEvent(new dNvm.window.Event('input', { bubbles: true }));
-  nvmDoc.querySelector('.tile[data-uname="bob"] .rename .cancel').click();
-  await sleep(80);
-  ok(nvmName.value === 'bob'
-     && !nvmName.closest('.rename').classList.contains('hot'),
-     'CANCEL on a rename draft restores the committed name');
-  type(dNvm, 'roster-input', 'stray');
-  nvmDoc.getElementById('roster-cancel').click();
-  await sleep(80);
-  ok(nvmDoc.getElementById('roster-input').value === ''
-     && !nvmDoc.getElementById('roster-input').closest('.at-wrap')
-          .classList.contains('hot'),
-     'CANCEL on the + row clears the never-added name');
-  // the edit-war abandon itself: a stale draft under a moved blurb
-  nvmDoc.getElementById('desctoggle').click();
-  const nvmBlurb = nvmDoc.getElementById('descedit');
-  nvmBlurb.value = 'The house rules. Plus mine.';
-  nvmBlurb.dispatchEvent(new dNvm.window.Event('input', { bubbles: true }));
-  nvmDoc.getElementById('desccancel').click();
-  await sleep(80);
-  ok(nvmBlurb.value === 'The house rules.'
-     && !nvmDoc.getElementById('desc').classList.contains('hot')
-     && gas.handle({ action: 'state', aname: 'nvm' }).blurb
-          === 'The house rules.',
-     'CANCEL on the blurb abandons the draft in place: server truth'
-     + ' back in the editor, nothing on the wire — no reload needed');
 
   /* Replicata: a description write reserved an auction without adding
      a participant or bid, and a bare page types that name. Expectata:
@@ -1234,8 +1179,7 @@ const cssBattles = [];
        && l.some((r) => r.who === '@ann')),
      'arrival: the auction named, the roster tabled as found');
   addName(dDiary, 'me');
-  await until(() => row(diaryDoc, 'me')
-    && !row(diaryDoc, 'me').classList.contains('stale'));
+  await until(() => row(diaryDoc, 'me') && drained(dDiary));
   ok(has('→ add @me'),
      'an outbound write announces itself at the send');
   ok(has('+ @me'),
@@ -1255,8 +1199,7 @@ const cssBattles = [];
   ok(has('→ remove') && has('− @tmp'),
      'a removal: announced outbound, narrated at the settle');
   renameTo(dDiary, 'bob', 'rob');
-  await until(() => row(diaryDoc, 'rob')
-    && !row(diaryDoc, 'rob').classList.contains('stale'));
+  await until(() => row(diaryDoc, 'rob') && drained(dDiary));
   ok(has('→ rename → @rob') && has('@bob → @rob'),
      'a rename narrates as old → new');
   const warned = (s) => dDiary.window.__warns.some((w) => w.includes(s));
@@ -1291,7 +1234,7 @@ const cssBattles = [];
   addName(dDiary, 'zed');  // the 2d2 race: this page loses, quietly
   await until(() => row(diaryDoc, 'zed')
     && row(diaryDoc, 'zed').dataset.pid === 'pid-diary-zed-remote'
-    && !diaryDoc.querySelector('#tiles .tile.stale'));
+    && drained(dDiary));
   ok(diaryDoc.getElementById('banner').hidden && has('+ @zed'),
      'a lost add race converges quietly: one + entry, no error — the'
      + ' loser is an ordinary latecomer (dreev 2026-07-21)');
@@ -1300,8 +1243,7 @@ const cssBattles = [];
   renameTo(dDiary, 'rob', 'kim');  // stale roster: the local guard is
                                    // blind, the server refuses
   await until(() => !diaryDoc.getElementById('banner').hidden);
-  await until(() => row(diaryDoc, 'rob')
-    && !diaryDoc.querySelector('#tiles .tile.stale'));
+  await until(() => row(diaryDoc, 'rob') && drained(dDiary));
   ok(warned('✗ ' + SCOPY.nameTakenCopy) && row(diaryDoc, 'rob') !== null,
      "a server refusal warns ✗ with the server's words (a rename onto"
      + ' a live label is a real error: the requested CHANGE did not'
@@ -1465,8 +1407,7 @@ const cssBattles = [];
   // to wait — the ⭐ needs at least one actual waiter
   const dSolo = await makePage('/solome?api=' + API_URL);
   addName(dSolo, 'me');
-  await until(() => !dSolo.window.document
-    .querySelector('#tiles .tile.stale'));
+  await until(() => drained(dSolo));
   ok(dSolo.window.document.title === STR.tabTitle(STR.waitingGlyph, 'solome'),
      'alone on the roster, bidless: waiting, never the ⭐');
 
@@ -1487,8 +1428,7 @@ const cssBattles = [];
   ok(peekDoc.title === STR.tabTitle(STR.waitingGlyph, 'peekaboo'),
      'a spectator over a bidless pair-less roster: plain waiting');
   addName(dPeek, 'me');
-  await until(() => row(peekDoc, 'me')
-    && !row(peekDoc, 'me').classList.contains('stale'));
+  await until(() => row(peekDoc, 'me') && drained(dPeek));
   const peek = dPeek.window.__intervals.find((i) => i.ms === 60000);
   ok(peek !== undefined,
      'the hidden peek is registered at its explicit minute cadence'
@@ -1646,8 +1586,6 @@ const cssBattles = [];
      'fresh editor: blank — the caret invites the bid, not words');
   ok(myEditor(doc).getAttribute('enterkeyhint') === 'send',
      "the mobile return key reads Send over the bid editor");
-  ok(myEditor(doc).closest('.rebid').querySelector('.gavel.mini'),
-     'your editor carries its own mini gavel for bid-in-flight');
   ok(!doc.getElementById('status').classList.contains('unclaimed'),
      'someone is you now: the + row stops wearing the you-star');
   ok([...tiles(doc)].every((t) =>
@@ -1760,9 +1698,10 @@ const cssBattles = [];
      'solo bidder: bidding cannot unlock a roster of one, and the tip'
      + ' says so instead of inventing someone to wait for');
 
-  /* --- 2c. roster edits register instantly; the ROW busy until
-     confirmed (2026-07-27, the gavelspinner audit: the box-wide gray
-     retired for row ops) --------------------------------------------- */
+  /* --- 2c. roster edits register instantly and fly SIGNLESS (dreev
+     2026-07-28, the no-spinners ruling: a write's feedback is the
+     commit pulse and, on failure, the banner — no gray, no gavel,
+     nothing to wait on) ---------------------------------------------- */
   const domO = await makePage('/optimist?api=' + API_URL);
   mockDelay = 300;
   addName(domO, 'pam');
@@ -1770,22 +1709,17 @@ const cssBattles = [];
   ok(tiles(domO.window.document).length === 1
      && row(domO.window.document, 'pam'),
      'added person appears in the BIDS box immediately');
-  ok(row(domO.window.document, 'pam').classList.contains('stale')
-     && !domO.window.document.getElementById('status').classList
-          .contains('stale'),
-     'her row wears the busy sign while the server has not confirmed'
-     + ' — the box itself neither grays nor gavels');
+  ok(!domO.window.document.querySelector('.stale')
+     && !domO.window.document.querySelector('.gavel.mini'),
+     'and NOTHING wears a busy sign while the server has not'
+     + ' confirmed: no gray, no gavel, anywhere');
   await sleep(2000);
-  ok(!row(domO.window.document, 'pam').classList.contains('stale'),
-     'the sign retires once the server confirms');
   row(domO.window.document, 'pam').querySelector('.x').click();
   await sleep(30);  // the remove op is still in flight (mockDelay 300)
   ok(tiles(domO.window.document).length === 0,
      'removal empties the row immediately');
-  ok(!domO.window.document.getElementById('status').classList
-       .contains('stale'),
-     'and flies signless: its row is already gone, and the box has'
-     + ' no business graying');
+  ok(!domO.window.document.querySelector('.stale'),
+     'and flies signless too');
   await sleep(600);
   mockDelay = 0;
   await sleep(2000);
@@ -4398,65 +4332,48 @@ const cssBattles = [];
   ok(!myEditor(domW.window.document).classList.contains('error'),
      'trimmed back under the limit, the objection withdraws itself');
 
-  /* --- 3k. the busy sign is op-local (dreev, 2026-07-21: saving
-     JUST the blurb must not gray the bid table; extended 2026-07-27,
-     dreev's gavelspinner audit — "it seems like the gavelspinners far
-     more often than it needs to"): a roster op's busy sign rides the
-     affected ROW, and the whole-ledger gray + big gavel are reserved
-     for whole-table moments (arrival, transport failure, the
-     typed-name probe, the reveal) ---------------------------------- */
+  /* --- 3k. writes fly SIGNLESS (dreev 2026-07-28, the no-spinners
+     ruling, superseding both 2026-07-21's desc-local mini gavel and
+     2026-07-27's row-local ones): no roster op, claim, release, or
+     blurb save grays or gavels ANYTHING. The commit pulse is the
+     feedback; failures banner; the one gavel + table gray remain
+     for untrusted-picture moments only (arrival, transport failure,
+     the typed-name probe, the reveal). ----------------------------- */
   const domY = await makePage('/descbusy?api=' + API_URL);
   mockDelay = 250;
   addName(domY, 'gia');  // self-claims (2j)
   const docY = domY.window.document;
-  ok(!docY.getElementById('status').classList.contains('stale')
-     && row(docY, 'gia').classList.contains('stale')
-     && row(docY, 'gia').querySelector('.gavel.mini') !== null
-     && !docY.getElementById('desc').classList.contains('stale'),
-     'an add marks ITS OWN row busy (the mini gavel) — never the'
-     + ' whole ledger, never the description');
-  await until(() => !row(docY, 'gia').classList.contains('stale'));
-  ok(!row(docY, 'gia').classList.contains('stale'),
-     "the settle clears the row's busy sign");
+  const noSigns = () => !docY.querySelector('.stale')
+    && !docY.querySelector('.gavel.mini');
+  ok(noSigns(), 'an add in flight: no gray, no gavel, anywhere');
+  await until(() => drained(domY));
   addName(domY, 'hal');
-  await until(() => !row(docY, 'hal').classList.contains('stale'));
+  await until(() => drained(domY));
   renameTo(domY, 'hal', 'harold');
-  ok(row(docY, 'harold').classList.contains('stale')
-     && !docY.getElementById('status').classList.contains('stale'),
-     'a rename marks its row busy, never the ledger');
-  await until(() => !row(docY, 'harold').classList.contains('stale'));
+  ok(noSigns(), 'a rename in flight: nothing');
+  await until(() => drained(domY));
   row(docY, 'harold').querySelector('.x').click();
-  ok(!docY.getElementById('status').classList.contains('stale')
-     && !docY.querySelector('#tiles .tile.stale'),
-     'a remove flies signless: its row is already gone, and nothing'
-     + ' grays');
+  ok(noSigns(), 'a remove in flight: nothing');
   await until(() => names(gas.handle(
     { action: 'state', aname: 'descbusy' })) === 'gia');
   row(docY, 'gia').querySelector('.tu').click();  // release the seat
-  ok(row(docY, 'gia').classList.contains('stale')
-     && !docY.getElementById('status').classList.contains('stale'),
-     'a release marks its row busy, never the ledger');
-  await until(() => !row(docY, 'gia').classList.contains('stale'));
+  ok(noSigns(), 'a release in flight: nothing');
+  await until(() => drained(domY));
   row(docY, 'gia').querySelector('.tu').click();  // claim it back
-  ok(row(docY, 'gia').classList.contains('stale')
-     && !docY.getElementById('status').classList.contains('stale'),
-     'a claim marks its row busy, never the ledger — clicking into'
-     + ' an empty bid cell no longer hammers the whole table');
+  ok(noSigns(), 'a claim in flight: nothing — clicking into an empty'
+     + ' bid cell hammers no gavel at all');
   mockDelay = 0;
-  await until(() => !row(docY, 'gia').classList.contains('stale'));
+  await until(() => drained(domY));
+  mockDelay = 250;
   docY.getElementById('descedit').value = 'brunch rules';
   docY.getElementById('descedit').dispatchEvent(
     new domY.window.Event('input', { bubbles: true }));
   docY.getElementById('descgo').click();
-  ok(docY.getElementById('desc').classList.contains('stale')
-     && docY.querySelector('#desc .gavel.mini')
-     && !docY.getElementById('status').classList.contains('stale'),
-     'a blurb save marks the desc card busy — its own mini gavel —'
-     + ' and the ledger neither grays nor gavels');
-  await until(() => !docY.getElementById('desc').classList
-    .contains('stale'));
-  ok(!docY.getElementById('desc').classList.contains('stale'),
-     "the settle stills the desc card's gavel");
+  ok(noSigns(),
+     'a blurb save in flight: nothing busy either — the instant'
+     + ' rendered paint is the whole show');
+  mockDelay = 0;
+  await until(() => drained(domY));
 
   /* --- 3i. keyed node reuse: rows keep their DOM nodes across CHANGE-ful
      renders too, so a mid-gesture click or focused editor can never be
