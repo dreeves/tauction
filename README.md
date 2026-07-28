@@ -22,10 +22,10 @@ Next for the golems:
 
 2. maybe relatedly, i don't think i like these save/submit buttons beeing inside the field.
 
-3. why do i get a gavelspinner just by clicking in an empty bid field? in general it seems like the gavelspinners far more often than it needs to. can you do a thorough audit?
+3. and maybe there should be a button to abandon your changes so you don't have to reload the page if you get the edit-war banner? i'm not sure if that's worth it though.
 
-4. shouldn't the submit button gray out upon successful submission and reeanble only when the field changes? non-rhetorical question: is that the usual convention?
+4. why do i get a gavelspinner just by clicking in an empty bid field? in general it seems like the gavelspinners far more often than it needs to. can you do a thorough audit?
 
-5. something's broken on firefox. it takes like minutes to load the page and then when it finally does it says "Oops, someone else is making simultaneous edits to the description" despite me not touching the description field in the firefox session.
+5. shouldn't the submit button gray out upon successful submission and reeanble only when the field changes? non-rhetorical question: is that the usual convention?
 
-7. i'm thinking i should have you rewrite this whole thing from scratch. it really seems like a disaster at this point. look at the sheer length of sourcery.html for such a simple app. either i, the human, or you, the ai, are really bad at this. or both, i suppose.
+6. i'm thinking i should have you rewrite this whole thing from scratch. it really seems like a disaster at this point. look at the sheer length of sourcery.html for such a simple app. either i, the human, or you, the ai, are really bad at this. or both, i suppose.

@@ -1859,6 +1859,14 @@ function wireUp() {
   $('descgo').textContent = saveCopy;
   $('descgo').addEventListener('click', commitDesc);
   $('roster-go').textContent = saveCopy;
+  // The blurb's compare-and-swap base is BORN '', matching the
+  // server's tblurb for a never-described auction: a page that has
+  // adopted no snapshot and a blurb nobody ever described are the
+  // same virgin state, and the two spellings must agree — an unset
+  // base read as foreign against '' and cried simultaneous-edits at
+  // whoever typed before the first snapshot landed (dreev's
+  // fresh-URL report, 2026-07-27).
+  $('descedit').dataset.base = '';
   // Disclosed if: leaving a CLEAN, nonempty editor flips back to
   // rendered — a pure mode flip, no write, undone by the ✎ (without
   // it a look-but-don't-touch visit would strand the card in source

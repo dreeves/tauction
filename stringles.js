@@ -113,7 +113,7 @@ const blurbTooLongBanner = 'Description too long (max 2000 characters)';
 // thrown by the server's compare-and-swap; must match it exactly so
 // the back-to-back banners read as one)
 const simulEditsBanner = 
-  'Oops, someone else is making simultaneous edits to the description';
+  'Edit war! Copy your changes elsewhere for safekeeping and reload the page';
 
 // Plumbing failures we expect to never see
 const e2152 = (msg) => 'ERROR2152: ' + msg;  // poll fetch failed

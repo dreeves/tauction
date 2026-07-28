@@ -588,6 +588,93 @@ const cssBattles = [];
      && !newerDoc.getElementById('descedit').classList.contains('error'),
      'saving the informed C draft again succeeds');
 
+  /* Replicata: a fresh URL is opened and the visitor types in the
+     blurb box before the first snapshot lands (dreev, 2026-07-27, on
+     Chrome at a brand-new /test2103). Expectata: no one else exists,
+     so no banner — the arrival slides under the draft silently.
+     Resultata pre-fix: "Oops, someone else is making simultaneous
+     edits to the description" — the virgin editor's missing base
+     stamp read as foreign against the never-described blurb's ''. */
+  mockDelay = 300;
+  const dVirgin = await makePage('/virgindesc?api=' + API_URL);
+  const virginDoc = dVirgin.window.document;
+  const virginEdit = virginDoc.getElementById('descedit');
+  ok(virginDoc.getElementById('status').classList.contains('stale'),
+     'the first snapshot is still in flight when typing begins');
+  virginEdit.focus();
+  type(dVirgin, 'descedit', 'my words');
+  mockDelay = 0;
+  await until(() => !virginDoc.getElementById('status').classList
+    .contains('stale'));
+  ok(!virginDoc.getElementById('status').classList.contains('stale'),
+     'the first snapshot has arrived under the draft');
+  ok(virginDoc.getElementById('banner').hidden
+     && virginEdit.value === 'my words'
+     && !virginEdit.classList.contains('error'),
+     'typing in the blurb before the first snapshot is not a'
+     + ' simultaneous edit: no banner, the draft undisturbed');
+  virginDoc.getElementById('descgo').click();
+  await until(() => gas.handle({ action: 'state', aname: 'virgindesc' })
+    .blurb === 'my words');
+  ok(gas.handle({ action: 'state', aname: 'virgindesc' })
+       .blurb === 'my words'
+     && virginDoc.getElementById('banner').hidden,
+     'and the pre-arrival draft saves cleanly');
+
+  /* Replicata: same eager typing, but the visitor SAVEs too before
+     the first snapshot lands. Expectata: the save carries the virgin
+     base, passes the server's compare-and-swap, and settles without
+     drama. (Fences the fix's other face: the base a commit puts on
+     the wire must be the same virgin '' the render compares.) */
+  mockDelay = 300;
+  const dEager = await makePage('/eagerdesc?api=' + API_URL);
+  const eagerDoc = dEager.window.document;
+  eagerDoc.getElementById('descedit').focus();
+  type(dEager, 'descedit', 'first words');
+  eagerDoc.getElementById('descgo').click();
+  mockDelay = 0;
+  await until(() => gas.handle({ action: 'state', aname: 'eagerdesc' })
+    .blurb === 'first words');
+  await until(() => !eagerDoc.getElementById('status').classList
+    .contains('stale'));
+  ok(gas.handle({ action: 'state', aname: 'eagerdesc' })
+       .blurb === 'first words'
+     && eagerDoc.getElementById('banner').hidden
+     && !eagerDoc.getElementById('descedit').classList.contains('error'),
+     'typing AND saving before the first snapshot lands cleanly');
+
+  /* Replicata: the eager typist again, but at a URL where someone
+     already left a description this browser has never seen (no cached
+     snapshot). Expectata: the warn-and-rebase machinery DOES speak —
+     a real description just landed under a real draft — the draft
+     survives, and saving again, now informed, wins. (Fences the fix
+     from overreaching: only the virgin case went quiet.) */
+  gas.handle({ action: 'describe', aname: 'preexdesc', base: '',
+    blurb: 'House rules.' });
+  mockDelay = 300;
+  const dPreex = await makePage('/preexdesc?api=' + API_URL);
+  const preexDoc = dPreex.window.document;
+  const preexEdit = preexDoc.getElementById('descedit');
+  preexEdit.focus();
+  type(dPreex, 'descedit', 'my addendum');
+  mockDelay = 0;
+  await until(() => !preexDoc.getElementById('status').classList
+    .contains('stale'));
+  ok(!preexDoc.getElementById('banner').hidden
+     && preexEdit.value === 'my addendum'
+     && preexEdit.defaultValue === 'House rules.'
+     && preexEdit.dataset.base === gas.handle(
+          { action: 'state', aname: 'preexdesc' }).tblurb,
+     'an unseen pre-existing description landing under a pre-arrival'
+     + ' draft still warns and rebases, keeping the draft');
+  preexDoc.getElementById('desctoggle').click();
+  preexDoc.getElementById('descgo').click();
+  await until(() => gas.handle({ action: 'state', aname: 'preexdesc' })
+    .blurb === 'my addendum');
+  ok(gas.handle({ action: 'state', aname: 'preexdesc' })
+       .blurb === 'my addendum',
+     'and the informed save wins');
+
   /* Replicata: a description write reserved an auction without adding
      a participant or bid, and a bare page types that name. Expectata:
      the occupied-name gate offers its URL. Resultata pre-fix: the gate

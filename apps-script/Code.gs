@@ -73,7 +73,7 @@ const blurbTooLongCopy = 'Description too long (max 2000 characters)';
 // the client shows the same words for locally- and remotely-detected
 // simultaneous edits, so back-to-back banners read as one message
 const simulEditsCopy =
-  'Oops, someone else is making simultaneous edits to the description';
+  'Edit war! Copy your changes elsewhere for safekeeping and reload the page';
 const rosterClosedCopy = 'Auction complete — no new participants';
 const nameTakenCopy = 'That name is taken';
 // the frozen-record refusal (dreev's copy): renames, claims, and
