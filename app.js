@@ -1518,17 +1518,39 @@ function openShare() {
   const url = shareUrl();
   $('share-url').textContent = url;
   drawQr(url, $('qr'));
-  $('copy').classList.remove('copied');
+  copyIdle();  // a mid-beat close must not reopen onto Copied!
   $('share-dlg').showModal();
 }
 
+// The Copied! beat (the design-system convention — Primer, Shoelace,
+// Helios; golem item 6, dreev 2026-07-27): on success the button
+// ITSELF is the confirmation — green, label swapped to Copied!,
+// natively disabled (a status is not a clickable button) — and it
+// reverts on its own beat. The role=status region echoes the words
+// for screen readers, and clears with them. Banners still stick;
+// this is a button's own label, not news to read.
+const COPIED_MS = 2000;  // GitHub's beat
+let copiedTimer = 0;
+function copyIdle() {  // the resting Copy button (revert + reopen)
+  $('copy').classList.remove('copied');
+  $('copy').disabled = false;
+  $('copy-status').textContent = '';
+}
 async function copyUrl() {
   try {
     await navigator.clipboard.writeText(shareUrl());
-    $('copy').classList.add('copied');
   } catch (e) {
     banner(copyFailBanner(e.message));
+    return;
   }
+  const b = $('copy');
+  b.classList.add('copied');
+  b.disabled = true;
+  $('copy-status').textContent =
+    b.querySelector('.copy-done').textContent;
+  // a ghost beat from before a reopen must not cut a fresh one short
+  clearTimeout(copiedTimer);
+  copiedTimer = setTimeout(copyIdle, COPIED_MS);
 }
 
 

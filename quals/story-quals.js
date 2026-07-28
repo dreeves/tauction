@@ -772,7 +772,18 @@ async function bid(page, bidText) {
        'the QR code scans back to the auction URL: '
          + (decoded ? decoded.data : 'UNDECODABLE'));
 
+    /* The Copied! beat, per the design-system consensus (GitHub
+       Primer, Shoelace, HashiCorp Helios — golem item 6, dreev
+       2026-07-27): on success the button ITSELF is the confirmation —
+       success green, its label swapped to real Copied! text, natively
+       disabled (a status is not a clickable button), same width (no
+       jiggle) — then it reverts on its own beat, clickable again. A
+       persistent role="status" region echoes the confirmation for
+       screen readers (CSS-generated or display-toggled text doesn't
+       announce reliably; every design system documents this part). */
     await alice.bringToFront();  // clipboard writes need a focused document
+    const idleWidth = await alice.$eval('#copy',
+      (b) => b.getBoundingClientRect().width);
     await alice.click('#copy');
     await alice.waitForFunction(() =>
       document.getElementById('copy').classList.contains('copied'));
@@ -780,10 +791,40 @@ async function bid(page, bidText) {
     ok(clip === shareUrl, 'copy button puts the URL on the clipboard: ' + clip);
     ok(await alice.evaluate(() => {
       const b = document.getElementById('copy');
-      return getComputedStyle(b.querySelector('.copy-label')).display === 'none'
-        && getComputedStyle(b, '::after').content.includes('Copied');
+      return getComputedStyle(b.querySelector('.copy-label'))
+          .visibility === 'hidden'
+        && getComputedStyle(b.querySelector('.copy-done'))
+          .visibility === 'visible';
     }), 'the confirmation replaces the button label rather than appending');
+    ok(await alice.$eval('#copy', (b) => b.disabled),
+       'while it says Copied! it is NOT a clickable button');
+    ok(await alice.$eval('#copy',
+        (b) => b.getBoundingClientRect().width) === idleWidth,
+       'the label swap never changes the button\'s size');
+    ok(await alice.$eval('#copy-status', (e) =>
+        e.getAttribute('role') === 'status' && /Copied/.test(e.textContent)),
+       'the role=status region echoes the confirmation to screen readers');
     await shoot(alice, 'share-dialog');
+
+    /* ...and the beat ends on its own: Copied! retires, the button
+       comes back live at the same size, and a second click copies
+       again. (Resultata pre-fix: Copied! stuck until the dialog
+       reopened.) */
+    await alice.waitForFunction(() =>
+      !document.getElementById('copy').classList.contains('copied'),
+      { timeout: 5000 });
+    ok(await alice.$eval('#copy', (b) => !b.disabled
+         && getComputedStyle(b.querySelector('.copy-label'))
+           .visibility === 'visible'),
+       'the Copied! moment passes on its own: the button is back');
+    ok(await alice.$eval('#copy-status', (e) => e.textContent === ''),
+       'the screen-reader echo clears with it');
+    await alice.click('#copy');
+    await alice.waitForFunction(() =>
+      document.getElementById('copy').classList.contains('copied'));
+    ok(await alice.evaluate(() => navigator.clipboard.readText())
+         === shareUrl,
+       'a second click copies again: the button came back live');
 
     await alice.keyboard.press('Escape');
     await alice.waitForFunction(() =>

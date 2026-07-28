@@ -1346,21 +1346,45 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
 }
 
 .copy {
+  display: inline-grid;      /* both labels share one cell, so the */
+  justify-items: center;     /* button always fits the longer one   */
   padding: 0.5rem 1.1rem;
   font-weight: 700;
   color: #fff;
   background: var(--accent);
   border: none;
   border-radius: 3px;
+  transition: background 0.6s;  /* the fade back from Copied green */
 }
 
-.copy:hover { filter: brightness(1.08); }
+.copy > span { grid-area: 1 / 1; }
 
-.copy.copied { background: var(--ok-fg); }
+/* visibility, not display: the hidden label keeps its footprint (no
+   width jiggle) and leaves the accessibility tree */
+.copy .copy-done { visibility: hidden; }
 
-.copy.copied .copy-label { display: none; }  /* the label is replaced... */
+.copy.copied .copy-label { visibility: hidden; }
 
-.copy.copied::after { content: attr(data-copied); }  /* ...by this */
+.copy.copied .copy-done { visibility: visible; }
+
+.copy:hover:not(:disabled) { filter: brightness(1.08); }
+
+/* the Copied! beat: a status, not a clickable button — success green,
+   no hand cursor (the button is disabled; app.js reverts it on a
+   timer). The flip TO green is instant — transition: none wins while
+   .copied is on; dropping the class rides .copy's transition back. */
+.copy.copied { background: var(--ok-fg); cursor: default; transition: none; }
+
+/* visually hidden, read by screen readers (the standard clip recipe;
+   first use: the copy confirmation's role=status echo) */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 
 /* the help text is dreev's prose: give it prose typography, not mono */
 .help-body {

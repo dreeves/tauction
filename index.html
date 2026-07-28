@@ -123,7 +123,7 @@
   <footer>
     <a href="/sourcery.html">sourcery</a>
     <span class="sep">·</span>
-    <span class="version">v2026.07.27-c</span>
+    <span class="version">v2026.07.27-d</span>
   </footer>
 </main>
 
@@ -131,8 +131,17 @@
   <button class="dlg-x" type="button" aria-label="Close">×</button>
   <canvas id="qr" class="qr"></canvas>
   <p id="share-url" class="share-url"></p>
-  <button id="copy" class="copy" type="button" data-copied="Copied!"><span
-    class="copy-label">Copy link</span></button>
+  <!-- the copy button IS its own confirmation (the design-system
+       convention — Primer, Shoelace, Helios): on success the label
+       swaps to Copied! and the button disables for a beat (a status,
+       not a clickable button), then reverts on its own. Both labels
+       are real text overlaid by CSS grid, so the width never
+       jiggles; the empty role=status span is the screen-reader echo
+       (swapped-in text alone doesn't announce reliably). -->
+  <button id="copy" class="copy" type="button"><span
+    class="copy-label">Copy link</span><span
+    class="copy-done">Copied!</span></button>
+  <span id="copy-status" role="status" class="sr-only"></span>
 </dialog>
 
 <dialog id="help-dlg" class="dlg">
