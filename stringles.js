@@ -82,9 +82,7 @@ const submitCopy = 'SUBMIT';
 
 const creaCopy = 'Go';
 
-// TODO: the tip on a grayed SAVE/SUBMIT after the reveal — too late,
-// the auction closed; this draft was never sent
-const tooLateGoTip = 'Sero — auctio conclusa est';
+const tooLateGoTip = 'Auction closed — too late to submit your revised bid';
 
 // The blurb's unknown-device fallback (when user-agent comes up empty)
 const mysteryDevice = 'mystery device';

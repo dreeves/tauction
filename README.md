@@ -28,8 +28,8 @@ Next for the golems:
 
 5. shouldn't the submit button gray out upon successful submission and reeanble only when the field changes? non-rhetorical question: is that the usual convention? if so, how am i having to spell shit like this out?
 
-6. another question about standard conventions: in the share popup i click "Copy" and expect it to say "Copied" but fade back to the "Copy" button so i can click it again if i need to.
+6. something's broken on firefox. it takes like minutes to load the page and then when it finally does it says "Oops, someone else is making simultaneous edits to the description" despite me not touching the description field in the firefox session.
 
-7. something's broken on firefox. it takes like minutes to load the page and then when it finally does it says "Oops, someone else is making simultaneous edits to the description" despite me not touching the description field in the firefox session.
+7. i'm thinking i should have you rewrite this whole thing from scratch. it really seems like a disaster at this point. look at the sheer length of sourcery.html for such a simple app. either i, the human, or you, the ai, are really bad at this. or both, i suppose.
 
-8. i'm thinking i should have you rewrite this whole thing from scratch. it really seems like a disaster at this point. look at the sheer length of sourcery.html for such a simple app. either i, the human, or you, the ai, are really bad at this. or both, i suppose.
+8. the stringle tooLateGoTip should never happen, should it? 
