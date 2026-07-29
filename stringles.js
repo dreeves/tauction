@@ -77,7 +77,7 @@ const consensusStamp = 'CONSENSUS';
 // and the + row, SUBMIT rides the bid editor. They appear only while
 // a field is HOT (holding an uncommitted draft). Renames have no
 // button since 2026-07-28: unames commit on blur.
-const saveCopy = 'SAVE';
+const saveCopy = 'ADD PARTICIPANT';
 const submitCopy = 'SUBMIT';
 
 // The name field's commit button narrates its deed, live (dreev's

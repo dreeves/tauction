@@ -475,10 +475,49 @@ const cssBattles = [];
   ok(myEditor(dPad.window.document).value === 'same bid'
      && !myEditor(dPad.window.document).closest('.rebid')
           .classList.contains('hot')
-     && !('bid:pid-padbid-ann' in JSON.parse(dPad.window.localStorage
+     && !('bid' in JSON.parse(dPad.window.localStorage
           .getItem('tauction-drafts:padbid') || '{}')),
      'a padded bid settles clean: the editor normalizes to the words'
      + ' actually sent, SUBMIT retires, the draft store empties');
+
+  /* Replicata (dreev 2026-07-28, README #2: "an unsubmitted bid
+     gets completely lost if you claim another participant as you"):
+     claim alice, type an unsubmitted bid, then claim bob — the usual
+     reason being "typed into the wrong row". Expectata: the words
+     FOLLOW YOU — the draft is the browser's, not the seat's — into
+     bob's editor; Escape discards them there; and a SUBMIT carried
+     this way commits as BOB. Resultata pre-fix: the draft sat parked
+     invisibly under alice's pid. */
+  gas.handle({ action: 'add', aname: 'follow',
+    uname: 'alice', pid: 'pid-follow-alice' });
+  gas.handle({ action: 'add', aname: 'follow',
+    uname: 'bob', pid: 'pid-follow-bob' });
+  const dFollow = await makePage('/follow?api=' + API_URL);
+  claimRow(dFollow, 'alice');
+  await until(() => myEditor(dFollow.window.document) !== null
+    && drained());
+  const followEd1 = myEditor(dFollow.window.document);
+  followEd1.value = 'wrong row words';
+  followEd1.dispatchEvent(new dFollow.window.Event('input',
+    { bubbles: true }));
+  claimRow(dFollow, 'bob');
+  await until(() => row(dFollow.window.document, 'bob')
+    .classList.contains('mine') && drained());
+  ok(myEditor(dFollow.window.document).value === 'wrong row words'
+     && JSON.parse(dFollow.window.localStorage
+          .getItem('tauction-drafts:follow')).bid === 'wrong row words',
+     "the unsubmitted words follow you to bob's editor: the draft is"
+     + ' yours, not the seat\'s');
+  submitBid(dFollow);
+  await settled(dFollow);
+  ok(gas.handle({ action: 'state', aname: 'follow' }).bidders
+       .some((b) => b.pid === 'pid-follow-bob')
+     && !gas.handle({ action: 'state', aname: 'follow' }).bidders
+       .some((b) => b.pid === 'pid-follow-alice')
+     && !('bid' in JSON.parse(dFollow.window.localStorage
+          .getItem('tauction-drafts:follow') || '{}')),
+     'SUBMIT commits the carried words as BOB, alice untouched, the'
+     + ' draft slot pruned');
 
   /* Replicata (Sol's audit #4): type a bid draft, release your
      seat (editor gone), then claim it back. Expectata: the reborn
@@ -504,7 +543,7 @@ const cssBattles = [];
   await sleep(80);
   ok(myEditor(lateDoc).value === 'half a thought'
      && JSON.parse(dLate.window.localStorage
-          .getItem('tauction-drafts:latedraft'))['bid:pid-latedraft-ann']
+          .getItem('tauction-drafts:latedraft'))['bid']
           === 'half a thought',
      'the reborn editor holds the waiting draft, and the store still'
      + ' holds it too: a draft outlives the editor, not vice versa');
@@ -2807,7 +2846,7 @@ const cssBattles = [];
   type(dk1, 'roster-input', 'mel');
   const dk1drafts = JSON.parse(
     dk1.window.localStorage.getItem('tauction-drafts:draftkeep'));
-  ok(dk1drafts['bid:' + kimPid] === 'half a tho'
+  ok(dk1drafts.bid === 'half a tho'
      && !('blurb' in dk1drafts)
      && !('rename:pid-dk-lou' in dk1drafts)
      && dk1drafts.addrow === 'mel',
@@ -2842,9 +2881,9 @@ const cssBattles = [];
      + ' database, no ghosts and no alarm');
   submitBid(dk2);
   await settled(dk2);
-  await until(() => !(('bid:' + kimPid) in JSON.parse(
+  await until(() => !('bid' in JSON.parse(
     dk2.window.localStorage.getItem('tauction-drafts:draftkeep'))));
-  ok(!(('bid:' + kimPid) in JSON.parse(
+  ok(!('bid' in JSON.parse(
       dk2.window.localStorage.getItem('tauction-drafts:draftkeep'))),
      'a committed bid leaves the draft store: only unsubmitted words'
      + ' persist');

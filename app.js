@@ -521,9 +521,14 @@ function draftSlot(f) {
   if (f.id === 'descedit') return null;
   if (f.matches('.rename input')) return null;
   if (f.id === 'roster-input') return 'addrow';
-  const t = f.closest('.tile');  // a row field: keyed by its pid
-  if (t === null) return null;   // #aname: chosen once, no drafts
-  return (f.closest('.rebid') ? 'bid:' : 'rename:') + t.dataset.pid;
+  // the ONE bid slot per auction (dreev 2026-07-28, README #2): the
+  // unsent bid is the BROWSER's, not the seat's — it follows you when
+  // you claim another participant instead of parking invisibly under
+  // the pid you left. One browser holds one seat, so one slot.
+  // (Legacy 'bid:<pid>' and 'rename:<pid>' slots in old stores are
+  // inert, the retired-slot-shape precedent.)
+  if (f.closest('.rebid')) return 'bid';
+  return null;  // #aname (chosen once) and anything else: no drafts
 }
 
 function saveDraft(f, dirty) {
@@ -553,15 +558,13 @@ function saveDraft(f, dirty) {
 function restoreDrafts() {
   const all = JSON.parse(
     localStorage.getItem('tauction-drafts:' + aname) || '{}');
-  Object.entries(all).forEach(([slot, draft]) => {
-    const [kind, pid] = slot.split(':');
-    const t = rowNodes[pid];
-    const f = slot === 'addrow' ? $('roster-input')
-      : t === undefined ? null
-      : kind === 'bid' ? t.querySelector('.rebid textarea')
-      : null;  // legacy rename slots: inert (renames blur-commit now)
-    if (f && f.value === f.defaultValue) f.value = draft;
-  });
+  // only the + row restores HERE: the bid draft comes home via
+  // updateRow's clean-sync (at every editor birth, arrival included),
+  // and every other slot shape is legacy and inert
+  const f = $('roster-input');
+  if (all.addrow !== undefined && f.value === f.defaultValue) {
+    f.value = all.addrow;
+  }
   sweepHot();
 }
 
@@ -1221,7 +1224,7 @@ function updateRow(t, seat, b, mine, known, locked) {
       // only restore missed late-born editors, and the clean-sweep
       // then deleted the waiting draft). A committed or Escaped
       // draft was pruned from the store, so nothing stale returns.
-      const draft = jmap('tauction-drafts:' + aname)['bid:' + pid];
+      const draft = jmap('tauction-drafts:' + aname)['bid'];
       if (draft !== undefined && draft !== baseline) {
         editor.value = draft;
       }

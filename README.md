@@ -26,12 +26,12 @@ Previously for the golems:
 
 Next for the golems:
 
-1. Bug: red outline on uname doesn't match the field at all
+1. I don't like how an unsubmitted bid gets completely lost if you claim another participant as you. Planning mode for how to address that.
 
-2. I don't like how an unsubmitted bid gets completely lost if you claim another participant as you. Planning mode for how to address that.
+2. Can you give the help popup a LaTeX style but still super mobile-friendly?
 
-3. Can you give the help popup a LaTeX style but still super mobile-friendly?
+3. How exactly does it work if two people try to submit changes to the blurb at the same time?
 
-4. How exactly does it work if two people try to submit changes to the blurb at the same time?
+4. Can you do deep research on web design with the goal of predicting the first complaint a professional web designer would have about this app?
 
-5. Can you do deep research on web design with the goal of predicting the first complaint a professional web designer would have about this app?
+5. I don't think we ever need a Save button on uname, do we? 
