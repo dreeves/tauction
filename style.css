@@ -1432,16 +1432,50 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
   white-space: nowrap;
 }
 
-/* the help text is dreev's prose: give it prose typography, not mono */
+/* The help reads like a PAPER (dreev 2026-07-29: "LaTeX style but
+   still super mobile-friendly"): book serifs at phone-readable size,
+   centered title, justified-and-hyphenated body (justification
+   without hyphenation makes rivers at phone widths — hyphens: auto
+   rides the html lang attribute), TeX paragraph rhythm (first-line
+   indents, no gaps), and the classic short footnote rule. The prose
+   is dreev's, untouched: typesetting only. */
 .help-body {
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  font-size: 0.92rem;
-  line-height: 1.6;
+  font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria,
+    Georgia, serif;
+  font-size: 1rem;
+  line-height: 1.45;
+  text-align: justify;
+  -webkit-hyphens: auto;  /* iOS Safari still wants the prefix */
+  hyphens: auto;
 }
 
-.help-body h1 { font-size: 1.25rem; margin: 0 0 0.8rem; }
+.help-body h1 {
+  font-size: 1.35rem;
+  text-align: center;
+  margin: 0.2rem 0 1.1rem;
+}
 
-.help-body h2 { font-size: 1rem; margin: 1.4rem 0 0.5rem; }
+.help-body h2 {
+  font-size: 1.05rem;
+  margin: 1.6rem 0 0.5rem;
+  position: relative;
+  padding-top: 0.9rem;
+}
+
+/* \footnoterule, near enough: the short line above the notes */
+.help-body h2::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 33%;
+  border-top: 1px solid var(--fg);
+}
+
+/* TeX paragraphs: indent, never gap */
+.help-body p { margin: 0; text-indent: 1.4em; }
+
+.help-body h1 + p, .help-body h2 + p { text-indent: 0; }
 
 .help-body a { color: var(--accent); }
 

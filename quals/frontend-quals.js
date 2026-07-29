@@ -508,6 +508,19 @@ const cssBattles = [];
           .getItem('tauction-drafts:follow')).bid === 'wrong row words',
      "the unsubmitted words follow you to bob's editor: the draft is"
      + ' yours, not the seat\'s');
+  const followEd2 = myEditor(dFollow.window.document);
+  followEd2.focus();
+  followEd2.dispatchEvent(new dFollow.window.KeyboardEvent('keydown',
+    { key: 'Escape', bubbles: true, cancelable: true }));
+  await sleep(50);
+  ok(followEd2.value === ''
+     && !('bid' in JSON.parse(dFollow.window.localStorage
+          .getItem('tauction-drafts:follow') || '{}')),
+     'Escape at the new seat discards the carried words and prunes'
+     + ' the slot');
+  followEd2.value = 'final words';
+  followEd2.dispatchEvent(new dFollow.window.Event('input',
+    { bubbles: true }));
   submitBid(dFollow);
   await settled(dFollow);
   ok(gas.handle({ action: 'state', aname: 'follow' }).bidders
@@ -516,8 +529,80 @@ const cssBattles = [];
        .some((b) => b.pid === 'pid-follow-alice')
      && !('bid' in JSON.parse(dFollow.window.localStorage
           .getItem('tauction-drafts:follow') || '{}')),
-     'SUBMIT commits the carried words as BOB, alice untouched, the'
-     + ' draft slot pruned');
+     'SUBMIT commits as BOB, alice untouched, the draft slot pruned');
+
+  /* ...the carried draft can land on a seat that already HOLDS a
+     committed bid: it rides above the baseline as an ordinary dirty
+     draft, and Escape reverts to that seat's own committed words */
+  gas.handle({ action: 'add', aname: 'followbid',
+    uname: 'ann', pid: 'pid-followbid-ann' });
+  gas.handle({ action: 'add', aname: 'followbid',
+    uname: 'bea', pid: 'pid-followbid-bea' });
+  gas.handle({ action: 'bid', aname: 'followbid',
+    pid: 'pid-followbid-bea', uname: 'bea', bid: 'beas standing bid',
+    deviceID: 'bea-rig', deviceBlurb: 'bea rig' });
+  gas.handle({ action: 'release', aname: 'followbid',
+    pid: 'pid-followbid-bea', deviceID: 'bea-rig' });  // seat open
+  const dFB = await makePage('/followbid?api=' + API_URL);
+  claimRow(dFB, 'ann');
+  await until(() => myEditor(dFB.window.document) !== null && drained());
+  myEditor(dFB.window.document).value = 'carried words';
+  myEditor(dFB.window.document).dispatchEvent(
+    new dFB.window.Event('input', { bubbles: true }));
+  claimRow(dFB, 'bea');  // deliberate takeover of a bid-bearing seat
+  await until(() => row(dFB.window.document, 'bea')
+    .classList.contains('mine') && drained());
+  const fbEd = myEditor(dFB.window.document);
+  ok(fbEd.value === 'carried words'
+     && fbEd.defaultValue === ''
+     && row(dFB.window.document, 'bea').classList.contains('has-bid'),
+     'the carried draft rides into the taken-over seat — above an'
+     + " EMPTY baseline, because the predecessor's bid stays sealed"
+     + ' even from the new claimant; the row still counts as bid-in');
+  fbEd.focus();
+  fbEd.dispatchEvent(new dFB.window.KeyboardEvent('keydown',
+    { key: 'Escape', bubbles: true, cancelable: true }));
+  await sleep(50);
+  ok(fbEd.value === ''
+     && !('bid' in JSON.parse(dFB.window.localStorage
+          .getItem('tauction-drafts:followbid') || '{}')),
+     "Escape discards the carried words to the sealed seat's empty"
+     + ' baseline (no browser can unseal what it never knew) and'
+     + ' prunes the slot');
+
+  /* ...a LEGACY per-pid slot (the pre-2026-07-28 shape) is inert:
+     never restored, never crashing, per the retired-slot precedent */
+  gas.handle({ action: 'add', aname: 'legacyslot',
+    uname: 'ann', pid: 'pid-legacyslot-ann' });
+  const dLeg = await makePage('/legacyslot?api=' + API_URL, (w) => {
+    w.localStorage.setItem('tauction-pids',
+      '{"legacyslot":"pid-legacyslot-ann"}');
+    w.localStorage.setItem('tauction-drafts:legacyslot',
+      '{"bid:pid-legacyslot-ann":"ghost of the old shape"}');
+  });
+  await sleep(80);
+  ok(myEditor(dLeg.window.document).value === ''
+     && !dLeg.window.document.getElementById('banner').textContent
+          .includes('ghost'),
+     'a legacy per-pid slot stays inert: no restore, no crash');
+
+  /* ...and the draft survives ×ing your own row and re-adding
+     yourself: gone with the editor, home at its rebirth */
+  gas.handle({ action: 'add', aname: 'xdraft',
+    uname: 'ann', pid: 'pid-xdraft-ann' });
+  const dX = await makePage('/xdraft?api=' + API_URL);
+  addName(dX, 'me');  // self-claims (2j)
+  await until(() => myEditor(dX.window.document) !== null && drained());
+  myEditor(dX.window.document).value = 'phoenix words';
+  myEditor(dX.window.document).dispatchEvent(
+    new dX.window.Event('input', { bubbles: true }));
+  row(dX.window.document, 'me').querySelector('.x').click();
+  await until(() => !myEditor(dX.window.document) && drained());
+  addName(dX, 'me');  // re-latch (the remembered-name law)
+  await until(() => myEditor(dX.window.document) !== null && drained());
+  ok(myEditor(dX.window.document).value === 'phoenix words',
+     'the draft survives ×ing your own row: home again at the'
+     + " reborn editor");
 
   /* Replicata (Sol's audit #4): type a bid draft, release your
      seat (editor gone), then claim it back. Expectata: the reborn

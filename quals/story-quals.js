@@ -1501,6 +1501,32 @@ async function bid(page, bidText) {
          document.scrollingElement.scrollWidth <= innerWidth),
        'the grown touch targets still fit a 320px phone sideways');
     await shoot(fat, 'story5b-fatfinger-narrow');
+    /* Replicata (dreev 2026-07-29): "Can you give the help popup a
+       LaTeX style but still super mobile-friendly?" Expectata, at
+       320px coarse: book serifs at >=16px, justified AND hyphenated
+       (justification without hyphenation makes rivers at phone
+       widths), centered title, TeX paragraph indents, and no
+       sideways scroll inside the dialog. */
+    await fat.tap('#help');
+    await fat.waitForSelector('#help-dlg[open]');
+    ok(await fat.evaluate(() => {
+      const body = document.querySelector('.help-body');
+      const cs = getComputedStyle(body);
+      const h1 = getComputedStyle(body.querySelector('h1'));
+      const p2 = getComputedStyle(body.querySelectorAll('p')[1]);
+      return /serif/i.test(cs.fontFamily)
+        && !/system-ui/.test(cs.fontFamily)
+        && parseFloat(cs.fontSize) >= 16
+        && cs.textAlign === 'justify'
+        && (cs.hyphens === 'auto' || cs.webkitHyphens === 'auto')
+        && h1.textAlign === 'center'
+        && parseFloat(p2.textIndent) > 0
+        && body.scrollWidth <= body.clientWidth + 1;
+    }), 'the help reads like a PAPER: serifs at phone size, justified'
+       + ' and hyphenated, centered title, TeX indents, no sideways'
+       + ' scroll at 320px');
+    await fat.evaluate(() =>
+      document.querySelector('#help-dlg .dlg-x').click());
     // the fence: a fine pointer (desktop) keeps today's exact compact
     // geometry — the touch ergonomics are the coarse pointer's alone
     const fine = await makePage(browser, DESKTOP);
