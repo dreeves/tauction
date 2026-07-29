@@ -2032,11 +2032,11 @@ function wireUp() {
   // only if the name TOOK (a gate refusal keeps the field pulseless
   // beside its banner).
   const commitAname = async () => {
-    if ($('aname').value === '') return;
-    // the processing guard covers EVERY commit gesture: the disabled
-    // button can't be clicked, and Enter checks the same truth
-    // (Sol's audit: double-Enter double-probed)
-    if ($('namego').disabled) return;
+    // reachable only through the button (Enter CLICKS it, below): a
+    // disabled button — blank name, or a probe already in flight —
+    // swallows the gesture natively, keyboard and pointer alike, so
+    // no guards here, just the assert that the invariant held
+    assert($('aname').value !== '', 'commitAname on a blank name');
     const want = sanAname($('aname').value);
     // refused before the wire, in the server's words, text kept
     if (overlongName(want)) {
@@ -2061,7 +2061,12 @@ function wireUp() {
   $('aname').addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    commitAname();
+    $('namego').click();  // ONE gesture funnel: the button is the
+                          // commit, and its disabled state gates
+                          // every path to it (a synthetic click has
+                          // e.detail 0, so the pointer-blur hygiene
+                          // rule leaves focus alone, as for any
+                          // keyboard activation)
   });
 
   // Enter or SAVE commit — nothing else (dreev 2026-07-27,
