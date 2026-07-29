@@ -123,7 +123,7 @@ const STR = new Function(STRINGLES
   + ' moneyGlyphs, revealTip, needNameTip, removeTip,'
   + ' tooLateRemoveTip, resubmittedTip, nameStoneTip,'
   + ' waitingGlyph, yourMoveGlyph, readyGlyph, revealedGlyph,'
-  + ' tabTitle, saveCopy, submitCopy, tooLateGoTip, startCopy,'
+  + ' tabTitle, saveCopy, addCopy, submitCopy, tooLateGoTip, startCopy,'
   + ' anameTooLongBanner, unameTooLongBanner, blurbTooLongBanner };')();
 const STAMP = STR.stampCopy;
 
@@ -4091,9 +4091,15 @@ const cssBattles = [];
      && dAdd.window.document.getElementById('roster-input').value
           === 'gala'
      && dAdd.window.document.getElementById('roster-input')
-          .closest('.fieldcol').classList.contains('hot'),
+          .closest('.fieldcol').classList.contains('hot')
+     && dAdd.window.document.getElementById('roster-go').textContent
+          === STR.addCopy
+     && dAdd.window.document.getElementById('descgo').textContent
+          === STR.saveCopy
+     && STR.addCopy !== STR.saveCopy,
      'a tapped-away name is not yet anybody: it waits in the + row,'
-     + ' hot, its SAVE standing');
+     + " hot, its button standing in ITS OWN copy — distinct from the"
+     + " blurb's (the shared-constant leak, 2026-07-29, reds here)");
   dAdd.window.document.getElementById('roster-go').click();
   await settled(dAdd);
   ok(row(dAdd.window.document, 'gala') !== null

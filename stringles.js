@@ -73,11 +73,14 @@ const moneyGlyphs = ['$', '¥', '£', '\u{1fa99}', '⚖️'];
 // Schelling's coordination game (see the help copy), won.
 const consensusStamp = 'CONSENSUS';
 
-// The commit buttons (dreev's copy, 2026-07-27): SAVE rides the blurb
-// and the + row, SUBMIT rides the bid editor. They appear only while
-// a field is HOT (holding an uncommitted draft). Renames have no
-// button since 2026-07-28: unames commit on blur.
-const saveCopy = 'ADD PARTICIPANT';
+// The commit buttons (dreev's copy, 2026-07-27; split 2026-07-29
+// when his ADD PARTICIPANT rename leaked onto the blurb through the
+// shared constant): SAVE rides the blurb, ADD PARTICIPANT rides the
+// + row, SUBMIT rides the bid editor. They appear only while a field
+// is HOT (holding an uncommitted draft). Renames have no button
+// since 2026-07-28: unames commit on blur.
+const saveCopy = 'SAVE';
+const addCopy = 'ADD PARTICIPANT';
 const submitCopy = 'SUBMIT';
 
 // The name field's commit button narrates its deed, live (dreev's

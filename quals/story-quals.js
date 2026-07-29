@@ -1536,9 +1536,21 @@ async function bid(page, bidText) {
         .getBoundingClientRect();
       const bid = getComputedStyle(
         document.querySelector('.tile:not(.mine) .bid-card'));
-      return Math.round(star.width) === 24 && Math.round(star.height) === 32
-        && parseFloat(bid.fontSize) < 16;
-    }), 'fine pointer: the compact desktop geometry is untouched');
+      const name = getComputedStyle(
+        document.querySelector('.tile .tile-name'));
+      const view = getComputedStyle(
+        document.getElementById('descview'));
+      const go = getComputedStyle(
+        document.getElementById('descgo'));
+      return Math.round(star.width) === 24
+        && Math.round(star.height) === 36  // flush with the 1rem cells
+        && parseFloat(bid.fontSize) >= 16
+        && parseFloat(name.fontSize) >= 16
+        && parseFloat(view.fontSize) >= 16
+        && parseFloat(go.fontSize) >= 12;
+    }), 'fine pointer: hit boxes stay desktop-compact, but READING'
+       + " text meets the 16px floor there too (Butterick's floor is"
+       + ' not a phone-only rule), and the button labels cleared 12px');
 
     /* ============ THE LAYOUT AUDITOR (dreev 2026-07-28) ===============
        "Do an elaborate audit for how you're failing to spot that kind
@@ -1587,6 +1599,23 @@ async function bid(page, bidText) {
          + ' visible control keeps its 2px of daylight — '
          + JSON.stringify(bad));
     };
+
+    /* ...the whisper text keeps its whisper by SIZE, not by fading
+       below contrast: the legend and footer wear full muted ink
+       (the old 75%-alpha-of-muted double reduction failed WCAG at
+       11px) */
+    ok(await fine.evaluate(() => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--muted)';
+      document.body.append(probe);
+      const muted = getComputedStyle(probe).color;
+      probe.remove();
+      const legend = getComputedStyle(document.querySelector('.legend'));
+      const foot = getComputedStyle(document.querySelector('footer'));
+      return legend.color === muted && foot.color === muted
+        && parseFloat(legend.fontSize) >= 12.5;
+    }), 'the legend and footer whisper by size, at full muted ink —'
+       + ' never by alpha below contrast');
 
     /* ============= Story 5c: the buttons left the fields ===============
        Replicata: dreev 2026-07-27: "i don't think i like these
@@ -1645,13 +1674,15 @@ async function bid(page, bidText) {
         && go.disabled;
     }), 'the landing page: no premature red, and its one action'
        + ' already visible, grayed until there is a name');
-    ok(await fresh.evaluate(() =>
-      document.getElementById('share').disabled
-      && !document.getElementById('help').disabled
-      && parseFloat(getComputedStyle(
-           document.getElementById('desc')).opacity) < 1
-      && parseFloat(getComputedStyle(
-           document.getElementById('status')).opacity) < 1),
+    ok(await fresh.evaluate(() => {
+      const dim = parseFloat(getComputedStyle(
+        document.getElementById('desc')).opacity);
+      return document.getElementById('share').disabled
+        && !document.getElementById('help').disabled
+        && dim < 1 && dim >= 0.55  // dimmed, never illegible
+        && parseFloat(getComputedStyle(
+             document.getElementById('status')).opacity) === dim;
+    }),
        'an unnamed page is a ONE-action page: description and ledger'
        + ' wait grayed, share is a link to nowhere and disabled, help'
        + ' stays live');

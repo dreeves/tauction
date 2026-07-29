@@ -25,11 +25,10 @@ Previously for the golems:
 
 3. I don't like how an unsubmitted bid gets completely lost if you claim another participant as you.
 
+4. Can you do deep research on web design with the goal of predicting the first complaint a professional web designer would have about this app?
 
 Next for the golems:
 
-2. Can you give the help popup a LaTeX style but still super mobile-friendly?
+1. How exactly does it work if two people try to submit changes to the blurb at the same time?
 
-3. How exactly does it work if two people try to submit changes to the blurb at the same time?
-
-4. Can you do deep research on web design with the goal of predicting the first complaint a professional web designer would have about this app?
+2. Remove all the path dependence / historical documenation from the code comments. If a bug or whatever is fixed, we don't need the history.

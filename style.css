@@ -224,7 +224,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .descedit {
   font: inherit;
-  font-size: 0.85rem;
+  font-size: 1rem;  /* the 16px reading floor, desktop included
+                       (dreev 2026-07-29, the designer verdict) */
   color: inherit;
   background: transparent;
   border: none;
@@ -239,7 +240,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 
 .descview {
-  font-size: 0.85rem;
+  font-size: 1rem;
   padding-right: 2rem;  /* clear of the corner toggle */
   overflow-wrap: break-word;
 }
@@ -341,11 +342,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .go {
   font: inherit;
-  font-size: 0.6rem;
+  font-size: 0.75rem;  /* 12px: labels, not body — but never the old
+                          9.6px microtype (dreev 2026-07-29) */
   font-weight: 700;
   letter-spacing: 0.05em;
   line-height: 1;
-  padding: 0.25rem 0.4rem;
+  padding: 0.3rem 0.5rem;
   border: 1px solid var(--accent);
   border-radius: 3px;
   color: var(--accent);
@@ -420,7 +422,9 @@ body.unnamed .field .gorow { display: flex; }
    until Chrome failed to re-evaluate the long-distance :has() on the
    click-path disable and the page stayed gray after naming. */
 body.unnamed #desc,
-body.unnamed #status { opacity: 0.45; }
+body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
+                          (0.45 pushed placeholder text under any
+                          reasonable contrast) */
 
 .corner .icon:disabled { opacity: 0.4; cursor: default; }
 
@@ -871,9 +875,12 @@ body.unnamed #status { opacity: 0.45; }
    its ★ wears the same gold as a lit one */
 .legend {
   margin-top: 0.9rem;
-  padding-left: 0.65rem;
-  font-size: 0.7rem;
-  color: color-mix(in srgb, var(--muted) 75%, transparent);
+  padding-left: 0.55rem;  /* re-centers the bigger star glyph on
+                             the identity-control axis */
+  font-size: 0.8rem;  /* whisper by SIZE at full muted ink: the old
+                         75%-alpha-of-muted failed contrast (dreev
+                         2026-07-29, the designer verdict) */
+  color: var(--muted);
 }
 
 .legend::first-letter {
@@ -892,7 +899,7 @@ body.unnamed #status { opacity: 0.45; }
   display: grid;
   place-items: center;
   width: 1.5rem;
-  height: 2rem;
+  height: 2.25rem;  /* the star's height: one gutter rhythm */
   font-size: 0.85rem;
   user-select: none;
 }
@@ -928,7 +935,8 @@ body.unnamed #status { opacity: 0.45; }
   border-radius: 3px;
   padding: 0.3rem 0.65rem;
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 1rem;  /* the reading floor; the COLUMN's width keeps
+                       its ch basis on .rename, pinned at 0.85rem */
   color: var(--muted);
 }
 
@@ -945,7 +953,7 @@ body.unnamed #status { opacity: 0.45; }
   gap: 0.4rem;
   flex: 1;
   min-width: 0;
-  font-size: 0.85rem;
+  font-size: 1rem;
   color: var(--muted);
   word-break: break-word;
   animation-delay: inherit;
@@ -1032,7 +1040,8 @@ body.unnamed #status { opacity: 0.45; }
   display: grid;
   place-items: center;
   width: 1.5rem;
-  height: 2rem;
+  height: 2.25rem;  /* the 1rem cells' height (24px line + padding
+                       + border), so star and field stay flush */
   border: none;
   background: none;
   padding: 0;
@@ -1082,7 +1091,8 @@ body.unnamed #status { opacity: 0.45; }
 }
 
 .rename input {
-  width: 12ch;
+  width: 11ch;  /* one ch fewer: 16px glyphs in the 0.85-based
+                   column (long names scroll within) */
   min-width: 0;
   padding: 0;
   border: none;
@@ -1141,7 +1151,7 @@ body.unnamed #status { opacity: 0.45; }
   font: inherit;
   color: inherit;
   background: transparent;
-  font-size: 0.85rem;
+  font-size: 1rem;
   width: 100%;
   min-width: 0;
   text-align: left;
@@ -1257,15 +1267,18 @@ body.unnamed #status { opacity: 0.45; }
    own margin. */
 .tile.addrow { margin-top: 0.4rem; }
 
-/* gap 0 keeps the input hugging the @ */
+/* gap 0 keeps the input hugging the @; the wrap's own font is the
+   ch BASIS of its width — the text inside reads at the floor */
 .addrow .at-wrap { flex: none; font-size: 0.85rem; gap: 0; }
+
+.addrow .at-wrap .at { font-size: 1rem; }
 
 /* the input fills whatever the fixed-width wrap has left (base
    .at-wrap input is flex: 1) — its old 14ch pin made the box wider
    than the person fields above it */
 .addrow .at-wrap input {
   padding: 0 0.3rem 0 0.1rem;  /* hug the @ like the row names do */
-  font-size: 0.85rem;
+  font-size: 1rem;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1285,8 +1298,9 @@ footer {
   gap: 0.5rem;
   margin-top: 1.6rem;
   padding-top: 1rem;
-  font-size: 0.7rem;
-  color: color-mix(in srgb, var(--muted) 75%, transparent);
+  font-size: 0.7rem;  /* the whisper is the SIZE (a pinned law);
+                         the ink is full muted for contrast */
+  color: var(--muted);
 }
 
 footer a {

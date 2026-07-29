@@ -1956,7 +1956,7 @@ function wireUp() {
   // constants)
   $('descgo').textContent = saveCopy;
   $('descgo').addEventListener('click', commitDesc);
-  $('roster-go').textContent = saveCopy;
+  $('roster-go').textContent = addCopy;
   // The blurb's compare-and-swap base is BORN '', matching the
   // server's tblurb for a never-described auction: a page that has
   // adopted no snapshot and a blurb nobody ever described are the
