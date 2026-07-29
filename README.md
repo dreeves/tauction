@@ -31,3 +31,5 @@ Next for the golems:
 2. Can you give the help popup a LaTeX style but still super mobile-friendly?
 
 3. How exactly does it work if two people try to submit changes to the blurb at the same time?
+
+4. Can you do deep research on web design with the goal of predicting the first complaint a professional web designer would have about this app?

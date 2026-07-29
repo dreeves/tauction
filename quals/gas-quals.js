@@ -927,4 +927,47 @@ ok(!call({ action: 'describe', aname: 'limits', base: '',
            blurb: 'x'.repeat(2000) }).error,
    'a 2000-character blurb is legal');
 
+// 18. refusals and no-ops mutate NOTHING, and hand-gutted sheets
+//     refuse rather than corrupt (Sol's audit, 2026-07-29)
+call({ action: 'describe', aname: 'mutless', base: '', blurb: 'v1' });
+call({ action: 'add', aname: 'mutless', uname: 'ann',
+  pid: 'pid-mutless-ann' });
+const mutRow = () =>
+  ss.sheets['auctions'].data.find((r) => r[0] === 'mutless');
+mutRow()[2] = 'TMOD-SENTINEL';  // hand-poke: any bump erases this
+ok(call({ action: 'describe', aname: 'mutless', base: 'stale',
+          blurb: 'v2' }).error === COPY.simulEditsCopy
+   && mutRow()[2] === 'TMOD-SENTINEL' && mutRow()[4] === 'v1',
+   'a refused describe mutates nothing: no tmod bump, blurb intact');
+ok(call({ action: 'release', aname: 'mutless', pid: 'pid-mutless-ann',
+          deviceID: 'rig-noop' }).error === undefined
+   && mutRow()[2] === 'TMOD-SENTINEL',
+   'a no-op release (open seat) mutates nothing');
+call({ action: 'claim', aname: 'mutless', pid: 'pid-mutless-ann',
+  deviceID: 'rig-a', deviceBlurb: 'rig a' });
+mutRow()[2] = 'TMOD-SENTINEL';
+ok(typeof call({ action: 'release', aname: 'mutless',
+     pid: 'pid-mutless-ann', deviceID: 'rig-b' }).error === 'string'
+   && mutRow()[2] === 'TMOD-SENTINEL',
+   'a REFUSED release (not your seat) mutates nothing');
+
+// reveal on a ghost auction: users and bids rows exist, the auctions
+// row hand-deleted — refuse loudly, never write tfin into the HEADER
+call({ action: 'add', aname: 'ghostrow', uname: 'gia',
+  pid: 'pid-ghostrow-gia' });
+call({ action: 'add', aname: 'ghostrow', uname: 'hal',
+  pid: 'pid-ghostrow-hal' });
+call({ action: 'bid', aname: 'ghostrow', pid: 'pid-ghostrow-gia',
+  uname: 'gia', bid: 'a' });
+call({ action: 'bid', aname: 'ghostrow', pid: 'pid-ghostrow-hal',
+  uname: 'hal', bid: 'b' });
+const aData18 = ss.sheets['auctions'].data;
+aData18.splice(aData18.findIndex((r) => r[0] === 'ghostrow'), 1);
+const head18 = JSON.stringify(aData18[0]);
+const ghost18 = call({ action: 'reveal', aname: 'ghostrow' });
+ok(typeof ghost18.error === 'string'
+   && JSON.stringify(aData18[0]) === head18,
+   'reveal on a hand-gutted sheet refuses instead of writing tfin'
+   + ' into the header row');
+
 console.log('gas-quals: all ' + passed + ' assertions passed');

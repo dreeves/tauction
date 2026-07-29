@@ -436,6 +436,171 @@ const cssBattles = [];
   await settled(dLocalReady);
   mockDelay = 0;
 
+  /* Replicata (Sol's audit #7): submit "  same bid  ". The server
+     stores the trimmed words. Expectata: the editor settles CLEAN —
+     normalized to what was actually sent — so no phantom dirtiness,
+     no armed SUBMIT whose press does nothing, no immortal draft.
+     Resultata pre-fix: the padded value stayed visibly dirty
+     forever. */
+  gas.handle({ action: 'add', aname: 'padbid',
+    uname: 'ann', pid: 'pid-padbid-ann' });
+  const dPad = await makePage('/padbid?api=' + API_URL, (w) => {
+    w.localStorage.setItem('tauction-pids', '{"padbid":"pid-padbid-ann"}');
+  });
+  typeBid(dPad, '  same bid  ');
+  myEditor(dPad.window.document).dispatchEvent(
+    new dPad.window.Event('input', { bubbles: true }));
+  submitBid(dPad);
+  await settled(dPad);
+  ok(myEditor(dPad.window.document).value === 'same bid'
+     && !myEditor(dPad.window.document).closest('.rebid')
+          .classList.contains('hot')
+     && !('bid:pid-padbid-ann' in JSON.parse(dPad.window.localStorage
+          .getItem('tauction-drafts:padbid') || '{}')),
+     'a padded bid settles clean: the editor normalizes to the words'
+     + ' actually sent, SUBMIT retires, the draft store empties');
+
+  /* Replicata (Sol's audit #4): type a bid draft, release your
+     seat (editor gone), then claim it back. Expectata: the reborn
+     editor holds the waiting draft. Resultata pre-fix: the restore
+     ran only at the arrival edge, so the late-born editor came up
+     empty — and the clean-sweep then DELETED the stored draft. */
+  gas.handle({ action: 'add', aname: 'latedraft',
+    uname: 'ann', pid: 'pid-latedraft-ann' });
+  gas.handle({ action: 'add', aname: 'latedraft',
+    uname: 'bo', pid: 'pid-latedraft-bo' });
+  const dLate = await makePage('/latedraft?api=' + API_URL, (w) => {
+    w.localStorage.setItem('tauction-pids',
+      '{"latedraft":"pid-latedraft-ann"}');
+  });
+  const lateDoc = dLate.window.document;
+  const lateEd = myEditor(lateDoc);
+  lateEd.value = 'half a thought';
+  lateEd.dispatchEvent(new dLate.window.Event('input', { bubbles: true }));
+  claimRow(dLate, 'ann');   // the star toggle: release the seat
+  await until(() => !myEditor(lateDoc));
+  claimRow(dLate, 'ann');   // ...and claim it back
+  await until(() => myEditor(lateDoc) !== null);
+  await sleep(80);
+  ok(myEditor(lateDoc).value === 'half a thought'
+     && JSON.parse(dLate.window.localStorage
+          .getItem('tauction-drafts:latedraft'))['bid:pid-latedraft-ann']
+          === 'half a thought',
+     'the reborn editor holds the waiting draft, and the store still'
+     + ' holds it too: a draft outlives the editor, not vice versa');
+
+  /* Replicata (Sol's audit #3): the wifi dies exactly as SAVE (or a
+     rename, or an add) flies. Expectata: the banner tells the
+     weather AND the words come back — a failed write must never
+     eat typed work. Resultata pre-fix: the error survived, the
+     words did not (the recovery only ran for server refusals). */
+  gas.handle({ action: 'describe', aname: 'wifieat', base: '',
+    blurb: 'the record' });
+  gas.handle({ action: 'add', aname: 'wifieat',
+    uname: 'ann', pid: 'pid-wifieat-ann' });
+  const dEat = await makePage('/wifieat?api=' + API_URL);
+  const eatDoc = dEat.window.document;
+  eatDoc.getElementById('desctoggle').click();
+  const eatEd = eatDoc.getElementById('descedit');
+  eatEd.value = 'the record, amended';
+  eatEd.dispatchEvent(new dEat.window.Event('input', { bubbles: true }));
+  fetchDown = true;
+  eatDoc.getElementById('descgo').click();
+  await until(() => !eatDoc.getElementById('banner').hidden);
+  await sleep(80);
+  ok(eatEd.value === 'the record, amended'
+     && eatEd.classList.contains('error')
+     && !eatDoc.getElementById('desc').classList.contains('viewing'),
+     'a transport-dead SAVE hands the words back: draft red in the'
+     + ' reopened editor, nothing eaten');
+  const eatName = row(eatDoc, 'ann').querySelector('.rename input');
+  eatName.focus();
+  eatName.value = 'annette';
+  eatName.dispatchEvent(new dEat.window.Event('input', { bubbles: true }));
+  eatName.blur();  // the blur-commit, into the dead wifi
+  await sleep(120);
+  ok(eatName.value === 'annette' && eatName.classList.contains('error'),
+     'a transport-dead rename keeps the typed name in the field, red');
+  type(dEat, 'roster-input', 'mo');
+  submitName(dEat);
+  await sleep(120);
+  ok(eatDoc.getElementById('roster-input').value === 'mo',
+     'a transport-dead add returns the typed name to the + row');
+  fetchDown = false;
+
+  /* Replicata (Sol's audit #2): rename bob to a name the local
+     roster can't see is taken (the stale-roster race), then — while
+     that refusal is still in flight — rename him again to gamma.
+     Expectata: the OLD refusal never repaints the field; gamma wins
+     and the field agrees with the server. Resultata pre-fix: the
+     late refusal restored 'carl' over the committed 'gamma' — DOM
+     said gamma, eyes saw carl. */
+  gas.handle({ action: 'add', aname: 'staleref',
+    uname: 'ann', pid: 'pid-staleref-ann' });
+  gas.handle({ action: 'add', aname: 'staleref',
+    uname: 'bob', pid: 'pid-staleref-bob' });
+  const dRef = await makePage('/staleref?api=' + API_URL);
+  gas.handle({ action: 'add', aname: 'staleref',
+    uname: 'carl', pid: 'pid-staleref-carl' });  // remote; no poll yet
+  mockDelay = 300;
+  renameTo(dRef, 'bob', 'carl');   // local guard blind; server refuses
+  renameTo(dRef, 'carl', 'gamma'); // the newer intent, queued behind
+  await until(() => pidOf(gas.handle({ action: 'state',
+    aname: 'staleref' }), 'gamma') === 'pid-staleref-bob');
+  mockDelay = 0;
+  const refInp = row(dRef.window.document, 'gamma')
+    && row(dRef.window.document, 'gamma').querySelector('.rename input');
+  ok(refInp && refInp.value === 'gamma'
+     && refInp.defaultValue === 'gamma',
+     "a stale refusal never repaints a newer name: the field says"
+     + ' gamma, the server says gamma, nobody says carl');
+
+  /* Replicata (Sol's audit #1, the worst of the eight): focus bob's
+     name, type NOTHING; another browser renames him robert; click
+     away. Expectata: no edit, no commit — the row converges to
+     robert. Resultata pre-fix: the blur posted the STALE text and
+     undid the remote rename. */
+  gas.handle({ action: 'add', aname: 'stalefocus',
+    uname: 'ann', pid: 'pid-stalefocus-ann' });
+  gas.handle({ action: 'add', aname: 'stalefocus',
+    uname: 'bob', pid: 'pid-stalefocus-bob' });
+  const dStale = await makePage('/stalefocus?api=' + API_URL);
+  const staleDoc = dStale.window.document;
+  const staleInp = row(staleDoc, 'bob').querySelector('.rename input');
+  staleInp.focus();  // parked caret, no edit
+  gas.handle({ action: 'rename', aname: 'stalefocus',
+    pid: 'pid-stalefocus-bob', to: 'robert' });
+  await until(() => apiCalls.filter((c) => c.action === 'state'
+    && c.aname === 'stalefocus').length > 1);  // a poll saw robert
+  staleInp.blur();
+  await sleep(150);
+  ok(apiCalls.every((c) => c.action !== 'rename'
+       || c.aname !== 'stalefocus')
+     && names(gas.handle({ action: 'state', aname: 'stalefocus' }))
+          === 'ann,robert',
+     'leaving an untouched name commits NOTHING: a parked caret'
+     + " can't undo somebody else's rename");
+  await until(() => row(staleDoc, 'robert') !== null);
+  ok(row(staleDoc, 'robert') !== null,
+     '...and the row converges to the remote truth');
+  /* Replicata (Sol's audit #6): the gavel falls while a rename draft
+     is mid-edit; the freeze disables the field, which blurs it.
+     Expectata: a disabled field's blur commits nothing — the dying
+     draft just stays, the bid editor's own frozen-draft law. */
+  const staleAnn = row(staleDoc, 'ann').querySelector('.rename input');
+  staleAnn.focus();
+  staleAnn.value = 'annette';
+  staleAnn.dispatchEvent(new dStale.window.Event('input',
+    { bubbles: true }));
+  staleAnn.disabled = true;  // what updateRow does at the reveal
+  staleAnn.blur();           // ...and the blur the disable fires
+  await sleep(150);
+  ok(apiCalls.every((c) => c.action !== 'rename'
+       || c.aname !== 'stalefocus'),
+     "a frozen field's blur posts nothing: the dying draft stays,"
+     + ' unsent, like a bid caught by the gavel');
+  staleAnn.disabled = false;  // (jsdom fixture cleanup)
+
   /* Replicata: erase a persisted participant name and leave its field.
      Expectata (2026-07-28, save-on-blur unames): a name can't be
      nothing — the blur-commit's empty path snaps the committed name
@@ -2709,6 +2874,20 @@ const cssBattles = [];
   mockDelay = 0;
   ok(busyProbes() === 1,
      'the double-click fired ONE probe: the disable is the guard');
+  /* ...and the KEYBOARD path honors the same guard (Sol's audit #8:
+     Enter bypassed the disabled button and double-probed) */
+  const dEnterGo = await makePage('/?api=' + API_URL);
+  type(dEnterGo, 'aname', 'entergo');
+  mockDelay = 300;
+  const enterProbes = () => apiCalls.filter((c) => c.action === 'state'
+    && c.aname === 'entergo').length;
+  commitName(dEnterGo);
+  commitName(dEnterGo);  // the double-Enter
+  await until(() => dEnterGo.window.location.pathname === '/entergo');
+  mockDelay = 0;
+  ok(enterProbes() === 1,
+     'double-Enter likewise fires ONE probe: processing gates the'
+     + ' gesture, not just the button');
   /* ...and the SAME convention's fences on the optimistic buttons,
      where instant retirement plays the disable's role: a double
      press sends ONE write. */
@@ -2832,15 +3011,21 @@ const cssBattles = [];
   ok(!dB.window.document.getElementById('descedit').classList
        .contains('error'),
      'the red clears at the next keystroke, like every field objection');
-  // B, now informed, insists: the recovery poll re-based the draft
-  await until(() =>
-    dB.window.document.getElementById('descedit').dataset.base
-    === gas.handle({ action: 'state', aname: 'descy' }).tblurb);
-  dB.window.document.getElementById('descedit').dispatchEvent(
-    new dB.window.Event('blur'));  // click away again = re-commit
-  await until(() => gas.handle({ action: 'state', aname: 'descy' })
-    .blurb === 'B version');
-  ok(true, 'saving again, informed, wins: one warning per clobber');
+  // [Sol's audit, 2026-07-29: this tail waited on the re-base and
+  // blur-commit behaviors DELETED with the mid-air-collision redo,
+  // timed out twice in silence, and passed on ok(true). Rewritten to
+  // the current law — and every until() below re-asserts.]
+  // B mashes SAVE unrepentant: the collision refuses again, same
+  // words — no save ever silently wins an edit war
+  dB.window.document.getElementById('banner-x').click();
+  dB.window.document.getElementById('descgo').click();
+  await until(() => !dB.window.document.getElementById('banner').hidden);
+  ok(dB.window.document.getElementById('banner-msg').textContent
+       === SCOPY.simulEditsCopy
+     && gas.handle({ action: 'state', aname: 'descy' }).blurb
+          === 'A version',
+     'insisting bounces again, in the same server words: repeat SAVEs'
+     + " never clobber A's win");
 
   /* --- 2k. the alice race: two machines, one seat ------------------------
      Replicata (dreev's report, re-ruled 2026-07-21 after faire's
@@ -4505,6 +4690,22 @@ const cssBattles = [];
      + 'submission branch, got ' + hoverBid(domL, 'oldtimer'));
   ok(rowL.querySelector('.bid-card').style.boxShadow === 'var(--lift)',
      'legacy row: single card, no sheets');
+
+  /* Replicata (Sol's audit #5): the route regex accepted 40 chars
+     while the server refuses past 20, so /twentyoneletterslong21
+     adopted an unusable name — every poll refused, page dead.
+     Expectata: an overlong slug is NOT a name; the page lands as
+     the unnamed one-action page, name field ready. */
+  const dLongSlug = await makePage('/' + 'x'.repeat(21) + '?api='
+    + API_URL);
+  await sleep(80);
+  ok(!dLongSlug.window.document.getElementById('aname').disabled
+     && dLongSlug.window.document.getElementById('aname').value === ''
+     && dLongSlug.window.document.body.classList.contains('unnamed')
+     && apiCalls.every((c) => c.aname !== 'x'.repeat(21)),
+     'an overlong slug is no name at all: the page lands unnamed,'
+     + ' ready to start fresh, and nothing unaskable goes to the'
+     + ' wire');
 
   /* --- 4. switching auctions via the auction field; grayed while loading
      (a fresh page: its first 5s poll can't be mid-flight during the

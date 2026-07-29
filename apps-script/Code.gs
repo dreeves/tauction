@@ -102,6 +102,11 @@ const covenantCopy = (aname, why) =>
   + ' — fix or delete its sheet rows';
 // operator-facing (dreev sees this, users only if very unlucky): the
 // sheet's tabs predate the running code's schema
+// operator-facing, like schemaDriftCopy: a write aimed at a row a
+// hand-edit deleted (the auction's sibling rows survive it)
+const patchGhostCopy = (kind) =>
+  'no "' + kind + '" row to write: the sheet was hand-edited out'
+  + ' from under this auction — fix or delete its sibling rows';
 const schemaDriftCopy = (name, got, want) =>
   'schema drift: the "' + name + '" tab\'s headers are [' + got
   + '] but this code expects [' + want + '] — rename the tab for'
@@ -158,7 +163,11 @@ function handle(req) {
 
 // Platform mutual exclusion (LockService is Apps Script's; a real
 // database would bring its own transactions — this is the storage
-// layer's one out-of-section sibling)
+// layer's one out-of-section sibling). Reads run UNLOCKED, by
+// choice: a state GET between a multi-write op's rows can see a
+// transient half-picture (e.g. one device on two seats for a poll
+// tick) — the next poll heals it, and serializing reads would put
+// every 5s poll through the lock queue.
 function withLock(fn) {
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
@@ -300,6 +309,12 @@ function wrote(kind) { delete rowsMemo[kind]; }
 // ("007" -> 7), and for sealed bids silent is the worst kind. Fields
 // left out land as ''. Returns the new record's index. Costs no
 // extra service calls: the row count comes from the memoized read.
+// insert()'s armor check, askable up front (see placeBid: no
+// partial writes)
+function assertRoom(kind) {
+  if (load(kind).length + 2 > ARMOR_ROWS) throw armorFullCopy(kind);
+}
+
 function insert(kind, rec) {
   const i = load(kind).length;
   if (i + 2 > ARMOR_ROWS) throw armorFullCopy(kind);
@@ -313,6 +328,10 @@ function insert(kind, rec) {
 // columns inside the span are rewritten with their current values
 // (safe under the lock), so a patch never costs more than a cell poke
 function patch(kind, i, changes) {
+  // a hand-gutted sheet hands findIndex a -1, and row -1+2 is the
+  // HEADER (Sol's audit: reveal could write tfin over the schema) —
+  // refuse at the chokepoint, operator-facing like schemaDriftCopy
+  if (i < 0) throw patchGhostCopy(kind);
   const head = TABS[kind];
   const cols = Object.keys(changes).map(f => head.indexOf(f));
   if (cols.some(c => c === -1)) throw 'patch: field not in ' + kind;
@@ -564,14 +583,21 @@ function describe(req) {
   const aname = cleanAname(req.aname);
   const blurb = String(req.blurb == null ? '' : req.blurb);
   if (blurb.length > 2000) throw blurbTooLongCopy;
-  touchAuction(aname);
-  const i = load('auctions').findIndex(r => r.aname === aname);
-  const current = load('auctions')[i].tblurb;
+  // the verdict comes BEFORE any write (Sol's audit: a refused
+  // describe used to bump tmod first) — a missing row reads as the
+  // virgin '' token, so a fresh auction's first describe passes
+  const pre = load('auctions').findIndex(r => r.aname === aname);
+  const current = pre === -1 ? '' : load('auctions')[pre].tblurb;
   if (String(req.base == null ? '' : req.base) !== current) {
     throw simulEditsCopy;
   }
+  touchAuction(aname);
+  const i = load('auctions').findIndex(r => r.aname === aname);
+  // the token is for CAS identity, not chronology: the random tail
+  // keeps two same-millisecond saves from sharing it (Sol's audit)
   patch('auctions', i, { blurb: blurb,
-                         tblurb: new Date().toISOString() });
+                         tblurb: new Date().toISOString() + '/'
+                           + Math.random().toString(36).slice(2, 10) });
   return getState(aname);
 }
 
@@ -673,12 +699,16 @@ function releaseClaim(req) {
   const deviceID = cleanDeviceID(req.deviceID);
   if (!deviceID) throw releaseNeedsDeviceCopy;
   if (getState(aname).revealed) throw auctionClosedCopy;  // frozen too
-  touchAuction(aname);
   const held = deviceOf(aname, pid);
   if (held && held !== deviceID) {
     throw notYourSeatCopy;
   }
-  if (held) setDeviceID(aname, pid, '');
+  // only an ACTUAL release writes: refused and no-op requests mutate
+  // nothing, not even tmod (Sol's audit)
+  if (held) {
+    touchAuction(aname);
+    setDeviceID(aname, pid, '');
+  }
   return getState(aname);
 }
 
@@ -743,6 +773,11 @@ function placeBid(req) {
   if (seatIndex(aname, pid) === -1 && twin && twin.pid !== pid) {
     throw nameTakenCopy;
   }
+  // no partial writes: every row this bid may append is capacity-
+  // checked BEFORE the first one lands (Sol's audit: an armor-full
+  // refusal used to arrive after the seat was already created)
+  assertRoom('bids');
+  if (seatIndex(aname, pid) === -1) assertRoom('users');
   touchAuction(aname);
   ensureSeat(aname, pid, uname);
   if (deviceID) {

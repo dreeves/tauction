@@ -1193,6 +1193,16 @@ function updateRow(t, seat, b, mine, known, locked) {
       const baseline = known[pid] === undefined ? '' : known[pid];
       editor.value = baseline;
       editor.defaultValue = baseline;
+      // ...and a stored draft comes home at any CLEAN sync — the
+      // editor's birth included, whenever that is: arrival, a claim,
+      // a re-claim after release (Sol's audit #4: the arrival-edge-
+      // only restore missed late-born editors, and the clean-sweep
+      // then deleted the waiting draft). A committed or Escaped
+      // draft was pruned from the store, so nothing stale returns.
+      const draft = jmap('tauction-drafts:' + aname)['bid:' + pid];
+      if (draft !== undefined && draft !== baseline) {
+        editor.value = draft;
+      }
     }
   } else if (kind === 'card') {
     // a received bid is a card; each re-submission stacks a sheet
@@ -1341,6 +1351,12 @@ function buildNameField(pid) {
   // the blur, which then finds a clean field and commits nothing —
   // no exemption needed. The SAVE button retired with the friction.
   input.addEventListener('blur', () => {
+    // Only an EDIT commits (value moved off the field's own
+    // baseline): a parked caret leaving must not post its possibly
+    // stale text over a remote rename, and a field the gavel just
+    // froze (disable fires this blur) keeps its dying draft unsent,
+    // like a bid caught by the gavel (Sol's audit #1 and #6).
+    if (input.disabled || input.value === input.defaultValue) return;
     commitRename(pid, input.value, input);
   });
   return form;
@@ -1394,6 +1410,11 @@ function commitRename(pid, raw, field) {
             const node = rowNodes[pid];
             if (node) {
               const f = node.querySelector('.rename input');
+              // an OLD refusal must never repaint a newer name: only
+              // if the field still reflects THIS commit does the
+              // draft come back for fixing (commitDesc's staleness
+              // guard, which rename lacked — Sol's audit #2)
+              if (f.value !== to || f.defaultValue !== to) return;
               f.classList.add('error');
               f.value = to;
               f.defaultValue = from;
@@ -1499,6 +1520,15 @@ async function placeBid(pid, form) {
       localStorage.setItem('tauction-mybids:' + a, JSON.stringify(mine));
       editor.defaultValue = bid;  // the submitted text is the new
                                   // baseline, not a draft to shield
+      // ...and padding around those same words settles too: the
+      // field normalizes to what was actually sent, instead of
+      // sitting phantom-dirty forever beside an armed SUBMIT whose
+      // press does nothing (Sol's audit #7). Real newer words are
+      // untouched — trim-equality is the whole test.
+      if (editor.value.trim() === bid) {
+        editor.value = bid;
+        syncHot(editor);
+      }
     }
     bidsAloft--;
     if (bidsAloft === 0) form.classList.remove('busy');
@@ -1634,9 +1664,12 @@ function settleWrite(res, at, onRefusal) {
     // lock, 2026-07-21: claims take the seat, so no refusal exists
     // to soften — every refusal banners, and banner() chronicles)
     banner(res.error);
-    if (onRefusal) onRefusal();
     res = null;
   }
+  // recovery runs for server refusals AND transport deaths alike
+  // (Sol's audit #3: the words must come back either way — the
+  // transport catch already bannered its own weather)
+  if (res === null && onRefusal) onRefusal();
   // Disclosed if: a SUCCESSFUL settle retires stale bad news — the
   // question the banner answered is over (the durable signal, a red
   // field, stays). One of the three exits of a sticky banner.
@@ -1734,7 +1767,16 @@ function addName() {  // returns the added seat's pid ('' if refused)
     if (hint === null) localStorage.setItem('tauction-uname', uname);
     storeMyPid(pid);
   }
-  queueOp({ action: 'add', aname: aname, uname: uname, pid: pid });
+  queueOp({ action: 'add', aname: aname, uname: uname, pid: pid },
+          () => {
+            // the add didn't land: the typed name returns to the
+            // + row for retrying — unless newer typing owns it (the
+            // staleness guard every recovery wears)
+            if ($('roster-input').value === '') {
+              $('roster-input').value = uname;
+              syncHot($('roster-input'));
+            }
+          });
   return pid;
 }
 
@@ -1967,6 +2009,10 @@ function wireUp() {
   // beside its banner).
   const commitAname = async () => {
     if ($('aname').value === '') return;
+    // the processing guard covers EVERY commit gesture: the disabled
+    // button can't be clicked, and Enter checks the same truth
+    // (Sol's audit: double-Enter double-probed)
+    if ($('namego').disabled) return;
     const want = sanAname($('aname').value);
     // refused before the wire, in the server's words, text kept
     if (overlongName(want)) {
@@ -2040,7 +2086,9 @@ async function init() {
   // footer version) — question zero of any console session
   console.log('tauction ' + document.querySelector('.version').textContent);
 
-  const m = location.pathname.match(/^\/([a-zA-Z0-9]{1,40})\/?$/);
+  // 1,20: the server's own aname limit (Sol's audit: the old 40 let
+  // a 21+ slug adopt a name every server call refuses — a dead page)
+  const m = location.pathname.match(/^\/([a-zA-Z0-9]{1,20})\/?$/);
   if (m) aname = m[1].toLowerCase();
   $('aname').value = aname;
   $('aname').defaultValue = aname;  // the baseline Escape reverts to
