@@ -58,6 +58,9 @@ let stampSwap = null;
 // Simulate transport death (the wifi blink, the wake race): every API
 // fetch rejects the way Chrome does, before any response exists
 let fetchDown = false;
+// Simulate the ambiguous transport case: the server commits a write,
+// but its response dies on the way back to the browser.
+let dropWriteResponse = null;
 
 function mockFetch(url, opts) {
   url = String(url);
@@ -81,10 +84,15 @@ function mockFetch(url, opts) {
   // (a slow response still shows old state), but writes only commit
   // when they land — like the real locked server working its queue.
   const read = WRITES.includes(req.action) ? null : gas.handle(req);
-  return new Promise((resolve) => setTimeout(() => {
+  return new Promise((resolve, reject) => setTimeout(() => {
     if (OPS.includes(req.action)) opsInFlight--;
     if (WRITES.includes(req.action)) writesInFlight--;
     const res = read !== null ? read : gas.handle(req);
+    if (dropWriteResponse === req.action) {
+      dropWriteResponse = null;
+      reject(new TypeError('Response lost after commit'));
+      return;
+    }
     if (stripTini && res.bidders) {
       res.bidders.forEach((b) => { delete b.tini; });
     }
@@ -129,14 +137,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Wait (bounded) for a condition instead of sampling at a fixed delay:
 // a loaded machine stretches the 5s poll past any fixed sleep's slack,
-// which made fixed-sleep asserts flake ~1 run in 5. The caller re-asserts
-// the condition right after, so a timeout still fails loudly there.
+// which made fixed-sleep asserts flake ~1 run in 5. Timeout itself
+// throws, so no forgotten follow-up assertion can pass vacuously.
 async function until(fn, ms = 10000) {
   await sleep(0);  // flush the microtask queue first: a just-queued
                    // op has not hit the fetch bridge yet, and a
                    // synchronous first check would see a drained wire
   const t0 = Date.now();
-  while (!fn() && Date.now() - t0 < ms) await sleep(25);
+  while (!fn()) {
+    if (Date.now() - t0 >= ms) {
+      throw new Error('until timed out after ' + ms + 'ms');
+    }
+    await sleep(25);
+  }
 }
 
 async function makePage(pathAndQuery, seed) {
@@ -359,6 +372,13 @@ const cssBattles = [];
 }
 
 (async () => {
+  let timeoutFailed = false;
+  try { await until(() => false, 10); }
+  catch (e) { timeoutFailed = true; }
+  ok(timeoutFailed,
+     'until fails loudly on timeout instead of letting a stale'
+     + ' scenario pass vacuously');
+
   ok(cssBattles.length === 0,
      'no unregistered same-selector CSS battles (the 0.6-relic'
      + ' class): ' + cssBattles.join('; '));
@@ -488,6 +508,18 @@ const cssBattles = [];
           === 'half a thought',
      'the reborn editor holds the waiting draft, and the store still'
      + ' holds it too: a draft outlives the editor, not vice versa');
+  const lateLong = 'x'.repeat(161);
+  myEditor(lateDoc).value = lateLong;
+  myEditor(lateDoc).dispatchEvent(
+    new dLate.window.Event('input', { bubbles: true }));
+  claimRow(dLate, 'ann');
+  await until(() => !myEditor(lateDoc));
+  claimRow(dLate, 'ann');
+  await until(() => myEditor(lateDoc) !== null);
+  ok(myEditor(lateDoc).value === lateLong
+     && myEditor(lateDoc).classList.contains('error'),
+     'a reborn editor revalidates its restored draft: an overlong'
+     + ' draft returns with its live red objection');
 
   /* Replicata (Sol's audit #3): the wifi dies exactly as SAVE (or a
      rename, or an add) flies. Expectata: the banner tells the
@@ -528,6 +560,67 @@ const cssBattles = [];
      'a transport-dead add returns the typed name to the + row');
   fetchDown = false;
 
+  /* A rejected fetch does not prove the write was rejected: the
+     server may have committed and only its response died. Recovery
+     must compare the next state with the submitted goal, settling it
+     clean when it landed and keeping it dirty only when it did not. */
+  gas.handle({ action: 'describe', aname: 'maybeate', base: '',
+    blurb: 'the record' });
+  gas.handle({ action: 'add', aname: 'maybeate',
+    uname: 'ann', pid: 'pid-maybeate-ann' });
+  const dMaybe = await makePage('/maybeate?api=' + API_URL);
+  const maybeDoc = dMaybe.window.document;
+  maybeDoc.getElementById('desctoggle').click();
+  const maybeDesc = maybeDoc.getElementById('descedit');
+  maybeDesc.value = 'the committed amendment';
+  maybeDesc.dispatchEvent(new dMaybe.window.Event('input',
+    { bubbles: true }));
+  dropWriteResponse = 'describe';
+  maybeDoc.getElementById('descgo').click();
+  await until(() => gas.handle({ action: 'state', aname: 'maybeate' })
+    .blurb === 'the committed amendment');
+  await sleep(100);
+  const maybeState = gas.handle({ action: 'state', aname: 'maybeate' });
+  ok(maybeDesc.value === 'the committed amendment'
+     && maybeDesc.defaultValue === 'the committed amendment'
+     && maybeDesc.dataset.base === maybeState.tblurb
+     && !maybeDesc.classList.contains('error')
+     && !maybeDoc.getElementById('desc').classList.contains('hot'),
+     'a SAVE whose response alone was lost reconciles as committed:'
+     + ' clean words and the accepted CAS token');
+
+  const maybeName = row(maybeDoc, 'ann').querySelector('.rename input');
+  maybeName.focus();
+  maybeName.value = 'annette';
+  maybeName.dispatchEvent(new dMaybe.window.Event('input',
+    { bubbles: true }));
+  dropWriteResponse = 'rename';
+  maybeName.form.requestSubmit();
+  await until(() => pidOf(gas.handle({ action: 'state',
+    aname: 'maybeate' }), 'annette') === 'pid-maybeate-ann');
+  await sleep(100);
+  ok(maybeName.value === 'annette'
+     && maybeName.defaultValue === 'annette'
+     && !maybeName.classList.contains('error')
+     && !maybeName.closest('.rename').classList.contains('hot'),
+     'a rename whose response alone was lost reconciles as committed');
+
+  gas.handle({ action: 'add', aname: 'maybeate',
+    uname: 'bob', pid: 'pid-maybeate-bob-remote' });
+  type(dMaybe, 'roster-input', 'bob');
+  dropWriteResponse = 'add';
+  submitName(dMaybe);
+  await until(() => pidOf(gas.handle({ action: 'state',
+    aname: 'maybeate' }), 'bob') === 'pid-maybeate-bob-remote');
+  await sleep(100);
+  const maybeAdd = maybeDoc.getElementById('roster-input');
+  ok(maybeAdd.value === ''
+     && !maybeAdd.closest('.fieldcol').classList.contains('hot')
+     && !('addrow' in JSON.parse(dMaybe.window.localStorage
+          .getItem('tauction-drafts:maybeate') || '{}')),
+     'an add whose response alone was lost reconciles as committed'
+     + ' instead of returning a false retry draft');
+
   /* Replicata (Sol's audit #2): rename bob to a name the local
      roster can't see is taken (the stale-roster race), then — while
      that refusal is still in flight — rename him again to gamma.
@@ -555,6 +648,37 @@ const cssBattles = [];
      "a stale refusal never repaints a newer name: the field says"
      + ' gamma, the server says gamma, nobody says carl');
 
+  gas.handle({ action: 'add', aname: 'staletype',
+    uname: 'ann', pid: 'pid-staletype-ann' });
+  gas.handle({ action: 'add', aname: 'staletype',
+    uname: 'bob', pid: 'pid-staletype-bob' });
+  const dType = await makePage('/staletype?api=' + API_URL);
+  gas.handle({ action: 'add', aname: 'staletype',
+    uname: 'carl', pid: 'pid-staletype-carl' });
+  const typeInp = row(dType.window.document, 'bob')
+    .querySelector('.rename input');
+  typeInp.focus();
+  typeInp.value = 'carl';
+  typeInp.dispatchEvent(new dType.window.Event('input',
+    { bubbles: true }));
+  mockDelay = 300;
+  typeInp.form.requestSubmit();
+  typeInp.value = 'gamma';
+  typeInp.dispatchEvent(new dType.window.Event('input',
+    { bubbles: true }));
+  await until(() => !dType.window.document
+    .getElementById('banner').hidden);
+  await sleep(350);
+  mockDelay = 0;
+  ok(typeInp.value === 'gamma'
+     && typeInp.defaultValue === 'bob'
+     && typeInp.closest('.rename').classList.contains('hot')
+     && !typeInp.classList.contains('error')
+     && pidOf(gas.handle({ action: 'state', aname: 'staletype' }), 'bob')
+          === 'pid-staletype-bob',
+     'a refused rename preserves newer typing but rebases it on the'
+     + ' accepted server name, so Escape still tells the truth');
+
   /* Replicata (Sol's audit #1, the worst of the eight): focus bob's
      name, type NOTHING; another browser renames him robert; click
      away. Expectata: no edit, no commit — the row converges to
@@ -570,8 +694,10 @@ const cssBattles = [];
   staleInp.focus();  // parked caret, no edit
   gas.handle({ action: 'rename', aname: 'stalefocus',
     pid: 'pid-stalefocus-bob', to: 'robert' });
-  await until(() => apiCalls.filter((c) => c.action === 'state'
-    && c.aname === 'stalefocus').length > 1);  // a poll saw robert
+  await until(() => row(staleDoc, 'robert') !== null);
+  ok(staleInp.value === 'bob' && staleInp.defaultValue === 'bob',
+     'the remote label is adopted while the focused field keeps its'
+     + ' untouched visible words until the user leaves');
   staleInp.blur();
   await sleep(150);
   ok(apiCalls.every((c) => c.action !== 'rename'
@@ -581,8 +707,30 @@ const cssBattles = [];
      'leaving an untouched name commits NOTHING: a parked caret'
      + " can't undo somebody else's rename");
   await until(() => row(staleDoc, 'robert') !== null);
-  ok(row(staleDoc, 'robert') !== null,
-     '...and the row converges to the remote truth');
+  ok(row(staleDoc, 'robert') !== null
+     && staleInp.value === 'robert'
+     && staleInp.defaultValue === 'robert',
+     '...and leaving the field reconciles its visible words and'
+     + ' baseline to the remote truth');
+  const staleEnter = row(staleDoc, 'robert')
+    .querySelector('.rename input');
+  staleEnter.focus();
+  gas.handle({ action: 'rename', aname: 'stalefocus',
+    pid: 'pid-stalefocus-bob', to: 'roberta' });
+  await until(() => row(staleDoc, 'roberta') !== null);
+  const staleRenamePosts = apiCalls.filter((c) => c.action === 'rename'
+    && c.aname === 'stalefocus').length;
+  staleEnter.form.requestSubmit();
+  await sleep(150);
+  ok(apiCalls.filter((c) => c.action === 'rename'
+       && c.aname === 'stalefocus').length === staleRenamePosts
+     && names(gas.handle({ action: 'state', aname: 'stalefocus' }))
+          === 'ann,roberta'
+     && staleEnter.value === 'roberta'
+     && staleEnter.defaultValue === 'roberta',
+     'pressing Enter on an untouched stale name also commits NOTHING:'
+     + " it can't undo somebody else's rename, and it reconciles to"
+     + ' that truth');
   /* Replicata (Sol's audit #6): the gavel falls while a rename draft
      is mid-edit; the freeze disables the field, which blurs it.
      Expectata: a disabled field's blur commits nothing — the dying
@@ -3431,7 +3579,8 @@ const cssBattles = [];
      && instaView.querySelector('strong').textContent === 'bold',
      'the rendered markdown appears the instant SAVE is pressed,'
      + ' not when the database answers');
-  await settled(dI);
+  await until(() => gas.handle({ action: 'state', aname: 'instadesc' })
+    .blurb === '# Big News\n\nmuch **bold**');
   mockDelay = 0;
   ok(gas.handle({ action: 'state', aname: 'instadesc' }).blurb
        === '# Big News\n\nmuch **bold**'
@@ -3602,7 +3751,8 @@ const cssBattles = [];
   // parked tip — the pin is about the RENDER retitling it)
   type(dTip2, 'roster-input', 'zed');
   submitName(dTip2);
-  await settled(dTip2);
+  await until(() => dTip2.window.document.getElementById('tip').textContent
+    === STR.claimedByTip('rival rig'));
   ok(dTip2.window.document.getElementById('tip').textContent
        === STR.claimedByTip('rival rig'),
      "the render retitles the open tip in place: it follows the truth"
@@ -3613,7 +3763,7 @@ const cssBattles = [];
     { bubbles: true }));
   type(dTip2, 'roster-input', 'yaz');
   submitName(dTip2);
-  await settled(dTip2);
+  await until(() => dTip2.window.document.getElementById('tip').hidden);
   ok(dTip2.window.document.getElementById('tip').hidden,
      'a removed host takes its tip with it: no haunting');
   // ...and a host that merely LOSES its data-tip while alive (the
@@ -3763,7 +3913,8 @@ const cssBattles = [];
      "tapping a takeable row's empty bid box claims it and puts the"
      + ' caret in the editor: the intent was never ambiguous');
   claimRow(dHall, 'bee');  // release again (radio) for scene (b)
-  await settled(dHall);
+  await until(() => gas.handle({ action: 'state', aname: 'hallway' })
+    .claims['pid-hallway-bee'] === undefined);
   const dHall2 = await makePage('/hallway?api=' + API_URL);
   await sleep(20);
   dHall2.window.document.getElementById('roster-input').focus();
@@ -4808,9 +4959,8 @@ const cssBattles = [];
      "bidding joined @rando to the roster: not crossed out");
 
   /* --- 6. no 404 dead-ends: 404.html IS the app -------------------------
-     (404.html is a derived artifact; `npm run quals` regenerates it via
-     sync-404 before running, so this only fires when the suites are
-     invoked directly with node)
+     (404.html is a derived artifact; quals inspect rather than rewriting
+     it, so forgetting the explicit sync-404 step fails loudly.)
      Replicata: navigate straight to /tau, or reload there. GitHub Pages
      answers unknown paths with 404.html. Expectata: that IS the app, booted
      at /tau — no bounce, no flash, nothing to dead-end. */

@@ -590,8 +590,15 @@ function renderDesc() {
     view.innerHTML = mdRender(state.blurb);
   }
   edit.disabled = false;  // only the unnamed idle page keeps it off
-  if (edit !== document.activeElement
-      && edit.value === edit.defaultValue) {
+  // A recovery snapshot can prove that an apparently failed SAVE
+  // actually landed: identical words settle and take their accepted
+  // CAS token even while the editor is focused.
+  if (edit.value === state.blurb) {
+    edit.defaultValue = state.blurb;
+    edit.dataset.base = state.tblurb;
+    edit.classList.remove('error');
+  } else if (edit !== document.activeElement
+             && edit.value === edit.defaultValue) {
     edit.value = state.blurb;
     edit.defaultValue = state.blurb;
     edit.dataset.base = state.tblurb;
@@ -849,6 +856,17 @@ function renderStatus() {
   });
   rowNodes = keep;
   seen = nextSeen;
+
+  // A failed add response may conceal a successful write. Its retry
+  // words retire only when the recovered roster proves that label
+  // landed; otherwise they stay hot for retrying.
+  const addInput = $('roster-input');
+  const recoveredAdd = seats.find(
+    (s) => s.uname === addInput.dataset.retryName);
+  if (recoveredAdd !== undefined && addInput.value === recoveredAdd.uname) {
+    addInput.value = '';
+    delete addInput.dataset.retryName;
+  }
 
   // On your first sight of an auction still waiting on your bid, the
   // caret lands in your editor: the blinking cursor IS the type-here
@@ -1126,8 +1144,13 @@ function updateRow(t, seat, b, mine, known, locked) {
   nameInput.disabled = state.revealed;
   // the label under never-clobber: sync unless mid-edit (a rename is
   // a plain optimistic op now — no transactions, nothing to lock)
-  if (nameInput !== document.activeElement
-      && nameInput.value === nameInput.defaultValue) {
+  // Exact server agreement also settles an uncertain write whose
+  // response was lost, without clobbering different newer typing.
+  if (nameInput.value === seat.uname) {
+    nameInput.defaultValue = seat.uname;
+    nameInput.classList.remove('error');
+  } else if (nameInput !== document.activeElement
+             && nameInput.value === nameInput.defaultValue) {
     nameInput.value = seat.uname;
     nameInput.defaultValue = seat.uname;
   }
@@ -1184,7 +1207,6 @@ function updateRow(t, seat, b, mine, known, locked) {
     // pulse rides out on this cleanup), then the overlong objection
     // recomputed: a LIVE ring must survive a change-ful render
     editor.className = stamp === undefined ? 'bid-slot' : 'bid-card';
-    editor.classList.toggle('error', overlong(editor.value));
     editor.style.boxShadow = stamp === undefined ? '' : stackShadow;
     // never clobber what the user is typing: leave a focused or dirty
     // editor alone (a draft = live value differs from defaultValue)
@@ -1204,6 +1226,7 @@ function updateRow(t, seat, b, mine, known, locked) {
         editor.value = draft;
       }
     }
+    editor.classList.toggle('error', overlong(editor.value));
   } else if (kind === 'card') {
     // a received bid is a card; each re-submission stacks a sheet
     // behind it (visual depth caps at 3; the counter stays exact)
@@ -1351,12 +1374,6 @@ function buildNameField(pid) {
   // the blur, which then finds a clean field and commits nothing —
   // no exemption needed. The SAVE button retired with the friction.
   input.addEventListener('blur', () => {
-    // Only an EDIT commits (value moved off the field's own
-    // baseline): a parked caret leaving must not post its possibly
-    // stale text over a remote rename, and a field the gavel just
-    // froze (disable fires this blur) keeps its dying draft unsent,
-    // like a bid caught by the gavel (Sol's audit #1 and #6).
-    if (input.disabled || input.value === input.defaultValue) return;
     commitRename(pid, input.value, input);
   });
   return form;
@@ -1372,6 +1389,7 @@ function buildNameField(pid) {
 // granted, because it is asked about pids.) Renaming onto a live
 // label is refused, locally and server-side, in the same words.
 function commitRename(pid, raw, field) {
+  if (field.disabled) return;
   const to = sanUname(raw);
   // the length objection: refused before the wire, in the server's
   // words, the draft kept for trimming
@@ -1381,9 +1399,14 @@ function commitRename(pid, raw, field) {
     return;
   }
   const seat = seats.find((s) => s.pid === pid);
-  // nothing usable, or nothing changed: the field just snaps back
-  if (seat === undefined || !to || to === seat.uname) {
-    field.value = field.defaultValue;
+  // nothing usable, or nothing changed: the field reconciles to the
+  // newest accepted label (which may have moved under a focused field)
+  if (seat === undefined || !to
+      || field.value === field.defaultValue || to === seat.uname) {
+    const accepted = seat === undefined ? field.defaultValue : seat.uname;
+    field.value = accepted;
+    field.defaultValue = accepted;
+    field.classList.remove('error');
     syncHot(field);
     return;
   }
@@ -1411,13 +1434,12 @@ function commitRename(pid, raw, field) {
             if (node) {
               const f = node.querySelector('.rename input');
               // an OLD refusal must never repaint a newer name: only
-              // if the field still reflects THIS commit does the
-              // draft come back for fixing (commitDesc's staleness
-              // guard, which rename lacked — Sol's audit #2)
-              if (f.value !== to || f.defaultValue !== to) return;
-              f.classList.add('error');
-              f.value = to;
+              // if THIS commit still owns the baseline does the
+              // refusal get to move it. Newer typing stays in place;
+              // a newer commit owns a different baseline altogether.
+              if (f.defaultValue !== to) return;
               f.defaultValue = from;
+              f.classList.toggle('error', f.value === to);
               syncHot(f);
             }
           });
@@ -1747,6 +1769,7 @@ function addName() {  // returns the added seat's pid ('' if refused)
     return '';
   }
   $('roster-input').value = '';
+  delete $('roster-input').dataset.retryName;
   const pid = crypto.randomUUID();
   seats.push({ pid: pid, uname: uname });
   // Disclosed if: a FRESH add is yours when you are nobody here yet
@@ -1774,6 +1797,7 @@ function addName() {  // returns the added seat's pid ('' if refused)
             // staleness guard every recovery wears)
             if ($('roster-input').value === '') {
               $('roster-input').value = uname;
+              $('roster-input').dataset.retryName = uname;
               syncHot($('roster-input'));
             }
           });
@@ -2071,6 +2095,7 @@ function wireUp() {
     commitAdd();
   });
   $('roster-input').addEventListener('input', () => {
+    delete $('roster-input').dataset.retryName;
     const v = $('roster-input').value;
     const s = sanUname(v);
     if (s !== v) $('roster-input').value = s;

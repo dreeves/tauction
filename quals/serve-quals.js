@@ -23,6 +23,12 @@ function ok(cond, label) {
 }
 
 (async () => {
+  const pkg = JSON.parse(
+    fs.readFileSync(path.join(REPO, 'package.json'), 'utf8'));
+  ok(!pkg.scripts.quals.includes('sync-404'),
+     'the qual command audits index/404 parity without rewriting the'
+     + ' artifact it is meant to inspect');
+
   // fail LOUD if a stale server squats the port: the spawn below
   // would die silently on EADDRINUSE and we'd interrogate a zombie
   // (it happened: a crashed run's leftover served pre-fix bytes)

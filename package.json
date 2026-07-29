@@ -2,7 +2,7 @@
   "name": "tauction",
   "private": true,
   "scripts": {
-    "quals": "npm run sync-404 && node quals/gas-quals.js && node quals/frontend-quals.js && node quals/serve-quals.js && node quals/story-quals.js",
+    "quals": "node quals/gas-quals.js && node quals/frontend-quals.js && node quals/serve-quals.js && node quals/story-quals.js",
     "dev": "python3 serve.py",
     "deploy": "node deploy.js",
     "sync-404": "cp index.html 404.html"

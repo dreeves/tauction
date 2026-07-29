@@ -874,10 +874,12 @@ ok(!st.error && pit.data.length === ARMOR,
 st = call({ action: 'bid', aname: 'pit', uname: 'over',
             pid: pid('pit', 'over'), bid: 'spills',
             deviceID: 'd-pit2' });
+const pitAfter = call({ action: 'state', aname: 'pit' });
 ok(ARMOR_COPY !== null && String(st.error) === ARMOR_COPY('bids')
    && pit.data.length === ARMOR
-   && !call({ action: 'state', aname: 'pit' }).bidders
-        .some((b) => b.pid === pid('pit', 'over')),
+   && !pitAfter.bidders.some((b) => b.pid === pid('pit', 'over'))
+   && !pitAfter.seats.some((s) => s.pid === pid('pit', 'over'))
+   && pitAfter.claims[pid('pit', 'over')] === undefined,
    'one row past the armor refuses loudly, and no bid row lands: '
      + st.error);
 ok(typeof ctx.armThePit === 'function',
@@ -969,5 +971,35 @@ ok(typeof ghost18.error === 'string'
    && JSON.stringify(aData18[0]) === head18,
    'reveal on a hand-gutted sheet refuses instead of writing tfin'
    + ' into the header row');
+
+const virgin18 = call({ action: 'state', aname: 'mutlessvirgin' });
+const staleVirgin18 = call({ action: 'describe',
+  aname: 'mutlessvirgin', base: 'stale', blurb: 'never lands' });
+const releasedVirgin18 = call({ action: 'release',
+  aname: 'mutlessvirgin', pid: 'pid-mutlessvirgin-ann',
+  deviceID: 'rig-noop' });
+ok(virgin18.exists === false
+   && staleVirgin18.error === COPY.simulEditsCopy
+   && releasedVirgin18.exists === false
+   && call({ action: 'state', aname: 'mutlessvirgin' }).exists === false,
+   'refused describe and no-op release leave a virgin auction virgin');
+
+require('vm').runInContext(
+  'var NativeDate18 = Date;'
+  + ' Date = class extends NativeDate18 {'
+  + ' constructor() { super("2026-07-28T12:34:56.789Z"); }'
+  + ' static now() { return 1785267296789; }'
+  + ' };', ctx);
+const sameMs18a = call({ action: 'describe', aname: 'samems',
+  base: '', blurb: 'first' });
+const sameMs18b = call({ action: 'describe', aname: 'samems',
+  base: sameMs18a.tblurb, blurb: 'second' });
+const sameMs18stale = call({ action: 'describe', aname: 'samems',
+  base: sameMs18a.tblurb, blurb: 'stale third' });
+require('vm').runInContext('Date = NativeDate18;', ctx);
+ok(sameMs18a.tblurb !== sameMs18b.tblurb
+   && sameMs18stale.error === COPY.simulEditsCopy
+   && call({ action: 'state', aname: 'samems' }).blurb === 'second',
+   'same-millisecond blurb saves still get distinct CAS identities');
 
 console.log('gas-quals: all ' + passed + ' assertions passed');
