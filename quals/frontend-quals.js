@@ -115,7 +115,7 @@ const STR = new Function(STRINGLES
   + ' moneyGlyphs, revealTip, needNameTip, removeTip,'
   + ' tooLateRemoveTip, resubmittedTip, nameStoneTip,'
   + ' waitingGlyph, yourMoveGlyph, readyGlyph, revealedGlyph,'
-  + ' tabTitle, saveCopy, submitCopy, tooLateGoTip, creaCopy,'
+  + ' tabTitle, saveCopy, submitCopy, tooLateGoTip, startCopy,'
   + ' anameTooLongBanner, unameTooLongBanner, blurbTooLongBanner };')();
 const STAMP = STR.stampCopy;
 
@@ -437,9 +437,9 @@ const cssBattles = [];
   mockDelay = 0;
 
   /* Replicata: erase a persisted participant name and leave its field.
-     Expectata (2026-07-27, blur commits nothing): the emptied field
-     just STAYS — an honest dirty draft, hot, SAVE standing, no write —
-     and Escape is the never-mind that restores the committed name. */
+     Expectata (2026-07-28, save-on-blur unames): a name can't be
+     nothing — the blur-commit's empty path snaps the committed name
+     straight back, and nothing goes to the wire. */
   gas.handle({ action: 'add', aname: 'emptyrename',
     uname: 'ann', pid: 'pid-emptyrename-ann' });
   gas.handle({ action: 'add', aname: 'emptyrename',
@@ -453,19 +453,12 @@ const cssBattles = [];
     new dEmptyRename.window.Event('input', { bubbles: true }));
   emptyName.blur();
   await sleep(80);
-  ok(emptyName.value === '' && emptyName.defaultValue === 'bob'
-     && emptyName.closest('.rename').classList.contains('hot')
+  ok(emptyName.value === 'bob' && emptyName.defaultValue === 'bob'
+     && !emptyName.closest('.rename').classList.contains('hot')
      && apiCalls.every((r) => r.action !== 'rename'
           || r.aname !== 'emptyrename'),
-     'leaving an emptied persisted name writes nothing: the empty'
-     + ' draft waits, hot, its SAVE standing');
-  emptyName.focus();
-  emptyName.dispatchEvent(new dEmptyRename.window.KeyboardEvent(
-    'keydown', { key: 'Escape', bubbles: true, cancelable: true }));
-  ok(emptyName.value === 'bob'
-     && !emptyName.closest('.rename').classList.contains('hot'),
-     'Escape is the never-mind: the committed name returns and the'
-     + ' field cools');
+     'leaving an emptied name snaps the committed name back — a name'
+     + " can't be nothing, and nothing went to the wire");
 
   /* Replicata: erase a standing bid and leave the editor. Expectata
      (2026-07-27): the empty draft stays, hot, and nothing is sent —
@@ -1919,17 +1912,19 @@ const cssBattles = [];
   nameInp.dispatchEvent(
     new domT2.window.Event('input', { bubbles: true }));
   nameInp.blur();
-  // [dreev flipped this pin TWICE: 07-17 tap-away-saves, 07-27 blur
-  // commits nothing anywhere — the draft waits with its SAVE instead]
+  // [dreev flipped this pin THRICE: 07-17 tap-away-saves, 07-27 blur
+  // commits nothing anywhere, 07-28 the commit taxonomy — a uname is
+  // a cheap clobber-tolerant label, so blur commits IT alone]
   await sleep(80);
-  ok(row(docT2, 'alicw') !== null && !row(docT2, 'wronger')
-     && nameInp.value === 'wronger'
-     && nameInp.closest('.rename').classList.contains('hot'),
-     'clicking away saves NOTHING: the rename draft waits, hot, its'
-     + ' SAVE standing');
-  nameInp.dispatchEvent(new domT2.window.KeyboardEvent('keydown',
-    { key: 'Escape', bubbles: true }));
-  ok(nameInp.value === 'alicw', 'Escape hands back the committed name');
+  ok(row(docT2, 'wronger') !== null && !row(docT2, 'alicw')
+     && nameInp.defaultValue === 'wronger',
+     'clicking away COMMITS the rename: cheap label edits are'
+     + ' frictionless again');
+  await until(() => names(gas.handle({ action: 'state', aname: 'typo' }))
+    === 'wronger,bob');
+  renameTo(domT2, 'wronger', 'alicw');  // back, for the legs below
+  await until(() => names(gas.handle({ action: 'state', aname: 'typo' }))
+    === 'alicw,bob');
   renameTo(domT2, 'alicw', 'alice');
   ok(row(docT2, 'alice') && !row(docT2, 'alicw')
      && tiles(docT2)[0].dataset.uname === 'alice',
@@ -2394,27 +2389,24 @@ const cssBattles = [];
        .classList.contains('hot'),
      'settled and left: the field cools and its button stands down');
 
-  // ...and the rename field: a tapped-away draft waits, visibly
+  // ...but the RENAME field commits on blur (dreev 2026-07-28, the
+  // commit taxonomy: a uname is a cheap idempotent label edit —
+  // clobber-tolerant, trivially redone — so it gets save-on-blur
+  // frictionlessness; bids, the blurb, and the auction name keep
+  // their deliberate gestures, and the + row keeps its explicit
+  // commit because a stray blur must not MINT a seat)
   const nbRow = row(nb.window.document, 'bea');
   const nbName = nbRow.querySelector('.rename input');
   nbName.focus();
   nbName.value = 'beatrix';
   nbName.dispatchEvent(new nb.window.Event('input', { bubbles: true }));
-  const nbRens = () =>
-    apiCalls.filter((r) => r.action === 'rename').length;
-  const nbRensBefore = nbRens();
   nbName.blur();
-  await sleep(150);
-  ok(nbRens() === nbRensBefore && nbName.value === 'beatrix',
-     'clicking away from a half-renamed name renames nobody; the'
-     + ' draft waits');
-  ok(nbRow.querySelector('.rename').classList.contains('hot'),
-     "the name field is hot, dreev's SAVE standing by");
-  nbName.form.dispatchEvent(
-    new nb.window.Event('submit', { bubbles: true, cancelable: true }));
   ok(nbName.defaultValue === 'beatrix',
-     'the committed label is the baseline the moment it commits — no'
-     + ' flicker window between commit and settle');
+     'clicking away from an edited name COMMITS it: the baseline'
+     + ' follows the label at once');
+  ok(!nbRow.querySelector('.rename .go'),
+     'no SAVE stands on a blur-committing field: the button retired'
+     + ' with the friction');
   await until(() => gas.handle({ action: 'state', aname: 'noblur' })
     .seats.some((s) => s.uname === 'beatrix'));
   ok(gas.handle({ action: 'state', aname: 'noblur' })
@@ -2500,20 +2492,17 @@ const cssBattles = [];
                                           // deliberately DIES with the
                                           // tab (2026-07-28)
   type(dk1, 'roster-input', 'mel');
-  const louName = row(dk1.window.document, 'lou')
-    .querySelector('.rename input');
-  louName.value = 'louise';
-  louName.dispatchEvent(new dk1.window.Event('input', { bubbles: true }));
   const dk1drafts = JSON.parse(
     dk1.window.localStorage.getItem('tauction-drafts:draftkeep'));
   ok(dk1drafts['bid:' + kimPid] === 'half a tho'
      && !('blurb' in dk1drafts)
-     && dk1drafts.addrow === 'mel'
-     && dk1drafts['rename:pid-dk-lou'] === 'louise',
-     'every keystroke of an uncommitted PERSONAL draft is already in'
-     + ' tauction-drafts, keyed by slot — and the shared blurb is'
-     + ' deliberately not among them (2026-07-28: its ghosts read as'
-     + ' mid-air collisions)');
+     && !('rename:pid-dk-lou' in dk1drafts)
+     && dk1drafts.addrow === 'mel',
+     'every keystroke of a surviving draft is already in'
+     + ' tauction-drafts, keyed by slot — and neither the shared'
+     + ' blurb (its ghosts read as mid-air collisions) nor renames'
+     + ' (they blur-commit; nothing uncommitted outlives focus) are'
+     + ' among them (2026-07-28)');
   // the tab closes; the same browser returns to the URL
   const dk1keys = {};
   for (let i = 0; i < dk1.window.localStorage.length; i++) {
@@ -2533,11 +2522,11 @@ const cssBattles = [];
      && dk2.window.document.getElementById('roster-input').value
           === 'mel'
      && row(dk2.window.document, 'lou').querySelector('.rename input')
-          .value === 'louise'
+          .value === 'lou'
      && dk2.window.document.getElementById('banner').hidden,
-     'the returning tab holds every personal draft — hot, buttons'
-     + ' standing — while the blurb editor shows the database, no'
-     + ' ghost and no alarm');
+     'the returning tab holds the surviving drafts — hot, buttons'
+     + ' standing — while the blurb editor and the names show the'
+     + ' database, no ghosts and no alarm');
   submitBid(dk2);
   await settled(dk2);
   await until(() => !(('bid:' + kimPid) in JSON.parse(
@@ -2680,26 +2669,71 @@ const cssBattles = [];
   const creaDoc = dCrea.window.document;
   ok(creaDoc.activeElement === creaDoc.getElementById('aname')
      && creaDoc.getElementById('namego').disabled
-     && creaDoc.getElementById('namego').textContent === STR.creaCopy,
+     && creaDoc.getElementById('namego').textContent === STR.startCopy(''),
      'the landing page parks the caret in the name field (the'
-     + " arrival-caret law) beside its one visible action: Go, in"
-     + " dreev's copy, grayed until there is a name to commit"
-     + ' (2026-07-28, the discoverability ruling)');
+     + " arrival-caret law) beside its one visible action, in dreev's"
+     + ' copy, grayed until there is a name to commit');
+  ok(creaDoc.getElementById('share').disabled
+     && !creaDoc.getElementById('help').disabled,
+     'unnamed: share is a link to nowhere, disabled; help stays live');
   type(dCrea, 'aname', 'poker');
   ok(!creaDoc.getElementById('namego').disabled
-     && creaDoc.querySelector('.field').classList.contains('hot'),
-     'the first typed character arms it');
+     && creaDoc.querySelector('.field').classList.contains('hot')
+     && creaDoc.getElementById('namego').textContent
+          === STR.startCopy('poker'),
+     'the first typed characters arm it — and the label narrates the'
+     + ' deed, live: the typed name rides in the button copy');
   creaDoc.getElementById('namego').click();
   await until(() => dCrea.window.location.pathname === '/poker');
   // disabling a focused field blurs it in real Chrome but not in
   // jsdom (the long-known gap, and jsdom won't blur() a disabled
   // element either) — moving focus on models the browser truth
   creaDoc.getElementById('roster-input').focus();
+  /* Replicata (dreev 2026-07-28: "you click a button, it becomes
+     disabled while it's processing" — the standard double-submit
+     guard): Start is the one button gated on a real round-trip (the
+     name probe). Expectata: disabled the moment it's pressed, until
+     the probe settles; a double-click fires ONE probe. Resultata
+     pre-fix: armed throughout — a double-click double-probed. */
+  const dBusyGo = await makePage('/?api=' + API_URL);
+  const busyDoc = dBusyGo.window.document;
+  type(dBusyGo, 'aname', 'busygo');
+  mockDelay = 300;
+  const busyProbes = () => apiCalls.filter((c) => c.action === 'state'
+    && c.aname === 'busygo').length;
+  busyDoc.getElementById('namego').click();
+  busyDoc.getElementById('namego').click();  // the double-click
+  ok(busyDoc.getElementById('namego').disabled,
+     'Start disables the moment it is pressed: processing');
+  await until(() => dBusyGo.window.location.pathname === '/busygo');
+  mockDelay = 0;
+  ok(busyProbes() === 1,
+     'the double-click fired ONE probe: the disable is the guard');
+  /* ...and the SAME convention's fences on the optimistic buttons,
+     where instant retirement plays the disable's role: a double
+     press sends ONE write. */
+  gas.handle({ action: 'describe', aname: 'dblsave', base: '',
+    blurb: '' });
+  const dDbl = await makePage('/dblsave?api=' + API_URL);
+  const dblDoc = dDbl.window.document;
+  dblDoc.getElementById('descedit').value = 'once';
+  dblDoc.getElementById('descedit').dispatchEvent(
+    new dDbl.window.Event('input', { bubbles: true }));
+  dblDoc.getElementById('descgo').click();
+  dblDoc.getElementById('descgo').click();  // the double-click
+  await until(() => gas.handle({ action: 'state', aname: 'dblsave' })
+    .blurb === 'once');
+  ok(apiCalls.filter((c) => c.action === 'describe'
+       && c.aname === 'dblsave').length === 1,
+     'a double-pressed blurb SAVE sends one write: the field went'
+     + ' clean at the first press and a clean commit is a no-op');
+
   ok(dCrea.window.location.pathname === '/poker'
      && creaDoc.getElementById('aname').disabled
+     && !creaDoc.getElementById('share').disabled
      && !creaDoc.querySelector('.field').classList.contains('hot'),
      'pressing it commits exactly like Enter: the auction exists,'
-     + ' the name is stone, the button stands down');
+     + ' the name is stone, the button stands down, share wakes');
 
   /* --- 2p2. a rename that loses the race reddens the FIELD ------------
      Replicata: the local roster is a poll behind — someone else just
@@ -3258,10 +3292,14 @@ const cssBattles = [];
        .every((f) => {
          const home = f.closest(
            '.rebid, .rename, .fieldcol, .desc, .field');
-         return home !== null && home.querySelector('.go') !== null;
+         if (home === null) return false;
+         // a blur-committing field (renames, 2026-07-28) needs no
+         // button: leaving IS its commit gesture
+         return home.matches('.rename')
+           || home.querySelector('.go') !== null;
        }),
-     'EVERY text field has a commit button riding its wrapper: the'
-     + ' gesture table is closed by construction');
+     'EVERY text field either carries a commit button or commits on'
+     + ' blur: the gesture table stays closed by construction');
 
   /* --- 2t2. dead ends are STICKY and walkable (dreev's PWA report:
      an installed app has no URL bar, so "use the URL" must BE the

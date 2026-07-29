@@ -80,7 +80,12 @@ const consensusStamp = 'CONSENSUS';
 const saveCopy = 'SAVE';
 const submitCopy = 'SUBMIT';
 
-const creaCopy = 'Go';
+// The name field's commit button narrates its deed, live (dreev's
+// copy, 2026-07-28): "Start the foo auction", foo tracking the field
+// per keystroke. The blank-name variant just drops the name — the
+// button is grayed then anyway, a label, not an offer.
+const startCopy = (aname) =>
+  aname === '' ? 'Start the auction' : 'Start the ' + aname + ' auction';
 
 const tooLateGoTip = 'Auction closed — too late to submit your revised bid';
 

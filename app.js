@@ -514,9 +514,12 @@ function draftSlot(f) {
   // field's draft outliving its tab manufactured ghost mid-air
   // collisions — a stale draft restored weeks later met a moved
   // blurb and cried edit-war on a fresh load. A fresh load always
-  // shows the database's blurb; only PERSONAL fields (your bid, a
-  // half-typed name) survive the tab.
+  // shows the database's blurb. RENAMES have none either (2026-07-28
+  // later, with save-on-blur unames: nothing uncommitted survives a
+  // blur, so there is nothing for a tab to keep). What survives the
+  // tab: your bid draft and the + row's half-typed name.
   if (f.id === 'descedit') return null;
+  if (f.matches('.rename input')) return null;
   if (f.id === 'roster-input') return 'addrow';
   const t = f.closest('.tile');  // a row field: keyed by its pid
   if (t === null) return null;   // #aname: chosen once, no drafts
@@ -555,8 +558,8 @@ function restoreDrafts() {
     const t = rowNodes[pid];
     const f = slot === 'addrow' ? $('roster-input')
       : t === undefined ? null
-      : t.querySelector(kind === 'bid' ? '.rebid textarea'
-                                       : '.rename input');
+      : kind === 'bid' ? t.querySelector('.rebid textarea')
+      : null;  // legacy rename slots: inert (renames blur-commit now)
     if (f && f.value === f.defaultValue) f.value = draft;
   });
   sweepHot();
@@ -1121,12 +1124,6 @@ function updateRow(t, seat, b, mine, known, locked) {
   // could swap around who bid what) — grayed, never suppressed
   const nameInput = t.querySelector('.rename input');
   nameInput.disabled = state.revealed;
-  // its SAVE grays with it — and only the grayed button explains
-  // itself (a live SAVE is its own explanation, per dreev's tip diet)
-  const nameGo = t.querySelector('.rename .go');
-  nameGo.disabled = state.revealed;
-  if (state.revealed) nameGo.setAttribute('data-tip', tooLateGoTip);
-  else nameGo.removeAttribute('data-tip');
   // the label under never-clobber: sync unless mid-edit (a rename is
   // a plain optimistic op now — no transactions, nothing to lock)
   if (nameInput !== document.activeElement
@@ -1335,15 +1332,17 @@ function buildNameField(pid) {
   });
   box.append(input);
   form.append(box);
-  // SAVE (dreev's copy), on duty while the field is hot — the phone's
-  // gesture, as Enter is the keyboard's (dreev 2026-07-27, re-reversing
-  // his 07-17 tap-away-saves: blur commits nothing, anywhere) — in the
-  // .gorow below the box, like every commit button
-  const go = el('button', 'go', saveCopy);
-  go.type = 'submit';
-  const row = el('div', 'gorow');
-  row.append(go);
-  form.append(row);
+  // A uname commits on BLUR (dreev 2026-07-28, the commit taxonomy:
+  // a name is a cheap idempotent label edit — clobber-tolerant,
+  // trivially redone — so it alone gets save-on-blur backness; bids,
+  // blurb, and auction name keep deliberate gestures, and the + row
+  // keeps its explicit commit because a stray blur must not MINT a
+  // seat). Escape still means never-mind: its revert lands BEFORE
+  // the blur, which then finds a clean field and commits nothing —
+  // no exemption needed. The SAVE button retired with the friction.
+  input.addEventListener('blur', () => {
+    commitRename(pid, input.value, input);
+  });
   return form;
 }
 
@@ -1760,6 +1759,9 @@ function paintCached() {
 async function switchAuction(a) {
   if (!a || a === aname) return;
   $('status').classList.add('stale');  // busy while we look the name up
+  $('namego').disabled = true;  // processing: the standard double-
+                                // submit guard (dreev 2026-07-28) —
+                                // the probe is a real round-trip
   try {
     const res = await apiGet({ action: 'state', aname: a });
     // the user kept typing: a newer probe owns the field now
@@ -1782,6 +1784,8 @@ async function switchAuction(a) {
     // copy (no new tooltip: dreev's anti-clutter call)
     document.querySelector('label[for="aname"]')
       .setAttribute('data-tip', nameStoneTip);
+    $('share').disabled = false;  // the page is somewhere now
+    document.body.classList.remove('unnamed');  // ...and wakes whole
     $('banner').hidden = true;  // landing somewhere real clears any
                                 // dead-end sign still standing
     state = null;
@@ -1797,6 +1801,9 @@ async function switchAuction(a) {
     // on any non-commit path the old (or unnamed) page is back in
     // charge and isn't busy; after a commit render() already unstaled
     $('status').classList.remove('stale');
+    syncHot($('aname'));  // the button re-derives from field truth:
+                          // a refusal leaves a dirty field (re-armed
+                          // for fixing), a commit a disabled one
   }
 }
 
@@ -1942,6 +1949,7 @@ function wireUp() {
   $('aname').addEventListener('input', () => {
     const v = sanAname($('aname').value);
     if (v !== $('aname').value) $('aname').value = v;
+    $('namego').textContent = startCopy(v);  // the deed, narrated live
     // the live length objection, the bid editor's exact pattern
     $('aname').classList.toggle('error', overlongName(v));
   });
@@ -1969,7 +1977,7 @@ function wireUp() {
     await switchAuction(want);
     if (aname === want) flashCommit($('aname'));
   };
-  $('namego').textContent = creaCopy;
+  $('namego').textContent = startCopy(sanAname($('aname').value));
   $('namego').addEventListener('click', commitAname);
   // the touched-validation mark (research convention: a field may
   // only object AFTER the user has been and gone — never on arrival;
@@ -1978,6 +1986,7 @@ function wireUp() {
   // leave, drives the pure-CSS blank-name objection
   $('aname').addEventListener('focusout', () => {
     $('aname').classList.add('visited');
+    $('namego').textContent = startCopy(sanAname($('aname').value));
   });
   $('aname').addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
@@ -2035,6 +2044,8 @@ async function init() {
   if (m) aname = m[1].toLowerCase();
   $('aname').value = aname;
   $('aname').defaultValue = aname;  // the baseline Escape reverts to
+  // the one-action-page state, explicit (its CSS gray rides this)
+  document.body.classList.toggle('unnamed', aname === '');
 
   if (!configured) {
     banner(e2156);
@@ -2052,6 +2063,7 @@ async function init() {
   if (!aname) {
     $('roster-input').disabled = true;
     $('descedit').disabled = true;  // nothing to describe yet
+    $('share').disabled = true;  // a link to nowhere until named
     $('aname').focus();
   } else {
     setPath(aname);

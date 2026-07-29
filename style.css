@@ -323,16 +323,18 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
                         letter-mangling them */
   justify-content: flex-end;
   gap: 0.4rem;
+  margin-top: 0.3rem;  /* daylight above EVERY visible button row —
+                          this rode .hot only, and the always-visible
+                          landing Go sat flush on its field's border
+                          (dreev 2026-07-28; the layout auditor now
+                          patrols the whole class) */
   /* intrinsic width zero: flex max-content sizing ignores wrapping,
      so without this the person cell widens by a button's width to
      make one-line room for a row that never shares its line */
   contain: inline-size;
 }
 
-.hot .gorow {
-  display: flex;
-  margin-top: 0.3rem;
-}
+.hot .gorow { display: flex; }
 
 /* the flex field wrappers wrap, so the .gorow lands under the words */
 .rebid, .rename, .at-wrap { flex-wrap: wrap; }
@@ -383,7 +385,44 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
             color-mix(in srgb, var(--err-fg) 45%, transparent));
 }
 
-.field:has(#aname:enabled) .gorow { display: flex; }
+body.unnamed .field .gorow { display: flex; }
+
+/* THE primary action (dreev 2026-07-28: "it needs to be clearer
+   that nothing works until you do this"): the start button reads
+   big, filled, and FIRST — left-justified under its field like a
+   form's submit, not tucked in a corner — and flips to the plain
+   grayed outline while there is nothing to commit. */
+.field .gorow { justify-content: flex-start; }
+
+.field .go {
+  font-size: 0.85rem;
+  padding: 0.55rem 1.1rem;
+  color: #fff;
+  background: var(--accent);
+}
+
+.field .go:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+
+.field .go:disabled {
+  color: var(--muted);
+  background: var(--card);
+}
+
+/* ...and while the page is unnamed, everything downstream WAITS,
+   grayed — never hidden (the fields inside are already disabled).
+   Help stays live: reading is always allowed. Share disables in
+   init: a link to an unnamed page is a link to nowhere.
+   body.unnamed is an EXPLICIT class (init and the christening write
+   it beside share.disabled): this hung off body:has(#aname:enabled)
+   until Chrome failed to re-evaluate the long-distance :has() on the
+   click-path disable and the page stayed gray after naming. */
+body.unnamed #desc,
+body.unnamed #status { opacity: 0.45; }
+
+.corner .icon:disabled { opacity: 0.4; cursor: default; }
 
 /* ----------------------------- BIDS box -------------------------------- */
 

@@ -511,7 +511,8 @@ async function bid(page, bidText) {
     // Editing a name highlights the FIELD: the person cell wears the
     // + row's ring recipe — the underline special case is retired
     // (dreev 2026-07-27: "shouldn't the field just highlight
-    // itself?") — and its SAVE wakes only once the field is dirty
+    // itself?"). No SAVE exists here at all: unames blur-commit
+    // (dreev 2026-07-28, the commit taxonomy).
     await alice.click('.tile[data-uname="bob"] .rename input');
     ok(await alice.evaluate(() => {
       const cell = document.querySelector(
@@ -521,33 +522,32 @@ async function bid(page, bidText) {
         && getComputedStyle(cell).outlineStyle === 'solid'
         && getComputedStyle(inp).boxShadow === 'none'
         && !document.querySelector(
-               '.tile[data-uname="bob"] .rename .go')
-             .checkVisibility({ visibilityProperty: true });
+               '.tile[data-uname="bob"] .rename .go');
     }), 'editing a name rings the person cell itself, star lassoed'
-       + ' like the + row rings its @ — no underline — and no SAVE'
-       + ' yet: a clean field has nothing to commit (hot = dirty)');
+       + ' like the + row rings its @ — no underline, and no SAVE:'
+       + ' a name field commits by leaving');
     await alice.keyboard.type('by');
+    await alice.click('.legend');  // wander off mid-edit: THE commit
+    await alice.waitForSelector('.tile[data-uname="bobby"]');
+    ok(true, 'wandering off an edited name COMMITS it: cheap label'
+       + ' edits are frictionless (dreev 2026-07-28)');
+    await alice.click('.tile[data-uname="bobby"] .rename input');
+    await alice.keyboard.press('End');
+    await alice.keyboard.type('xx');
+    await alice.keyboard.press('Escape');  // never mind, pre-blur
+    await new Promise((r) => setTimeout(r, 300));
     ok(await alice.evaluate(() =>
-      document.querySelector('.tile[data-uname="bob"] .rename .go')
-        .checkVisibility({ visibilityProperty: true })),
-       'the first typed character wakes SAVE');
-    await alice.click('.legend');  // wander off mid-edit
-    ok(await alice.evaluate(() =>
-      document.querySelector('.tile[data-uname="bob"] .rename input')
-        .value === 'bobby'
-      && document.querySelector('.tile[data-uname="bob"] .rename .go')
-           .checkVisibility({ visibilityProperty: true })),
-       'a wandering click commits nothing and cannot dismiss the'
-       + " draft's SAVE: dirty keeps it standing, focus or no");
-    await alice.click('.tile[data-uname="bob"] .rename input');
-    await alice.keyboard.press('Escape');  // never mind: bob is bob
-    await alice.waitForFunction(() =>  // the 0.35s collapse grace
-      !document.querySelector('.tile[data-uname="bob"] .rename .go')
-        .checkVisibility({ visibilityProperty: true }));
-    ok(await alice.evaluate(() =>
-      document.querySelector('.tile[data-uname="bob"] .rename input')
-        .value === 'bob'),
-       'Escape reverts and SAVE stands down');
+      document.querySelector('.tile[data-uname="bobby"] .rename input')
+        .value === 'bobby'),
+       "Escape still means never-mind: its revert lands before the"
+       + ' blur, which then finds a clean field and commits nothing');
+    // bob is bobby now; put him back for the legs below
+    await alice.click('.tile[data-uname="bobby"] .rename input');
+    await alice.$eval('.tile[data-uname="bobby"] .rename input',
+      (e) => { e.value = ''; });
+    await alice.keyboard.type('bob');
+    await alice.keyboard.press('Enter');
+    await alice.waitForSelector('.tile[data-uname="bob"]');
     await bid(alice, 'three tacos');
     await alice.waitForSelector('#tiles .tile.has-bid');
     ok(await alice.$eval('.tile.mine .rebid textarea', (e) => e.value)
@@ -1489,6 +1489,54 @@ async function bid(page, bidText) {
         && parseFloat(bid.fontSize) < 16;
     }), 'fine pointer: the compact desktop geometry is untouched');
 
+    /* ============ THE LAYOUT AUDITOR (dreev 2026-07-28) ===============
+       "Do an elaborate audit for how you're failing to spot that kind
+       of brokenness yourself." The failure mode: geometry quals only
+       asserted RELATIONS I hypothesized (is the button below?), so a
+       state nobody hypothesized about — the resting landing page, a
+       flush zero-gap abutment — sailed through every suite. The
+       remedy is an INVARIANT, not more point asserts: on any audited
+       state, every pair of visible interactive boxes must keep 2px of
+       daylight — no overlap, no flush abutment — excluding ancestor
+       chains, the z-ladder's declared floaters (tip, banner, gavel,
+       corner), and open dialogs (their own layer). Fine-pointer only:
+       the coarse hit boxes deliberately overlap by design (negative-
+       margin hit inflation), so phone geometry keeps its targeted
+       asserts and screenshots instead. */
+    const auditLayout = async (page, label) => {
+      const bad = await page.evaluate(() => {
+        const OVERLAYS = '#tip, #banner, .gavel, .corner';
+        const els = [...document.querySelectorAll(
+          'button, input, textarea, a, .bid-card, .tile-name,'
+          + ' .at-wrap')]
+          .filter((e) => !e.closest(OVERLAYS) && !e.closest('dialog'))
+          .filter((e) =>
+            e.checkVisibility({ visibilityProperty: true }));
+        const boxes = els.map((e) => [
+          e.tagName + '#' + e.id + '.' + e.className,
+          e, e.getBoundingClientRect()]);
+        const out = [];
+        const GAP = 2;  // flush abutment reads as overlap
+        for (let i = 0; i < boxes.length; i++) {
+          for (let j = i + 1; j < boxes.length; j++) {
+            const [na, a, ra] = boxes[i];
+            const [nb, b, rb] = boxes[j];
+            if (a.contains(b) || b.contains(a)) continue;
+            if (ra.width === 0 || rb.width === 0) continue;
+            if (ra.right > rb.left - GAP && rb.right > ra.left - GAP
+                && ra.bottom > rb.top - GAP
+                && rb.bottom > ra.top - GAP) {
+              out.push(na + ' vs ' + nb);
+            }
+          }
+        }
+        return out;
+      });
+      ok(bad.length === 0, 'layout audit [' + label + ']: every'
+         + ' visible control keeps its 2px of daylight — '
+         + JSON.stringify(bad));
+    };
+
     /* ============= Story 5c: the buttons left the fields ===============
        Replicata: dreev 2026-07-27: "i don't think i like these
        save/submit buttons beeing inside the field." Expectata: every
@@ -1518,11 +1566,10 @@ async function bid(page, bidText) {
     await fine2.click('.tile[data-uname="alice"] .tu');
     await fine2.waitForSelector('.tile.mine .rebid textarea');
     await fine2.type('.tile.mine .rebid textarea', 'x');
+    await auditLayout(fine2, 'named page, every field hot');
     const placements = await fine2.evaluate(() => [
       window.__below('.tile.mine .rebid textarea',
                      '.tile.mine .rebid .go'),
-      window.__below('.tile[data-uname="bob"] .rename input',
-                     '.tile[data-uname="bob"] .rename .go'),
       window.__below('#roster-input', '#roster-go'),
       window.__below('#descedit', '#descgo'),
     ]);
@@ -1533,6 +1580,8 @@ async function bid(page, bidText) {
     await shoot(fine2, 'story5c-buttons-below');
     const fresh = await makePage(browser, DESKTOP);
     await fresh.goto(BASE + '/', { waitUntil: 'networkidle0' });
+    await auditLayout(fresh, 'landing, resting');
+    await shoot(fresh, 'story5d-landing-resting');
     await fresh.evaluate(BELOW_JS);
     // the landing affordances (dreev 2026-07-28): no red on arrival
     // (touched validation), the one action visible but grayed
@@ -1543,8 +1592,18 @@ async function bid(page, bidText) {
         && getComputedStyle(a).filter === 'none'
         && go.checkVisibility({ visibilityProperty: true })
         && go.disabled;
-    }), 'the landing page: no premature red, and its one action — Go'
-       + ' — already visible, grayed until there is a name');
+    }), 'the landing page: no premature red, and its one action'
+       + ' already visible, grayed until there is a name');
+    ok(await fresh.evaluate(() =>
+      document.getElementById('share').disabled
+      && !document.getElementById('help').disabled
+      && parseFloat(getComputedStyle(
+           document.getElementById('desc')).opacity) < 1
+      && parseFloat(getComputedStyle(
+           document.getElementById('status')).opacity) < 1),
+       'an unnamed page is a ONE-action page: description and ledger'
+       + ' wait grayed, share is a link to nowhere and disabled, help'
+       + ' stays live');
     await fresh.keyboard.press('Tab');  // wander off, name still blank
     ok(await fresh.evaluate(() => {
       const cs = getComputedStyle(document.getElementById('aname'));
@@ -1554,13 +1613,57 @@ async function bid(page, bidText) {
        + ' after you have been and gone — the touched convention)');
     await fresh.click('#aname');
     await fresh.type('#aname', 'gorows');
+    ok(await fresh.evaluate(() =>
+         document.getElementById('namego').textContent
+           === startCopy('gorows')),
+       'the commit button narrates the deed live: the typed name'
+       + " rides in dreev's copy");
+    ok(await fresh.evaluate(() => {
+      const go = document.getElementById('namego');
+      const cs = getComputedStyle(go);
+      return !go.disabled && cs.color === 'rgb(255, 255, 255)'
+        && go.getBoundingClientRect().height > 28
+        && Math.abs(go.getBoundingClientRect().left
+             - document.getElementById('aname')
+                 .getBoundingClientRect().left) < 2;
+    }), 'armed, the start button is the page hero: big, filled,'
+       + " left-justified under its field");
     ok((await fresh.evaluate(() =>
          window.__below('#aname', '#namego')))[1],
-       "the auction name's Go sits below its field too");
+       "the auction name's commit button sits below its field too");
+    await auditLayout(fresh, 'landing, name typed');
     // ...and the glow rides every field objection (dreev 2026-07-28:
     // "glowy red, not just a red outline" — Bootstrap's convention)
     await fresh.keyboard.press('Enter');
     await fresh.waitForFunction(() => location.pathname === '/gorows');
+    ok(await fresh.evaluate(() =>
+      !document.getElementById('share').disabled
+      && getComputedStyle(document.getElementById('desc')).opacity
+           === '1'
+      && getComputedStyle(document.getElementById('status')).opacity
+           === '1'),
+       'naming wakes the whole page: cards at full ink, share live');
+    /* Replicata (dreev 2026-07-28: "you forgot to ungray when the
+       auction name is chosen"): naming via the START BUTTON left the
+       page gray — the body-level :has(#aname:enabled) never
+       re-evaluated on the click path's disable, while the Enter path
+       (the only one a qual walked) happened to recalc. Expectata:
+       BOTH commit gestures wake the page. */
+    const clicker = await makePage(browser, DESKTOP);
+    await clicker.goto(BASE + '/', { waitUntil: 'networkidle0' });
+    await clicker.type('#aname', 'clickstart');
+    await clicker.click('#namego');
+    await clicker.waitForFunction(() =>
+      location.pathname === '/clickstart');
+    await clicker.waitForFunction(() =>
+      getComputedStyle(document.getElementById('desc')).opacity === '1'
+      && getComputedStyle(document.getElementById('status')).opacity
+           === '1'
+      && !document.getElementById('share').disabled
+      && getComputedStyle(document.querySelector('.field .gorow'))
+           .display === 'none');
+    ok(true, 'clicking the start button wakes the page exactly like'
+       + ' Enter: full ink, live share, the button retired');
     await fresh.type('#roster-input', 'x'.repeat(21));
     await fresh.keyboard.press('Enter');  // the overlong objection
     ok(await fresh.evaluate(() =>
@@ -1693,6 +1796,7 @@ async function bid(page, bidText) {
     ok(gas.handle({ action: 'state', aname: 'wirestory' }).bids
          .find((b) => b.pid === 'pid-wirestory-ann').bid === 'first word',
        'the sheet keeps the pre-gavel bid');
+    await auditLayout(wire, 'revealed page, dead draft standing');
     // ...and the page's weather changed at the close (dreev
     // 2026-07-27: the paper warms as another subtle indicator), with
     // the Closed line sitting a full breath under the ledger
