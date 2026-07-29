@@ -548,6 +548,31 @@ async function bid(page, bidText) {
     await alice.keyboard.type('bob');
     await alice.keyboard.press('Enter');
     await alice.waitForSelector('.tile[data-uname="bob"]');
+    /* Replicata (dreev 2026-07-28: "red outline on uname doesn't
+       match the field at all"): rename bob onto a taken name; the
+       refusal reddens. Expectata: the ring wraps the person CELL —
+       the visible box, where the focus ring lives — not the
+       borderless input inside it. */
+    await alice.click('.tile[data-uname="bob"] .rename input');
+    await alice.$eval('.tile[data-uname="bob"] .rename input',
+      (e) => { e.value = ''; });
+    await alice.keyboard.type('alice');  // taken: the guard refuses
+    await alice.click('.legend');        // the blur-commit
+    await alice.waitForFunction(() =>
+      !document.getElementById('banner').hidden);
+    ok(await alice.evaluate(() => {
+      const cell = document.querySelector(
+        '.tile[data-uname="bob"] .tile-name');
+      const inp = cell.querySelector('input');
+      return getComputedStyle(cell).outlineStyle === 'solid'
+        && getComputedStyle(cell).filter.includes('drop-shadow')
+        && getComputedStyle(inp).outlineStyle === 'none';
+    }), 'the name objection rings the person CELL, the visible box —'
+       + ' never the borderless input inside it');
+    await alice.click('.tile[data-uname="bob"] .rename input');
+    await alice.keyboard.press('Escape');  // never mind; tidy the scene
+    await alice.evaluate(() =>
+      document.getElementById('banner-x').click());
     await bid(alice, 'three tacos');
     await alice.waitForSelector('#tiles .tile.has-bid');
     ok(await alice.$eval('.tile.mine .rebid textarea', (e) => e.value)

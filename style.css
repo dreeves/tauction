@@ -1175,15 +1175,17 @@ body.unnamed #status { opacity: 0.45; }
    convention: a soft danger halo around the hard line). drop-shadow,
    not box-shadow: the bid editor's box-shadow slot belongs to the
    re-submission stack sheets. */
-.rebid textarea.error, .rename input.error, #aname.error {
+.rebid textarea.error, #aname.error {
   outline: 2px solid var(--err-fg);
   outline-offset: -1px;
   filter: drop-shadow(0 0 0.25rem
             color-mix(in srgb, var(--err-fg) 45%, transparent));
 }
 
-/* the + row's objection rings its wrapper, where its focus ring lives */
-.at-wrap:has(input.error) {
+/* the name and + row objections ring their BOXES, where their focus
+   rings live — the inner inputs are borderless, and a ring on one
+   matched nothing visible (dreev 2026-07-28) */
+.tile-name:has(input.error), .at-wrap:has(input.error) {
   outline: 2px solid var(--err-fg);
   outline-offset: -1px;
   filter: drop-shadow(0 0 0.25rem
