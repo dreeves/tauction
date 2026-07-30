@@ -24,14 +24,14 @@ We refer to the auction description internally as the blurb.
 3. Clicking the pencil refreshes the blurb from the server (without blocking the editor opening) and notes the server's version token in client memory (not localstorage, lest an old token resurrect an old edit war).
 4. The pencil grays out and a textarea appears to the left or above (depending on screensize) the rendered blurb.
 5. Editing in the textarea makes the rendered blurb update in real time.
-6. Below the textarea are buttons SAVE and DISCARD.
+6. Below the textarea are buttons SAVE and DISCARD. Cmd/ctrl-enter works for SAVE and Escape works for DISCARD.
 7. If DISCARD, the textarea disappears and the edits are discarded, obviously. The blurb contents continue refreshing with ~5s polling as usual.
 8. If SAVE, the draft is sent along with the token it started from; the server, inside its write lock, refuses atomically if the token is stale.
 9. On success the textarea disappears and a fresh token comes back for subsequent edits.
 10. On refusal the textarea stays (glowing red, with words intact for stashing) and a popup shows "💥 Edit war! Stash your changes and reload the page" as popup title and a red/green diff of yours vs theirs the same way VS Code does it.
 11. At the bottom, the popup offers "Keep theirs" / "Overwrite with mine".
 12. If the popup is dismissed without clicking either button, nothing changes: the red textarea keeps reflecting the local edits. Clicking SAVE yields the same edit-war popup with a fresh diff. Clicking DISCARD at this point does the same thing "Keep theirs" in the popup does, since the edit-war popup was accompanied by a new fetch of the server's version of the blurb.
-
+13. Choosing "Overwrite with mine" resends the draft with the fresh token. This either succeeds or is refused again if another edit snuck in. In that case the popup title is modified: "💥 Edit war, take 2! Stash your changes (again) and reload the page", with that "2" incrementing as needed.
 
 ---
 
