@@ -384,6 +384,14 @@ st = call({ action: 'describe', aname: 'tau',
 ok(String(st.error) === COPY.simulEditsCopy
    && call({ action: 'state', aname: 'tau' }).blurb === 'second thoughts',
    'an edit based on a STALE stamp is refused: no silent clobbering');
+// ...and the refusal CARRIES the snapshot that refused it (generated
+// under the same write lock), so the client's war diff needs no
+// second round trip — same payload a success returns, plus the error
+ok(st.aname === 'tau' && st.blurb === 'second thoughts'
+   && st.tblurb === call({ action: 'state', aname: 'tau' }).tblurb
+   && Array.isArray(st.bidders),
+   'the CAS refusal rides on a full state snapshot: theirs arrives'
+   + ' with the verdict');
 st = call({ action: 'describe', aname: 'tau', blurb: 'x'.repeat(2001),
             base: call({ action: 'state', aname: 'tau' }).tblurb });
 ok(st.error, 'a novel is refused (2000 chars is plenty)');

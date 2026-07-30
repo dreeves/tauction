@@ -177,30 +177,68 @@ async function bid(page, bidText) {
     const slug = 'brunch';
     ok((await alice.$$('#status .tile:not(.addrow)')).length === 0,
        'no roster yet: the ledger is just the + row');
-    // the description block: no label, placeholder says it; typing
-    // markdown and clicking AWAY commits and renders it in place
-    // (dreev's pencil-only model: the pencil is the only control,
-    // and it only appears in rendered mode)
+    // the description block: RESTS RENDERED with its pencil (README
+    // blurb spec item 1, 2026-07-29 — reversing the edit-at-rest
+    // arrival for blank blurbs); the pencil opens the editing mode
+    // with textarea, live preview, and its SAVE/DISCARD row
     ok(await alice.evaluate(() => {
       const t = document.getElementById('descedit');
+      return getComputedStyle(t).display === 'none'
+        && document.getElementById('desc').classList
+             .contains('viewing')
+        && getComputedStyle(document.getElementById('desctoggle'))
+             .display !== 'none'
+        && !document.getElementById('descgo')
+             .checkVisibility({ visibilityProperty: true });
+    }), 'the description rests RENDERED, pencil standing: the way in'
+       + ' is one click, blank blurb or not');
+    await alice.click('#desctoggle');
+    ok(await alice.evaluate(() => {
+      const t = document.getElementById('descedit');
+      const p = document.getElementById('desctoggle');
       return getComputedStyle(t).display !== 'none'
         && t.placeholder.length > 0
-        && getComputedStyle(document.getElementById('desctoggle'))
-             .display === 'none'
-        && !document.getElementById('descgo')
-             .checkVisibility({ visibilityProperty: true })
-        && getComputedStyle(document.getElementById('desc'))
-             .borderTopColor !== 'rgba(0, 0, 0, 0)';
-    }), 'the description sits between name and ledger, explaining'
-       + ' itself by placeholder, boxed like the field it is — and'
-       + ' its SAVE asleep while the field is cold');
-    await alice.click('#descedit');
+        && document.activeElement === t
+        && !p.checkVisibility({ visibilityProperty: true })
+        && document.getElementById('descdiscard')
+             .checkVisibility({ visibilityProperty: true });
+    }), 'the pencil opens the mode and LEAVES (dreev 2026-07-30,'
+       + ' overriding gray-never-suppress here: SAVE/DISCARD are the'
+       + " mode's exits): textarea focused, placeholder explaining,"
+       + ' DISCARD already reachable as the way out');
+    // ...and with no pencil to dodge, the field owns the card's full
+    // width: symmetric insets, left and right
+    ok(await alice.evaluate(() => {
+      const c = document.getElementById('desc').getBoundingClientRect();
+      const e = document.getElementById('descedit')
+        .getBoundingClientRect();
+      return Math.abs((c.right - e.right) - (e.left - c.left)) < 1;
+    }), 'the editing field runs the full card width: its left and'
+       + ' right insets match');
     await alice.type('#descedit', '# Rules\n\nLoser buys **coffee**');
+    ok(await alice.evaluate(() =>
+      document.querySelector('#descview h1')
+      && document.querySelector('#descview h1').textContent === 'Rules'
+      && document.querySelector('#descview strong')
+           .textContent === 'coffee'),
+       'the pane previews the keystrokes LIVE, rendered (spec item 5)');
     ok(await alice.evaluate(() =>
       document.getElementById('descgo')
         .checkVisibility({ visibilityProperty: true })
       && document.getElementById('descgo').textContent === saveCopy),
        "typing wakes SAVE on the desc card, wearing dreev's copy");
+    // the one editing layout, here at phone width: the textarea sits
+    // ABOVE the live preview, stacked, with daylight between
+    ok(await alice.evaluate(() => {
+      const e = document.getElementById('descedit')
+        .getBoundingClientRect();
+      const v = document.getElementById('descview')
+        .getBoundingClientRect();
+      return e.bottom <= v.top - 2
+        && Math.abs(e.left - v.left) < 1;
+    }), 'phone editing mode stacks: source above, rendered preview'
+       + ' below, flush left (spec item 4)');
+    await shoot(alice, 'story1-blurb-editing-phone');
     await alice.click('#aname');  // clicking away...
     await new Promise((r) => setTimeout(r, 150));
     ok(await alice.evaluate(() =>
@@ -239,6 +277,12 @@ async function bid(page, bidText) {
       && document.getElementById('desctoggle').textContent.length > 0),
        'SAVE commits and renders rich (h1 + bold); the'
        + ' pencil appears, the only way back to the source');
+    ok(await alice.evaluate(() => {
+      const p = document.getElementById('desctoggle');
+      return getComputedStyle(p).position === 'absolute'
+        && getComputedStyle(p, '::before').content === 'none';
+    }), 'with words on the record the pencil returns to its corner,'
+       + ' invitation shed');
     // the commit pulse tints the card green for a beat (your words
     // are away); the resting look this pin is about arrives when the
     // pulse fades — so outwait it, and bank that it fired at all
@@ -1647,6 +1691,48 @@ async function bid(page, bidText) {
     await fine2.waitForSelector('.tile.mine .rebid textarea');
     await fine2.type('.tile.mine .rebid textarea', 'x');
     await auditLayout(fine2, 'named page, every field hot');
+    // the editing mode STACKS at every width (dreev 2026-07-30,
+    // killing side-by-side: twin texts at equal weight read as a
+    // duplicated render, not source-and-preview), and top to bottom
+    // it reads: bordered source field (the person cells' twin — THE
+    // "editable here" box), its SAVE/DISCARD row directly under it,
+    // then the live preview below as plain prose OUTSIDE any box —
+    // the card wears no box of its own in either mode
+    ok(await fine2.evaluate(() => {
+      const e = document.getElementById('descedit');
+      const v = document.getElementById('descview');
+      const er = e.getBoundingClientRect();
+      const gr = document.getElementById('descgo').closest('.gorow')
+        .getBoundingClientRect();
+      const vr = v.getBoundingClientRect();
+      const es = getComputedStyle(e);
+      const card = getComputedStyle(document.getElementById('desc'));
+      const wrap = getComputedStyle(
+        document.querySelector('#status .addrow .at-wrap'));
+      return er.bottom <= gr.top && gr.bottom <= vr.top - 2
+        && Math.abs(er.left - vr.left) < 1
+        && es.borderTopStyle === 'solid'
+        && es.borderTopColor === wrap.borderTopColor
+        && card.backgroundColor === 'rgba(0, 0, 0, 0)'
+        && card.borderTopColor === 'rgba(0, 0, 0, 0)';
+    }), 'editing mode, top to bottom: bordered source field, its'
+       + ' SAVE/DISCARD row, then the preview as plain prose below,'
+       + ' outside any box');
+    // the desktop column offers a comfortable reading MEASURE
+    // (designer loop round 2, 2026-07-30: 27rem was a phone column
+    // on every screen — 39ch prose, 19ch bid cells; the canonical
+    // guidance is 45-75ch, sweet spot ~66)
+    ok(await fine2.evaluate(() => {
+      const probe = document.createElement('span');
+      probe.textContent = '0'.repeat(10);
+      document.body.append(probe);
+      const ch = probe.getBoundingClientRect().width / 10;
+      probe.remove();
+      const cpl = document.getElementById('descview')
+        .getBoundingClientRect().width / ch;
+      return cpl >= 50 && cpl <= 80;
+    }), 'desktop prose reads at a comfortable measure: 50-80'
+       + ' characters per line');
     const placements = await fine2.evaluate(() => [
       window.__below('.tile.mine .rebid textarea',
                      '.tile.mine .rebid .go'),
@@ -1661,6 +1747,17 @@ async function bid(page, bidText) {
     const fresh = await makePage(browser, DESKTOP);
     await fresh.goto(BASE + '/', { waitUntil: 'networkidle0' });
     await auditLayout(fresh, 'landing, resting');
+    // the corner chips own their strip (designer loop round 3,
+    // 2026-07-30): share/help sat straddling the first card's top
+    // border — half in, half out, the border line running behind
+    // them — on every page at every width (the auditor never saw it:
+    // a card is not a control)
+    ok(await fresh.evaluate(() =>
+      document.querySelector('.corner').getBoundingClientRect().bottom
+        <= document.querySelector('main .card').getBoundingClientRect()
+             .top - 2),
+       'the corner chips sit wholly in the page margin: daylight'
+       + ' between them and the first card');
     await shoot(fresh, 'story5d-landing-resting');
     await fresh.evaluate(BELOW_JS);
     // the landing affordances (dreev 2026-07-28): no red on arrival
@@ -1922,32 +2019,136 @@ async function bid(page, bidText) {
               === 'original plus cletus'),
        'a foreign save mid-draft warns NOBODY mid-composition:'
        + ' his words and his calm stand');
-    // his SAVE is where the collision surfaces, in the server's words
+    // his SAVE is where the collision surfaces: THE WAR POPUP
+    // (README items 10-11), a real modal in a real browser, VS-Code
+    // red/green diff and all — the banner stands down
     await cle.click('#descgo');
     await cle.waitForFunction(() =>
-      !document.getElementById('banner').hidden);
-    ok(await cle.evaluate((words) =>
-         document.getElementById('banner-msg').textContent === words
-         && document.getElementById('descedit').value
-              === 'original plus cletus'
-         && document.getElementById('descedit').classList
-              .contains('error'), SCOPY2.simulEditsCopy)
+      document.getElementById('war-dlg').open);
+    await cle.waitForFunction(() =>
+      document.querySelector('#war-diff .diff-row') !== null);
+    ok(await cle.evaluate((take) => {
+      const del = document.querySelector('#war-diff .diff-row.del');
+      const ins = document.querySelector('#war-diff .diff-row.ins');
+      return document.getElementById('war-title').textContent
+          === warTitle(take)
+        && document.getElementById('banner').hidden
+        && del && del.textContent.includes('per winifred')
+        && ins && ins.textContent.includes('original plus cletus')
+        && getComputedStyle(del).backgroundColor
+             === 'rgba(255, 0, 0, 0.2)'
+        && getComputedStyle(ins).backgroundColor
+             === 'rgba(155, 185, 85, 0.2)'
+        && document.querySelector('#war-diff mark.chg') !== null
+        && document.getElementById('descedit').value
+             === 'original plus cletus'
+        && document.getElementById('descedit').classList
+             .contains('error');
+    }, 1)
        && gas.handle({ action: 'state', aname: 'clobstory' }).blurb
             === 'per winifred',
-       "the collision surfaces at HIS save: refused in the server's"
-       + ' words, his draft red and copyable, her words standing');
-    // the banner says reload — and a fresh load shows the DATABASE,
-    // never a ghost of the dead draft (dreev's firefox haunting)
+       'the collision surfaces at HIS save as the war popup: her'
+       + ' words red-deleted, his green-inserted in VS Code inks,'
+       + ' inner marks lit, his draft red below — her words standing');
+    await shoot(cle, 'story-editwar-popup');
+    // the popup keeps its own house: buttons disjoint with daylight,
+    // everything inside the dialog, the dialog inside the viewport
+    // (the layout auditor skips dialog innards, so this is its
+    // war-popup checkpoint)
+    ok(await cle.evaluate(() => {
+      const dlg = document.getElementById('war-dlg')
+        .getBoundingClientRect();
+      const keep = document.getElementById('war-keep')
+        .getBoundingClientRect();
+      const mine = document.getElementById('war-mine')
+        .getBoundingClientRect();
+      const diff = document.getElementById('war-diff')
+        .getBoundingClientRect();
+      const inside = (r) => r.left >= dlg.left && r.right <= dlg.right
+        && r.top >= dlg.top && r.bottom <= dlg.bottom;
+      return keep.right <= mine.left - 2
+        && diff.bottom <= Math.min(keep.top, mine.top) - 2
+        && [keep, mine, diff].every(inside)
+        && dlg.right <= innerWidth && dlg.bottom <= innerHeight;
+    }), 'war popup geometry: diff above the two buttons, daylight'
+       + ' everywhere, dialog within the viewport');
+    // Keep theirs surrenders: popup and editor close, the record
+    // stands rendered
+    await cle.click('#war-keep');
+    await cle.waitForFunction(() =>
+      !document.getElementById('war-dlg').open
+      && document.getElementById('desc').classList.contains('viewing'));
+    ok(await cle.evaluate(() =>
+      document.getElementById('descview').textContent
+        .includes('per winifred')),
+       'Keep theirs: one click of surrender, the record rendered');
+    // round two: he edits again, winifred lands again, he OVERWRITES
+    await cle.click('#desctoggle');
+    await cle.keyboard.press('End');
+    await cle.keyboard.type(' — cletus insists');
+    gas.handle({ action: 'describe', aname: 'clobstory',
+      blurb: 'winifred again',
+      base: gas.handle({ action: 'state', aname: 'clobstory' }).tblurb });
+    await cle.click('#descgo');
+    await cle.waitForFunction(() =>
+      document.getElementById('war-dlg').open);
+    await cle.waitForFunction(() =>
+      document.querySelector('#war-diff .diff-row') !== null);
+    await cle.click('#war-mine');
+    await cle.waitForFunction(() =>
+      document.getElementById('desc').classList.contains('viewing')
+      && !document.getElementById('war-dlg').open);
+    await cle.waitForFunction(() =>
+      document.getElementById('descview').textContent
+        .includes('cletus insists'));
+    ok(gas.handle({ action: 'state', aname: 'clobstory' }).blurb
+         === 'per winifred — cletus insists',
+       'Overwrite with mine: the informed win lands — appended to'
+       + " HER words, because Keep theirs adopted the record into"
+       + ' the editor (item 12)');
+    // and a fresh load shows the DATABASE, never a ghost of any
+    // dead draft (dreev's firefox haunting)
     await cle.reload({ waitUntil: 'networkidle0' });
     await cle.waitForFunction(() =>
       document.getElementById('desc').classList.contains('viewing'));
     ok(await cle.evaluate(() =>
       document.getElementById('descview').textContent
-        .includes('per winifred')
-      && document.getElementById('descedit').value === 'per winifred'
+        .includes('cletus insists')
+      && document.getElementById('descedit').value
+           .includes('cletus insists')
       && document.getElementById('banner').hidden),
-       "the reload shows winifred's words and only winifred's words:"
-       + ' no restored draft, no banner, no haunting');
+       'the reload shows the database and only the database: no'
+       + ' restored draft, no banner, no haunting');
+    // ...and the popup on a phone-sized COARSE pointer: its own page
+    // (a mid-story hasTouch flip RELOADS the page — puppeteer's
+    // setViewport contract), its own quick collision. The resolution
+    // buttons must be real touch targets and the dialog must fit.
+    const phw = await makePage(browser, { ...PHONE, hasTouch: true });
+    await phw.goto(BASE + '/clobstory', { waitUntil: 'networkidle0' });
+    await phw.click('#desctoggle');
+    await phw.keyboard.type('phone draft ');
+    gas.handle({ action: 'describe', aname: 'clobstory',
+      blurb: 'rival for the phone',
+      base: gas.handle({ action: 'state', aname: 'clobstory' }).tblurb });
+    await phw.click('#descgo');
+    await phw.waitForFunction(() =>
+      document.getElementById('war-dlg').open);
+    await phw.waitForFunction(() =>
+      document.querySelector('#war-diff .diff-row') !== null);
+    const warFit = await phw.evaluate(() => ({
+      coarse: matchMedia('(pointer: coarse)').matches,
+      keep: document.getElementById('war-keep')
+        .getBoundingClientRect().height,
+      mine: document.getElementById('war-mine')
+        .getBoundingClientRect().height,
+      dlg: document.getElementById('war-dlg').getBoundingClientRect()
+        .toJSON(),
+    }));
+    ok(warFit.coarse && warFit.keep >= 44 && warFit.mine >= 44
+       && warFit.dlg.right <= PHONE.width && warFit.dlg.left >= 0,
+       'coarse pointer: both war buttons offer >=44px and the'
+       + ' dialog fits the phone: ' + JSON.stringify(warFit));
+    await shoot(phw, 'story-editwar-popup-phone');
 
     /* ====== name, tab, enter (dreev's own fumble, verbatim) ==========
        He typed the auction name and hit Tab: pre-fix it either
@@ -1971,6 +2172,19 @@ async function bid(page, bidText) {
       document.getElementById('aname').disabled),
        'enter presses it: name, tab, enter — commit by convention,'
        + ' no hidden gesture');
+    // the empty description TEACHES (designer loop round 1,
+    // 2026-07-30; NN/g: a blank container damages discoverability —
+    // say what belongs here and hand over the action): the pencil
+    // steps into the flow wearing the textarea's own invitation —
+    // one control, same click, single-sourced human copy
+    ok(await crea.evaluate(() => {
+      const p = document.getElementById('desctoggle');
+      return getComputedStyle(p).position === 'static'
+        && getComputedStyle(p, '::before').content
+             .includes(document.getElementById('descedit').placeholder)
+        && p.checkVisibility({ visibilityProperty: true });
+    }), 'an empty description invites: the pencil joins the flow'
+       + " wearing the placeholder's words");
 
     /* ---- tooltips outrank the banner --------------------------------
        Replicata (dreev: "tooltips appearing behind other elements" —

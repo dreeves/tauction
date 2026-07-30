@@ -83,6 +83,22 @@ const saveCopy = 'SAVE';
 const addCopy = 'ADD PARTICIPANT';
 const submitCopy = 'SUBMIT';
 
+// The blurb editor's never-mind button (dreev's copy, README blurb
+// spec item 6): the blurb is the one field with an editing MODE, and
+// DISCARD is its exit (Escape works too)
+const discardCopy = 'DISCARD';
+
+// The edit-war popup (dreev's copy, README blurb spec items 10-13):
+// the title escalates with the take — the count of refusals since
+// this editing session opened
+const warTitle = (take) => take <= 1
+  ? '💥 Edit war! Stash your changes and reload the page'
+  : '💥 Edit war, take ' + take + '! Stash your changes (again) and'
+    + ' reload the page';
+// ...and its two resolutions: surrender, or informed overwrite
+const keepTheirsCopy = 'Keep theirs';
+const overwriteCopy = 'Overwrite with mine';
+
 const startCopy = (aname) => aname === '' ? 'Create the auction'
                                           : 'Create the ' + aname + ' auction';
 

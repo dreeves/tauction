@@ -70,8 +70,14 @@ body.revealed {
 main {
   position: relative;  /* anchors .corner to the column, not the viewport */
   width: 100%;
-  max-width: 27rem;
-  padding: 1.25rem 0.9rem 3rem;
+  /* a comfortable reading measure on big screens (designer loop
+     round 2, 2026-07-30: 27rem was a phone column on every screen —
+     39ch prose, 19ch bid cells; 38rem lands the blurb at ~57ch,
+     inside the canonical 45-75ch, and matches the war dialog) */
+  max-width: 38rem;
+  /* the top makes room for the corner chips' own strip (designer
+     loop round 3: they used to straddle the first card's border) */
+  padding: 3rem 0.9rem 3rem;
 }
 
 .card {
@@ -93,7 +99,10 @@ main {
   margin-bottom: 0.25rem;
 }
 
-input:not([type]) {  /* every input in the app is typeless */
+input:not([type]),  /* every input in the app is typeless */
+.descedit {         /* the blurb's source field wears the same
+                       recipe: the border is what marks the editable
+                       half against the look-alike preview below */
   font: inherit;
   color: inherit;
   background: transparent;
@@ -103,7 +112,7 @@ input:not([type]) {  /* every input in the app is typeless */
   width: 100%;
 }
 
-input:focus, .rebid textarea:focus {
+input:focus, .rebid textarea:focus, .descedit:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
 }
@@ -205,10 +214,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .desc { position: relative; padding: 0.75rem 1rem; }
 
-/* Rendered blurb = prose on the page; the box means "editable here"
-   and appears only in edit mode (dreev). Colors go transparent rather
-   than the border going away so nothing shifts by its 1px. */
-.desc.viewing { background: transparent; border-color: transparent; }
+/* Rendered blurb = prose on the page, in BOTH modes: the "editable
+   here" box lives on the source field itself (dreev 2026-07-30), so
+   the card never wears one — editing shows field and buttons above
+   plain prose. Colors go transparent rather than the border going
+   away so nothing shifts by its 1px. */
+.desc { background: transparent; border-color: transparent; }
 
 /* the field objection recipe, same as the bid editor's (glow and all) */
 .descedit.error {
@@ -220,21 +231,24 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .desc.viewing .descedit { display: none; }
 
-.desc:not(.viewing) .descview { display: none; }
+/* EDITING MODE (README blurb spec items 4-5; stacked-always per
+   dreev 2026-07-30, killing side-by-side — twin texts at equal
+   visual weight read as a duplicated render, not source-and-
+   preview): source field, live preview, buttons — DOM order, one
+   column at every width, the gap their daylight. The card rests
+   rendered; this grid exists only while the pencil's mode is open. */
+.desc:not(.viewing) {
+  display: grid;
+  gap: 0.6rem;
+}
 
-.descedit {
-  font: inherit;
+/* no pencil while editing, so the preview sheds its rest-mode
+   pencil inset and runs the full card width, like the field */
+.desc:not(.viewing) .descview { padding-right: 0; }
+
+.descedit {  /* deltas from the shared field recipe above */
   font-size: 1rem;  /* the 16px reading floor, desktop included
                        (dreev 2026-07-29, the designer verdict) */
-  color: inherit;
-  background: transparent;
-  border: none;
-  outline: none;
-  /* full width so the native resize grip sits in the card's true
-     corner (dreev caught it drifting left); the padding, not the
-     width, keeps text clear of the corner toggle */
-  width: 100%;
-  padding-right: 2rem;
   resize: vertical;
 }
 
@@ -294,9 +308,34 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .desctoggle:hover { color: var(--accent); }
 
-/* the pencil is rendered-mode's control only: while editing, its
-   corner belongs to SAVE */
+/* the pencil LEAVES while editing (dreev 2026-07-30, overriding the
+   gray-never-suppress law for this one case: SAVE/DISCARD are the
+   mode's only exits, and the field wants the full card width)... */
 .desc:not(.viewing) .desctoggle { display: none; }
+
+/* THE EMPTY STATE TEACHES (designer loop round 1, 2026-07-30; NN/g:
+   a blank container damages discoverability — say what belongs here
+   and hand over the action): with nothing on the record the corner
+   pencil steps into the flow and wears the textarea's own
+   invitation as its label, placeholder-inked. One control, same
+   click; the words come from data-hint, stamped by wireUp from the
+   placeholder itself. */
+.desc.viewing .descview:empty ~ .desctoggle {
+  position: static;
+  font-size: 1rem;
+  color: var(--muted);
+  opacity: 0.8;  /* placeholder ink, exactly */
+}
+
+.desc.viewing .descview:empty ~ .desctoggle::before {
+  content: attr(data-hint) ' ';
+}
+
+/* ...and GRAYS while the page is unnamed, inert to the pointer */
+body.unnamed .desctoggle {
+  color: color-mix(in srgb, var(--muted) 30%, transparent);
+  pointer-events: none;
+}
 
 /* -------------------------- commit buttons ----------------------------- */
 /* SAVE/SUBMIT (dreev's copy, via stringles): the finger's Enter. Each
@@ -366,11 +405,16 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   cursor: default;
 }
 
-/* edit-mode's ONLY: a restored draft (drafts survive the tab,
-   2026-07-27) can make the card hot while rendered — there the
-   corner is the pencil's, and the pencil is the whole affordance
-   for "the source holds a draft" */
+/* DISCARD: the editing mode's quiet exit, never the accent */
+.go.discard { color: var(--muted); border-color: var(--border); }
+
+/* the blurb's buttons belong to the editing MODE, not to hotness:
+   DISCARD must be reachable even before the first keystroke (it is
+   the mode's exit), so the row shows whenever the editor does —
+   SAVE simply sits grayed until there is something to send */
 .desc.viewing .gorow { display: none; }
+
+.desc:not(.viewing) .gorow { display: flex; }
 
 /* The auction name is the page's PREREQUISITE (nothing else works
    unnamed), so it breaks two hot-law rules on researched convention
@@ -1446,6 +1490,107 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
   white-space: nowrap;
 }
 
+/* ------------------------- the edit-war popup --------------------------
+   README blurb spec items 10-17: dreev's copy up top, a VS-Code-
+   style diff of yours vs theirs below it (line tints and char-level
+   inner marks, palette lifted from VS Code's diffEditor defaults —
+   removed rgba(255,0,0,.2), inserted rgba(155,185,85,.2), inner
+   marks at double strength), and the two resolutions at the foot. */
+.dlg.war { max-width: min(38rem, 94vw); }
+
+.war-title {
+  margin: 0 1.6rem 0.9rem 0;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.war-diff {
+  position: relative;  /* anchors the loading gavel */
+  min-height: 3.4rem;
+  max-height: 55vh;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.diff-row { display: flex; }
+
+.diff-gutter {
+  flex: none;
+  width: 1.5rem;
+  text-align: center;
+  color: var(--muted);
+  user-select: none;
+}
+
+.diff-text {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding-right: 0.5rem;
+  min-height: 1.5em;  /* an empty line still owns its row */
+}
+
+.diff-row.del { background: rgba(255, 0, 0, 0.2); }
+
+.diff-row.ins { background: rgba(155, 185, 85, 0.2); }
+
+.diff-row.del mark.chg {
+  background: rgba(255, 0, 0, 0.4);
+  color: inherit;
+}
+
+.diff-row.ins mark.chg {
+  background: rgba(156, 204, 44, 0.4);
+  color: inherit;
+}
+
+/* the slot's loading gavel: centered, appearing only past the 0.3s
+   no-flash delay (an insertion can't ride a transition, so the
+   delay is an animation), hammering via the usual keyframes */
+.war-diff .gavel.mini {
+  display: block;
+  left: 50%;
+  top: 50%;
+  zoom: 0.45;
+  transform: translate(-50%, -50%);
+  animation: fadein 0.15s 0.3s forwards;
+}
+
+@keyframes fadein { to { opacity: 1; } }
+
+.war-diff .gavel.mini .mallet { animation: gavel 1.15s infinite; }
+
+.war-diff .gavel.mini .bang { animation: gavel-bang 1.15s infinite; }
+
+.war-diff .gavel.mini .block { animation: gavel-thud 1.15s infinite; }
+
+.war-btns {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.9rem;
+}
+
+.warbtn {
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.5rem 0.9rem;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: var(--card);
+}
+
+.warbtn:hover { background: var(--accent-soft); }
+
+/* Overwrite with mine is the destructive-leaning choice: it wears
+   the danger ink; Keep theirs stays the quiet default */
+.warbtn.mine { color: var(--err-fg); border-color: var(--err-fg); }
+
 /* The help reads like a PAPER (dreev 2026-07-29: "LaTeX style but
    still super mobile-friendly"): book serifs at phone-readable size,
    centered title, justified-and-hyphenated body (justification
@@ -1506,6 +1651,10 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
   .descedit, .descview, .rebid textarea, .tile-name, .tile-bid,
   .addrow .at-wrap, .addrow .at-wrap input { font-size: 1.1rem; }
 
+  /* the corner chips grow to thumb size here (below), so their
+     strip above the first card grows with them */
+  main { padding-top: 3.9rem; }
+
   /* the sealed decoy stays small: it is blurred nonsense whose only
      job is holding a card shape, and at full size it overflows the
      phone's bid column */
@@ -1565,6 +1714,8 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
 
   /* the commit buttons: full 44px thumb targets while on duty */
   .go { font-size: 0.85rem; padding: 0.9rem 0.6rem; }
+
+  .warbtn { font-size: 0.9rem; padding: 0.85rem 1rem; }
 
   /* the name column keeps its desktop FOOTPRINT (12ch of 1rem is the
      old 15ch of 0.85rem): bigger glyphs must not starve the bid

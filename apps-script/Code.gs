@@ -589,7 +589,14 @@ function describe(req) {
   const pre = load('auctions').findIndex(r => r.aname === aname);
   const current = pre === -1 ? '' : load('auctions')[pre].tblurb;
   if (String(req.base == null ? '' : req.base) !== current) {
-    throw simulEditsCopy;
+    // the refusal CARRIES the snapshot that refused it — generated
+    // under this same write lock — so the client's edit-war diff
+    // draws yours-vs-theirs with no second round trip (2026-07-30;
+    // it took two Apps-Script-latency trips before, and an unlucky
+    // in-flight poll could stretch that to the next poll tick)
+    const s = getState(aname);
+    s.error = simulEditsCopy;
+    return s;
   }
   touchAuction(aname);
   const i = load('auctions').findIndex(r => r.aname === aname);

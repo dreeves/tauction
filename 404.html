@@ -76,16 +76,20 @@
 
   <!-- The auction description: freeform markdown, no label (the
        placeholder explains), editable by anyone before or after the
-       close. The corner ✎ (rendered mode only) opens the editor;
-       SAVE (hot fields only; copy stamped from stringles) commits.
-       Clicking away commits nothing, anywhere (dreev 2026-07-27). -->
-  <section id="desc" class="card desc">
-    <div id="descview" class="descview"></div>
-    <textarea id="descedit" class="descedit" rows="3"
+       close. The card RESTS RENDERED (README blurb spec, 2026-07-29:
+       .viewing is the birth state); the corner ✎ opens the editing
+       mode — textarea left of (or above, when narrow) the pane,
+       which becomes a live preview — and SAVE/DISCARD (copy stamped
+       from stringles) or Escape leave it. Clicking away commits
+       nothing, anywhere (dreev 2026-07-27). -->
+  <section id="desc" class="card desc viewing">
+    <textarea id="descedit" class="descedit" rows="6"
       placeholder="Describe this auction..."></textarea>
-    <button id="desctoggle" class="desctoggle" type="button">✎</button>
     <div class="gorow"><button id="descgo" class="go"
-      type="button"></button></div>
+      type="button"></button><button id="descdiscard"
+      class="go discard" type="button"></button></div>
+    <div id="descview" class="descview"></div>
+    <button id="desctoggle" class="desctoggle" type="button">✎</button>
   </section>
 
   <section id="status" class="card">
@@ -126,7 +130,7 @@
   <footer>
     <a href="/sourcery.html">sourcery</a>
     <span class="sep">·</span>
-    <span class="version">v2026.07.29-i</span>
+    <span class="version">v2026.07.29-j</span>
   </footer>
 </main>
 
@@ -145,6 +149,21 @@
     class="copy-label">Copy link</span><span
     class="copy-done">Copied!</span></button>
   <span id="copy-status" role="status" class="sr-only"></span>
+</dialog>
+
+<!-- The edit-war popup (README blurb spec items 10-17): title and
+     buttons stamped from stringles; the diff slot is painted by
+     paintWar() — a VS-Code-style red/green diff once "theirs"
+     arrives, the mini gavel while it loads, the refusal's words if
+     the wire is down. Dismissing decides nothing (item 12). -->
+<dialog id="war-dlg" class="dlg war">
+  <button class="dlg-x" type="button" aria-label="Close">×</button>
+  <h2 id="war-title" class="war-title"></h2>
+  <div id="war-diff" class="war-diff"></div>
+  <div class="war-btns">
+    <button id="war-keep" class="warbtn" type="button"></button>
+    <button id="war-mine" class="warbtn mine" type="button"></button>
+  </div>
 </dialog>
 
 <dialog id="help-dlg" class="dlg">

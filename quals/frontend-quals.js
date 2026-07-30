@@ -124,6 +124,7 @@ const STR = new Function(STRINGLES
   + ' tooLateRemoveTip, resubmittedTip, nameStoneTip,'
   + ' waitingGlyph, yourMoveGlyph, readyGlyph, revealedGlyph,'
   + ' tabTitle, saveCopy, addCopy, submitCopy, tooLateGoTip, startCopy,'
+  + ' discardCopy, warTitle, keepTheirsCopy, overwriteCopy,'
   + ' anameTooLongBanner, unameTooLongBanner, blurbTooLongBanner };')();
 const STAMP = STR.stampCopy;
 
@@ -159,6 +160,17 @@ async function makePage(pathAndQuery, seed) {
     pretendToBeVisual: true,
   });
   dom.window.fetch = mockFetch;
+  // jsdom still lacks <dialog>'s showModal/close; the war popup (and
+  // the help/share dialogs) use them — shim onto the open attribute,
+  // which is all these quals assert on
+  const dlgProto = dom.window.HTMLDialogElement
+    && dom.window.HTMLDialogElement.prototype;
+  if (dlgProto && !dlgProto.showModal) {
+    dlgProto.showModal = function () { this.open = true; };
+  }
+  if (dlgProto && !dlgProto.close) {
+    dlgProto.close = function () { this.open = false; };
+  }
   // jsdom has no matchMedia; the app (a browser program) rightly
   // assumes it — the harness fills its own gap
   dom.window.matchMedia = (q) => ({ matches: false, media: q });
@@ -666,9 +678,11 @@ const cssBattles = [];
   await sleep(80);
   ok(eatEd.value === 'the record, amended'
      && eatEd.classList.contains('error')
-     && !eatDoc.getElementById('desc').classList.contains('viewing'),
+     && !eatDoc.getElementById('desc').classList.contains('viewing')
+     && !eatDoc.getElementById('war-dlg').open,
      'a transport-dead SAVE hands the words back: draft red in the'
-     + ' reopened editor, nothing eaten');
+     + ' reopened editor, nothing eaten — and NO war popup (README'
+     + ' item 16: transport death is not a refusal)');
   const eatName = row(eatDoc, 'ann').querySelector('.rename input');
   eatName.focus();
   eatName.value = 'annette';
@@ -1029,14 +1043,362 @@ const cssBattles = [];
      'an older refused description never overwrites a newer local draft');
   newerDoc.getElementById('banner-x').click();
   newerDoc.getElementById('descgo').click();
-  await until(() => !newerDoc.getElementById('banner').hidden);
-  ok(newerDoc.getElementById('banner-msg').textContent
-       === SCOPY.simulEditsCopy
+  await until(() => newerDoc.getElementById('war-dlg').open);
+  ok(newerDoc.getElementById('war-title').textContent
+       === STR.warTitle(1)
+     && newerDoc.getElementById('banner').hidden
      && gas.handle({ action: 'state', aname: 'newerdesc' }).blurb
           === 'A2 version'
      && newerDoc.getElementById('descedit').value === 'C version',
-     "saving C bounces too — same collision, same server words: no"
-     + ' save ever silently wins an edit war its author never saw');
+     'saving C bounces too — into the war popup (the banner stands'
+     + ' down): no save ever silently wins an edit war its author'
+     + ' never saw. And note B\'s OLD refusal opened no popup: the'
+     + ' staleness guard swallowed it before the war machinery');
+  newerDoc.querySelector('#war-dlg .dlg-x').click();
+
+  /* THE BLURB SPEC, README items 1-7 (dreev 2026-07-29). Replicata:
+     arrive anywhere, any blurb, even an empty one. Expectata: the
+     card RESTS RENDERED — pencil live, textarea hidden — and editing
+     is a mode you enter by pencil (which re-fetches without blocking
+     and grays itself), with a live preview, and leave by SAVE,
+     DISCARD, Escape, or a clean blur. Resultata pre-spec: an empty
+     blurb arrived in edit mode, no pencil, no DISCARD, no preview. */
+  gas.handle({ action: 'add', aname: 'blurbspec',
+    uname: 'ann', pid: 'pid-blurbspec-ann' });
+  const dBS = await makePage('/blurbspec?api=' + API_URL);
+  const bsDoc = dBS.window.document;
+  ok(bsDoc.getElementById('desc').classList.contains('viewing'),
+     'item 1: the card rests RENDERED, empty blurb or not');
+  const bsPolls = () => apiCalls.filter((c) => c.action === 'state'
+    && c.aname === 'blurbspec').length;
+  const bsPolls0 = bsPolls();
+  bsDoc.getElementById('desctoggle').click();
+  ok(!bsDoc.getElementById('desc').classList.contains('viewing')
+     && bsDoc.activeElement === bsDoc.getElementById('descedit'),
+     'item 3/4: the pencil opens the editor without blocking');
+  await until(() => bsPolls() > bsPolls0);
+  ok(bsPolls() > bsPolls0,
+     'item 3: the pencil click re-fetched the blurb (token freshened)');
+  type(dBS, 'descedit', '# Rules\n\n**bold** move');
+  ok(bsDoc.getElementById('descview').querySelector('h1')
+     && bsDoc.getElementById('descview').querySelector('h1')
+          .textContent === 'Rules'
+     && bsDoc.getElementById('descview').querySelector('strong')
+          .textContent === 'bold',
+     'item 5: the pane is a LIVE PREVIEW while editing');
+  const bsDiscard = bsDoc.getElementById('descdiscard');
+  ok(bsDiscard !== null && bsDiscard.textContent === STR.discardCopy
+     && bsDiscard.type === 'button',
+     "item 6: DISCARD stands below the textarea, in dreev's copy");
+  bsDiscard.click();
+  await sleep(50);
+  ok(bsDoc.getElementById('desc').classList.contains('viewing')
+     && bsDoc.getElementById('descedit').value === ''
+     && bsDoc.getElementById('descview').textContent === ''
+     && apiCalls.filter((c) => c.action === 'describe'
+          && c.aname === 'blurbspec').length === 0,
+     'item 7: DISCARD closes to rendered, drops the words, writes'
+     + ' nothing — and the pane shows the record again');
+  bsDoc.getElementById('desctoggle').click();
+  type(dBS, 'descedit', 'escape me');
+  bsDoc.getElementById('descedit').dispatchEvent(
+    new dBS.window.KeyboardEvent('keydown',
+      { key: 'Escape', bubbles: true, cancelable: true }));
+  await sleep(50);
+  ok(bsDoc.getElementById('desc').classList.contains('viewing')
+     && bsDoc.getElementById('descedit').value === '',
+     'item 6: Escape IS discard');
+  bsDoc.getElementById('desctoggle').click();
+  bsDoc.getElementById('descedit').blur();
+  await sleep(50);
+  ok(bsDoc.getElementById('desc').classList.contains('viewing'),
+     'a clean blur closes the editor too (nothing to keep open for)');
+  bsDoc.getElementById('desctoggle').click();
+  type(dBS, 'descedit', 'dirty words');
+  bsDoc.getElementById('descedit').blur();
+  await sleep(50);
+  ok(!bsDoc.getElementById('desc').classList.contains('viewing')
+     && bsDoc.getElementById('descedit').value === 'dirty words',
+     'a DIRTY blur keeps the editor open, words intact: blur still'
+     + ' commits nothing');
+  type(dBS, 'descedit', 'saved words');
+  bsDoc.getElementById('descgo').click();
+  await until(() => gas.handle({ action: 'state', aname: 'blurbspec' })
+    .blurb === 'saved words');
+  ok(bsDoc.getElementById('desc').classList.contains('viewing')
+     && bsDoc.getElementById('descview').textContent
+          .includes('saved words'),
+     'item 9: SAVE closes to rendered with the new words painted');
+
+  /* THE EDIT WAR POPUP, README items 10-17 (dreev 2026-07-29).
+     Replicata: open the editor, edit; a rival save lands; SAVE.
+     Expectata: the popup — title in dreev's copy, VS-Code red/green
+     diff of yours vs theirs, Keep theirs / Overwrite with mine —
+     while the words stay red in the open editor. The banner stays
+     hidden: the popup carries this news. */
+  gas.handle({ action: 'describe', aname: 'warzone', base: '',
+    blurb: 'line one\nline two\nline three' });
+  gas.handle({ action: 'add', aname: 'warzone',
+    uname: 'ann', pid: 'pid-warzone-ann' });
+  const dWar = await makePage('/warzone?api=' + API_URL);
+  const warDoc = dWar.window.document;
+  warDoc.getElementById('desctoggle').click();
+  await until(() => drained());
+  warDoc.getElementById('descedit').value
+    = 'line one\nline 2 mine\nline three';
+  warDoc.getElementById('descedit').dispatchEvent(
+    new dWar.window.Event('input', { bubbles: true }));
+  gas.handle({ action: 'describe', aname: 'warzone',
+    base: gas.handle({ action: 'state', aname: 'warzone' }).tblurb,
+    blurb: 'line one\nline 2 theirs\nline three' });  // the rival
+  const warCallsAtSave = apiCalls.length;
+  warDoc.getElementById('descgo').click();
+  await until(() => warDoc.getElementById('war-dlg').open);
+  ok(warDoc.getElementById('war-title').textContent
+       === STR.warTitle(1)
+     && warDoc.getElementById('war-keep').textContent
+          === STR.keepTheirsCopy
+     && warDoc.getElementById('war-mine').textContent
+          === STR.overwriteCopy
+     && warDoc.getElementById('banner').hidden
+     && warDoc.getElementById('descedit').value
+          === 'line one\nline 2 mine\nline three'
+     && warDoc.getElementById('descedit').classList.contains('error'),
+     "items 10-11: the popup, in dreev's copy, over a red editor"
+     + ' holding the words; the banner stands down');
+  await until(() => warDoc.querySelector('#war-diff .diff-row'));
+  const warRows = [...warDoc.querySelectorAll('#war-diff .diff-row')]
+    .map((r) => r.className.replace('diff-row', '').trim() + '|'
+      + r.textContent);
+  ok(warRows.some((r) => r.startsWith('same|')
+       && r.includes('line one'))
+     && warRows.some((r) => r.startsWith('del|')
+       && r.includes('line 2 theirs'))
+     && warRows.some((r) => r.startsWith('ins|')
+       && r.includes('line 2 mine')),
+     'the diff: unchanged context plain, theirs red-deleted, mine'
+     + ' green-inserted, VS Code style: ' + JSON.stringify(warRows));
+  ok([...warDoc.querySelectorAll('#war-diff mark')].length >= 2,
+     'char-level inner marks light the changed words within the'
+     + ' modified pair, like VS Code');
+  /* Replicata: the collision, on production latency (dreev's
+     firefox, 2026-07-30: the diff "takes forever"). Expectata: the
+     refusal CARRIES theirs, so the diff needs NO second round trip —
+     zero state reads between SAVE and the drawn diff. Resultata
+     pre-fix: a separate recovery fetch (1-2s on Apps Script), which
+     an in-flight poll could swallow entirely, stranding the popup
+     on its gavel until the NEXT poll (~7s). */
+  ok(!apiCalls.slice(warCallsAtSave).some((c) =>
+       c.action === 'state' && c.aname === 'warzone'),
+     'the war diff draws from the refusal itself: no recovery fetch,'
+     + ' no gavel beat, no poll roulette');
+  // dismissal decides nothing (item 12); the next SAVE is take 2
+  warDoc.querySelector('#war-dlg .dlg-x').click();
+  ok(!warDoc.getElementById('war-dlg').open
+     && warDoc.getElementById('descedit').value
+          === 'line one\nline 2 mine\nline three',
+     'item 12: dismissing decides nothing');
+  warDoc.getElementById('descgo').click();
+  await until(() => warDoc.getElementById('war-dlg').open);
+  ok(warDoc.getElementById('war-title').textContent
+       === STR.warTitle(2),
+     'item 13: mashing SAVE re-collides as take 2, in the'
+     + ' escalated title');
+  // Keep theirs: surrender — close, discard, show the record
+  warDoc.getElementById('war-keep').click();
+  await sleep(50);
+  ok(!warDoc.getElementById('war-dlg').open
+     && warDoc.getElementById('desc').classList.contains('viewing')
+     && warDoc.getElementById('descview').textContent
+          .includes('line 2 theirs')
+     && gas.handle({ action: 'state', aname: 'warzone' }).blurb
+          === 'line one\nline 2 theirs\nline three',
+     'Keep theirs: the editor closes, the pane shows the record,'
+     + ' nothing was written');
+  /* Replicata: Keep theirs, then the pencil again before the next
+     poll. Expectata: the textarea holds THEIR winning words — Keep
+     theirs adopted the record (item 12: it rides the war's fresh
+     fetch). Resultata pre-fix: the textarea resurrected the stale
+     pre-war base, contradicting the pane beside it. */
+  warDoc.getElementById('desctoggle').click();
+  ok(warDoc.getElementById('descedit').value
+       === 'line one\nline 2 theirs\nline three'
+     && !warDoc.getElementById('descedit').classList.contains('error'),
+     'Keep theirs ADOPTS theirs: reopening the editor shows the'
+     + ' record, never the stale pre-war words');
+  warDoc.getElementById('descdiscard').click();  // back to rest
+  await until(() => drained());
+
+  /* ...and Overwrite with mine: the informed win, plus the take
+     reset on a fresh session */
+  warDoc.getElementById('desctoggle').click();
+  await until(() => drained());
+  warDoc.getElementById('descedit').value = 'mine, informed';
+  warDoc.getElementById('descedit').dispatchEvent(
+    new dWar.window.Event('input', { bubbles: true }));
+  gas.handle({ action: 'describe', aname: 'warzone',
+    base: gas.handle({ action: 'state', aname: 'warzone' }).tblurb,
+    blurb: 'theirs again' });
+  warDoc.getElementById('descgo').click();
+  await until(() => warDoc.getElementById('war-dlg').open);
+  ok(warDoc.getElementById('war-title').textContent
+       === STR.warTitle(1),
+     'a fresh editing session starts a fresh war: take 1 again');
+  await until(() => warDoc.querySelector('#war-diff .diff-row'));
+  warDoc.getElementById('war-mine').click();
+  await until(() => gas.handle({ action: 'state', aname: 'warzone' })
+    .blurb === 'mine, informed');
+  ok(!warDoc.getElementById('war-dlg').open
+     && warDoc.getElementById('desc').classList.contains('viewing')
+     && !warDoc.getElementById('descedit').classList.contains('error'),
+     'Overwrite with mine: the informed save wins, everything'
+     + ' closes clean (item 13)');
+
+  /* Item 12's last sentence: DISCARD after dismissing the popup does
+     what Keep theirs does — the war's fresh fetch already brought
+     theirs, so DISCARD adopts it. */
+  warDoc.getElementById('desctoggle').click();
+  await until(() => drained());
+  warDoc.getElementById('descedit').value = 'third draft';
+  warDoc.getElementById('descedit').dispatchEvent(
+    new dWar.window.Event('input', { bubbles: true }));
+  gas.handle({ action: 'describe', aname: 'warzone',
+    base: gas.handle({ action: 'state', aname: 'warzone' }).tblurb,
+    blurb: 'third rival' });
+  warDoc.getElementById('descgo').click();
+  await until(() => warDoc.getElementById('war-dlg').open);
+  await until(() => warDoc.querySelector('#war-diff .diff-row'));
+  warDoc.querySelector('#war-dlg .dlg-x').click();
+  warDoc.getElementById('descdiscard').click();
+  await sleep(50);
+  ok(warDoc.getElementById('desc').classList.contains('viewing')
+     && warDoc.getElementById('descview').textContent
+          .includes('third rival')
+     && warDoc.getElementById('descedit').value === 'third rival'
+     && !warDoc.getElementById('descedit').classList.contains('error')
+     && gas.handle({ action: 'state', aname: 'warzone' }).blurb
+          === 'third rival',
+     'item 12: DISCARD after dismissal = Keep theirs — theirs'
+     + ' adopted, editor closed, nothing written');
+
+  /* ...the diff never executes user text (anti-postel: the blurb is
+     a shared field) */
+  gas.handle({ action: 'describe', aname: 'xsswar', base: '',
+    blurb: 'plain' });
+  gas.handle({ action: 'add', aname: 'xsswar',
+    uname: 'ann', pid: 'pid-xsswar-ann' });
+  const dXw = await makePage('/xsswar?api=' + API_URL);
+  dXw.window.document.getElementById('desctoggle').click();
+  await until(() => drained());
+  dXw.window.document.getElementById('descedit').value
+    = '<img src=x onerror=alert(1)>';
+  dXw.window.document.getElementById('descedit').dispatchEvent(
+    new dXw.window.Event('input', { bubbles: true }));
+  gas.handle({ action: 'describe', aname: 'xsswar',
+    base: gas.handle({ action: 'state', aname: 'xsswar' }).tblurb,
+    blurb: '<script>alert(2)</script>' });
+  dXw.window.document.getElementById('descgo').click();
+  await until(() => dXw.window.document.getElementById('war-dlg').open);
+  await until(() =>
+    dXw.window.document.querySelector('#war-diff .diff-row'));
+  ok(!dXw.window.document.querySelector('#war-diff img')
+     && !dXw.window.document.querySelector('#war-diff script')
+     && dXw.window.document.getElementById('war-diff').textContent
+          .includes('<img src=x onerror=alert(1)>'),
+     'the diff shows markup as TEXT: no element ever executes from'
+     + ' a shared field');
+
+  /* Item 17's diff slot, state one: theirs PENDING. The refusal
+     itself carries theirs (2026-07-30), so the pending state needs a
+     write QUEUED BEHIND the refused SAVE — with later writes out,
+     the refusal's snapshot is dropped (settleWrite's writesPending
+     guard) and the slot waits on the trailing write's own snapshot.
+     Expectata: the mini hammering gavel — an empty diff slot is an
+     untrusted picture — then the diff when the trailing write
+     settles. */
+  gas.handle({ action: 'describe', aname: 'slotgav', base: '',
+    blurb: 'alpha' });
+  gas.handle({ action: 'add', aname: 'slotgav',
+    uname: 'ann', pid: 'pid-slotgav-ann' });
+  const dSlot = await makePage('/slotgav?api=' + API_URL);
+  const slotDoc = dSlot.window.document;
+  slotDoc.getElementById('desctoggle').click();
+  await until(() => drained());
+  slotDoc.getElementById('descedit').value = 'mine';
+  slotDoc.getElementById('descedit').dispatchEvent(
+    new dSlot.window.Event('input', { bubbles: true }));
+  gas.handle({ action: 'describe', aname: 'slotgav',
+    base: gas.handle({ action: 'state', aname: 'slotgav' }).tblurb,
+    blurb: 'theirs' });
+  mockDelay = 150;  // every hop crawls
+  slotDoc.getElementById('descgo').click();
+  const slotName = row(slotDoc, 'ann').querySelector('.rename input');
+  slotName.focus();
+  slotName.value = 'annette';
+  slotName.dispatchEvent(new dSlot.window.Event('input',
+    { bubbles: true }));
+  slotName.form.requestSubmit();  // the trailing write, queued
+  await until(() => slotDoc.getElementById('war-dlg').open);
+  ok(slotDoc.querySelector('#war-diff .gavel.mini')
+     && !slotDoc.querySelector('#war-diff .diff-row'),
+     'item 17: theirs still pending behind a queued write — the slot'
+     + ' shows the mini gavel, an untrusted picture');
+  mockDelay = 0;
+  await until(() => slotDoc.querySelector('#war-diff .diff-row'));
+  ok(!slotDoc.querySelector('#war-diff .gavel'),
+     "the trailing write settles: its snapshot draws the diff");
+
+  /* ...and state two: the wire dies under the diff's remaining
+     ride. A write queued behind the refused SAVE drops the refusal's
+     snapshot, then the wire dies: the trailing write's transport
+     death routes to a recovery refresh that dies too. Expectata
+     (item 17): the slot shows the refusal's plain words — never a
+     gavel hammering forever on a dead wire; a healed take repaints
+     the real diff. Resultata pre-paintWar-in-refresh's-catch: the
+     gavel hammered until the wire healed on its own. */
+  gas.handle({ action: 'describe', aname: 'downwar', base: '',
+    blurb: 'alpha' });
+  gas.handle({ action: 'add', aname: 'downwar',
+    uname: 'ann', pid: 'pid-downwar-ann' });
+  const dDown = await makePage('/downwar?api=' + API_URL);
+  const downDoc = dDown.window.document;
+  downDoc.getElementById('desctoggle').click();
+  await until(() => drained());
+  downDoc.getElementById('descedit').value = 'mine';
+  downDoc.getElementById('descedit').dispatchEvent(
+    new dDown.window.Event('input', { bubbles: true }));
+  gas.handle({ action: 'describe', aname: 'downwar',
+    base: gas.handle({ action: 'state', aname: 'downwar' }).tblurb,
+    blurb: 'theirs' });
+  mockDelay = 100;  // let the POST leave before the wire dies
+  downDoc.getElementById('descgo').click();
+  const downName = row(downDoc, 'ann').querySelector('.rename input');
+  downName.focus();
+  downName.value = 'annette';
+  downName.dispatchEvent(new dDown.window.Event('input',
+    { bubbles: true }));
+  downName.form.requestSubmit();  // the trailing write, queued
+  await until(() => writesInFlight === 1);
+  fetchDown = true;  // the refusal's response is already in flight
+                     // and still lands; everything after it dies
+  await until(() => downDoc.getElementById('war-dlg').open);
+  await sleep(150);  // outwait the doomed rides
+  ok(downDoc.getElementById('war-diff').textContent
+       === SCOPY.simulEditsCopy
+     && !downDoc.querySelector('#war-diff .gavel'),
+     'item 17: the wire dies under the remaining rides — the slot'
+     + ' shows the plain words, never a gavel hammering forever');
+  // the wire heals; the user retries from the popup (item 13's
+  // dismiss-and-SAVE path) and the fresh take draws the real diff
+  fetchDown = false;
+  mockDelay = 0;
+  downDoc.querySelector('#war-dlg .dlg-x').click();
+  downDoc.getElementById('descgo').click();
+  await until(() => downDoc.querySelector('#war-diff .diff-row'));
+  ok(downDoc.getElementById('war-title').textContent
+       === STR.warTitle(2)
+     && !downDoc.querySelector('#war-diff .gavel'),
+     'the healed take 2 rebuilds the real diff over the words');
 
   /* Replicata: a fresh URL is opened and the visitor types in the
      blurb box before the first snapshot lands (dreev, 2026-07-27, on
@@ -1093,6 +1455,27 @@ const cssBattles = [];
      && !eagerDoc.getElementById('descedit').classList.contains('error'),
      'typing AND saving before the first snapshot lands cleanly');
 
+  /* Replicata: a virgin page (no snapshot yet), the pencil, then a
+     clean click-away — nothing typed. Expectata: the mode closes,
+     the pane painted with the virgin record ''. Resultata pre-fix:
+     discardDesc read state.blurb off the null state and died
+     mid-close (TypeError), leaving the pane unpainted. */
+  mockDelay = 300;
+  const dVBlur = await makePage('/virginblur?api=' + API_URL);
+  const vblurDoc = dVBlur.window.document;
+  vblurDoc.getElementById('desctoggle').click();
+  const vblurEdit = vblurDoc.getElementById('descedit');
+  vblurEdit.focus();
+  vblurEdit.blur();
+  ok(vblurDoc.getElementById('desc').classList.contains('viewing')
+     && vblurDoc.getElementById('descview').dataset.md === ''
+     && vblurEdit.value === '',
+     'pencil then clean click-away on a virgin page closes the mode'
+     + ' whole: the record (still \'\') painted, nothing thrown');
+  mockDelay = 0;
+  await until(() => !vblurDoc.getElementById('status').classList
+    .contains('stale'));
+
   /* Replicata: the eager typist again, but at a URL where someone
      already left a description this browser has never seen (no cached
      snapshot). Expectata (mid-air-collision convention, 2026-07-28):
@@ -1119,13 +1502,14 @@ const cssBattles = [];
      + ' waits');
   preexDoc.getElementById('desctoggle').click();
   preexDoc.getElementById('descgo').click();
-  await until(() => !preexDoc.getElementById('banner').hidden);
-  ok(preexDoc.getElementById('banner-msg').textContent
-       === SCOPY.simulEditsCopy
-     && gas.handle({ action: 'state', aname: 'preexdesc' })
-          .blurb === 'House rules.',
-     "and his save bounces in the server's words: a draft based on"
+  await until(() => preexDoc.getElementById('war-dlg').open);
+  ok(gas.handle({ action: 'state', aname: 'preexdesc' })
+       .blurb === 'House rules.'
+     && preexDoc.getElementById('war-title').textContent
+          === STR.warTitle(1),
+     'and his save bounces into the war popup: a draft based on'
      + ' nothing never silently overwrites the record');
+  preexDoc.querySelector('#war-dlg .dlg-x').click();
 
   /* Replicata (dreev's Firefox haunting, 2026-07-28): weeks ago this
      browser typed in the blurb and never saved; the blurb has since
@@ -2492,10 +2876,12 @@ const cssBattles = [];
     uname: 'ann', pid: 'pid-descy-ann' });
   const domDs = await makePage('/descy?api=' + API_URL);
   const dsDoc = domDs.window.document;
-  ok(dsDoc.getElementById('descedit')
-     && !dsDoc.getElementById('desc').classList.contains('viewing')
+  ok(dsDoc.getElementById('desc').classList.contains('viewing')
      && dsDoc.getElementById('descedit').placeholder.length > 0,
-     'an undescribed auction opens in edit mode, placeholder explaining');
+     'an undescribed auction rests RENDERED like every other (README'
+     + ' blurb spec item 1, 2026-07-29, reversing the edit-at-rest'
+     + ' arrival): the pencil is the way in');
+  dsDoc.getElementById('desctoggle').click();  // the way in
   dsDoc.getElementById('descedit').value = '# Brunch\n\n**bring** cash';
   dsDoc.getElementById('descedit').dispatchEvent(
     new domDs.window.Event('input', { bubbles: true }));
@@ -2543,13 +2929,14 @@ const cssBattles = [];
      + ' sent');
   const domBk = await makePage('/blank?api=' + API_URL);
   await sleep(20);
-  domBk.window.document.getElementById('descedit').focus();
+  domBk.window.document.getElementById('desctoggle').click();
   domBk.window.document.getElementById('descedit').dispatchEvent(
     new domBk.window.Event('blur'));
-  ok(!domBk.window.document.getElementById('desc').classList
+  ok(domBk.window.document.getElementById('desc').classList
        .contains('viewing'),
-     'a clean blur of a BLANK blurb stays in edit mode: flipping'
-     + ' would trade the placeholder for an invisible empty pane');
+     'a clean blur of a BLANK blurb closes to rendered like any'
+     + ' other (README blurb spec, 2026-07-29: rendered is THE rest'
+     + ' state, empty or not — the pencil is always the way back)');
 
   /* code spans are LITERAL. Replicata: describe an auction with
      backticked text containing markdown syntax. Resultata pre-fix:
@@ -2701,11 +3088,12 @@ const cssBattles = [];
   // ...and B moves on: clicks into the + row and starts thinking
   dB.window.document.getElementById('roster-input').focus();
   await until(() =>
-    !dB.window.document.getElementById('banner').hidden);
-  ok(dB.window.document.getElementById('banner').textContent
-       .includes(SCOPY.simulEditsCopy),
-     "the clobber bounces off the compare-and-swap, loudly, in dreev's"
-     + ' words');
+    dB.window.document.getElementById('war-dlg').open);
+  ok(dB.window.document.getElementById('war-title').textContent
+       === STR.warTitle(1)
+     && dB.window.document.getElementById('banner').hidden,
+     'the clobber bounces off the compare-and-swap into the war'
+     + " popup, in dreev's copy — the banner stands down");
   ok(STR.mysteryDevice === SCOPY.mysteryDeviceCopy,
      'stringles.js and Code.gs agree verbatim on the nameless-rig'
      + " fallback (both ends decorate tooltips with the holder's rig)");
@@ -2783,15 +3171,25 @@ const cssBattles = [];
   // draft kept red and copyable, winifred's words standing
   cw.window.document.querySelector('#desc .go').click();
   await until(() =>
-    !cw.window.document.getElementById('banner').hidden);
-  ok(cw.window.document.getElementById('banner-msg').textContent
-       === SCOPY.simulEditsCopy
+    cw.window.document.getElementById('war-dlg').open);
+  ok(cw.window.document.getElementById('war-title').textContent
+       === STR.warTitle(1)
      && cwEd.value === 'per cletus'
      && cwEd.classList.contains('error')
      && gas.handle({ action: 'state', aname: 'clob' }).blurb
           === 'per winifred',
-     'his save bounces off the compare-and-swap: refused in the'
-     + " server's words, draft red for copying, her words standing");
+     'his save bounces off the compare-and-swap into the war popup:'
+     + ' draft red for copying, her words standing');
+  await until(() =>
+    cw.window.document.querySelector('#war-diff .diff-row'));
+  ok([...cw.window.document.querySelectorAll('#war-diff .diff-row')]
+       .some((r) => r.className.includes('del')
+         && r.textContent.includes('per winifred'))
+     && [...cw.window.document.querySelectorAll('#war-diff .diff-row')]
+       .some((r) => r.className.includes('ins')
+         && r.textContent.includes('per cletus')),
+     'the popup diffs hers against his, red and green');
+  cw.window.document.querySelector('#war-dlg .dlg-x').click();
 
   // The same law for the bid editor: clicking away sends nothing
   const nb = await makePage('/noblur?api=' + API_URL);
@@ -3060,6 +3458,7 @@ const cssBattles = [];
      'the rename is refused before the wire, in the same words');
   limName.dispatchEvent(new dLim2.window.KeyboardEvent('keydown',
     { key: 'Escape', bubbles: true, cancelable: true }));
+  lim2Doc.getElementById('desctoggle').click();  // the mode's way in
   const bigBlurb = 'x'.repeat(2001);
   lim2Doc.getElementById('descedit').value = bigBlurb;
   lim2Doc.getElementById('descedit').dispatchEvent(
@@ -3272,32 +3671,30 @@ const cssBattles = [];
        === dB.window.document.getElementById('roster-input'),
      "...but it never STEALS the caret from the field B moved on to"
      + ' (the arrival-caret law): the red editor waits its turn');
-  await until(() => dB.window.document.getElementById('descview')
-    .textContent.includes('A version'));
-  ok(!dB.window.document.getElementById('descview').textContent
+  ok(dB.window.document.getElementById('descview').textContent
        .includes('B version'),
-     "meanwhile the (hidden) view pane holds the server's truth: flip"
-     + ' over to read what won before insisting');
+     'the pane is the PREVIEW while the editor is open (README blurb'
+     + " spec item 5): B's words stay painted; what won surfaces in"
+     + ' the war popup, not by flipping the pane');
+  dB.window.document.querySelector('#war-dlg .dlg-x').click();
   dB.window.document.getElementById('descedit')
     .dispatchEvent(new dB.window.Event('input', { bubbles: true }));
   ok(!dB.window.document.getElementById('descedit').classList
        .contains('error'),
      'the red clears at the next keystroke, like every field objection');
-  // [Sol's audit, 2026-07-29: this tail waited on the re-base and
-  // blur-commit behaviors DELETED with the mid-air-collision redo,
-  // timed out twice in silence, and passed on ok(true). Rewritten to
-  // the current law — and every until() below re-asserts.]
-  // B mashes SAVE unrepentant: the collision refuses again, same
-  // words — no save ever silently wins an edit war
-  dB.window.document.getElementById('banner-x').click();
+  // B mashes SAVE unrepentant after dismissing: the collision
+  // refuses again — take 2, escalated title (README items 12-13) —
+  // and A's win stands
   dB.window.document.getElementById('descgo').click();
-  await until(() => !dB.window.document.getElementById('banner').hidden);
-  ok(dB.window.document.getElementById('banner-msg').textContent
-       === SCOPY.simulEditsCopy
+  await until(() =>
+    dB.window.document.getElementById('war-dlg').open);
+  ok(dB.window.document.getElementById('war-title').textContent
+       === STR.warTitle(2)
      && gas.handle({ action: 'state', aname: 'descy' }).blurb
           === 'A version',
-     'insisting bounces again, in the same server words: repeat SAVEs'
-     + " never clobber A's win");
+     'insisting bounces again as TAKE 2, in the escalated title:'
+     + " repeat SAVEs never clobber A's win");
+  dB.window.document.querySelector('#war-dlg .dlg-x').click();
 
   /* --- 2k. the alice race: two machines, one seat ------------------------
      Replicata (dreev's report, re-ruled 2026-07-21 after faire's

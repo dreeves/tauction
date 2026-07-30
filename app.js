@@ -402,6 +402,9 @@ async function refresh() {
   } catch (e) {
     console.warn(e2152(e.message));
     $('status').classList.add('stale');
+    paintWar();  // an open war popup shows the weather in the
+                 // refusal's words (item 17): never a gavel
+                 // hammering on a dead wire
   }
   try {
     if (res !== null) {
@@ -588,7 +591,11 @@ function sweepHot() {
 function renderDesc() {
   const view = $('descview');
   const edit = $('descedit');
-  if (view.dataset.md !== state.blurb) {
+  // the pane mirrors server truth AT REST only: while editing it is
+  // the live preview (README blurb spec item 5) and belongs to the
+  // keystrokes
+  if ($('desc').classList.contains('viewing')
+      && view.dataset.md !== state.blurb) {
     view.dataset.md = state.blurb;
     view.innerHTML = mdRender(state.blurb);
   }
@@ -606,20 +613,179 @@ function renderDesc() {
     edit.defaultValue = state.blurb;
     edit.dataset.base = state.tblurb;
   }
-  if (!adopted) {  // the arrival picks the mode, once per auction
-    $('desc').classList.toggle('viewing', state.blurb !== '');
-  }
+  paintWar();  // the war popup, while open, mirrors state too: the
+               // diff freshens itself as snapshots land
   syncHot(edit);
 }
 
-// The corner ✎ (rendered mode's only control; the glyph lives in
-// index.html) reopens the editor. SAVE commits (dreev 2026-07-27,
-// reversing his own 💾 kill: cletus's clobber showed that a blur —
-// dismissing a banner, reloading — is never a decision to save).
-// Escape still reverts and leaves.
+// The corner ✎ (grayed while editing; the glyph lives in
+// index.html) opens the editing mode: textarea beside the pane,
+// which becomes the live preview. Per README blurb spec item 3 the
+// click also re-fetches the blurb — WITHOUT blocking the editor —
+// so the CAS token is at most a round trip stale instead of a poll.
 function editDesc() {
+  refresh();     // freshen the token; fire-and-forget
+  warTake = 0;   // a fresh editing session starts at take zero
   $('desc').classList.remove('viewing');
   $('descedit').focus();
+}
+
+// The war diff's engine: longest-common-subsequence over LINES
+// (blurbs cap at 2000 chars, so the quadratic table is trivially
+// small), yielding rows of [op, text] with op same | del | ins —
+// theirs is the original, mine the proposal, VS Code's orientation.
+function lineDiff(theirs, mine) {
+  const a = theirs.split('\n');
+  const b = mine.split('\n');
+  const L = Array.from({ length: a.length + 1 },
+    () => new Array(b.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) {
+      L[i][j] = a[i] === b[j] ? L[i + 1][j + 1] + 1
+        : Math.max(L[i + 1][j], L[i][j + 1]);
+    }
+  }
+  const rows = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      rows.push(['same', a[i]]);
+      i++;
+      j++;
+    } else if (L[i + 1][j] >= L[i][j + 1]) {
+      rows.push(['del', a[i++]]);
+    } else {
+      rows.push(['ins', b[j++]]);
+    }
+  }
+  while (i < a.length) rows.push(['del', a[i++]]);
+  while (j < b.length) rows.push(['ins', b[j++]]);
+  return rows;
+}
+
+// One diff line's text, with the char-level inner mark VS Code puts
+// on a modified pair: common prefix and suffix stay plain, the
+// differing middle wears the <mark>. DOM-built through textContent —
+// user text must never meet innerHTML.
+function appendMarked(node, text, other) {
+  let p = 0;
+  while (p < text.length && p < other.length
+         && text[p] === other[p]) p++;
+  let s = 0;
+  while (s < text.length - p && s < other.length - p
+         && text[text.length - 1 - s]
+            === other[other.length - 1 - s]) s++;
+  node.append(text.slice(0, p));
+  if (text.length - p - s > 0) {
+    node.append(el('mark', 'chg', text.slice(p, text.length - s)));
+  }
+  node.append(text.slice(text.length - s));
+}
+
+// The rendered diff: line rows with a −/+ gutter and VS Code's line
+// tints; an adjacent del/ins pair gets the inner marks too.
+function diffEl(theirs, mine) {
+  const box = el('div', 'diff-body');
+  const rows = lineDiff(theirs, mine);
+  rows.forEach(([op, text], k) => {
+    const row = el('div', 'diff-row ' + op);
+    row.append(el('span', 'diff-gutter',
+      op === 'del' ? '−' : op === 'ins' ? '+' : ' '));
+    const body = el('span', 'diff-text');
+    const pair =
+      op === 'del' && rows[k + 1] && rows[k + 1][0] === 'ins'
+        ? rows[k + 1][1]
+      : op === 'ins' && rows[k - 1] && rows[k - 1][0] === 'del'
+        ? rows[k - 1][1]
+      : null;
+    if (pair === null) body.textContent = text;
+    else appendMarked(body, text, pair);
+    row.append(body);
+    box.append(row);
+  });
+  return box;
+}
+
+// the diff slot's loading sign: the big gavel's anatomy, mini — the
+// empty slot is an untrusted PICTURE, exactly what the gavel means
+// (README item 17); the one-gavel law holds structurally, because a
+// wire-down slot shows words instead (see paintWar)
+function slotGavel() {
+  const g = el('span', 'gavel mini');
+  g.setAttribute('aria-hidden', 'true');
+  g.innerHTML = $('status').querySelector(':scope > .gavel').innerHTML;
+  return g;
+}
+
+let warWords = '';  // the refusal's words, for the wire-down slot
+
+// A refused SAVE opens the war (README items 10-13): title at the
+// current take, banner stood down (the popup carries this news), the
+// slot painted by paintWar now and by every render while open.
+function openWar(words) {
+  warTake++;
+  warWords = words;
+  $('banner').hidden = true;
+  $('war-title').textContent = warTitle(warTake);
+  const slot = $('war-diff');
+  delete slot.dataset.key;
+  slot.replaceChildren();
+  $('war-dlg').showModal();  // open FIRST: paintWar paints only an
+                             // open war (its at-rest no-op guard)
+  paintWar();
+}
+
+// The war popup's one painter (README items 10-17), from openWar and
+// from every render while it shows. Disclosed ifs, one per spec'd
+// state: theirs not yet fetched (the recovery ride is out) → the
+// gavel; the wire down → the refusal's words, never a gavel
+// hammering forever; theirs in hand → the diff, rebuilt only when
+// its inputs actually changed (each take freshens it).
+function paintWar() {
+  if (!$('war-dlg').open) return;
+  const edit = $('descedit');
+  const slot = $('war-diff');
+  if (state.tblurb === edit.dataset.base) {
+    if ($('status').classList.contains('stale')) {
+      slot.textContent = warWords;
+    } else if (!slot.querySelector('.gavel')) {
+      slot.replaceChildren(slotGavel());
+    }
+    return;
+  }
+  const key = state.tblurb + '\u0000' + edit.value;
+  if (slot.dataset.key === key) return;
+  slot.dataset.key = key;
+  slot.replaceChildren(diffEl(state.blurb, edit.value));
+}
+
+// the war take: how many times THIS editing session's save has
+// bounced off the compare-and-swap (README blurb spec item 13 —
+// "take 2" and counting; reset when a session opens)
+let warTake = 0;
+
+// DISCARD (and Escape, and a clean blur, and the war's Keep theirs):
+// never mind — the editor closes and editor, baseline, CAS base, and
+// pane ALL adopt the record, the newest snapshot this client holds.
+// Not defaultValue: after a war that is the stale pre-war baseline,
+// while the record already includes theirs, brought home by the
+// war's own fetch (item 12: DISCARD here ≡ Keep theirs). Writes
+// nothing, obviously (README blurb spec item 7). Disclosed ternary:
+// a virgin page that has adopted no snapshot spells its record '',
+// the same virgin convention as the CAS base born '' (see wireUp).
+function discardDesc() {
+  const edit = $('descedit');
+  const rec = state === null ? { blurb: '', tblurb: '' } : state;
+  edit.value = rec.blurb;
+  edit.defaultValue = rec.blurb;
+  edit.dataset.base = rec.tblurb;
+  edit.classList.remove('error');
+  $('desc').classList.add('viewing');
+  const view = $('descview');
+  view.dataset.md = rec.blurb;
+  view.innerHTML = mdRender(rec.blurb);
+  syncHot(edit);
 }
 
 // SAVE: commit any change and flip back to rendered. Disclosed ifs:
@@ -639,7 +805,7 @@ function commitDesc() {
     const draft = edit.value;
     const cleanBase = edit.defaultValue;  // pre-edit server truth
     queueLazyOp(() => ({ action: 'describe', aname: aname, blurb: draft,
-                         base: edit.dataset.base }), () => {
+                         base: edit.dataset.base }), (ref) => {
       if (edit.value !== draft || edit.defaultValue !== draft) return;
       // The commit bounced off the compare-and-swap (someone's edit
       // beat ours): back into the editor, your words intact and the
@@ -656,6 +822,10 @@ function commitDesc() {
       // is idle (the arrival-caret law) — if you've moved on to
       // another field, the red editor waits its turn
       if (document.activeElement === document.body) edit.focus();
+      // a real refusal IS the edit war (README item 15: after the
+      // local length check it is the only refusal a describe has
+      // left); transport death shows only the weather banner (16)
+      if (ref) openWar(ref.error);
     }, (res) => { edit.dataset.base = res.tblurb; });
     edit.defaultValue = draft;  // ours is the working base now
     edit.classList.remove('error');
@@ -667,7 +837,8 @@ function commitDesc() {
     view.innerHTML = mdRender(draft);
     flashCommit($('desc'));  // the card glows: your words are away
   }
-  $('desc').classList.toggle('viewing', edit.value !== '');
+  $('desc').classList.add('viewing');  // the editor closes on SAVE,
+                                       // empty blurb or not (item 9)
   syncHot(edit);  // committed: the field cools, SAVE stands down
 }
 
@@ -1276,7 +1447,10 @@ function mdRender(md) {
         '<a href="$2" target="_blank" rel="noopener">$1</a>')
       .replace(/<<(\d+)>>/g, (_, i) => stash[i]);
   };
-  return esc.split(/\n{2,}/).map((b) => {
+  // blank blocks (an empty source, stray leading/trailing blank
+  // lines) render as NOTHING, never as <p></p> — an empty record
+  // must leave the pane truly :empty (the empty-state CSS keys on it)
+  return esc.split(/\n{2,}/).filter((b) => b.trim() !== '').map((b) => {
     const lines = b.split('\n');
     const h = lines.length === 1 && lines[0].match(/^(#{1,3}) (.*)$/);
     if (h) {
@@ -1684,24 +1858,36 @@ function settleWrite(res, at, onRefusal) {
   writesPending--;
   assert(writesPending >= 0, 'write bookkeeping went negative');
   settleSeq++;
+  let refusal = null;
   if (res && res.error) {
     // (the old /^ERROR1304/ banner suppression died with the claim
     // lock, 2026-07-21: claims take the seat, so no refusal exists
     // to soften — every refusal banners, and banner() chronicles)
     banner(res.error);
+    refusal = res;
     res = null;
   }
   // recovery runs for server refusals AND transport deaths alike
   // (Sol's audit #3: the words must come back either way — the
-  // transport catch already bannered its own weather)
-  if (res === null && onRefusal) onRefusal();
+  // transport catch already bannered its own weather); the refusal
+  // itself rides along, null for transport, so a recovery can tell
+  // a real verdict from dead wifi (the war popup needs to)
+  if (res === null && onRefusal) onRefusal(refusal);
   // Disclosed if: a SUCCESSFUL settle retires stale bad news — the
   // question the banner answered is over (the durable signal, a red
   // field, stays). One of the three exits of a sticky banner.
   if (res) $('banner').hidden = true;
   if (writesPending > 0) return;
-  if (res && res.aname === aname && at === writeSeq) {
-    ingest(res);
+  // A refusal that CARRIES a snapshot (describe's CAS since
+  // 2026-07-30 — generated under the same write lock) is adopted by
+  // the same last-write-standing rule as a success: the war diff
+  // draws theirs from it with no recovery fetch. The error key is
+  // shed first — onRefusal above already consumed it, and a stored
+  // snapshot must never replay bad news.
+  const snap = res || (refusal && refusal.aname ? refusal : null);
+  if (snap) delete snap.error;
+  if (snap && snap.aname === aname && at === writeSeq) {
+    ingest(snap);
     render();
   } else {
     refresh();
@@ -1951,11 +2137,31 @@ function wireUp() {
   });
   $('seal').addEventListener('click', pressReveal);
   $('desctoggle').addEventListener('click', editDesc);
+  // the empty pane's invitation = the textarea's own placeholder,
+  // single-sourced (the empty-state CSS label reads this attribute)
+  $('desctoggle').dataset.hint = $('descedit').placeholder;
   // the commit buttons wear dreev's copy, single-sourced from
   // stringles (their dynamic row siblings are built with the same
   // constants)
   $('descgo').textContent = saveCopy;
   $('descgo').addEventListener('click', commitDesc);
+  $('descdiscard').textContent = discardCopy;
+  $('descdiscard').addEventListener('click', discardDesc);
+  // the war's two resolutions (README item 11); dismissal — the ×,
+  // the backdrop, Escape — is wired with every other dialog and
+  // decides nothing (item 12)
+  $('war-keep').textContent = keepTheirsCopy;
+  $('war-keep').addEventListener('click', () => {
+    $('war-dlg').close();
+    discardDesc();
+  });
+  $('war-mine').textContent = overwriteCopy;
+  $('war-mine').addEventListener('click', () => {
+    $('war-dlg').close();
+    $('descedit').dataset.base = state.tblurb;  // informed now: the
+                          // token the war's own fetch brought home
+    commitDesc();
+  });
   $('roster-go').textContent = addCopy;
   // The blurb's compare-and-swap base is BORN '', matching the
   // server's tblurb for a never-described auction: a page that has
@@ -1965,16 +2171,18 @@ function wireUp() {
   // whoever typed before the first snapshot landed (dreev's
   // fresh-URL report, 2026-07-27).
   $('descedit').dataset.base = '';
-  // Disclosed if: leaving a CLEAN, nonempty editor flips back to
-  // rendered — a pure mode flip, no write, undone by the ✎ (without
-  // it a look-but-don't-touch visit would strand the card in source
-  // mode). A dirty editor stays open: unsaved work stays visibly
-  // unsaved, its SAVE standing, until a deliberate SAVE or Escape.
+  // Disclosed if: leaving a CLEAN editor discards — a pure mode
+  // flip, no write, undone by the ✎ (and this is how Escape's
+  // revert-then-blur lands as DISCARD, README blurb spec item 6).
+  // A dirty editor stays open: unsaved work stays visibly unsaved,
+  // its SAVE standing, until a deliberate SAVE or DISCARD.
   $('descedit').addEventListener('blur', () => {
     const edit = $('descedit');
-    if (edit.value === edit.defaultValue && edit.value !== '') {
-      $('desc').classList.add('viewing');
-    }
+    // a blur AFTER the mode closed (SAVE closes it, then focus moves
+    // on) means nothing — without this, the post-SAVE blur repainted
+    // the pane with pre-save truth over the optimistic paint
+    if ($('desc').classList.contains('viewing')) return;
+    if (edit.value === edit.defaultValue) discardDesc();
   });
   $('descedit').addEventListener('input', () => {
     // one toggle: the live length ring past 2000 (the silent
@@ -1982,6 +2190,11 @@ function wireUp() {
     // objection clears on the next keystroke, as before
     $('descedit').classList.toggle('error',
       overlongBlurb($('descedit').value));
+    // ...and the pane previews every keystroke, rendered (README
+    // blurb spec item 5); renderDesc leaves it alone while editing
+    const view = $('descview');
+    view.dataset.md = $('descedit').value;
+    view.innerHTML = mdRender($('descedit').value);
   });
   // Cmd/Ctrl+Enter commits from the keyboard — the textarea
   // convention (plain Enter stays a newline)
