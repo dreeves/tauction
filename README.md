@@ -18,21 +18,19 @@ There's a bunch of setup info and deploy instructions currently in black hole of
 ### Spec for editing the auction description
 
 We refer to the auction description internally as the blurb.
-[not correct yet]
 
 1. Always show the rendered version of the blurb, with a pencil icon in the upper right corner
-2. Use standard markdown rules a la github.com/dreeves/eat-the-richtext
-3. When the user clicks the pencil, refresh the blurb from the server and keep a hash of it in localstorage
-4. Optional optimization: let the server store/compute that hash so the client can ask for just the hash
-5. Clicking the pencil makes the pencil disappear or gray out and a textarea appear to the left or above (depending on screensize) the rendered blurb
-6. Editing in the textarea makes the rendered blurb update in real time
-7. Below the textarea are buttons SAVE and DISCARD
-8. Pressing either makes the textarea disappear
-9. If DISCARD, just discard the edits, obviously
-10. If SAVE, first check the server to confirm the hash of the blurb didn't change on the server
-11. If the blurb didn't change on the server, update the blurb on the server
-12. (What about race conditions?)
-13. If the blurb did change, show a popup with ":boom-emoji: Edit war! Stash your changes and reload the page" as popup title and a red/green diff the same way VS Code does it
+2. Use standard markdown rules a la github.com/dreeves/eat-the-richtext (open questions: images? raw html?)
+3. Clicking the pencil refreshes the blurb from the server (without blocking the editor opening) and notes the server's version token in client memory (not localstorage, lest an old token resurrect an old edit war)
+4. The pencil disappears or grays out (open question: which?) and a textarea appears to the left or above (depending on screensize) the rendered blurb
+5. Editing in the textarea makes the rendered blurb update in real time
+6. Below the textarea are buttons SAVE and DISCARD
+7. If DISCARD, the textarea disappears and the edits are discarded, obviously
+8. If SAVE, the draft is sent along with the token it started from; the server, inside its write lock, refuses atomically if the token is stale
+9. On success the textarea disappears and a fresh token comes back for subsequent edits
+10. On refusal the textarea stays (red, words intact for stashing) and a popup shows "💥 Edit war! Stash your changes and reload the page" as popup title and a red/green diff of yours vs theirs the same way VS Code does it
+11. At the bottom, the popup offers "Keep theirs" / "Overwrite with mine"
+12. If the popup is dismissed without clicking either button [TODO]
 
 
 ---
