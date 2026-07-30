@@ -34,7 +34,8 @@ We refer to the auction description internally as the blurb.
 13. Choosing "Overwrite with mine" (or closing the popup and hitting SAVE) resends the draft with the fresh token. This either succeeds or is refused again if another edit snuck in. In that case the popup title is modified: "💥 Edit war, take 2! Stash your changes (again) and reload the page", with that "2" (call it the warcount) incrementing as needed. And of course warcount resets to zero when the textarea closes.
 14. The popup's title and buttons are client-side copy specified in stringles.js. 
 15. When the client get a refusal from the server on SAVE, it knows it's an edit war and doesn't need to consider the text of the server's error message. A blurb save is refused for only two reasons: (a) it's too long, which the client knows and doesn't attempt sending to the server, and (b) stale token aka collision aka edit war.
-16. Drawing the diff needs the server's current blurb, fetched when the refusal arrives (~1 second). During that beat the popup's diff area shows the gavelspinner (small hammering gavel) with the usual 300ms appearance delay, so a fast fetch never flashes it. If that fetch itself fails, the diff area shows the plain error text rather than a gavel hammering forever. The draft stays in the red textarea throughout, either way.
+16. (A SAVE that dies in transport is not a refusal. In that case the contents of the textarea are restored to what was last typed and the user gets the usual transport error banner.)
+17. Drawing the diff needs the server's current blurb, fetched when the refusal arrives (~1 second). During that beat the popup's diff area shows the gavelspinner (small hammering gavel) with the usual 300ms appearance delay, so a fast fetch never flashes it. If that fetch itself fails, the diff area shows the plain error text rather than a gavel hammering forever. The draft stays in the red textarea throughout, either way.
 
 ---
 
