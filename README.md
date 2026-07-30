@@ -25,12 +25,12 @@ We refer to the auction description internally as the blurb.
 4. The pencil disappears or grays out (open question: which?) and a textarea appears to the left or above (depending on screensize) the rendered blurb
 5. Editing in the textarea makes the rendered blurb update in real time
 6. Below the textarea are buttons SAVE and DISCARD
-7. If DISCARD, the textarea disappears and the edits are discarded, obviously
+7. If DISCARD, the textarea disappears and the edits are discarded, obviously. [TODO: do we do a new fetch from the server at this point?]
 8. If SAVE, the draft is sent along with the token it started from; the server, inside its write lock, refuses atomically if the token is stale
 9. On success the textarea disappears and a fresh token comes back for subsequent edits
 10. On refusal the textarea stays (red, words intact for stashing) and a popup shows "💥 Edit war! Stash your changes and reload the page" as popup title and a red/green diff of yours vs theirs the same way VS Code does it
 11. At the bottom, the popup offers "Keep theirs" / "Overwrite with mine"
-12. If the popup is dismissed without clicking either button [TODO]
+12. If the popup is dismissed without clicking either button, nothing changes: the red textarea keeps reflecting the local edits. Clicking SAVE yields the same edit-war popup with a fresh diff. Clicking DISCARD and [TODO: see to-do in item 7]
 
 
 ---
