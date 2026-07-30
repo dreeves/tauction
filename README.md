@@ -31,7 +31,10 @@ We refer to the auction description internally as the blurb.
 10. On refusal the textarea stays (glowing red, with words intact for stashing) and a popup shows "💥 Edit war! Stash your changes and reload the page" as popup title and a red/green diff of yours vs theirs the same way VS Code does it.
 11. At the bottom, the popup offers "Keep theirs" / "Overwrite with mine".
 12. If the popup is dismissed without clicking either button, nothing changes: the red textarea keeps reflecting the local edits. Clicking SAVE yields the same edit-war popup with a fresh diff. Clicking DISCARD at this point does the same thing "Keep theirs" in the popup does, since the edit-war popup was accompanied by a new fetch of the server's version of the blurb.
-13. Choosing "Overwrite with mine" resends the draft with the fresh token. This either succeeds or is refused again if another edit snuck in. In that case the popup title is modified: "💥 Edit war, take 2! Stash your changes (again) and reload the page", with that "2" incrementing as needed.
+13. Choosing "Overwrite with mine" (or closing the popup and hitting SAVE) resends the draft with the fresh token. This either succeeds or is refused again if another edit snuck in. In that case the popup title is modified: "💥 Edit war, take 2! Stash your changes (again) and reload the page", with that "2" (call it the warcount) incrementing as needed. And of course warcount resets to zero when the textarea closes.
+14. The popup's title and buttons are client-side copy specified in stringles.js. 
+15. When the client get a refusal from the server on SAVE, it knows it's an edit war and doesn't need to consider the text of the server's error message. A blurb save is refused for only two reasons: (a) it's too long, which the client knows and doesn't attempt sending to the server, and (b) stale token aka collision aka edit war.
+16. Drawing the diff needs the server's current blurb, fetched when the refusal arrives (~1 second). During that beat the popup's diff area shows the gavelspinner (small hammering gavel) with the usual 300ms appearance delay, so a fast fetch never flashes it. If that fetch itself fails, the diff area shows the plain error text rather than a gavel hammering forever. The draft stays in the red textarea throughout, either way.
 
 ---
 
