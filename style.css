@@ -1,11 +1,21 @@
+/* The auctioneer's ledger palette (2026-07-30, replacing the stock
+   Tailwind-indigo-on-blue-gray chrome — the statistical-center "AI
+   look"): every color derives from a prop the app already owns.
+   Neutrals are paper and ink — cream stock, espresso ink, warm sand
+   rules — never blue-gray; the accent is petrol teal, the classic
+   ledger-ruling ink, dark enough to carry --accent-ink text at AA.
+   The frontend suite's palette fence enforces all of this
+   structurally (no indigo band, warm neutrals, AA on-accent) over
+   every token in both themes. */
 :root {
-  --bg: #faf9f5;
-  --card: #ffffff;
-  --fg: #24242c;
-  --muted: #6f6f80;
-  --border: #d9d8e4;
-  --accent: #5b5bd6;
-  --accent-soft: #ececfa;
+  --bg: #f7f2e6;
+  --card: #fffdf7;
+  --fg: #2f2a21;
+  --muted: #766c5d;
+  --border: #d8cdb8;
+  --accent: #135f6e;
+  --accent-soft: #e0eeec;
+  --accent-ink: #ffffff;
   --ok-fg: #1d6b43;
   --ok-bg: #e6f4ec;
   /* error pair copied from GitHub Primer's shipped tokens (dreev:
@@ -15,28 +25,29 @@
   --err-bg: #ffebe9;
   --glow: rgba(29, 107, 67, 0.28);
   --shimmer: rgba(29, 107, 67, 0.22);
-  --grid: rgba(36, 36, 44, 0.07);
+  --grid: rgba(47, 42, 33, 0.07);
   --star: #d4a017;
-  --pop: 0 1px 3px rgba(36, 36, 44, 0.18), 0 1px 2px rgba(36, 36, 44, 0.1);
+  --pop: 0 1px 3px rgba(47, 42, 33, 0.18), 0 1px 2px rgba(47, 42, 33, 0.1);
   --wood: #8a5a2b;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #10131a;
-    --card: #181c26;
-    --fg: #e6e8f0;
-    --muted: #969cb2;
-    --border: #2c3140;
-    --accent: #9d9df2;
-    --accent-soft: #272b40;
+    --bg: #181410;
+    --card: #221d16;
+    --fg: #ece3d3;
+    --muted: #a2947e;
+    --border: #3b3327;
+    --accent: #58b7bf;
+    --accent-soft: #1f3436;
+    --accent-ink: #181410;
     --ok-fg: #7fd6a4;
     --ok-bg: #17301f;
     --err-fg: #f85149;
     --err-bg: #f851491a;
     --glow: rgba(127, 214, 164, 0.28);
     --shimmer: rgba(127, 214, 164, 0.25);
-    --grid: rgba(230, 232, 240, 0.05);
+    --grid: rgba(236, 227, 211, 0.05);
     --star: #f2c744;
     --pop: 0 1px 3px rgba(0, 0, 0, 0.6), 0 1px 2px rgba(0, 0, 0, 0.4);
     --wood: #b98a5a;
@@ -436,7 +447,7 @@ body.unnamed .field .gorow { display: flex; }
 .field .go {
   font-size: 0.85rem;
   padding: 0.55rem 1.1rem;
-  color: #fff;
+  color: var(--accent-ink);
   background: var(--accent);
 }
 
@@ -580,7 +591,16 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
 
 /* Column headings over the two pieces. Same font-size as .tile-name so
    the ch-based min-width resolves to the identical column width. */
-.thead { display: flex; gap: 0.4rem; margin-bottom: 0.4rem; }
+/* the account book's head rule: a double line under the column
+   headings, the classic ledger convention (part of the 2026-07-30
+   de-AI retheme — a typographic signature no template ships) */
+.thead {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 3px double var(--border);
+}
 
 .thead::before {
   content: '';
@@ -1056,6 +1076,11 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
   opacity: 0.75;
   user-select: none;
   white-space: nowrap;  /* decoys stay one line, so cards stay uniform */
+  /* ...and the card CLIPS the line: on a phone the fixed decoy is
+     wider than the bid column and its haze ran out of the card,
+     under the × (2026-07-30 designer round) */
+  max-width: 100%;
+  overflow: hidden;
 }
 
 /* the star radio for who-you-are: ☆ = claimable, dimmed ☆ = dibsed by
@@ -1450,7 +1475,7 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
   justify-items: center;     /* button always fits the longer one   */
   padding: 0.5rem 1.1rem;
   font-weight: 700;
-  color: #fff;
+  color: var(--accent-ink);
   background: var(--accent);
   border: none;
   border-radius: 3px;

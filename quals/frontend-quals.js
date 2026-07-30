@@ -384,6 +384,66 @@ const cssBattles = [];
   }
 }
 
+// THE PALETTE FENCE (dreev 2026-07-30: make the visuals "the opposite
+// of ai-generated-looking"). The 2026 design literature's loudest AI
+// tell is interface chrome in the Tailwind-indigo band — the
+// statistical center of "nice modern web UI" — over cool blue-gray
+// neutrals. This app's identity props are all WARM (cream ledger
+// paper, wood gavel, gold star, money green, stamp red), so the laws
+// are structural, enumerated over every color token in BOTH :root
+// blocks rather than spot-checked. Scope: the token blocks only —
+// one-off literals elsewhere (the QR quiet zone's #fff, VS Code's
+// lifted diff palette) answer to their own comments.
+const cssTokens = (fromIdx) => {
+  const open = STYLE_CSS.indexOf('{', STYLE_CSS.indexOf(':root', fromIdx));
+  const body = STYLE_CSS.slice(open + 1, STYLE_CSS.indexOf('}', open))
+    .replace(/\/\*[^]*?\*\//g, '');
+  const toks = {};
+  for (const m of body.matchAll(/--([\w-]+):\s*([^;]+);/g)) toks[m[1]] = m[2];
+  return toks;
+};
+const PALETTE = {
+  light: cssTokens(0),
+  dark: cssTokens(STYLE_CSS.indexOf('@media (prefers-color-scheme: dark)')),
+};
+// every color literal in a token's value (hex or rgb/rgba), as [r,g,b]
+const tokenColors = (val) => {
+  const out = [];
+  for (const h of val.match(/#[0-9a-fA-F]+/g) || []) {
+    const x = h.length < 6 ? h.slice(1).split('').map((c) => c + c)
+                           : h.slice(1).match(/../g);
+    out.push(x.slice(0, 3).map((c) => parseInt(c, 16)));
+  }
+  for (const f of val.match(/rgba?\([^)]*\)/g) || []) {
+    out.push(f.match(/[\d.]+/g).slice(0, 3).map(Number));
+  }
+  return out;
+};
+const hueSat = ([r, g, b]) => {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  const l = (mx + mn) / 510;
+  const s = d === 0 ? 0 : d / (255 * (1 - Math.abs(2 * l - 1)));
+  const h = d === 0 ? 0
+    : mx === r ? 60 * (((g - b) / d + 6) % 6)
+    : mx === g ? 60 * ((b - r) / d + 2)
+    :            60 * ((r - g) / d + 4);
+  return { h, s };
+};
+// WCAG relative luminance and contrast ratio, the spec's own math
+const srgbLin = (c) => {
+  c /= 255;
+  return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+};
+const relLum = ([r, g, b]) =>
+  0.2126 * srgbLin(r) + 0.7152 * srgbLin(g) + 0.0722 * srgbLin(b);
+const contrast = (a, b) => {
+  const [hi, lo] = [relLum(a), relLum(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+// the tokens whose job is to be colorLESS chrome; the identity colors
+// (accent, star, wood, ok, err, glow, shimmer) carry hue on purpose
+const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
+
 (async () => {
   let timeoutFailed = false;
   try { await until(() => false, 10); }
@@ -391,6 +451,77 @@ const cssBattles = [];
   ok(timeoutFailed,
      'until fails loudly on timeout instead of letting a stale'
      + ' scenario pass vacuously');
+
+  /* --- the palette fence: three laws over every :root color token ------- */
+  ok(Object.keys(PALETTE.dark).sort().join() ===
+       Object.keys(PALETTE.light).sort().join(),
+     'dark mode redefines exactly the light token set — a token added'
+     + ' to one theme only would silently wear the wrong theme half'
+     + ' the day');
+  {
+    const offenders = [];
+    for (const [theme, toks] of Object.entries(PALETTE)) {
+      for (const [name, val] of Object.entries(toks)) {
+        for (const c of tokenColors(val)) {
+          const { h, s } = hueSat(c);
+          if (s > 0.2 && h >= 225 && h <= 300) {
+            offenders.push(theme + ' --' + name);
+          }
+        }
+      }
+    }
+    ok(offenders.length === 0,
+       'no palette token sits in the AI-indigo band (hue 225-300 at'
+       + ' sat > 0.2), the Tailwind-default tell: ' + offenders.join(', '));
+    const cold = [];
+    for (const [theme, toks] of Object.entries(PALETTE)) {
+      for (const name of NEUTRAL_TOKENS) {
+        for (const c of tokenColors(toks[name])) {
+          if (c[0] < c[2]) cold.push(theme + ' --' + name);
+        }
+      }
+    }
+    ok(cold.length === 0,
+       'neutral chrome is warm: every neutral token keeps red >= blue'
+       + ' (paper and ink, not the default blue-gray): ' + cold.join(', '));
+    // ink stays legible on both papers in both themes: body ink at
+    // AAA 7:1, muted (it labels at small-bold sizes) at AA 4.5:1
+    const dim = [];
+    for (const [theme, toks] of Object.entries(PALETTE)) {
+      for (const paper of ['bg', 'card']) {
+        const on = (name) => contrast(
+          tokenColors(toks[name])[0], tokenColors(toks[paper])[0]);
+        if (on('fg') < 7) dim.push(theme + ' --fg/--' + paper);
+        if (on('muted') < 4.5) dim.push(theme + ' --muted/--' + paper);
+      }
+    }
+    ok(dim.length === 0,
+       'ink contrast holds on both papers, both themes (fg >= 7:1,'
+       + ' muted >= 4.5:1): ' + dim.join(', '));
+  }
+  {
+    const inkOn = (theme) => contrast(
+      tokenColors(PALETTE[theme]['accent-ink'] || '')[0] || [0, 0, 0],
+      tokenColors(PALETTE[theme].accent)[0]);
+    ok(PALETTE.light['accent-ink'] && PALETTE.dark['accent-ink']
+       && inkOn('light') >= 4.5 && inkOn('dark') >= 4.5,
+       '--accent-ink reads on --accent at WCAG AA 4.5:1 in both themes'
+       + ' (the old dark theme inked #fff on periwinkle at 2.5:1)');
+    // accent fills must take their ink from the pair above, never a
+    // hardcoded literal that one theme will contradict
+    const unpaired = [];
+    for (const m of STYLE_CSS.replace(/\/\*[^]*?\*\//g, '')
+        .matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      if (!/background(?:-color)?:\s*var\(--accent\)/.test(m[2])) continue;
+      const c = m[2].match(/(?:^|;)\s*color:\s*([^;]+)/);
+      if (c && c[1].trim() !== 'var(--accent-ink)') {
+        unpaired.push(m[1].trim().replace(/\s+/g, ' '));
+      }
+    }
+    ok(unpaired.length === 0,
+       'every accent-filled rule inks with var(--accent-ink): '
+       + unpaired.join(', '));
+  }
 
   ok(cssBattles.length === 0,
      'no unregistered same-selector CSS battles (the 0.6-relic'

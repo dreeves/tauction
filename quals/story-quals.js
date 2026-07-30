@@ -2391,6 +2391,23 @@ async function bid(page, bidText) {
              < slot.getBoundingClientRect().height * 1.5;
     }), 'sealed, the 78-char bid wears a ONE-LINE card: the box must'
        + ' never leak the size of what it hides');
+    /* the decoy is clipped by its card (2026-07-30 designer round).
+       Replicata: open a sealed auction at phone width. Expectata: the
+       blurred decoy stays inside the green card. Resultata pre-fix:
+       the fixed one-line decoy was wider than the phone's bid column
+       and its haze ran out of the card, under the neighboring ×. */
+    const peek = await makePage(browser, PHONE);
+    await peek.goto(BASE + '/longbid', { waitUntil: 'networkidle0' });
+    await peek.waitForSelector('.tile.has-bid .bid-card');
+    ok(await peek.evaluate(() =>
+      [...document.querySelectorAll('.bid-text.masked')].every((m) => {
+        const card = m.closest('.bid-card').getBoundingClientRect();
+        const r = m.getBoundingClientRect();
+        return r.right <= card.right + 1 && r.left >= card.left - 1;
+      })),
+       'on a phone the sealed decoy stays inside its card instead of'
+       + ' running under the ×');
+    await shoot(peek, 'story7-sealed-decoy-phone');
     await claimRow(mo, 'mo');
     /* the 160-char limit OBJECTS, never chops (dreev: "i don't like
        how it abruptly cuts me off... it should make it obvious"):
