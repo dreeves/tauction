@@ -1455,6 +1455,35 @@ const cssBattles = [];
      && !eagerDoc.getElementById('descedit').classList.contains('error'),
      'typing AND saving before the first snapshot lands cleanly');
 
+  /* Replicata (dreev 2026-07-30, "takes forever for anything to get
+     through to the server", both browsers): arrive at a FRESH URL —
+     no cached snapshot — and add a participant before the arrival
+     GET lands (2-3s against live Apps Script). Expectata: the row
+     paints AT THE KEYSTROKE; server truth reconciles behind it.
+     Resultata pre-fix: state sat null until arrival, the optimistic
+     paint was gated on it, and the mid-write arrival snapshot was
+     (rightly) rejected — so the first paint waited for the LAST
+     write to settle: 7-10s of dead screen on the live deployment. */
+  mockDelay = 300;
+  const dSeed = await makePage('/virginseed?api=' + API_URL);
+  const seedDoc = dSeed.window.document;
+  type(dSeed, 'roster-input', 'ann');
+  submitName(dSeed);
+  ok(seedDoc.querySelectorAll('#tiles .tile').length === 1
+     && seedDoc.querySelector('#tiles .tile .rename input').value
+          === 'ann',
+     'a fresh page paints the typed row AT THE KEYSTROKE: no round'
+     + ' trip gates the optimistic paint');
+  mockDelay = 0;
+  await until(() => drained());
+  await until(() => (gas.handle({ action: 'state', aname: 'virginseed' })
+    .seats || []).length === 1);
+  await sleep(120);
+  ok(seedDoc.querySelectorAll('#tiles .tile').length === 1
+     && seedDoc.getElementById('banner').hidden,
+     'the arrival and the settle reconcile to the same one row,'
+     + ' no banner, no flicker of a confirmed-empty roster');
+
   /* Replicata: a virgin page (no snapshot yet), the pencil, then a
      clean click-away — nothing typed. Expectata: the mode closes,
      the pane painted with the virgin record ''. Resultata pre-fix:

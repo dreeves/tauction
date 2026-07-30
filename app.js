@@ -366,7 +366,10 @@ function ingest(res) {
   assertState(res);
   res.claims = umap(res.claims);
   res.blurbs = umap(res.blurbs);
-  narrate(state, res);
+  // the chronicle's arrival edge is ADOPTED, not state-null: a page
+  // born on the virgin seed still narrates its first real snapshot
+  // as the arrival table
+  narrate(adopted ? state : null, res);
   state = res;
   seenRevealed = seenRevealed || res.revealed;
   localStorage.setItem('tauction-state:' + res.aname, JSON.stringify(res));
@@ -771,12 +774,12 @@ let warTake = 0;
 // Not defaultValue: after a war that is the stale pre-war baseline,
 // while the record already includes theirs, brought home by the
 // war's own fetch (item 12: DISCARD here ≡ Keep theirs). Writes
-// nothing, obviously (README blurb spec item 7). Disclosed ternary:
-// a virgin page that has adopted no snapshot spells its record '',
-// the same virgin convention as the CAS base born '' (see wireUp).
+// nothing, obviously (README blurb spec item 7). Every page that can
+// reach this holds a state (virgin-seeded at birth), so the record
+// is simply state — a fresh page's record is the virgin ''.
 function discardDesc() {
   const edit = $('descedit');
-  const rec = state === null ? { blurb: '', tblurb: '' } : state;
+  const rec = state;
   edit.value = rec.blurb;
   edit.defaultValue = rec.blurb;
   edit.dataset.base = rec.tblurb;
@@ -1824,7 +1827,11 @@ function queueOp(body, onRefusal, onSuccess) {
 }
 
 function queueLazyOp(request, onRefusal, onSuccess = () => {}) {
-  if (state) renderStatus();  // the optimistic paint
+  renderStatus();  // the optimistic paint (every page that can queue
+                   // a write holds a state: virgin-seeded at birth,
+                   // probe-seeded by switchAuction — the old
+                   // if-(state) gate was what kept eager typing
+                   // invisible on fresh pages)
   if (!configured) return;
   const at = startWrite();
   opChain = opChain.then(async () => {
@@ -2004,7 +2011,27 @@ function paintCached() {
   } catch (e) {
     localStorage.removeItem(key);  // cache from an old schema: purge
   }
+  // No cache: the page is born holding the VIRGIN state instead of
+  // null, so the optimistic paint works from the first keystroke.
+  // state used to sit null until the arrival GET landed (2-3s on
+  // live Apps Script), which left eager typing invisible until the
+  // last write settled — 7-10s of dead screen (dreev's "takes
+  // forever for anything to get through", 2026-07-30). Seeded, not
+  // ingested: no narration, no cache write, and the arrival edge
+  // (adopted) stays unconsumed for the first real snapshot.
+  if (state === null) state = virginState(aname);
   $('status').classList.add('stale');
+}
+
+// A brand-new auction's truth, known without asking: the exact
+// payload the server answers for a never-touched aname (claims and
+// blurbs already in their post-ingest umap shape). If the server's
+// virgin ever grows a field, the eager-typist quals against fake-gas
+// (which runs the real Code.gs) are the fence.
+function virginState(a) {
+  return { aname: a, exists: false, seats: [], bidders: [],
+           revealed: false, tfin: '', blurb: '', tblurb: '',
+           claims: umap(), blurbs: umap(), bids: null };
 }
 
 // Typed names CREATE auctions; joining an existing one is by URL or

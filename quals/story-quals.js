@@ -50,8 +50,11 @@ const SCOPY2 = require('vm')
   .runInContext('({ simulEditsCopy })', gas);
 
 // Answer any request to the deployed API URL with the local Code.gs
-// logic; write ops can be artificially delayed for in-flight-race quals
+// logic; write ops can be artificially delayed for in-flight-race
+// quals, and reads too (readDelay) — the live API takes 2-3s a call,
+// and the fresh-URL dead-screen regression hid in exactly that gap
 let opDelay = 0;
+let readDelay = 0;
 async function bridge(page) {
   await page.setRequestInterception(true);
   page.on('request', (req) => {
@@ -65,7 +68,7 @@ async function bridge(page) {
       ? JSON.parse(req.postData())
       : Object.fromEntries(new URL(req.url()).searchParams);
     const wait = ['add', 'remove', 'claim', 'release', 'bid', 'reveal',
-                  'describe'].includes(q.action) ? opDelay : 0;
+                  'describe'].includes(q.action) ? opDelay : readDelay;
     const body = JSON.stringify(gas.handle(q));
     setTimeout(() => req.respond({
       status: 200,
@@ -1991,6 +1994,35 @@ async function bid(page, bidText) {
              document.getElementById('closed')).marginTop) > 12;
     }), 'a closed auction changes the weather: the body tints off the'
        + ' resting paper and the Closed line gets its air');
+
+    /* ====== the fresh-URL eager typist (dreev 2026-07-30) ============
+       Replicata: arrive at a brand-new URL — no cached snapshot — on
+       a slow wire (1.5s a call; the live API takes 2-3), and type
+       two participants immediately. Expectata: both rows ON SCREEN
+       at the keystrokes, the server catching up behind. Resultata
+       pre-fix: nothing painted until the LAST write settled — 7-10s
+       of dead screen against live Apps Script, the "takes forever
+       for anything to get through" report, in both browsers. */
+    readDelay = 1500;
+    opDelay = 1500;
+    const eag = await makePage(browser, DESKTOP);
+    await eag.goto(BASE + '/eagertype',
+      { waitUntil: 'domcontentloaded' });
+    await eag.waitForSelector('#roster-input');
+    await addName(eag, 'ann');
+    await addName(eag, 'bob');
+    ok(await eag.evaluate(() =>
+      document.querySelectorAll('#tiles .tile').length === 2),
+       'two adds on a fresh slow-wire page paint at the keystrokes');
+    readDelay = 0;
+    opDelay = 0;
+    await eag.waitForFunction(() =>
+      !document.getElementById('status').classList.contains('stale'));
+    ok(gas.handle({ action: 'state', aname: 'eagertype' })
+         .seats.length === 2
+       && await eag.evaluate(() =>
+            document.querySelectorAll('#tiles .tile').length === 2),
+       'and the server catches up to the very same picture');
 
     /* ====== cletus and winifred, in a real browser ===================
        The mid-air-collision convention (dreev 2026-07-28, replacing
