@@ -122,6 +122,7 @@ const STR = new Function(STRINGLES
   + ' bidTooLongBanner,'
   + ' moneyGlyphs, revealTip, needNameTip, removeTip,'
   + ' tooLateRemoveTip, resubmittedTip, nameStoneTip,'
+  + ' submittedTip, yourBidWord,'
   + ' waitingGlyph, yourMoveGlyph, readyGlyph, revealedGlyph,'
   + ' tabTitle, saveCopy, addCopy, submitCopy, tooLateGoTip, startCopy,'
   + ' discardCopy, warTitle, keepTheirsCopy, overwriteCopy,'
@@ -1505,6 +1506,132 @@ const cssBattles = [];
      'create flow: the first participant paints at the keystroke');
   mockDelay = 0;
   await until(() => drained());
+
+  /* Replicata (dreev's phone): submit a bid, then look — on live
+     latency (~3s a write) the row still said "Awaiting bid...", the
+     slot kept breathing, the × stayed offered, the padlock kept
+     waiting on you. Expectata: the ledger counts the flying bid
+     EVERYWHERE the moment SUBMIT fires — like a roster add — and
+     the volley's away-tint is what says not-yet-confirmed. */
+  gas.handle({ action: 'add', aname: 'opti', uname: 'ann',
+    pid: 'pid-opti-ann' });
+  gas.handle({ action: 'add', aname: 'opti', uname: 'bob',
+    pid: 'pid-opti-bob' });
+  gas.handle({ action: 'bid', aname: 'opti', pid: 'pid-opti-bob',
+    uname: 'bob', bid: 'tacos', deviceID: 'dev-opti-bob' });
+  const dOpti = await makePage('/opti?api=' + API_URL);
+  const optiDoc = dOpti.window.document;
+  claimRow(dOpti, 'ann');
+  await until(() => drained());
+  typeBid(dOpti, 'my kingdom');
+  mockDelay = 400;  // live-shaped write latency
+  submitBid(dOpti);
+  const optiRow = row(optiDoc, 'ann');
+  optiRow.querySelector('.tile-bid').dispatchEvent(
+    new dOpti.window.Event('mouseover', { bubbles: true }));
+  ok(optiRow.classList.contains('has-bid')
+     && optiRow.querySelector('.x').disabled
+     && optiRow.querySelector('.tile-bid').getAttribute('data-tip')
+          === STR.submittedTip(STR.yourBidWord, '0s')
+     && !optiDoc.getElementById('seal').disabled
+     && optiDoc.title.startsWith(STR.readyGlyph)
+     && optiDoc.querySelector('#tiles .rebid').classList
+          .contains('busy'),
+     'the flying bid counts everywhere at SUBMIT: card flipped, ×'
+     + ' grayed, tip says submitted, padlock unlocked, tab glyph'
+     + ' ready — the volley tint alone says not-yet-confirmed');
+  mockDelay = 0;
+  await settled(dOpti);
+  ok(optiRow.classList.contains('has-bid')
+     && !optiDoc.querySelector('#tiles .rebid').classList
+          .contains('busy')
+     && gas.handle({ action: 'state', aname: 'opti' })
+          .bidders.length === 2,
+     'the settle confirms the same picture: tint gone, record in');
+
+  /* ...and the truthful revert: the wire eats a FIRST bid, so the
+     optimistic picture must walk back to awaiting, loudly. */
+  gas.handle({ action: 'add', aname: 'optidead', uname: 'ann',
+    pid: 'pid-optidead-ann' });
+  gas.handle({ action: 'add', aname: 'optidead', uname: 'bob',
+    pid: 'pid-optidead-bob' });
+  const dDead = await makePage('/optidead?api=' + API_URL);
+  const deadDoc = dDead.window.document;
+  claimRow(dDead, 'ann');
+  await until(() => drained());
+  typeBid(dDead, 'doomed words');
+  fetchDown = true;
+  submitBid(dDead);
+  ok(row(deadDoc, 'ann').classList.contains('has-bid'),
+     'the doomed bid still counts while it flies: no oracle');
+  await until(() => !deadDoc.getElementById('banner').hidden);
+  await sleep(80);
+  fetchDown = false;
+  row(deadDoc, 'ann').querySelector('.tile-bid').dispatchEvent(
+    new dDead.window.Event('mouseover', { bubbles: true }));
+  ok(!row(deadDoc, 'ann').classList.contains('has-bid')
+     && row(deadDoc, 'ann').querySelector('.tile-bid')
+          .getAttribute('data-tip') === STR.awaitingTip
+     && deadDoc.getElementById('seal').disabled
+     && myEditor(deadDoc).value === 'doomed words'
+     && !deadDoc.querySelector('#tiles .rebid').classList
+          .contains('busy'),
+     'a transport-dead volley walks the picture back: awaiting'
+     + ' again, padlock locked, words kept for retrying, banner up');
+
+  /* THE COMMIT TINT, held to the settle: the tint appears at the
+     commit gesture and its quiet fade IS the confirmation — per
+     field: blurb, rename, add, and the auction name (whose pending
+     window is its create probe). */
+  gas.handle({ action: 'add', aname: 'tint', uname: 'ann',
+    pid: 'pid-tint-ann' });
+  const dTint = await makePage('/tint?api=' + API_URL);
+  const tintDoc = dTint.window.document;
+  mockDelay = 300;
+  tintDoc.getElementById('desctoggle').click();
+  tintDoc.getElementById('descedit').value = 'tinted words';
+  tintDoc.getElementById('descedit').dispatchEvent(
+    new dTint.window.Event('input', { bubbles: true }));
+  tintDoc.getElementById('descgo').click();
+  ok(tintDoc.getElementById('desc').classList.contains('committed'),
+     'SAVE tints the blurb card: yours is away');
+  await until(() => drained());
+  await sleep(50);
+  ok(!tintDoc.getElementById('desc').classList.contains('committed'),
+     "the blurb's settle clears the tint: the fade is the"
+     + ' confirmation');
+  renameTo(dTint, 'ann', 'annette');
+  ok(row(tintDoc, 'annette').querySelector('.rename input')
+       .classList.contains('committed'),
+     'a rename tints its field: yours is away');
+  await until(() => drained());
+  await sleep(50);
+  ok(!row(tintDoc, 'annette').querySelector('.rename input')
+       .classList.contains('committed'),
+     "the rename's settle clears the tint");
+  type(dTint, 'roster-input', 'mo');
+  submitName(dTint);
+  ok(tintDoc.getElementById('roster-input').classList
+       .contains('committed'),
+     'an add tints the + row: yours is away');
+  await until(() => drained());
+  await sleep(50);
+  ok(!tintDoc.getElementById('roster-input').classList
+       .contains('committed'),
+     "the add's settle clears the tint");
+  mockDelay = 0;
+  const dNamec = await makePage('/?api=' + API_URL);
+  const namecDoc = dNamec.window.document;
+  mockDelay = 300;
+  type(dNamec, 'aname', 'tintname');
+  commitName(dNamec);
+  ok(namecDoc.getElementById('aname').classList.contains('committed'),
+     'committing a name tints it while its create probe rides');
+  await until(() => !namecDoc.body.classList.contains('unnamed'));
+  await sleep(50);
+  ok(!namecDoc.getElementById('aname').classList.contains('committed'),
+     "the probe's settle clears the name's tint");
+  mockDelay = 0;
 
   /* Replicata: a virgin page (no snapshot yet), the pencil, then a
      clean click-away — nothing typed. Expectata: the mode closes,
@@ -5595,70 +5722,79 @@ const cssBattles = [];
   ok(domWeird.window.location.search.includes('api='),
      '?api= preserved on the fresh-auction redirect');
 
-  /* --- 7. the commit pulse: a gesture visibly TAKES (dreev's ruling,
-     2026-07-19: submit-button legibility without submit buttons — a
-     one-shot ring on the field the instant its write queues; the
-     outgoing twin of the incoming shimmer). The negatives matter as
-     much as the positives: a gesture that queues NOTHING must never
-     flash, or the pulse becomes a lie. ------------------------------- */
+  /* --- 7. the commit tint: a gesture visibly TAKES (dreev's ruling:
+     submit-button legibility without submit buttons — the field
+     tints the instant its write queues and holds until the settle;
+     the fade is the confirmation). The negatives matter as much as
+     the positives: a gesture that queues NOTHING must never tint,
+     or the tint becomes a lie. --------------------------------------- */
   const dPulse = await makePage('/?api=' + API_URL);
   const pdoc = dPulse.window.document;
-  // negative first: naming an OCCUPIED auction is refused at the gate
+  // a refused name rode a real probe: its tint clears at the refusal
   type(dPulse, 'aname', 'occupied');
   commitName(dPulse);
   await until(() => !pdoc.getElementById('banner').hidden);
   ok(!pdoc.getElementById('aname').classList.contains('committed'),
-     'a gate-refused name does not pulse: nothing was committed');
-  // positive: a fresh name takes, and the field says so
+     "a refused name's tint clears with its probe: nothing left"
+     + ' pending');
+  // positive: a fresh name tints while its probe rides, then settles
+  mockDelay = 200;
   type(dPulse, 'aname', 'pulse');
   commitName(dPulse);
-  await until(() =>
-    pdoc.getElementById('aname').classList.contains('committed'), 2000);
   ok(pdoc.getElementById('aname').classList.contains('committed'),
-     'a name that takes pulses once: the commit is visible');
-  // the + row: an add queues a write and pulses; junk does not
+     'a committed name tints while its create probe rides');
+  await until(() => !pdoc.body.classList.contains('unnamed'));
+  await sleep(50);
+  mockDelay = 0;
+  ok(!pdoc.getElementById('aname').classList.contains('committed'),
+     "the probe's settle clears the name's tint: the fade is the"
+     + ' confirmation');
+  // the + row: an add queues a write and tints; junk does not
   addName(dPulse, 'pip');
   ok(pdoc.getElementById('roster-input').classList.contains('committed'),
-     'adding a person pulses the + row the instant the write queues');
+     'adding a person tints the + row the instant the write queues');
   await settled(dPulse);
-  pdoc.getElementById('roster-input').classList.remove('committed');
+  ok(!pdoc.getElementById('roster-input').classList.contains('committed'),
+     "the add's settle clears the + row's tint on its own");
   addName(dPulse, '@#$%');
   ok(!pdoc.getElementById('roster-input').classList.contains('committed')
      && pdoc.getElementById('roster-input').classList.contains('error'),
      'junk in the + row reddens but never pulses: no write queued');
-  // the bid editor: an empty submit is a local slip (no pulse); a
-  // real bid pulses at submit time, before any response lands
+  // the bid editor: an empty submit is a local slip (no tint); a
+  // real bid wears its volley's away-tint from submit to settle
   typeBid(dPulse, '');
   submitBid(dPulse);
-  ok(!myEditor(pdoc).classList.contains('committed')
+  ok(!pdoc.querySelector('#tiles .rebid').classList.contains('busy')
      && myEditor(pdoc).classList.contains('error'),
-     'an empty bid reddens but never pulses');
+     'an empty bid reddens but never tints: no write queued');
   typeBid(dPulse, '7 tacos');
   submitBid(dPulse);
-  ok(myEditor(pdoc).classList.contains('committed'),
-     'a bid pulses the moment it is away, not when the server answers');
+  ok(pdoc.querySelector('#tiles .rebid').classList.contains('busy'),
+     'a bid tints the moment it is away, not when the server answers');
   await settled(dPulse);
+  ok(!pdoc.querySelector('#tiles .rebid').classList.contains('busy'),
+     "the volley's settle clears the bid's tint");
   // a rename: same-name snap-back is a non-event; a real edit pulses
   renameTo(dPulse, 'pip', 'pip');
   ok(!row(pdoc, 'pip').querySelector('.rename input').classList
        .contains('committed'),
-     'a rename to the same name snaps back without a pulse');
+     'a rename to the same name snaps back without a tint');
   renameTo(dPulse, 'pip', 'quinn');
   ok(row(pdoc, 'quinn').querySelector('.rename input').classList
        .contains('committed'),
-     'a real rename pulses its field');
+     'a real rename tints its field');
   await settled(dPulse);
   // the description: an untouched blur commits nothing; SAVE
   // commits, and the card ring says so
   const pedit = pdoc.getElementById('descedit');
   pedit.dispatchEvent(new dPulse.window.Event('blur'));
   ok(!pdoc.getElementById('desc').classList.contains('committed'),
-     'an untouched description blur commits nothing and shows nothing');
+     'an untouched description blur commits nothing and tints nothing');
   pedit.value = 'pulse notes';
   pedit.dispatchEvent(new dPulse.window.Event('input', { bubbles: true }));
   pdoc.getElementById('descgo').click();
   ok(pdoc.getElementById('desc').classList.contains('committed'),
-     'SAVE commits the description and pulses the card');
+     'SAVE commits the description and tints the card');
   await settled(dPulse);
 
   /* --- 8. banners STICK (dreev's ruling, 2026-07-19): bad news stays

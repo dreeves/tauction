@@ -267,6 +267,15 @@ async function bid(page, bidText) {
            .opacity === '0'),
        'the in-flight blurb save shows NO busy sign anywhere: no'
        + ' gavel spins for a write');
+    // ...but it does wear the away-tint, held until the settle (the
+    // wait rides out the tint's own 0.45s fade-in, safely inside the
+    // 900ms flight)
+    await alice.waitForFunction(() =>
+      document.getElementById('desc').classList.contains('committed')
+      && getComputedStyle(document.getElementById('desc'))
+           .backgroundColor !== 'rgba(0, 0, 0, 0)', { timeout: 800 });
+    ok(true, 'the in-flight save holds the commit tint: yours is'
+       + ' away, not yet confirmed');
     opDelay = 0;
     await alice.waitForFunction(() =>
       document.querySelector('#descview h1'));
@@ -286,9 +295,8 @@ async function bid(page, bidText) {
         && getComputedStyle(p, '::before').content === 'none';
     }), 'with words on the record the pencil returns to its corner,'
        + ' invitation shed');
-    // the commit pulse tints the card green for a beat (your words
-    // are away); the resting look this pin is about arrives when the
-    // pulse fades — so outwait it, and bank that it fired at all
+    // the commit tint (your words are away) cleared at the settle
+    // above; the resting look this pin is about is what remains
     await alice.waitForFunction(() => {
       const box = getComputedStyle(document.getElementById('desc'));
       return box.backgroundColor === 'rgba(0, 0, 0, 0)';
@@ -297,11 +305,11 @@ async function bid(page, bidText) {
       const box = getComputedStyle(document.getElementById('desc'));
       return box.borderTopColor === 'rgba(0, 0, 0, 0)'
         && box.backgroundColor === 'rgba(0, 0, 0, 0)'
-        && document.getElementById('desc').classList
+        && !document.getElementById('desc').classList
              .contains('committed');
-    }), 'and the rendered blurb pulses its commit, then sheds its box:'
-       + ' prose on the page, not a field — the box itself says'
-       + ' "editable here" (dreev)');
+    }), 'and the settled blurb rests boxless and untinted: prose on'
+       + ' the page, not a field — the box itself says "editable'
+       + ' here" (dreev)');
 
     await alice.reload({ waitUntil: 'networkidle0' });
     await alice.waitForSelector('#tiles');
@@ -2068,6 +2076,32 @@ async function bid(page, bidText) {
        && await eag.evaluate(() =>
             document.querySelectorAll('#tiles .tile').length === 2),
        'and the server catches up to the very same picture');
+    // the reported phone bug, at live latency: a submitted bid must
+    // never read as awaited — the ledger counts it at SUBMIT, and
+    // the volley's away-tint (not a spinner) says not-yet-confirmed.
+    // (adding ann latched this page as her: the fresh-add auto-claim)
+    await eag.waitForSelector('.tile.mine .rebid textarea');
+    opDelay = 1500;
+    await bid(eag, 'my kingdom');
+    const flying = await eag.evaluate(() => {
+      const t = document.querySelector('.tile.mine');
+      return { hasBid: t.classList.contains('has-bid'),
+               tint: getComputedStyle(
+                 t.querySelector('.rebid textarea')).backgroundColor,
+               busy: !!t.querySelector('.rebid.busy') };
+    });
+    ok(flying.hasBid && flying.busy
+       && flying.tint !== 'rgba(0, 0, 0, 0)',
+       'a flying bid reads as IN, wearing the away-tint: '
+       + JSON.stringify(flying));
+    opDelay = 0;
+    await eag.waitForFunction(() =>
+      !document.querySelector('.rebid.busy'));
+    ok(await eag.evaluate(() =>
+      document.querySelector('.tile.mine').classList
+        .contains('has-bid')),
+       'the settle confirms the same picture: bid in, volley tint'
+       + ' shed (the editor now wears its bid-card green)');
 
     /* ====== cletus and winifred, in a real browser ===================
        The mid-air-collision convention (dreev 2026-07-28, replacing

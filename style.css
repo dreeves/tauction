@@ -1251,8 +1251,20 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
    green once and fades — the outgoing twin of the incoming shimmer
    (sweep = their news arrived, glow = yours is away). One keyframe:
    from the tint back to whatever the field's resting background is. */
-.committed { animation: commit-pulse 0.6s ease-out; }
-@keyframes commit-pulse { from { background-color: var(--shimmer); } }
+/* held until the write settles (see flashCommit): the quiet fade is
+   the confirmation. The bid editor's tint rides its volley's .busy
+   class instead — updateRow rebuilds that editor's className
+   wholesale, which would shed a .committed. */
+.committed, input.committed, textarea.committed,
+.rebid.busy textarea {
+  background-color: var(--shimmer);
+}
+
+/* the fade on clearing rides the tintable elements themselves (a
+   transition on .committed alone would vanish with the class) */
+.desc, input:not([type]), .descedit, .rebid textarea {
+  transition: background-color 0.45s ease-out;
+}
 
 /* Empty slots breathe slowly: unmistakably awaiting a bid, unmistakably
    not a loading spinner. (Both pieces still breathe, in phase — the

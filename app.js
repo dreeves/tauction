@@ -103,15 +103,28 @@ function linkBanner(html) {
   $('banner').hidden = false;
 }
 
-// THE COMMIT PULSE (dreev's ruling): the instant a
-// gesture queues a write, flash the field it happened in — submit-
-// button legibility without submit buttons; the outgoing twin of the
-// incoming shimmer. Only ever called where a write actually queues:
-// a pulse on a refused or no-op gesture would be a lie.
+// THE COMMIT TINT (dreev's ruling, revising the pulse that marked
+// the SUBMIT and faded on a 0.6s timer): the instant a gesture
+// queues a write the field tints — yours is AWAY — and the tint
+// holds until that write SETTLES, so its quiet fade is the
+// confirmation (the messaging-app convention: optimistic content,
+// subtle pending marker). On dev latency it reads as the old brief
+// pulse; on live latency it holds the honest seconds. A per-node
+// count keeps overlapping commits lit until the LAST settles; every
+// flashCommit must be paired with exactly one settleCommit on every
+// settle path. Only ever called where a write actually queues: a
+// tint on a refused or no-op gesture would be a lie. (The bid
+// editor's tint rides its volley's .busy class instead — updateRow
+// rebuilds that editor's className wholesale.)
 function flashCommit(node) {
-  node.classList.remove('committed');  // the shimmer's same remove-
-  void node.offsetWidth;               // reflow-add dance: back-to-
-  node.classList.add('committed');     // back commits restart it
+  node.dataset.aloft = String(1 + Number(node.dataset.aloft || 0));
+  node.classList.add('committed');
+}
+function settleCommit(node) {
+  const n = Number(node.dataset.aloft) - 1;
+  assert(n >= 0, 'commit-tint bookkeeping went negative');
+  node.dataset.aloft = String(n);
+  if (n === 0) node.classList.remove('committed');
 }
 
 /* ------------------------------- state -------------------------------- */
@@ -804,6 +817,7 @@ function commitDesc() {
     const cleanBase = edit.defaultValue;  // pre-edit server truth
     queueLazyOp(() => ({ action: 'describe', aname: aname, blurb: draft,
                          base: edit.dataset.base }), (ref) => {
+      settleCommit($('desc'));  // the words' ride is over, either way
       if (edit.value !== draft || edit.defaultValue !== draft) return;
       // The commit bounced off the compare-and-swap (someone's edit
       // beat ours): back into the editor, your words intact and the
@@ -824,7 +838,10 @@ function commitDesc() {
       // local length check it is the only refusal a describe has
       // left); transport death shows only the weather banner (16)
       if (ref) openWar(ref.error);
-    }, (res) => { edit.dataset.base = res.tblurb; });
+    }, (res) => {
+      settleCommit($('desc'));
+      edit.dataset.base = res.tblurb;
+    });
     edit.defaultValue = draft;  // ours is the working base now
     edit.classList.remove('error');
     // paint the draft NOW — rendering is pure client work; the write
@@ -927,7 +944,7 @@ function renderStatus() {
   // are in the fingerprint because the render right after a reveal or a
   // shimmer must still run: it retires those one-shot effects.
   const print = JSON.stringify([aname, wasRevealed, seen, seats,
-    state.bidders, state.seats, state.revealed, state.tfin,
+    bidView(), state.seats, state.revealed, state.tfin,
     state.claims, state.blurbs, mypid(), knownBids()]);
   if (print === lastPrint) return;
   lastPrint = print;
@@ -953,7 +970,7 @@ function renderStatus() {
   // below two is a separate, dominating blocker (no amount of bidding
   // unlocks a solo auction), so the tip names THAT then instead.
   const missing = seats.filter(
-    (s) => !state.bidders.some((b) => b.pid === s.pid));
+    (s) => !bidView().some((b) => b.pid === s.pid));
   const roll = missing.map((s) =>
     s.uname + (s.pid === mine ? youTag : ''));
   const listed = roll.length <= 2 ? roll.join(' and ')
@@ -984,7 +1001,7 @@ function renderStatus() {
   // ruled glyph quadruple), so a row of tauction tabs is legible —
   // and calls you back — without clicking through
   document.title = tabTitle(
-    titleGlyph(seats, state.bidders, state.revealed, mine), aname);
+    titleGlyph(seats, bidView(), state.revealed, mine), aname);
 
   // no row is you yet: the you-star perches on the + row instead, so
   // the legend's ★ always has a referent
@@ -997,7 +1014,7 @@ function renderStatus() {
     ? closedLine(closedStamp(state.tfin)) : '';
   const known = knownBids();
   const byPid = umap();
-  state.bidders.forEach((b) => { byPid[b.pid] = b; });
+  bidView().forEach((b) => { byPid[b.pid] = b; });
   // Placing a bid locks the who-you-are radio: no switching rows, no
   // releasing — permanently, since your bid never unlists (trying
   // this per dreev)
@@ -1497,7 +1514,7 @@ function ago(iso) {
 // no bid yet; submitted once ("your" on your own row); resubmitted
 // (first vs latest submission times, same wording for every row).
 function bidTip(pid) {
-  const b = state.bidders.find((x) => x.pid === pid);
+  const b = bidView().find((x) => x.pid === pid);
   if (b === undefined) return awaitingTip;
   if (b.bcount === 1) {
     return submittedTip(pid === mypid() ? yourBidWord : bidWord,
@@ -1601,6 +1618,7 @@ function commitRename(pid, raw, field) {
             const node = rowNodes[pid];
             if (node) {
               const f = node.querySelector('.rename input');
+              settleCommit(f);  // the ride is over, either way
               // an OLD refusal must never repaint a newer name: only
               // if THIS commit still owns the baseline does the
               // refusal get to move it. Newer typing stays in place;
@@ -1610,6 +1628,10 @@ function commitRename(pid, raw, field) {
               f.classList.toggle('error', f.value === to);
               syncHot(f);
             }
+          },
+          () => {
+            const node = rowNodes[pid];
+            if (node) settleCommit(node.querySelector('.rename input'));
           });
 }
 
@@ -1638,6 +1660,25 @@ function toggleTu(pid) {
 /* ------------------------------ actions ------------------------------- */
 
 let bidsAloft = 0;  // submissions still flying; busy shows till zero
+
+// THE FLYING BID (dreev's ruling, the phone's "Awaiting bid..."
+// after SUBMIT): your bid counts everywhere the ledger reads bids —
+// tip, card flip, ×, padlock, tab glyph — the moment you press
+// SUBMIT, exactly as a roster add paints its row; the volley's
+// away-tint (.busy) is what says not-yet-confirmed. One synthetic
+// bidder at most (one browser, one seat; the radio locks
+// mid-volley), merged by bidView and NEVER written into state: the
+// chronicle and the cached snapshot stay pure server truth. Cleared
+// when the volley settles, either way — a transport-dead volley
+// walks the picture back truthfully, beside its banner.
+let aloft = null;
+
+// the ledger's view of the bidders: server truth plus the flying bid
+function bidView() {
+  if (aloft === null) return state.bidders;
+  return state.bidders.filter((b) => b.pid !== aloft.pid)
+    .concat([aloft]);
+}
 
 async function placeBid(pid, form) {
   const a = aname;  // pin the auction this bid belongs to; the user might
@@ -1675,14 +1716,23 @@ async function placeBid(pid, form) {
     ? editor.dataset.sent : editor.defaultValue;
   if (bid === lastBid) return;
   editor.dataset.sent = bid;  // this exact text is on its way
-  flashCommit(editor);  // the pulse marks the SUBMIT, not the settle
   // The editor stays HOT during flight: down to the wire you can
   // change your mind and resubmit while the last bid still flies.
   // Bids ride the op chain, so submissions land in the order you made
   // them — your last word always wins on the sheet. busy clears only
-  // when the whole volley has settled.
+  // when the whole volley has settled (and .busy is the away-tint:
+  // see flashCommit's comment).
   form.classList.add('busy');
   bidsAloft++;
+  // the flying bid joins the ledger's view (see aloft above);
+  // tini/bcount build on the record — or on the volley's own earlier
+  // legs, so rapid resubmits stack honestly
+  const base = aloft || state.bidders.find((b) => b.pid === pid);
+  aloft = { pid: pid,
+            tini: base ? base.tini : new Date().toISOString(),
+            tmod: new Date().toISOString(),
+            bcount: (base ? base.bcount : 0) + 1 };
+  renderStatus();
   syncHot(editor);  // the effective baseline just moved to the wire:
                     // SUBMIT grays until the words diverge again
   // the radio locks the moment you commit: a mid-flight identity
@@ -1721,7 +1771,15 @@ async function placeBid(pid, form) {
       }
     }
     bidsAloft--;
-    if (bidsAloft === 0) form.classList.remove('busy');
+    if (bidsAloft === 0) {
+      form.classList.remove('busy');
+      aloft = null;
+      renderStatus();  // paint the walk-back NOW: a failed settle
+                       // never renders, and the truthful revert must
+                       // not wait for a poll (a successful settle's
+                       // own ingest+render lands right behind this,
+                       // same task, so no flicker)
+    }
     settleWrite(res, at);
   });
 }
@@ -1971,8 +2029,10 @@ function addName() {  // returns the added seat's pid ('' if refused)
     if (hint === null) localStorage.setItem('tauction-uname', uname);
     storeMyPid(pid);
   }
+  flashCommit($('roster-input'));  // yours is away
   queueOp({ action: 'add', aname: aname, uname: uname, pid: pid },
           () => {
+            settleCommit($('roster-input'));
             // the add didn't land: the typed name returns to the
             // + row for retrying — unless newer typing owns it (the
             // staleness guard every recovery wears)
@@ -1981,7 +2041,8 @@ function addName() {  // returns the added seat's pid ('' if refused)
               $('roster-input').dataset.retryName = uname;
               syncHot($('roster-input'));
             }
-          });
+          },
+          () => settleCommit($('roster-input')));
   return pid;
 }
 
@@ -2023,6 +2084,8 @@ function virginState(a) {
 // and nobody stumbles into a stranger's auction by picking "pizza".
 async function switchAuction(a) {
   if (!a || a === aname) return;
+  flashCommit($('aname'));  // yours is away: the tint rides the
+                            // create probe, cleared in the finally
   $('status').classList.add('stale');  // busy while we look the name up
   $('namego').disabled = true;  // processing: the standard double-
                                 // submit guard —
@@ -2063,6 +2126,7 @@ async function switchAuction(a) {
   } catch (e) {
     banner(e2157(e.message));
   } finally {
+    settleCommit($('aname'));  // the probe's ride is over, either way
     // on any non-commit path the old (or unnamed) page is back in
     // charge and isn't busy; after a commit render() already unstaled
     $('status').classList.remove('stale');
@@ -2276,7 +2340,6 @@ function wireUp() {
       return;
     }
     await switchAuction(want);
-    if (aname === want) flashCommit($('aname'));
   };
   $('namego').textContent = startCopy(sanAname($('aname').value));
   $('namego').addEventListener('click', commitAname);
@@ -2315,9 +2378,8 @@ function wireUp() {
   // here for the next name.
   const commitAdd = () => {
     const added = addName();
-    // pulse iff a write queued (addName returns '' on every refusal
-    // and no-op; the taken-seat path queues a claim, so it counts)
-    if (added !== '') flashCommit($('roster-input'));
+    // (the away-tint rides addName's own add write; the taken-seat
+    // claim path moves your attention to the readied editor instead)
     syncHot($('roster-input'));  // a landed name cools the field
     const t = rowNodes[added];
     if (t && t.classList.contains('mine')) {
