@@ -15,7 +15,7 @@ const configured = /^https:\/\//.test(api);
 const POLL_MS = 5000;
 
 // A hidden tab's entire traffic: one title-only peek a minute — an
-// explicit coarse cadence (dreev's ruling, 2026-07-20), never
+// explicit coarse cadence (dreev's ruling), never
 // outsourced to browser throttling heuristics — and none at all once
 // the reveal is seen (peekTitle's latch)
 const PEEK_MS = 60000;
@@ -39,8 +39,7 @@ function el(tag, cls, text) {
 
 // The sanitizers rewrite CHARSET only (the live-constraint pattern:
 // an illegal character just never lands). Length is never their
-// business — the old silent .slice() clamps died 2026-07-27 when
-// every limit became an objection.
+// business: every limit is an objection, never a chop.
 const sanAname = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 const sanUname = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
                          .replace(/^[0-9]+/, '');
@@ -49,8 +48,7 @@ const sanUname = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
 // the render resync, the commit refusal): pure functions of the
 // draft. The server refuses at the same numbers — no keystroke is
 // ever eaten client-side (dreev); a limit OBJECTS, never chops.
-// 160 for bids, 20 for both name kinds (dreev 2026-07-27), 2000
-// for the blurb.
+// 160 for bids, 20 for both name kinds, 2000 for the blurb.
 const overlong = (s) => s.trim().length > 160;
 const overlongName = (s) => s.length > 20;
 const overlongBlurb = (s) => s.length > 2000;
@@ -80,9 +78,8 @@ async function apiPost(body) {
   return r.json();
 }
 
-// Banners STICK (dreev's ruling, 2026-07-19): a timer must not
-// snatch bad news while you read — the old 5s self-destruct is gone.
-// A banner leaves exactly three ways: its × (wired in wireUp), a
+// Banners STICK (dreev's ruling): a timer must not snatch bad news
+// while you read. A banner leaves exactly three ways: its × (wired in wireUp), a
 // newer banner replacing it, or a later successful settle retiring
 // it (settleWrite). Server and user text comes here, through
 // textContent — never markup.
@@ -106,7 +103,7 @@ function linkBanner(html) {
   $('banner').hidden = false;
 }
 
-// THE COMMIT PULSE (dreev's ruling, 2026-07-19): the instant a
+// THE COMMIT PULSE (dreev's ruling): the instant a
 // gesture queues a write, flash the field it happened in — submit-
 // button legibility without submit buttons; the outgoing twin of the
 // incoming shimmer. Only ever called where a write actually queues:
@@ -123,8 +120,8 @@ let aname = '';
 let state = null;         // latest server snapshot of the current auction
 let seats = [];           // local working copy of the seats: one
                           // {pid, uname} per person, insertion order
-                          // — the pid is the IDENTITY (2026-07-19,
-                          // dreev's spec), the uname just its label
+                          // — the pid is the IDENTITY (dreev's
+                          // spec), the uname just its label
 let seen = umap();        // pid -> updated stamp at last render (shimmer)
 let wasRevealed = false;  // reveal state at last render
 let adopted = false;      // THE ARRIVAL EDGE: has any snapshot —
@@ -134,8 +131,6 @@ let adopted = false;      // THE ARRIVAL EDGE: has any snapshot —
                           // no-fanfare-for-latecomers) all key off
                           // the first render where this is false;
                           // one named edge, not a latch apiece
-                          // (2026-07-19, folding caretPlaced,
-                          // descModeSet, and wasRevealed's null)
 let writeSeq = 0;         // bumped when a write STARTS (bid, add/
                           // remove, claim, reveal): of concurrent
                           // write responses, only the newest — the
@@ -158,7 +153,7 @@ let seenRevealed = false; // has ANY response — adopted (ingest) or
                           // has no further news to poll for
 
 // This browser's anonymous device id. Claims are keyed by it on the
-// server, so every page agrees who's taken — two machines can no longer
+// server, so every page agrees who's taken — two machines can't
 // both be @alice. It's a consistency marker, not auth (honor system).
 if (!localStorage.getItem('tauction-device')) {
   localStorage.setItem('tauction-device', crypto.randomUUID());
@@ -198,8 +193,8 @@ async function locate() {
     let geo = localStorage.getItem('tauction-geo');
     const at = localStorage.getItem('tauction-geo-at');
     if (!(geo && Date.now() - Date.parse(at) < GEO_TTL_MS)) {
-      // The attempt is stamped BEFORE it flies (dreev's persisting-
-      // 429 report, 2026-07-18): a throttled or down service gets one
+      // The attempt is stamped BEFORE it flies: a throttled or
+      // down service gets one
       // probe per backoff window, never a console-spamming retry per
       // load — which itself fed the burst limit under dev live-reload
       const tried = localStorage.getItem('tauction-geo-try');
@@ -231,6 +226,15 @@ async function locate() {
 // keeps its counsel.
 let hoverHost = null;  // [data-tip] element under the pointer, if any
 let focusHost = null;  // [data-tip] element holding focus, if any
+
+// An icon-only control (the seal, the ×) has no words of its own, so
+// its tooltip IS its accessible name: one stamp writes both, and the
+// two can never drift apart (the name-audit story qual patrols this).
+function setTip(node, words) {
+  node.setAttribute('data-tip', words);
+  node.setAttribute('aria-label', words);
+}
+
 async function showTip() {
   const tip = $('tip');
   const host = hoverHost || focusHost;
@@ -260,10 +264,8 @@ function setPath(a) {
 // The one true stamp shape: what toISOString mints, what the sheet
 // stores as text, what compares lexicographically. Asserted in FULL
 // (anti-Postel): a stamp a human hand-edits or date-formats reads
-// back as "Fri Jul ... GMT-0700 (...)" — whose GMT smuggled a 'T'
-// past the old includes-check while silently breaking the stamp
-// ordering (and a blank stamp rendered "NaNd ago"). (gridScience,
-// 2026-07-18: Sheets' write-parser doesn't coerce the T...Z shape,
+// back as "Fri Jul ... GMT-0700 (...)", silently breaking the stamp
+// ordering. (Sheets' write-parser doesn't coerce the T...Z shape,
 // so sheet-side accidents bite bid text, not stamps — this assert
 // is the belt for the human-edit path.)
 const STAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -293,7 +295,7 @@ function assertState(res) {
   'bad state shape — is the deployed Code.gs current?');
 }
 
-// THE CHRONICLE (dreev's spec, 2026-07-20): every adopted snapshot
+// THE CHRONICLE (dreev's spec): every adopted snapshot
 // narrates its delta to the console — the ledger's story, one line
 // per change, in the app's own glyphs. ONE differ at the ONE
 // adoption seam (ingest), so local writes and remote arrivals alike
@@ -391,8 +393,8 @@ async function refresh() {
   const a = aname;  // the auction this request is for
   const seqAtRequest = settleSeq;
   // Only the network call sits in its own try (placeBid's precedent):
-  // transport death is WEATHER, not news (dreev's ruling, 2026-07-20)
-  // — no user action was lost, so nothing banners. The ledger grays
+  // transport death is WEATHER, not news (dreev's ruling) — no
+  // user action was lost, so nothing banners. The ledger grays
   // under the hammering gavel (the app's one signal for "this picture
   // may be stale") until a poll lands and render clears it, and the
   // diagnostic detail goes to the console, greppable by its code.
@@ -423,13 +425,11 @@ async function refresh() {
     banner(e2152(e.message));
   } finally {
     refreshing = false;
-    // (the old mid-flight-switch refire died with names-are-chosen-
-    // once: polls run only on named pages, where aname is immutable)
   }
 }
 
 // THE TITLE PEEK: a hidden tab's entire participation — a slow bare
-// state GET spent ONLY on the tab's title (Sol's title-only law).
+// state GET spent ONLY on the tab's title.
 // Nothing is ingested: the witnessed-reveal fanfare and every
 // never-clobber invariant sleep until the tab is actually looked at
 // (the visibilitychange refresh). No banner on failure — a hidden
@@ -474,15 +474,11 @@ function render() {
 // baseline (defaultValue, the never-clobber truth) — iff walking away
 // now would leave something uncommitted. The commit buttons ride this
 // class: SAVE/SUBMIT stand exactly while the field is hot, because
-// blur commits NOTHING (dreev 2026-07-27, cletus's clobber: a blur is
-// a side effect of every OTHER gesture — banner ×es, star taps,
-// reloads — never a decision to save). EVERY text field has a button
-// home — the auction name included, since 2026-07-27 later (it was
-// the one buttonless field, and its invisible Enter-only commit was
-// exactly the inconsistency dreev caught; a fence qual now closes the
-// class).
-// DIRTY ONLY, not focused-or-dirty (2026-07-27, the button row's move
-// below the fields): hotness now has geometry — the .gorow opens a
+// blur commits NOTHING (dreev's ruling: a blur is a side effect of
+// every OTHER gesture — banner ×es, star taps, reloads — never a
+// decision to save). EVERY text field has a button home, the auction
+// name included (a fence qual closes the class).
+// DIRTY ONLY, not focused-or-dirty: hotness has geometry — the .gorow opens a
 // line under the field — so it may only ever change at the user's own
 // keystroke, commit, or Escape, moments when nothing else is
 // mid-gesture. Focus-hot changed geometry at BLUR — which fires
@@ -496,7 +492,7 @@ function syncHot(f) {
   const dirty = f.value !== f.defaultValue;
   home.classList.toggle('hot', dirty);
   // A standing commit button is live only when pressing it would
-  // SEND something (dreev 2026-07-27: "shouldn't the submit button
+  // SEND something (dreev: "shouldn't the submit button
   // gray out...?"): against a flying volley the effective baseline
   // is the text already on the wire (placeBid's lastBid — its silent
   // no-op gets a visible gray), and a frozen field's button stays
@@ -509,30 +505,30 @@ function syncHot(f) {
   saveDraft(f, dirty);
 }
 
-// Drafts survive the tab (dreev 2026-07-27): a dirty field's words
+// Drafts survive the tab (dreev's ruling): a dirty field's words
 // are already in tauction-drafts:<aname>, keyed by slot, and the
 // arrival edge hands them back. Committing or Escaping deletes the
 // slot. The store rides the same chokepoint as hotness (syncHot), so
 // there is no second bookkeeping to drift. Per-auction keys linger
 // for auctions never revisited — the tauction-mybids precedent.
 function draftSlot(f) {
-  // The BLURB deliberately has no slot (dreev 2026-07-28): a SHARED
-  // field's draft outliving its tab manufactured ghost mid-air
-  // collisions — a stale draft restored weeks later met a moved
-  // blurb and cried edit-war on a fresh load. A fresh load always
-  // shows the database's blurb. RENAMES have none either (2026-07-28
-  // later, with save-on-blur unames: nothing uncommitted survives a
-  // blur, so there is nothing for a tab to keep). What survives the
-  // tab: your bid draft and the + row's half-typed name.
+  // The BLURB deliberately has no slot: a SHARED field's draft
+  // outliving its tab manufactures ghost mid-air collisions — a
+  // stale draft restored weeks later meets a moved blurb and cries
+  // edit-war on a fresh load. A fresh load always shows the
+  // database's blurb. RENAMES have none either (unames save on
+  // blur: nothing uncommitted survives a blur, so there is nothing
+  // for a tab to keep). What survives the tab: your bid draft and
+  // the + row's half-typed name.
   if (f.id === 'descedit') return null;
   if (f.matches('.rename input')) return null;
   if (f.id === 'roster-input') return 'addrow';
-  // the ONE bid slot per auction (dreev 2026-07-28, README #2): the
-  // unsent bid is the BROWSER's, not the seat's — it follows you when
-  // you claim another participant instead of parking invisibly under
+  // the ONE bid slot per auction (dreev's ruling): the unsent bid
+  // is the BROWSER's, not the seat's — it follows you when you
+  // claim another participant instead of parking invisibly under
   // the pid you left. One browser holds one seat, so one slot.
-  // (Legacy 'bid:<pid>' and 'rename:<pid>' slots in old stores are
-  // inert, the retired-slot-shape precedent.)
+  // (Slot shapes this code no longer mints sit inert in old
+  // stores.)
   if (f.closest('.rebid')) return 'bid';
   return null;  // #aname (chosen once) and anything else: no drafts
 }
@@ -589,8 +585,7 @@ function sweepHot() {
 // as the bid editor). A dirty or focused editor is left ENTIRELY
 // alone — words AND base stamp: a conflicting edit is refused by the
 // server's compare-and-swap at SAVE time, the wikis' mid-air-
-// collision convention (dreev 2026-07-28, replacing the warn-and-
-// rebase-at-poll-time scheme whose every subtlety read as broken).
+// collision convention (dreev's ruling).
 function renderDesc() {
   const view = $('descview');
   const edit = $('descedit');
@@ -900,7 +895,7 @@ function knownBids() {
 // editor: your bid lives there, editable in place; enter (re)submits.
 // × removes a row from the roster, offered only while it has no bid
 // to protect. Reveal lights the 🎉 and glows the card, once.
-// The tab-title state glyph — dreev's ruled quadruple (2026-07-20) —
+// The tab-title state glyph — dreev's ruled quadruple —
 // derived per-viewer from ANY snapshot: the adopted state, or a raw
 // glimpse the hidden peek never adopts. Disclosed ifs, one per ruled
 // state: revealed; all in (two-plus, none missing) awaiting the
@@ -939,8 +934,8 @@ function renderStatus() {
 
   const box = $('status');
   box.classList.toggle('revealed', state.revealed);
-  // the page itself changes weather at the close: the paper warms a
-  // shade (dreev 2026-07-27 — another subtle closed indicator)
+  // the page itself changes weather at the close: the paper warms
+  // a shade (dreev — another subtle closed indicator)
   document.body.classList.toggle('revealed', state.revealed);
   // fanfare belongs to the WITNESSED false->true flip: a latecomer's
   // arrival render (the adopted edge) sets the baseline silently
@@ -972,10 +967,13 @@ function renderStatus() {
   $('seal').classList.toggle('ready', ready);
   // the roster is CLOSED once revealed (the server refuses adds too)
   $('roster-input').disabled = state.revealed;
-  // the lit 🎉 explains itself (dreev): revealed needs no tooltip
-  if (state.revealed) $('seal').removeAttribute('data-tip');
-  else {
-    $('seal').setAttribute('data-tip',
+  // the lit 🎉 explains itself (dreev): revealed needs no tooltip —
+  // but a screen reader hears nothing obvious, so the name stays
+  if (state.revealed) {
+    $('seal').removeAttribute('data-tip');
+    $('seal').setAttribute('aria-label', revealedLabel);
+  } else {
+    setTip($('seal'),
       ready ? revealTip
       : seats.length === 0 ? needTwoTip
       : seats.length === 1 ? needOneMoreTip
@@ -1058,8 +1056,7 @@ function renderStatus() {
 
   // a render can retitle (or remove) the very host the open tip
   // describes — the tip follows the truth without waiting for the
-  // pointer to move (the old attr()-based tip live-updated; the
-  // singleton must too)
+  // pointer to move
   showTip();
   sweepHot();
 }
@@ -1159,8 +1156,7 @@ function buildRow(pid) {
   t.dataset.pid = pid;
   // one solid glyph for every star: CSS draws it hollow (outline)
   // until .selected fills it gold — a real radio button, and a tab
-  // stop like every control (the 07-16 tab law died 2026-07-27:
-  // keyboard users must be able to claim)
+  // stop like every control (keyboard users must be able to claim)
   const star = el('button', 'tu', '★');
   star.type = 'button';
   star.addEventListener('click', () => toggleTu(pid));
@@ -1191,9 +1187,6 @@ function buildRow(pid) {
   bidEl.addEventListener('mouseover', () => {
     bidEl.setAttribute('data-tip', bidTip(pid));
   });
-  // (green ✅ scrapped 2026-07-16 — it sat confusingly next to the ×,
-  // and the card's green styling already says "bid in"; git has the
-  // scaffolding if it ever returns)
   // × removes the whole row from the roster — grayed out once a bid is
   // in, because a sealed bid is never deletable (its tip is bid-state-
   // dependent, so updateRow owns it)
@@ -1218,7 +1211,7 @@ function buildBidContent(kind, pid) {
     // A TEXTAREA, not an input, so a long bid can WRAP and its box
     // grow to hold it (field-sizing in style.css) — while typing,
     // and in the frozen record after the reveal (your own row keeps
-    // its editor forever). Bids are MULTILINE (dreev 2026-07-27):
+    // its editor forever). Bids are MULTILINE (dreev's ruling):
     // Enter commits (42⏎ is sacred), Shift+Enter breaks the line,
     // and a pasted newline stays a newline. Mobile's return key
     // still means send (enterkeyhint); phone newlines arrive by
@@ -1248,11 +1241,9 @@ function buildBidContent(kind, pid) {
     form.append(editor);
     // SUBMIT (dreev's copy), on duty while the field is hot: the
     // deliberate gesture for fingers, as Enter is for keyboards —
-    // clicking/tapping away commits NOTHING (dreev 2026-07-27)
-    // It rides the .gorow BELOW the words (dreev 2026-07-27 later:
-    // "i don't think i like these save/submit buttons beeing inside
-    // the field" — the old overlay also blanketed a phone-narrowed
-    // editor, eating the taps meant for it)
+    // clicking/tapping away commits NOTHING. It rides the .gorow
+    // BELOW the words (dreev: "i don't think i like these
+    // save/submit buttons beeing inside the field")
     const go = el('button', 'go', submitCopy);
     go.type = 'submit';
     const row = el('div', 'gorow');
@@ -1286,9 +1277,9 @@ function updateRow(t, seat, b, mine, known, locked) {
   t.dataset.uname = seat.uname;
   // Every row leads with its star, a radio for who-you-are: hollow =
   // open, filled = claimed by a rival device, gold fill = you — and
-  // the filled star stays LIVE (dreev 2026-07-21, deleting the dibs
-  // lock after faire's lockout: Safari re-minted her device uuid and
-  // her own seat refused her). A claim is a consistency marker, not
+  // the filled star stays LIVE (a device that loses its uuid — it
+  // happens — must be able to retake its own seat). A claim is a
+  // consistency marker, not
   // auth: a tap on a taken star TAKES the seat, last write wins,
   // honor system. Clicking your own lit star releases you to nobody.
   // Once YOUR bid is in, the whole radio locks.
@@ -1319,6 +1310,7 @@ function updateRow(t, seat, b, mine, known, locked) {
   // could swap around who bid what) — grayed, never suppressed
   const nameInput = t.querySelector('.rename input');
   nameInput.disabled = state.revealed;
+  nameInput.setAttribute('aria-label', '@' + seat.uname);
   // the label under never-clobber: sync unless mid-edit (a rename is
   // a plain optimistic op now — no transactions, nothing to lock)
   // Exact server agreement also settles an uncertain write whose
@@ -1373,9 +1365,9 @@ function updateRow(t, seat, b, mine, known, locked) {
     // the gavel drop is a bright line: your bid stays readable in
     // your own editor, but the field goes dead at the reveal — and a
     // half-typed revision just STAYS, visibly unsent beside its
-    // grayed SUBMIT (no phantom auto-submit: that magic died with
-    // blur-commits, dreev 2026-07-27)
+    // grayed SUBMIT (no phantom auto-submit)
     editor.disabled = state.revealed;
+    editor.setAttribute('aria-label', yourBidWord);
     const bidGo = content.querySelector('.go');
     bidGo.disabled = state.revealed;
     if (state.revealed) bidGo.setAttribute('data-tip', tooLateGoTip);
@@ -1393,10 +1385,8 @@ function updateRow(t, seat, b, mine, known, locked) {
       editor.value = baseline;
       editor.defaultValue = baseline;
       // ...and a stored draft comes home at any CLEAN sync — the
-      // editor's birth included, whenever that is: arrival, a claim,
-      // a re-claim after release (Sol's audit #4: the arrival-edge-
-      // only restore missed late-born editors, and the clean-sweep
-      // then deleted the waiting draft). A committed or Escaped
+      // editor's birth included, whenever that is: arrival, a
+      // claim, a re-claim after release. A committed or Escaped
       // draft was pruned from the store, so nothing stale returns.
       const draft = jmap('tauction-drafts:' + aname)['bid'];
       if (draft !== undefined && draft !== baseline) {
@@ -1420,8 +1410,8 @@ function updateRow(t, seat, b, mine, known, locked) {
   const frozen = stamp !== undefined || state.revealed;
   const x = t.querySelector('.x');
   x.disabled = frozen;
-  x.setAttribute('data-tip',
-    frozen ? tooLateRemoveTip(seat.uname) : removeTip(seat.uname));
+  setTip(x, frozen ? tooLateRemoveTip(seat.uname)
+                   : removeTip(seat.uname));
 }
 
 // Render a small, safe markdown subset to HTML. Escape-first: the
@@ -1523,8 +1513,8 @@ function bidTip(pid) {
 function buildNameField(pid) {
   const form = el('form', 'rename');
   // the bordered person cell is the form's FIRST LINE; the .gorow
-  // hangs below the box (dreev 2026-07-28: a SAVE inside the field's
-  // own border still read as inside the field)
+  // hangs below the box (dreev: a SAVE inside the field's own
+  // border still reads as inside the field)
   const box = el('div', 'tile-name');
   box.append('@');
   const input = el('input');
@@ -1545,14 +1535,14 @@ function buildNameField(pid) {
   });
   box.append(input);
   form.append(box);
-  // A uname commits on BLUR (dreev 2026-07-28, the commit taxonomy:
+  // A uname commits on BLUR (dreev's commit taxonomy:
   // a name is a cheap idempotent label edit — clobber-tolerant,
   // trivially redone — so it alone gets save-on-blur backness; bids,
   // blurb, and auction name keep deliberate gestures, and the + row
   // keeps its explicit commit because a stray blur must not MINT a
   // seat). Escape still means never-mind: its revert lands BEFORE
   // the blur, which then finds a clean field and commits nothing —
-  // no exemption needed. The SAVE button retired with the friction.
+  // no exemption needed.
   input.addEventListener('blur', () => {
     commitRename(pid, input.value, input);
   });
@@ -1562,11 +1552,9 @@ function buildNameField(pid) {
 // Fix a typo'd name — anyone may, honor system, like all roster
 // edits. A rename is a LABEL EDIT on a fixed identity (the pid), so
 // it is just an optimistic op like any other: no transactions, no
-// rollback snapshots, no re-keying of bids or memory. (That whole
-// machinery — confirmed/desired/flight, the alice→beta→gamma hazard,
-// the transport-loss sweep — died with the pid migration, 2026-07-19:
-// the server can no longer be asked to rename a name it never
-// granted, because it is asked about pids.) Renaming onto a live
+// rollback snapshots, no re-keying of bids or memory (the server is
+// asked about pids, so it can never be asked to rename a name it
+// never granted). Renaming onto a live
 // label is refused, locally and server-side, in the same words.
 function commitRename(pid, raw, field) {
   if (field.disabled) return;
@@ -1697,9 +1685,9 @@ async function placeBid(pid, form) {
   bidsAloft++;
   syncHot(editor);  // the effective baseline just moved to the wire:
                     // SUBMIT grays until the words diverge again
-  // the radio locks the moment you commit: a mid-flight identity hop
-  // orphaned the bid under the old name and left a blank editor (the
-  // settle's render recomputes the lock from state truth)
+  // the radio locks the moment you commit: a mid-flight identity
+  // hop would orphan the flying bid (the settle's render recomputes
+  // the lock from state truth)
   $('tiles').querySelectorAll('.tu').forEach((s) => { s.disabled = true; });
   const at = startWrite();
   opChain = opChain.then(async () => {
@@ -1725,7 +1713,7 @@ async function placeBid(pid, form) {
       // ...and padding around those same words settles too: the
       // field normalizes to what was actually sent, instead of
       // sitting phantom-dirty forever beside an armed SUBMIT whose
-      // press does nothing (Sol's audit #7). Real newer words are
+      // press does nothing. Real newer words are
       // untouched — trim-equality is the whole test.
       if (editor.value.trim() === bid) {
         editor.value = bid;
@@ -1779,8 +1767,8 @@ function openShare() {
   $('share-dlg').showModal();
 }
 
-// The Copied! beat (the design-system convention — Primer, Shoelace,
-// Helios; golem item 6, dreev 2026-07-27): on success the button
+// The Copied! beat (the design-system convention — Primer,
+// Shoelace, Helios): on success the button
 // ITSELF is the confirmation — green, label swapped to Copied!,
 // natively disabled (a status is not a clickable button) — and it
 // reverts on its own beat. The role=status region echoes the words
@@ -1814,7 +1802,7 @@ async function copyUrl() {
 // Roster and claim writes are row-level ops, serialized client-side so
 // a burst of adds can't pile onto the server's script lock. The UI is
 // optimistic (the local roster already changed) and the write flies
-// SIGNLESS (dreev 2026-07-28, the no-spinners ruling: the commit
+// SIGNLESS (dreev's no-spinners ruling: the commit
 // pulse already said "yours is away", failures banner loudly, and
 // drafts survive the tab — so no gray, no gavel, nothing to wait on;
 // the table gray + gavel mean an untrusted PICTURE: arrival,
@@ -1867,16 +1855,13 @@ function settleWrite(res, at, onRefusal) {
   settleSeq++;
   let refusal = null;
   if (res && res.error) {
-    // (the old /^ERROR1304/ banner suppression died with the claim
-    // lock, 2026-07-21: claims take the seat, so no refusal exists
-    // to soften — every refusal banners, and banner() chronicles)
     banner(res.error);
     refusal = res;
     res = null;
   }
   // recovery runs for server refusals AND transport deaths alike
-  // (Sol's audit #3: the words must come back either way — the
-  // transport catch already bannered its own weather); the refusal
+  // (the words must come back either way — the transport catch
+  // already bannered its own weather); the refusal
   // itself rides along, null for transport, so a recovery can tell
   // a real verdict from dead wifi (the war popup needs to)
   if (res === null && onRefusal) onRefusal(refusal);
@@ -1885,8 +1870,8 @@ function settleWrite(res, at, onRefusal) {
   // field, stays). One of the three exits of a sticky banner.
   if (res) $('banner').hidden = true;
   if (writesPending > 0) return;
-  // A refusal that CARRIES a snapshot (describe's CAS since
-  // 2026-07-30 — generated under the same write lock) is adopted by
+  // A refusal that CARRIES a snapshot (describe's CAS — generated
+  // under the same write lock) is adopted by
   // the same last-write-standing rule as a success: the war diff
   // draws theirs from it with no recovery fetch. The error key is
   // shed first — onRefusal above already consumed it, and a stored
@@ -1906,7 +1891,7 @@ function pressReveal() {
   // server-side and rides the op chain, so a double press is a
   // harmless no-op — and disabling a focused button BLURS it in
   // real Chrome, which would eject a keyboard user at the moment
-  // of their reveal. Deleted 2026-07-27 with the tab law.)
+  // of their reveal.)
   // the reveal is the most table-wide op there is: the big gavel
   // hammers over the grayed ledger while it round-trips (the settle's
   // render lifts the stale)
@@ -2011,14 +1996,12 @@ function paintCached() {
   } catch (e) {
     localStorage.removeItem(key);  // cache from an old schema: purge
   }
-  // No cache: the page is born holding the VIRGIN state instead of
-  // null, so the optimistic paint works from the first keystroke.
-  // state used to sit null until the arrival GET landed (2-3s on
-  // live Apps Script), which left eager typing invisible until the
-  // last write settled — 7-10s of dead screen (dreev's "takes
-  // forever for anything to get through", 2026-07-30). Seeded, not
-  // ingested: no narration, no cache write, and the arrival edge
-  // (adopted) stays unconsumed for the first real snapshot.
+  // No cache: the page is born holding the VIRGIN state instead
+  // of null, so the optimistic paint works from the first keystroke
+  // instead of waiting out the arrival GET (seconds, on live Apps
+  // Script). Seeded, not ingested: no narration, no cache write,
+  // and the arrival edge (adopted) stays unconsumed for the first
+  // real snapshot.
   if (state === null) state = virginState(aname);
   $('status').classList.add('stale');
 }
@@ -2042,7 +2025,7 @@ async function switchAuction(a) {
   if (!a || a === aname) return;
   $('status').classList.add('stale');  // busy while we look the name up
   $('namego').disabled = true;  // processing: the standard double-
-                                // submit guard (dreev 2026-07-28) —
+                                // submit guard —
                                 // the probe is a real round-trip
   try {
     const res = await apiGet({ action: 'state', aname: a });
@@ -2096,20 +2079,25 @@ function wireUp() {
   // (dreev caught the padlock resting on the HTML's old "Reveal
   // bids!"): first a name, then bidders. Any real render paints
   // over it.
-  $('seal').setAttribute('data-tip', needNameTip);
+  setTip($('seal'), needNameTip);
+  // the pencil and the + row's field: bare glyphs to the eye, so
+  // their names are stamped here (the pencil's is a stringle; the
+  // field reuses its commit button's own words)
+  $('desctoggle').setAttribute('aria-label', editDescLabel);
+  $('roster-input').setAttribute('aria-label', addCopy);
 
   // Universal button hygiene: an activated button doesn't keep
   // focus — you pressed it, you know what it is (none is a tab stop,
   // so focus on one serves nothing). This also drops any focus-tip
   // and, in capture phase, lands before showModal records its
-  // focus-restore target (dialog-close used to re-stick the opener's
+  // focus-restore target (else dialog-close re-sticks the opener's
   // tip). Word-hosts (the auction label) keep their tap-to-focus tips.
   // Buttons shed POINTER focus on activation (tooltip hygiene: a
   // clicked button must not park its focus-leg tip). Keyboard
   // activation keeps focus where the keyboard put it — e.detail is
   // the click count, 0 for Enter/Space-synthesized clicks. Disclosed
   // if: was unconditional until buttons joined the tab ring
-  // (2026-07-27, the conventions audit).
+  // (the conventions audit).
   document.addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (b && e.detail > 0) b.blur();
@@ -2196,7 +2184,7 @@ function wireUp() {
   // same virgin state, and the two spellings must agree — an unset
   // base read as foreign against '' and cried simultaneous-edits at
   // whoever typed before the first snapshot landed (dreev's
-  // fresh-URL report, 2026-07-27).
+  // fresh-URL report).
   $('descedit').dataset.base = '';
   // Disclosed if: leaving a CLEAN editor discards — a pure mode
   // flip, no write, undone by the ✎ (and this is how Escape's
@@ -2212,8 +2200,8 @@ function wireUp() {
     if (edit.value === edit.defaultValue) discardDesc();
   });
   $('descedit').addEventListener('input', () => {
-    // one toggle: the live length ring past 2000 (the silent
-    // maxlength clamp died 2026-07-27), and any acknowledged
+    // one toggle: the live length ring past 2000 (no silent
+    // maxlength clamp), and any acknowledged
     // objection clears on the next keystroke, as before
     $('descedit').classList.toggle('error',
       overlongBlurb($('descedit').value));
@@ -2263,10 +2251,10 @@ function wireUp() {
     $('aname').classList.toggle('error', overlongName(v));
   });
   // NAMES COMMIT ON ENTER OR THEIR BUTTON — nothing else. Never a
-  // timer (dreev's mid-typing lockout, 2026-07-18: a 500ms debounce
+  // timer (dreev's mid-typing lockout report: a 500ms debounce
   // committed his half-typed name and froze the field), never blur
   // (a stray tap must not name an auction), never Tab (navigation,
-  // everywhere — since 2026-07-27). Committing a name is
+  // everywhere). Committing a name is
   // IRREVERSIBLE (names are chosen once), so a thinking pause or a
   // wandering click costs nothing: the typed text just waits, its
   // button standing. Tab from a hot name lands ON the button (the
@@ -2312,7 +2300,7 @@ function wireUp() {
                           // keyboard activation)
   });
 
-  // Enter or SAVE commit — nothing else (dreev 2026-07-27,
+  // Enter or SAVE commit — nothing else (dreev's ruling,
   // uniformity): no blur (a side effect of every other gesture), no
   // Tab (navigation — it wrote alice to the database), and no
   // comma/space separators anymore either (the live charset
@@ -2359,8 +2347,8 @@ async function init() {
   // footer version) — question zero of any console session
   console.log('tauction ' + document.querySelector('.version').textContent);
 
-  // 1,20: the server's own aname limit (Sol's audit: the old 40 let
-  // a 21+ slug adopt a name every server call refuses — a dead page)
+  // 1,20: the server's own aname limit — a longer slug would adopt
+  // a name every server call refuses (a dead page)
   const m = location.pathname.match(/^\/([a-zA-Z0-9]{1,20})\/?$/);
   if (m) aname = m[1].toLowerCase();
   $('aname').value = aname;

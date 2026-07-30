@@ -1483,6 +1483,28 @@ const cssBattles = [];
      && seedDoc.getElementById('banner').hidden,
      'the arrival and the settle reconcile to the same one row,'
      + ' no banner, no flicker of a confirmed-empty roster');
+  // ...and the seed does not eat the chronicle: the first real
+  // snapshot still tables itself as the arrival
+  ok(dSeed.window.__logs.some((l) =>
+       String(l).includes('· /virginseed')),
+     'a virgin-seeded page still chronicles its arrival');
+
+  /* The OTHER seed path: create an auction from the landing page and
+     add a participant the instant the roster wakes — the name
+     probe's snapshot is the seed, so the paint is at the keystroke
+     even with every later call slow. */
+  const dCre8 = await makePage('/?api=' + API_URL);
+  const cre8Doc = dCre8.window.document;
+  type(dCre8, 'aname', 'seedcreate');
+  commitName(dCre8);
+  await until(() => !cre8Doc.body.classList.contains('unnamed'));
+  mockDelay = 300;
+  type(dCre8, 'roster-input', 'ann');
+  submitName(dCre8);
+  ok(cre8Doc.querySelectorAll('#tiles .tile').length === 1,
+     'create flow: the first participant paints at the keystroke');
+  mockDelay = 0;
+  await until(() => drained());
 
   /* Replicata: a virgin page (no snapshot yet), the pencil, then a
      clean click-away — nothing typed. Expectata: the mode closes,

@@ -8,9 +8,9 @@
   --accent-soft: #ececfa;
   --ok-fg: #1d6b43;
   --ok-bg: #e6f4ec;
-  /* error pair copied from GitHub Primer's shipped tokens (dreev
-     2026-07-28, "research best practices and copy them"): fgColor-
-     danger + bgColor-danger-muted, light and dark themes verbatim */
+  /* error pair copied from GitHub Primer's shipped tokens (dreev:
+     "research best practices and copy them"): fgColor-danger +
+     bgColor-danger-muted, light and dark themes verbatim */
   --err-fg: #d1242f;
   --err-bg: #ffebe9;
   --glow: rgba(29, 107, 67, 0.28);
@@ -60,7 +60,7 @@ body {
 }
 
 /* a closed auction changes the weather: the paper warms a shade of
-   the star's gold, in either theme (dreev 2026-07-27 — another
+   the star's gold, in either theme (dreev — another
    subtle closed indicator; the cards keep their own paper, so they
    pop faintly against it) */
 body.revealed {
@@ -70,13 +70,12 @@ body.revealed {
 main {
   position: relative;  /* anchors .corner to the column, not the viewport */
   width: 100%;
-  /* a comfortable reading measure on big screens (designer loop
-     round 2, 2026-07-30: 27rem was a phone column on every screen —
-     39ch prose, 19ch bid cells; 38rem lands the blurb at ~57ch,
-     inside the canonical 45-75ch, and matches the war dialog) */
+  /* a comfortable reading measure on big screens: 38rem lands the
+     blurb at ~57ch, inside the canonical 45-75ch, and matches the
+     war dialog */
   max-width: 38rem;
-  /* the top makes room for the corner chips' own strip (designer
-     loop round 3: they used to straddle the first card's border) */
+  /* the top is the corner chips' own strip: they sit wholly in
+     the page margin, never straddling the first card's border */
   padding: 3rem 0.9rem 3rem;
 }
 
@@ -149,7 +148,7 @@ input::placeholder { color: var(--muted); opacity: 0.8; }
 .at-wrap:focus-within { outline: 2px solid var(--accent); outline-offset: -1px; }
 
 /* the + row's column: the bordered @-box on top, its .gorow below —
-   outside the border, like every button row (dreev 2026-07-28) */
+   outside the border, like every button row (dreev) */
 .fieldcol { display: flex; flex-direction: column; }
 
 .at-wrap .at { color: var(--muted); font-weight: 700; user-select: none; }
@@ -170,8 +169,7 @@ button { font: inherit; cursor: pointer; }
    PARTICIPANTS explains itself in the help popup); tabindex="-1"
    makes tap-to-focus show it on touchscreens without a tab stop */
 
-/* (the label's cursor: help was removed 2026-07-18 — dreev vetoed
-   question-mark cursors app-wide; do not restore it) */
+/* (dreev vetoed question-mark cursors app-wide; do not restore) */
 
 /* tooltips ride on ::before so ::after stays free for glyphs (the padlock) */
 /* THE tooltip (#tip in index.html): one element at body level,
@@ -198,10 +196,6 @@ button { font: inherit; cursor: pointer; }
   z-index: 10;
 }
 
-/* (right-anchoring died with the singleton tooltip: Floating UI's
-   flip and shift keep it on screen from any host) */
-
-
 /* buttons get the same accent focus ring as inputs (the tooltip words
    need none: tap-focus exists only to show the tip, which IS the
    feedback) */
@@ -215,7 +209,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .desc { position: relative; padding: 0.75rem 1rem; }
 
 /* Rendered blurb = prose on the page, in BOTH modes: the "editable
-   here" box lives on the source field itself (dreev 2026-07-30), so
+   here" box lives on the source field itself (dreev), so
    the card never wears one — editing shows field and buttons above
    plain prose. Colors go transparent rather than the border going
    away so nothing shifts by its 1px. */
@@ -231,10 +225,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .desc.viewing .descedit { display: none; }
 
-/* EDITING MODE (README blurb spec items 4-5; stacked-always per
-   dreev 2026-07-30, killing side-by-side — twin texts at equal
-   visual weight read as a duplicated render, not source-and-
-   preview): source field, live preview, buttons — DOM order, one
+/* EDITING MODE (README blurb spec items 4-5; stacked-always, per
+   dreev — side-by-side twin texts at equal visual weight read as a
+   duplicated render, not source-and-preview): source field, live preview, buttons — DOM order, one
    column at every width, the gap their daylight. The card rests
    rendered; this grid exists only while the pencil's mode is open. */
 .desc:not(.viewing) {
@@ -248,7 +241,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .descedit {  /* deltas from the shared field recipe above */
   font-size: 1rem;  /* the 16px reading floor, desktop included
-                       (dreev 2026-07-29, the designer verdict) */
+                       (dreev, the designer verdict) */
   resize: vertical;
 }
 
@@ -308,12 +301,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .desctoggle:hover { color: var(--accent); }
 
-/* the pencil LEAVES while editing (dreev 2026-07-30, overriding the
+/* the pencil LEAVES while editing (dreev, overriding the
    gray-never-suppress law for this one case: SAVE/DISCARD are the
    mode's only exits, and the field wants the full card width)... */
 .desc:not(.viewing) .desctoggle { display: none; }
 
-/* THE EMPTY STATE TEACHES (designer loop round 1, 2026-07-30; NN/g:
+/* THE EMPTY STATE TEACHES (NN/g:
    a blank container damages discoverability — say what belongs here
    and hand over the action): with nothing on the record the corner
    pencil steps into the flow and wears the textarea's own
@@ -345,10 +338,10 @@ body.unnamed .desctoggle {
    anywhere. Hidden-not-grayed when cold, per dreev's "appears while
    editing" spec: a permanent button on every row would be clutter,
    and a cold field has nothing the button could say. */
-/* The .gorow sits in flow BELOW the words, right-aligned (dreev
-   2026-07-27: "i don't think i like these save/submit buttons beeing
-   inside the field" — and the old overlay blanketed a phone-narrowed
-   bid box, eating the taps meant for its words). In flow means
+/* The .gorow sits in flow BELOW the words, right-aligned (dreev:
+   "i don't think i like these save/submit buttons beeing inside
+   the field"; an overlay also blankets a phone-narrowed bid box,
+   eating the taps meant for its words). In flow means
    hotness has geometry, which is why hot = DIRTY ONLY (see syncHot):
    the row opens at your keystroke and closes at your commit or
    Escape, never at a blur — a blur-time collapse moved whatever the
@@ -366,7 +359,7 @@ body.unnamed .desctoggle {
   margin-top: 0.3rem;  /* daylight above EVERY visible button row —
                           this rode .hot only, and the always-visible
                           landing Go sat flush on its field's border
-                          (dreev 2026-07-28; the layout auditor now
+                          (dreev; the layout auditor now
                           patrols the whole class) */
   /* intrinsic width zero: flex max-content sizing ignores wrapping,
      so without this the person cell widens by a button's width to
@@ -382,7 +375,7 @@ body.unnamed .desctoggle {
 .go {
   font: inherit;
   font-size: 0.75rem;  /* 12px: labels, not body — but never the old
-                          9.6px microtype (dreev 2026-07-29) */
+                          9.6px microtype (dreev) */
   font-weight: 700;
   letter-spacing: 0.05em;
   line-height: 1;
@@ -418,7 +411,7 @@ body.unnamed .desctoggle {
 
 /* The auction name is the page's PREREQUISITE (nothing else works
    unnamed), so it breaks two hot-law rules on researched convention
-   (dreev 2026-07-28): a blank name left behind glows the objection
+   (dreev): a blank name left behind glows the objection
    via the platform's touched-validation pseudo-class (:user-invalid
    — red only after interaction, never on arrival), and its Go stays
    VISIBLE while the field is live — grayed until there is something
@@ -433,7 +426,7 @@ body.unnamed .desctoggle {
 
 body.unnamed .field .gorow { display: flex; }
 
-/* THE primary action (dreev 2026-07-28: "it needs to be clearer
+/* THE primary action (dreev: "it needs to be clearer
    that nothing works until you do this"): the start button reads
    big, filled, and FIRST — left-justified under its field like a
    form's submit, not tucked in a corner — and flips to the plain
@@ -513,7 +506,7 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
 /* grayed while a different auction is loading; never hidden.
    The 0.3s appearance delay (here and on every busy gavel below):
    a sub-0.3s settle never flashes any busy sign at all (dreev's
-   gavelspinner audit, 2026-07-27) — the delay rides the SHOWN state,
+   gavelspinner audit) — the delay rides the SHOWN state,
    so retiring the sign stays instant. */
 #status .tiles { transition: opacity 0.25s; }
 #status.stale .tiles { opacity: 0.35; transition-delay: 0.3s; }
@@ -577,8 +570,7 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
    their bid changes. Your own row's slot is an input; × removes
    bidless rows; the + row at the bottom adds people to the roster. */
 
-/* Each ledger line is a FIELD and a CARD (dreev 2026-07-22, replacing
-   the twin-boxes look where both pieces wore one recipe): the person
+/* Each ledger line is a FIELD and a CARD (dreev's ruling): the person
    cell is a normal one-line field — solid quiet border, no fill, no
    shadow, never growing — and the bid is a card you write on, which
    carries ALL the state chrome: dashed and breathing while awaited,
@@ -921,9 +913,8 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
   margin-top: 0.9rem;
   padding-left: 0.55rem;  /* re-centers the bigger star glyph on
                              the identity-control axis */
-  font-size: 0.8rem;  /* whisper by SIZE at full muted ink: the old
-                         75%-alpha-of-muted failed contrast (dreev
-                         2026-07-29, the designer verdict) */
+  font-size: 0.8rem;  /* whisper by SIZE at full muted ink:
+                         alpha-dimmed muted fails contrast */
   color: var(--muted);
 }
 
@@ -984,10 +975,6 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
   color: var(--muted);
 }
 
-/* (the .tile.cut cancellation stroke lived here until 2026-07-19,
-   when dreev deleted the removed-after-bidding state itself: a bid
-   protects its seat, so no row can ever be crossed out) */
-
 /* the bid rides unboxed: its card (or your input) is box enough.
    animation-delay passes the tile's inline phase-lock through to the
    breathing slot card below. */
@@ -1003,9 +990,8 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
   animation-delay: inherit;
 }
 
-/* (green ✅ scrapped 2026-07-16 — sat confusingly next to the ×, and
-   the green card already signals "bid in"; its superscript was shelved
-   2026-07-15. Restore with the matching lines in app.js:
+/* (no green ✅: it sat confusingly next to the ×, and the green
+   card already signals "bid in". The scaffolding, if it ever returns:
 .check {
   flex: none;
   margin-left: auto;
@@ -1029,8 +1015,8 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
 
 .tile.has-bid .tile-bid { color: inherit; }
 
-/* a revealed bid keeps its author's line breaks (bids went multiline
-   2026-07-27); the masked decoy's nowrap below still wins for sealed
+/* a revealed bid keeps its author's line breaks (bids are
+   multiline); the masked decoy's nowrap below still wins for sealed
    cards, which must never leak a bid's shape */
 .bid-text { white-space: pre-wrap; }
 
@@ -1049,7 +1035,7 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
 }
 
 /* (re-submission sheets are inline box-shadows built in updateRow —
-   uncapped per ZOI; the old stack1/2/3 classes died 2026-07-18) */
+   uncapped per ZOI) */
 
 /* the empty card: the same shape a bid arrives in, nothing in it yet —
    dressed like an empty person cell, breathing in step with it */
@@ -1122,9 +1108,8 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
 
 /* every name is a live text field, like the + row's: click in, type,
    enter or SAVE commits the rename; escape restores it. The FORM is
-   the row's name column (it took the cell's sizing when the .gorow
-   moved below the box, 2026-07-28): bordered cell on top, buttons
-   underneath. */
+   the row's name column and owns the cell's sizing: bordered cell
+   on top, buttons underneath. */
 .rename {
   display: flex;
   flex-direction: column;
@@ -1149,7 +1134,7 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
 /* Editing a name highlights the field itself: the person cell wears
    the same ring the + row's wrapper does (.at-wrap:focus-within),
    star lassoed and all — the underline special case is retired
-   (dreev 2026-07-27: "shouldn't the field just highlight itself?") */
+   (dreev: "shouldn't the field just highlight itself?") */
 .tile-name:focus-within {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
@@ -1224,8 +1209,8 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
 
 /* the field objection: the field itself reddens (outline beats the
    accent focus ring while it stands) — bids, names, and the auction
-   name (whose length objects too, since 2026-07-27) */
-/* ...and it GLOWS (dreev 2026-07-28; Bootstrap's invalid-field
+   name (whose length objects too) */
+/* ...and it GLOWS (dreev; Bootstrap's invalid-field
    convention: a soft danger halo around the hard line). drop-shadow,
    not box-shadow: the bid editor's box-shadow slot belongs to the
    re-submission stack sheets. */
@@ -1238,7 +1223,7 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
 
 /* the name and + row objections ring their BOXES, where their focus
    rings live — the inner inputs are borderless, and a ring on one
-   matched nothing visible (dreev 2026-07-28) */
+   matched nothing visible (dreev) */
 .tile-name:has(input.error), .at-wrap:has(input.error) {
   outline: 2px solid var(--err-fg);
   outline-offset: -1px;
@@ -1247,8 +1232,7 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
 }
 
 
-/* the incoming shimmer sweeps the CARD — the thing that changed (it
-   rode the name box until the box died, 2026-07-22) */
+/* the incoming shimmer sweeps the CARD — the thing that changed */
 .tile.updated .bid-card {
   background-image: linear-gradient(105deg,
     transparent 40%, var(--shimmer) 50%, transparent 60%);
@@ -1262,7 +1246,7 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
   to   { background-position: -130% 0; }
 }
 
-/* THE COMMIT PULSE (dreev's ruling, 2026-07-19): the instant a
+/* THE COMMIT PULSE (dreev's ruling): the instant a
    gesture queues a write, the field it happened in glows the shimmer
    green once and fades — the outgoing twin of the incoming shimmer
    (sweep = their news arrived, glow = yours is away). One keyframe:
@@ -1286,9 +1270,9 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
 /* ...and subtly up-popped instead (doc.beeminder.com/pop): elevation,
    not motion, marks which row is you. --lift is a no-op shadow that
    .mine flips to the pop; every shadowed piece composes with it, so the
-   re-bid stack sheets and the pop coexist. (Since 2026-07-22 the only
-   shadowed piece is the bid box: shadows are card vocabulary, and the
-   person field stays flat.) */
+   re-bid stack sheets and the pop coexist. (The only shadowed piece
+   is the bid box: shadows are card vocabulary, and the person field
+   stays flat.) */
 .tile { --lift: 0 0 0 0 transparent; }
 
 .tile.mine { --lift: var(--pop); }
@@ -1591,7 +1575,7 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
    the danger ink; Keep theirs stays the quiet default */
 .warbtn.mine { color: var(--err-fg); border-color: var(--err-fg); }
 
-/* The help reads like a PAPER (dreev 2026-07-29: "LaTeX style but
+/* The help reads like a PAPER (dreev: "LaTeX style but
    still super mobile-friendly"): book serifs at phone-readable size,
    centered title, justified-and-hyphenated body (justification
    without hyphenation makes rivers at phone widths — hyphens: auto
@@ -1639,7 +1623,7 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
 .help-body a { color: var(--accent); }
 
 /* -------------------------- touch ergonomics ---------------------------
-   Fingers, not cursors (dreev 2026-07-27: "could this be more mobile-
+   Fingers, not cursors (dreev: "could this be more mobile-
    friendly just by making everything a little bigger?"). Two laws on
    coarse pointers: every text field reads at 16px — below that, iOS
    Safari zoom-jumps into any focused field — and every control offers
@@ -1673,9 +1657,9 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
     font-size: 1.5rem;
   }
 
-  /* the ×: an explicit 44px box, glyph centered where the old
-     first-line pin inked it (the negative margins re-shrink its
-     footprint to the old ~18x29 so the row doesn't shift) */
+  /* the ×: an explicit 44px box, glyph centered where the fine-
+     pointer first-line pin inks it (the negative margins re-shrink
+     its footprint to ~18x29 so the row doesn't shift) */
   .tile .x {
     display: grid;
     place-items: center;

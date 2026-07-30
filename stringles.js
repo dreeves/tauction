@@ -25,9 +25,8 @@ const removeTip = (uname) => 'Remove @' + uname;
 const tooLateRemoveTip = (uname) => 'Too late to remove @' + uname;
 
 // The padlock's tooltips (the revealed 🎉 wears none — dreev:
-// obvious is obvious). revealTip moved here verbatim from
-// index.html 2026-07-18, retiring the SEAL_TIP cache hack; the
-// resting page wears needTwoTip (the truth of an empty roster).
+// obvious is obvious); the resting page wears needTwoTip (the truth
+// of an empty roster).
 const revealTip = 'Reveal bids';
 // the resting (unnamed-page) padlock: name first, then bidders
 const needNameTip = 'Auction needs a name, then at least two bidders';
@@ -52,7 +51,7 @@ const closedLine = (stamp) => 'Closed ' + stamp;
 // keeps the HTML's static title): the auction's own name leads —
 // tabs truncate from the right, so the distinctive word goes first —
 // and a state glyph tells the state of play across a row of tabs at
-// a glance. The glyph quadruple is dreev's ruling (2026-07-20):
+// a glance. The glyph quadruple is dreev's ruling:
 // waiting on bidders, everyone-waiting-on-YOU (the standout — you
 // are the blocker), all-in-awaiting-the-press (🔓 lives on here:
 // retired from the seal button, where the pulsing 🔒 says press-me
@@ -73,12 +72,11 @@ const moneyGlyphs = ['$', '¥', '£', '\u{1fa99}', '⚖️'];
 // Schelling's coordination game (see the help copy), won.
 const consensusStamp = 'CONSENSUS';
 
-// The commit buttons (dreev's copy, 2026-07-27; split 2026-07-29
-// when his ADD PARTICIPANT rename leaked onto the blurb through the
-// shared constant): SAVE rides the blurb, ADD PARTICIPANT rides the
-// + row, SUBMIT rides the bid editor. They appear only while a field
-// is HOT (holding an uncommitted draft). Renames have no button
-// since 2026-07-28: unames commit on blur.
+// The commit buttons (dreev's copy; one constant per button, so a
+// rename of one can never leak onto another): SAVE rides the blurb,
+// ADD PARTICIPANT rides the + row, SUBMIT rides the bid editor.
+// They appear only while a field is HOT (holding an uncommitted
+// draft). Renames have no button: unames commit on blur.
 const saveCopy = 'SAVE';
 const addCopy = 'ADD PARTICIPANT';
 const submitCopy = 'SUBMIT';
@@ -98,6 +96,15 @@ const warTitle = (take) => take <= 1
 // ...and its two resolutions: surrender, or informed overwrite
 const keepTheirsCopy = 'Keep theirs';
 const overwriteCopy = 'Overwrite with mine';
+
+// Screen-reader names for controls whose visible face is a bare
+// glyph (a tooltip can be seen but not heard).
+// TODO: the ✎ pencil's aria-label; conveys "edit the description"
+const editDescLabel = 'Descriptionem mutare';
+// TODO: the revealed padlock's aria-label; conveys "bids revealed"
+// (the visible 🎉 wears no tooltip — obvious is obvious — but a
+// screen reader hears nothing obvious)
+const revealedLabel = 'Licitationes revelatae';
 
 const startCopy = (aname) => aname === '' ? 'Create the auction'
                                           : 'Create the ' + aname + ' auction';

@@ -15,32 +15,31 @@ const SHEET_ID = '1hclphAZ3zQIq14Nip1ZxTDSoE9ygXqAv27RwP1hiMA8';
 // submission's moment, deviceID = the claiming browser's anonymous
 // uuid, deviceBlurb = its self-description ("a Mac (Chrome)").
 //
-// THE PID (2026-07-19, dreev's spec in AGENTS.md, finishing the
-// migration): a person id, a uuid minted client-side at add-time.
+// THE PID: a person id, a uuid minted client-side at add-time.
 // The pid IS the identity — seats, bids, claims, and the client's
 // memory all key on it — and the uname is just its display label, so
 // renames are one-cell label edits: no bid re-keying, no client
 // rename transactions, no orphaned identities.
 const AUCTIONS_HEAD = ['aname', 'tini', 'tmod', 'tfin', 'blurb',
                        'tblurb'];
-// The bids tab is an append-only LOG (dreev's 2026-07-17
-// rearchitecture): every submission is its own row, nothing is ever
-// overwritten, and the payload's tini/tmod/bcount are DERIVED
+// The bids tab is an append-only LOG: every submission is its own
+// row, nothing is ever overwritten, and the payload's tini/tmod/
+// bcount are DERIVED
 const BIDS_HEAD     = ['aname', 'pid', 'bid', 'tbid'];
 // A users row IS a roster seat, and every seat is live: removing a
 // bidless person deletes their row outright, and a person who HAS
-// bid cannot be removed at all (dreev, 2026-07-19 — a sealed bid is
-// never deletable, so it can never be orphaned; the straggler you ex
-// to end early is bidless by definition). Future per-person
+// bid cannot be removed at all (a sealed bid is never deletable, so
+// it can never be orphaned; the straggler you ex to end early is
+// bidless by definition). Future per-person
 // attributes (weights/shares) append as columns to the right.
 const USERS_HEAD    = ['aname', 'pid', 'uname', 'deviceID',
                        'deviceBlurb', 'tini', 'tmod'];
 
 // Every cell that will ever hold data is armored plain-text at tab
 // creation: Sheets otherwise reinterprets writes ("007" -> 7, "3/4"
-// -> March 4th — silent sealed-bid corruption), and gridScience
-// (2026-07-18) proved rows born when appendRow grows the grid DON'T
-// inherit the armor, bounded or whole-column. So the grid is
+// -> March 4th — silent sealed-bid corruption), and rows born when
+// appendRow grows the grid DON'T inherit the armor, bounded or
+// whole-column. So the grid is
 // pre-grown and armored ARMOR_ROWS deep up front, and insert()
 // refuses loudly past that.
 const ARMOR_ROWS = 10000;
@@ -49,13 +48,10 @@ const ARMOR_ROWS = 10000;
 // that this file generates. Throw strings land verbatim in the client's
 // error banner. stringles.js can't be shared across the deployment
 // boundary, so this block mirrors its role — edit copy here as freely.
-// The ERROR-numbered prefixes are for greppability; nothing swallows
-// them anymore (the /^ERROR1304/ seat-race swallow died with the
-// claim lock, 2026-07-21: claims TAKE the seat, last write wins).
+// The ERROR-numbered prefixes are for greppability.
 const badAnameCopy = 'auction name must be alphanumeric';
 const badUnameCopy = 'username must be alphanumeric and start with a letter';
-// The name-length refusals (limits are 20, dreev 2026-07-27; his
-// copy). Must match stringles.js anameTooLongBanner /
+// The name-length refusals (dreev's copy). Must match stringles.js anameTooLongBanner /
 // unameTooLongBanner EXACTLY (quals check): the client refuses
 // before the wire in the same words, so local and server refusals
 // read as one message.
@@ -66,13 +62,12 @@ const badDevBlurbCopy = 'bad deviceBlurb';
 const unknownActionCopy = (action) => 'unknown action: ' + action;
 const notReadyCopy = 'not ready to reveal: everyone on the roster'
   + ' (at least two people) must bid first';
-// (reworded by dreev 2026-07-27; must match stringles.js
+// (dreev's copy; must match stringles.js
 // blurbTooLongBanner exactly, like its two name siblings)
 const blurbTooLongCopy = 'Description too long (max 2000 characters)';
-// the edit-war refusal's ONE home (2026-07-28: the client no longer
-// detects collisions itself — the compare-and-swap here refuses at
-// save time, the wikis' mid-air-collision convention, and the client
-// banners these words verbatim)
+// the edit-war refusal's ONE home: the compare-and-swap refuses at
+// save time (the wikis' mid-air-collision convention) and the client
+// banners these words verbatim
 const simulEditsCopy =
   'Edit war! Copy your changes elsewhere for safekeeping and reload the page';
 const rosterClosedCopy = 'Auction complete — no new participants';
@@ -83,7 +78,6 @@ const auctionClosedCopy = 'Auction closed, no editing';
 const noSuchOneCopy = (pid) => 'No such participant: ' + pid;
 const badPidCopy = 'bad pid';
 const claimNeedsDeviceCopy = 'ERROR1303: claim requires a deviceID';
-// (ERROR1304 seatHeldCopy died with the claim lock, 2026-07-21)
 const releaseNeedsDeviceCopy = 'ERROR1305: release requires a deviceID';
 const notYourSeatCopy = 'ERROR1306: Can this error ever happen?'
   + ' Disclaiming yourself as a participant failed?';
@@ -178,7 +172,7 @@ function withLock(fn) {
 
 function cleanAname(s) {
   s = String(s || '').toLowerCase();
-  // length first, for the specific words (20 max, dreev 2026-07-27)
+  // length first, for the specific words (20 max)
   if (s.length > 20) throw anameTooLongCopy;
   if (!/^[a-z0-9]{1,20}$/.test(s)) throw badAnameCopy;
   return s;
@@ -329,7 +323,7 @@ function insert(kind, rec) {
 // (safe under the lock), so a patch never costs more than a cell poke
 function patch(kind, i, changes) {
   // a hand-gutted sheet hands findIndex a -1, and row -1+2 is the
-  // HEADER (Sol's audit: reveal could write tfin over the schema) —
+  // HEADER —
   // refuse at the chokepoint, operator-facing like schemaDriftCopy
   if (i < 0) throw patchGhostCopy(kind);
   const head = TABS[kind];
@@ -372,10 +366,10 @@ function authorize() {
 }
 
 // Run ONCE from the editor after deploying the ARMOR_ROWS scheme
-// (verdict 2026-07-18: COLUMN ARMOR ALSO FALLS, so pre-grown armor
-// it is): grows each live tab's grid to ARMOR_ROWS and re-armors it
+// (column armor falls with grid growth, so pre-grown armor it
+// is): grows each live tab's grid to ARMOR_ROWS and re-armors it
 // in place, data intact. Tabs born under the new tab() never need
-// this; it migrates the ones armored under the old 1000-row scheme.
+// this; it migrates tabs armored shallower than ARMOR_ROWS.
 function armThePit() {
   Object.keys(TABS).forEach(function (kind) {
     const sh = tab(kind);
@@ -386,59 +380,6 @@ function armThePit() {
     Logger.log(kind + ': grid grown and armored ' + ARMOR_ROWS
       + ' rows deep');
   });
-}
-
-// THE GRID-GROWTH EXPERIMENT (run once from the editor toolbar, read
-// the execution log): does a row that appendRow births PAST the
-// armored grid inherit the plain-text format, or arrive interpreting
-// — the row-1001 "format cliff"? Faithful miniature: a scratch tab
-// trimmed to a fully armored 5-row grid, so the 6th append forces
-// the same grid growth row 1001 would. Self-cleaning; touches no
-// real tab. Verdict prints as NO CLIFF or CLIFF CONFIRMED.
-function gridScience() {
-  const ss = SpreadsheetApp.openById(SHEET_ID);
-  const old = ss.getSheetByName('gridscience');
-  if (old) ss.deleteSheet(old);
-  const sh = ss.insertSheet('gridscience');
-  sh.deleteRows(6, sh.getMaxRows() - 5);         // a 5-row universe...
-  sh.getRange(1, 1, 5, 2).setNumberFormat('@');  // ...fully armored
-  for (let i = 1; i <= 5; i++) sh.appendRow(['00' + i, 'filler']);
-  sh.appendRow(['007', '2026-07-18T22:01:33.510Z']);  // row 6: growth
-  const formats = sh.getRange(6, 1, 1, 2).getNumberFormats()[0];
-  const got = sh.getRange(6, 1, 1, 2).getValues()[0].map(String);
-  Logger.log('row 6 formats: ' + JSON.stringify(formats));
-  Logger.log('row 6 values:  ' + JSON.stringify(got));
-  Logger.log(got[0] === '007'
-      && got[1] === '2026-07-18T22:01:33.510Z'
-    ? 'NO CLIFF: newborn grid rows inherit the armor'
-    : 'CLIFF CONFIRMED: newborn grid rows interpret — "007" came back'
-      + ' as ' + got[0] + ' and the stamp as ' + got[1]);
-  ss.deleteSheet(sh);  // leave no trace
-}
-
-// SCIENCE, ROUND 2. (Round 1 verdict, 2026-07-18: CLIFF CONFIRMED —
-// bounded-range armor does not survive grid growth; "007" came back
-// as 7. Notably the ISO stamp SURVIVED: Sheets' write-parser doesn't
-// recognize the T...Z shape, so the cliff's victims are bid text and
-// digit-led anames, and silently.) The new question: does UNBOUNDED
-// whole-column armor survive grid growth? HOLDS makes the belt a
-// one-line creation change plus one manual column-format of the live
-// tabs; FALLS means pre-grown armor plus a loud guard.
-function gridScience2() {
-  const ss = SpreadsheetApp.openById(SHEET_ID);
-  const old = ss.getSheetByName('gridscience');
-  if (old) ss.deleteSheet(old);
-  const sh = ss.insertSheet('gridscience');
-  sh.deleteRows(6, sh.getMaxRows() - 5);      // a 5-row universe...
-  sh.getRange('A:B').setNumberFormat('@');    // ...whole-COLUMN armor
-  for (let i = 1; i <= 5; i++) sh.appendRow(['00' + i, 'filler']);
-  sh.appendRow(['007', '2026-07-18T22:01:33.510Z']);  // row 6: growth
-  const got = sh.getRange(6, 1, 1, 2).getValues()[0].map(String);
-  Logger.log('row 6 values: ' + JSON.stringify(got));
-  Logger.log(got[0] === '007'
-    ? 'COLUMN ARMOR HOLDS: unbounded-column format survives growth'
-    : 'COLUMN ARMOR ALSO FALLS: "007" came back as ' + got[0]);
-  ss.deleteSheet(sh);  // leave no trace
 }
 
 /* ============= END OF THE SHEETS LAYER (the storage fence) =============
@@ -583,17 +524,15 @@ function describe(req) {
   const aname = cleanAname(req.aname);
   const blurb = String(req.blurb == null ? '' : req.blurb);
   if (blurb.length > 2000) throw blurbTooLongCopy;
-  // the verdict comes BEFORE any write (Sol's audit: a refused
-  // describe used to bump tmod first) — a missing row reads as the
+  // the verdict comes BEFORE any write (a refusal must mutate
+  // nothing, tmod included) — a missing row reads as the
   // virgin '' token, so a fresh auction's first describe passes
   const pre = load('auctions').findIndex(r => r.aname === aname);
   const current = pre === -1 ? '' : load('auctions')[pre].tblurb;
   if (String(req.base == null ? '' : req.base) !== current) {
     // the refusal CARRIES the snapshot that refused it — generated
     // under this same write lock — so the client's edit-war diff
-    // draws yours-vs-theirs with no second round trip (2026-07-30;
-    // it took two Apps-Script-latency trips before, and an unlucky
-    // in-flight poll could stretch that to the next poll tick)
+    // draws yours-vs-theirs with no second round trip
     const s = getState(aname);
     s.error = simulEditsCopy;
     return s;
@@ -601,7 +540,7 @@ function describe(req) {
   touchAuction(aname);
   const i = load('auctions').findIndex(r => r.aname === aname);
   // the token is for CAS identity, not chronology: the random tail
-  // keeps two same-millisecond saves from sharing it (Sol's audit)
+  // keeps two same-millisecond saves from sharing it
   patch('auctions', i, { blurb: blurb,
                          tblurb: new Date().toISOString() + '/'
                            + Math.random().toString(36).slice(2, 10) });
@@ -610,8 +549,7 @@ function describe(req) {
 
 // The roster is CLOSED once revealed: the game is over, and a fresh
 // participant could neither bid meaningfully nor be waited on.
-// Adding is IDEMPOTENT on the label (dreev 2026-07-21, reversing the
-// 07-20 loud refusal): if the label is already seated — same pid or
+// Adding is IDEMPOTENT on the label (dreev's ruling): if the label is already seated — same pid or
 // not — the requested goal state holds, so this is success, sans
 // writes (not even a tmod bump). The race loser converges as an
 // ordinary latecomer: their next snapshot unseats their ghost pid and
@@ -641,7 +579,7 @@ function renameParticipant(req) {
   const pid = cleanPid(req.pid);
   const to = cleanUname(req.to);
   // names freeze at the gavel: a post-close rename could swap
-  // around who bid what (dreev, reversing always-editable)
+  // around who bid what (dreev's ruling)
   if (getState(aname).revealed) throw auctionClosedCopy;
   const i = seatIndex(aname, pid);
   if (i === -1) throw noSuchOneCopy(pid);
@@ -654,7 +592,7 @@ function renameParticipant(req) {
 }
 
 // Removing DELETES the seat — and is allowed only while they have
-// not bid (dreev, 2026-07-19, deleting the cut-flag model: a sealed
+// not bid (a sealed
 // bid is never deletable, so it must never be orphaned either; the
 // straggler you ex to end early is bidless by definition, and the UI
 // grays the × on every bid-bearing row, so this refusal is only ever
@@ -674,8 +612,7 @@ function removeParticipant(req) {
   return getState(aname);
 }
 
-// Stake a claim on a seat — LAST WRITE WINS (dreev 2026-07-21,
-// reversing first-come-first-served after faire's /carnoon lockout:
+// Stake a claim on a seat — LAST WRITE WINS (dreev's ruling:
 // Safari re-minted her device uuid and her own seat refused her).
 // A claim is a consistency marker, not auth: it TAKES the seat, the
 // previous holder's page converges at its next poll, and genuine
@@ -711,7 +648,7 @@ function releaseClaim(req) {
     throw notYourSeatCopy;
   }
   // only an ACTUAL release writes: refused and no-op requests mutate
-  // nothing, not even tmod (Sol's audit)
+  // nothing, not even tmod
   if (held) {
     touchAuction(aname);
     setDeviceID(aname, pid, '');
@@ -781,8 +718,8 @@ function placeBid(req) {
     throw nameTakenCopy;
   }
   // no partial writes: every row this bid may append is capacity-
-  // checked BEFORE the first one lands (Sol's audit: an armor-full
-  // refusal used to arrive after the seat was already created)
+  // checked BEFORE the first one lands (a refusal must not leave a
+  // half-created seat)
   assertRoom('bids');
   if (seatIndex(aname, pid) === -1) assertRoom('users');
   touchAuction(aname);

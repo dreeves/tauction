@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>tauction</title>
-<!-- the kawaii boxed gavel (dreev's art, 2026-07-18, retiring the
-     inline-SVG gavel); full-size source: icons/gavelbox-512.png -->
+<!-- the kawaii boxed gavel (dreev's art); full-size source:
+     icons/gavelbox-512.png -->
 <link rel="icon" type="image/png" href="/icons/favicon.png">
 <link rel="stylesheet" href="style.css">
 <!-- installable as a proper app (the icon is the gavel); without
@@ -76,12 +76,11 @@
 
   <!-- The auction description: freeform markdown, no label (the
        placeholder explains), editable by anyone before or after the
-       close. The card RESTS RENDERED (README blurb spec, 2026-07-29:
-       .viewing is the birth state); the corner ✎ opens the editing
-       mode — textarea left of (or above, when narrow) the pane,
-       which becomes a live preview — and SAVE/DISCARD (copy stamped
-       from stringles) or Escape leave it. Clicking away commits
-       nothing, anywhere (dreev 2026-07-27). -->
+       close. The card RESTS RENDERED (.viewing is the birth state);
+       the corner ✎ opens the editing mode — bordered textarea, its
+       SAVE/DISCARD row (copy stamped from stringles), live preview
+       below — and SAVE/DISCARD or Escape leave it. Clicking away
+       commits nothing, anywhere (dreev's ruling). -->
   <section id="desc" class="card desc viewing">
     <textarea id="descedit" class="descedit" rows="6"
       placeholder="Describe this auction..."></textarea>
@@ -122,15 +121,15 @@
     <!-- once revealed, the + row retires and this stamp takes its
          place (text filled in by render; format is dreev's spec) -->
     <div id="closed" class="closed"></div>
-    <!-- the star, footnoted (the ★ glyph everywhere is dreev-ratified
-         2026-07-17) -->
+    <!-- the star, footnoted (the ★ glyph everywhere is
+         dreev-ratified) -->
     <div class="legend">★ = you</div>
   </section>
 
   <footer>
     <a href="/sourcery.html">sourcery</a>
     <span class="sep">·</span>
-    <span class="version">v2026.07.30-a</span>
+    <span class="version">v2026.07.30-b</span>
   </footer>
 </main>
 

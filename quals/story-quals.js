@@ -1647,6 +1647,27 @@ async function bid(page, bidText) {
          + JSON.stringify(bad));
     };
 
+    // Accessible names: every visible control says what it is —
+    // icon-only controls mirror their tooltip words, bare inputs
+    // carry their purpose. A control whose computed name has no
+    // letters (×, ✎, 🔒, '') is mute to a screen reader.
+    const auditNames = async (page, label) => {
+      const mute = await page.evaluate(() => {
+        const name = (e) => e.getAttribute('aria-label')
+          || (e.labels && e.labels[0] && e.labels[0].textContent)
+          || e.textContent.trim()
+          || e.getAttribute('placeholder') || '';
+        return [...document.querySelectorAll(
+          'button, input, textarea, a[href]')]
+          .filter((e) => e.checkVisibility({ visibilityProperty: true }))
+          .filter((e) => !/[a-zA-Z]/.test(name(e)))
+          .map((e) => e.tagName + '#' + e.id + '.' + e.className);
+      });
+      ok(mute.length === 0, 'accessible-name audit [' + label
+         + ']: every visible control wears a lettered name — '
+         + JSON.stringify(mute));
+    };
+
     /* ...the whisper text keeps its whisper by SIZE, not by fading
        below contrast: the legend and footer wear full muted ink
        (the old 75%-alpha-of-muted double reduction failed WCAG at
@@ -1694,6 +1715,29 @@ async function bid(page, bidText) {
     await fine2.waitForSelector('.tile.mine .rebid textarea');
     await fine2.type('.tile.mine .rebid textarea', 'x');
     await auditLayout(fine2, 'named page, every field hot');
+    await auditNames(fine2, 'named page, every field hot');
+    // ...and the keyboard reaches everything (the every-control-is-a-
+    // tab-stop law): no positive tabindex anywhere (DOM order is tab
+    // order), and tabbing from the top visits the stars and the ×s —
+    // keyboard users can claim and remove
+    ok(await fine2.evaluate(() =>
+      document.querySelectorAll(
+        '[tabindex]:not([tabindex="-1"]):not([tabindex="0"])')
+        .length === 0),
+       'no positive tabindex anywhere: DOM order is tab order');
+    const tabbed = new Set();
+    await fine2.evaluate(() => document.body.focus());
+    for (let i = 0; i < 40; i++) {
+      await fine2.keyboard.press('Tab');
+      tabbed.add(await fine2.evaluate(() => {
+        const e = document.activeElement;
+        return e.id || String(e.className).split(' ')[0] || e.tagName;
+      }));
+    }
+    ok(['share', 'help', 'descedit', 'tu', 'roster-input', 'x']
+         .every((s) => tabbed.has(s)),
+       'tab reaches the whole hot page — stars and ×s included: '
+       + [...tabbed].join(','));
     // the editing mode STACKS at every width (dreev 2026-07-30,
     // killing side-by-side: twin texts at equal weight read as a
     // duplicated render, not source-and-preview), and top to bottom
@@ -1979,6 +2023,7 @@ async function bid(page, bidText) {
          .find((b) => b.pid === 'pid-wirestory-ann').bid === 'first word',
        'the sheet keeps the pre-gavel bid');
     await auditLayout(wire, 'revealed page, dead draft standing');
+    await auditNames(wire, 'revealed page, dead draft standing');
     // ...and the page's weather changed at the close (dreev
     // 2026-07-27: the paper warms as another subtle indicator), with
     // the Closed line sitting a full breath under the ledger
