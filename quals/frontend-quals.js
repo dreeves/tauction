@@ -110,6 +110,8 @@ const INDEX_HTML = fs.readFileSync(path.join(REPO, 'index.html'), 'utf8');
 const APP_JS = fs.readFileSync(path.join(REPO, 'app.js'), 'utf8');
 const STRINGLES = fs.readFileSync(path.join(REPO, 'stringles.js'), 'utf8');
 const STYLE_CSS = fs.readFileSync(path.join(REPO, 'style.css'), 'utf8');
+const CODE_GS =
+  fs.readFileSync(path.join(REPO, 'apps-script', 'Code.gs'), 'utf8');
 
 // Microcopy DERIVED from stringles.js, so dreev's copy edits there
 // never break the quals — the quals pin that the right string shows
@@ -127,14 +129,8 @@ const STR = new Function(STRINGLES
   + ' tabTitle, saveCopy, addCopy, submitCopy, tooLateGoTip, startCopy,'
   + ' discardCopy, warTitle, keepTheirsCopy, overwriteCopy,'
   + ' anameTooLongBanner, unameTooLongBanner, blurbTooLongBanner,'
-  + ' revealCopy, descVerTip, simulEditsBanner };')();
+  + ' revealCopy, descVerTip, simulEditsBanner, refusalCopy };')();
 const STAMP = STR.stampCopy;
-
-// ...and the server's half, out of the vm context hosting Code.gs
-const SCOPY = require('vm')
-  .runInContext('({ gavelFellCopy, simulEditsCopy, mysteryDeviceCopy,'
-    + ' nameTakenCopy, removeBidderCopy, bidTooLongCopy,'
-    + ' blurbTooLongCopy, anameTooLongCopy, unameTooLongCopy })', gas);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -1517,7 +1513,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await until(() => downDoc.getElementById('war-dlg').open);
   await sleep(150);  // outwait the doomed rides
   ok(downDoc.getElementById('war-diff').textContent
-       === SCOPY.simulEditsCopy
+       === STR.simulEditsBanner
      && !downDoc.querySelector('#war-diff .gavel'),
      'item 17: the wire dies under the remaining rides — the slot'
      + ' shows the plain words, never a gavel hammering forever');
@@ -1878,7 +1874,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const ordinaryFetch = dProbeError.window.fetch;
   dProbeError.window.fetch = (url, opts) => String(url).startsWith(API_URL)
     ? Promise.resolve({ json: () => Promise.resolve(
-      { error: SCOPY.nameTakenCopy }) })
+      { error: { code: 'nameTaken' } }) })
     : ordinaryFetch(url, opts);
   type(dProbeError, 'aname', 'probeerror');
   commitName(dProbeError);
@@ -1886,8 +1882,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     .getElementById('banner').hidden);
   ok(dProbeError.window.location.pathname === '/'
      && dProbeError.window.document.getElementById('banner-msg')
-          .textContent === SCOPY.nameTakenCopy,
-     'a typed-name probe displays res.error verbatim and stays put');
+          .textContent === STR.nameTakenBanner,
+     'a typed-name probe renders res.error in stringles copy and'
+     + ' stays put');
 
   /* Replicata: an active typed-name probe returns a state payload from
      before the exists field joined the contract. Expectata: reject the
@@ -1998,7 +1995,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     .getElementById('banner').hidden);
   await settled(dRen);
   ok(dRen.window.document.getElementById('banner').textContent
-       .includes(SCOPY.nameTakenCopy)
+       .includes(STR.nameTakenBanner)
      && row(dRen.window.document, 'gamma') !== null
      && row(dRen.window.document, 'gamma')
           .querySelector('.rename input').classList.contains('error')
@@ -2398,8 +2395,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
                                    // blind, the server refuses
   await until(() => !diaryDoc.getElementById('banner').hidden);
   await until(() => row(diaryDoc, 'rob') && drained(dDiary));
-  ok(warned('✗ ' + SCOPY.nameTakenCopy) && row(diaryDoc, 'rob') !== null,
-     "a server refusal warns ✗ with the server's words (a rename onto"
+  ok(warned('✗ ' + STR.nameTakenBanner) && row(diaryDoc, 'rob') !== null,
+     "a server refusal warns ✗ with the refusal's words (a rename onto"
      + ' a live label is a real error: the requested CHANGE did not'
      + ' happen — unlike the add race)');
   const quiet = logs.length;
@@ -3406,23 +3403,22 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && dB.window.document.getElementById('banner').hidden,
      'the clobber bounces off the compare-and-swap into the war'
      + " popup, in dreev's copy — the banner stands down");
-  ok(STR.mysteryDevice === SCOPY.mysteryDeviceCopy,
-     'stringles.js and Code.gs agree verbatim on the nameless-rig'
-     + " fallback (both ends decorate tooltips with the holder's rig)");
-  ok(STR.nameTakenBanner === SCOPY.nameTakenCopy,
-     'stringles.js and Code.gs agree verbatim on the name-taken copy'
-     + ' (the client pre-check and the server refusal must read as one'
-     + ' message)');
-  ok(STR.bidTooLongBanner === SCOPY.bidTooLongCopy,
-     'stringles.js and Code.gs agree verbatim on the bid-too-long copy'
-     + ' (the client refuses before the wire; the server clamps the'
-     + ' races and the hand-rolled requests)');
-  ok(STR.anameTooLongBanner === SCOPY.anameTooLongCopy
-     && STR.unameTooLongBanner === SCOPY.unameTooLongCopy
-     && STR.blurbTooLongBanner === SCOPY.blurbTooLongCopy,
-     'stringles.js and Code.gs agree verbatim on all three too-long'
-     + ' copies (same pattern as the bid: local refusal and server'
-     + ' backstop read as one message)');
+  // The code-vocabulary weld (successor to the old verbatim cross-
+  // pins): the server refuses in codes, stringles renders them, and
+  // the two vocabularies must be EQUAL — a new server refusal without
+  // client copy fails here, and so does orphaned copy for a code the
+  // server can no longer send.
+  {
+    const thrown = new Set([...CODE_GS.matchAll(
+      /code: '([A-Za-z0-9]+)'/g)].map((m) => m[1]));
+    const rendered = Object.keys(STR.refusalCopy);
+    ok(thrown.size > 0
+       && rendered.length === thrown.size
+       && rendered.every((c) => thrown.has(c)),
+       'refusalCopy covers exactly the codes Code.gs throws — server ['
+       + [...thrown].sort().join(' ') + '] vs stringles ['
+       + rendered.sort().join(' ') + ']');
+  }
 
   /* --- 2q. BLUR COMMITS NOTHING, anywhere (dreev 2026-07-27) ----------
      Cletus's clobber, verbatim from the bug report: winifred and
@@ -3920,7 +3916,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const recoveredBobName = dR.window.document
     .querySelector('.tile[data-uname="bob"] .rename input');
   ok(dR.window.document.getElementById('banner').textContent
-       .includes(SCOPY.nameTakenCopy)
+       .includes(STR.nameTakenBanner)
      && recoveredBobName.classList.contains('error')
      && recoveredBobName.isConnected,
      'the lost rename race: banner in the server\'s words AND the name'
@@ -4714,7 +4710,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // atomically, in the Latin
   const rmRes = gas.handle({ action: 'remove', aname: 'frozencut',
     pid: 'pid-frozencut-pam' });
-  ok(String(rmRes.error) === SCOPY.removeBidderCopy
+  ok(rmRes.error && rmRes.error.code === 'removeBidder'
      && names(gas.handle({ action: 'state', aname: 'frozencut' }))
           === 'pam,quinn,rex',
      'a raced remove of a bidder bounces off the server: nothing'
@@ -5159,7 +5155,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   mockDelay = 0;
   ok(!domWire.window.document.getElementById('banner').hidden
      && domWire.window.document.getElementById('banner').textContent
-          .includes(SCOPY.gavelFellCopy),
+          .includes(STR.refusalCopy.gavelFell({})),
      'losing the under-the-wire race is announced explicitly, in'
      + " dreev's words");
   ok(bidNamed(gas.handle({ action: 'state', aname: 'wire' }), 'ann').bid === 'first thoughts',
@@ -5576,10 +5572,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(apiCalls.filter((c) => c.action === 'bid').length === bids0
      && !domW.window.document.getElementById('banner').hidden
      && domW.window.document.getElementById('banner-msg').textContent
-          === SCOPY.bidTooLongCopy
+          === STR.bidTooLongBanner
      && myEditor(domW.window.document).value === 'x'.repeat(161),
      'an overlong submit is refused before the wire, in the'
-     + " server's exact words, the draft intact for trimming");
+     + " refusal's words, the draft intact for trimming");
   typeBid(domW, 'x'.repeat(160));
   myEditor(domW.window.document).dispatchEvent(
     new domW.window.Event('input', { bubbles: true }));
@@ -5756,7 +5752,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     pid: 'pid-cutcheck-pat' });  // the raced removal, refused
   const domC = await makePage('/cutcheck?api=' + API_URL);
   const patRow = row(domC.window.document, 'pat');
-  ok(String(cutRefusal.error) === SCOPY.removeBidderCopy
+  ok(cutRefusal.error && cutRefusal.error.code === 'removeBidder'
      && patRow && patRow.classList.contains('has-bid')
      && !patRow.classList.contains('cut')
      && patRow.querySelector('.x').disabled
@@ -6214,9 +6210,6 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      war paints theirs from the state in hand — no round trip, no
      loading gavel. The server's CAS stays the backstop for sub-poll
      races. */
-  ok(STR.simulEditsBanner === SCOPY.simulEditsCopy,
-     'the local verdict speaks the server\'s words verbatim (the'
-     + ' revived cross-runtime pin)');
   {
     gas.handle({ action: 'describe', aname: 'warlocal', base: 0,
       blurb: 'first truth' });

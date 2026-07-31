@@ -78,6 +78,16 @@ async function apiPost(body) {
   return r.json();
 }
 
+// The server refuses in CODES ({ code, ...args }; stringles'
+// refusalCopy renders the words — the completeness qual pins the two
+// vocabularies equal). Anything else — the assert-family diagnostics,
+// transport strings — is already finished text and shows verbatim.
+function refusalText(err) {
+  if (!err.code) return String(err);
+  assert(refusalCopy[err.code], 'no copy for refusal code: ' + err.code);
+  return refusalCopy[err.code](err);
+}
+
 // Banners STICK (dreev's ruling): a timer must not snatch bad news
 // while you read. A banner leaves exactly three ways: its × (wired in wireUp), a
 // newer banner replacing it, or a later successful settle retiring
@@ -440,7 +450,7 @@ async function refresh() {
   }
   try {
     if (res !== null) {
-      if (res.error) banner(res.error);
+      if (res.error) banner(refusalText(res.error));
       // adopt only if no writes are pending and no write SETTLED while
       // this snapshot was in flight — anything less and it can lack a
       // name you just added or a bid you just placed (the server
@@ -901,7 +911,7 @@ function commitDesc() {
       // a real refusal IS the edit war (README item 15: after the
       // local length check it is the only refusal a describe has
       // left); transport death shows only the weather banner (16)
-      if (ref) openWar(ref.error);
+      if (ref) openWar(refusalText(ref.error));
     }, () => settleCommit($('desc')));
     // (a SUCCESS settle leaves the base alone: res.blurbver is
     // exactly the claim the click already staked, and restating it
@@ -1985,7 +1995,7 @@ function settleWrite(res, at, onRefusal) {
   settleSeq++;
   let refusal = null;
   if (res && res.error) {
-    banner(res.error);
+    banner(refusalText(res.error));
     refusal = res;
     res = null;
   }
@@ -2171,7 +2181,7 @@ async function switchAuction(a) {
     const res = await apiGet({ action: 'state', aname: a });
     // the user kept typing: a newer probe owns the field now
     if (a !== sanAname($('aname').value)) return;
-    if (res.error) { banner(res.error); return; }
+    if (res.error) { banner(refusalText(res.error)); return; }
     assertState(res);
     if (res.exists) {
       linkBanner(auctionExistsBanner('/' + a));

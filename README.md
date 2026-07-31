@@ -48,3 +48,5 @@ Previously for the golems:
 3. Remove all the path dependence / historical documenation from the code comments. If a bug or whatever is fixed, we don't need the history.
 
 Next for the golems:
+
+1. Let's use the same pencil icon discourse.org does. It's a little bigger and clearer.

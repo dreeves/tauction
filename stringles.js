@@ -1,7 +1,8 @@
 // All UI/microcopy that app.js generates. Parameterized copy is an arrow function
 // See also static copy in index.html (placeholders, help text, HTML tooltips).
-// Code.gs's user-visible errors live in the microcopy block at the top of 
-// Code.gs (separate deployment, can't share this file). The quals derive copy
+// The server sends no user-visible English: Code.gs refuses in CODES
+// ({ code, ...args }) and the refusalCopy table at the bottom of this
+// file turns them into copy. The quals derive copy
 // from here, so edits here never break them.
 'use strict';
 
@@ -120,14 +121,15 @@ const auctionExistsBanner = (url) =>
   'Auction exists — use <a href="' + url + '">the URL</a> to join it';
 
 // renaming onto a name that's already seated: the client pre-checks
-// its own roster, the server refuses stale-roster races — identical
-// words (a qual pins the match), so both read as one message
+// its own roster, the server refuses stale-roster races — and the
+// refusalCopy table below reuses this very constant, so both read
+// as one message
 const nameTakenBanner = 'That name is taken';
 
 // The overlong-bid objection: the field reddens live past 160 and a
-// submit is refused before the wire — in the server's exact words
-// (Code.gs clamps too, for races and hand-rolled requests; a qual
-// pins the verbatim match so both read as one message)
+// submit is refused before the wire (Code.gs clamps too, for races
+// and hand-rolled requests; its refusal renders through this same
+// constant, so both read as one message)
 const bidTooLongBanner = 'bid too long (160 characters max)';
 
 const anameTooLongBanner = 'Auction name too long (max 20 characters)';
@@ -135,8 +137,8 @@ const unameTooLongBanner = 'Name too long (max 20 characters)';
 const blurbTooLongBanner = 'Description too long (max 2000 characters)';
 
 // Someone saved the description while you were editing yours (also
-// thrown by the server's compare-and-swap; must match it exactly so
-// the back-to-back banners read as one)
+// how the server's compare-and-swap refusal renders — the refusalCopy
+// table reuses this constant — so the back-to-back banners read as one)
 const simulEditsBanner =
   'Edit war! Copy your changes elsewhere for safekeeping and reload the page';
 
@@ -148,3 +150,57 @@ const e2155 = (msg) => 'ERROR2155: ' + msg;  // reveal POST failed
 const e2156 = 'ERROR2156: Missing API constant in app.js';
 const e2157 = (msg) => 'ERROR2157: ' + msg;  // auction-name probe failed
 const copyFailBanner = (msg) => 'Could not copy: ' + msg;
+
+// The server's refusals, one entry per code Code.gs can send (a qual
+// pins the two vocabularies equal, both directions). Every deliberate
+// "no" arrives as { code, ...args } and renders here — the words'
+// ONE home; the throw strings left in Code.gs are assert-style
+// operator diagnostics (broken sheet, drifted schema), not copy.
+// Uniformly arrow fns of the error object; parameterless codes
+// ignore it.
+// These ERRORXXXX errors are things we don't expect an end user to ever be able
+// to see.
+const refusalCopy = {
+  // transport/plumbing refusals: a malformed POST body, an action
+  // this server doesn't know (old server vs newer client)
+  badJson: () => 'ERROR1509: request body not valid JSON',
+  unknownAction: (e) => 'ERROR1510: unknown action: ' + e.action,
+  // the validators' refusals (the client pre-checks these same
+  // limits locally, in these same words, via the shared consts)
+  anameTooLong: () => anameTooLongBanner,
+  badAname: () => 'ERROR1511: auction name must be alphanumeric',
+  unameTooLong: () => unameTooLongBanner,
+  badUname: () => 
+    'ERROR1512: username must be alphanumeric and start with a letter',
+  badDevice: () => 'ERROR1513: bad deviceID',
+  badPid: () => 'ERROR1514: bad pid',
+  badDevBlurb: () => 'ERROR1515: bad deviceBlurb',
+  // the reveal button pressed before the roster is complete (a race:
+  // the client grays it until ready)
+  notReady: () => 'ERROR1516: not ready to reveal: everyone on the roster'
+    + ' (at least two people) must bid first',
+  blurbTooLong: () => blurbTooLongBanner,
+  simulEdits: () => simulEditsBanner,
+  rosterClosed: () => 'ERROR1517: Auction complete — no new participants',
+  nameTaken: () => nameTakenBanner,
+  // the frozen-record refusal (dreev's copy): renames, claims, and
+  // releases all bounce off it once the auction closes
+  auctionClosed: () => 'ERROR1518: Auction closed, no editing',
+  noSuchOne: (e) => 'ERROR1519: No such participant: ' + e.pid,
+  claimNeedsDevice: () => 'ERROR1520: claim requires a deviceID',
+  releaseNeedsDevice: () => 'ERROR1521: release requires a deviceID',
+  notYourSeat: () => 'ERROR1522: Disclaiming yourself as a participant failed',
+  emptyBid: () => 'ERROR1523: Bid is empty',
+  bidTooLong: () => bidTooLongBanner,
+  gavelFell: () =>
+    'Womp Womp! The auction closed before your bid got through',
+  // the bid-hijack refusal (dreev's copy): names the holder's rig
+  // and the seat's label. The mystery-device fallback is applied
+  // here, same as the claimed-by tooltip's (the server sends the
+  // holder's deviceBlurb raw, '' included)
+  bidSeatHeld: (e) => 'Someone else (' + (e.blurb || mysteryDevice)
+    + ') already placed a bid as ' + e.uname + '!',
+  // removing someone who has already bid is refused (reachable only
+  // by losing a race: the UI grays that × up front)
+  removeBidder: () => 'ERROR1524: Too late to remove, bid sealed',
+};

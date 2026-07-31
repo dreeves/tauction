@@ -42,12 +42,13 @@ function ok(cond, label) {
 }
 
 const gas = makeGas();
-// server copy derived from Code.gs (via its vm context), same as the
-// frontend suite does
-const SCOPY = require('vm')
-  .runInContext('({ gavelFellCopy, bidTooLongCopy })', gas);
-const SCOPY2 = require('vm')
-  .runInContext('({ simulEditsCopy })', gas);
+// Copy derived from stringles.js, same as the frontend suite does
+// (the server refuses in CODES; stringles renders every refusal's
+// words — and the one refusal pinned here is the client's own
+// pre-wire objection anyway)
+const STR = new Function(
+  fs.readFileSync(path.join(REPO, 'stringles.js'), 'utf8')
+  + '; return { bidTooLongBanner };')();
 
 // Answer any request to the deployed API URL with the local Code.gs
 // logic; write ops can be artificially delayed for in-flight-race
@@ -2478,9 +2479,9 @@ async function bid(page, bidText) {
     await mo.waitForFunction((womp) =>
       !document.getElementById('banner').hidden
       && document.getElementById('banner-msg').textContent === womp,
-      {}, SCOPY.bidTooLongCopy);
+      {}, STR.bidTooLongBanner);
     ok(await mo.$eval(ED, (e) => e.value.length === 170),
-       "refused before the wire, in the server's words, draft intact");
+       "refused before the wire, in the refusal's words, draft intact");
     await mo.$eval(ED, (e) => e.select());
     await mo.type(ED, '$100');
     ok(await mo.$eval(ED, (e) => !e.classList.contains('error')),

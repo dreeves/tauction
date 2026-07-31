@@ -42,8 +42,8 @@ function ok(cond, label) {
      'live state shape matches what app.js expects: ' + JSON.stringify(r).slice(0, 120));
   // Self-HEALING preamble: a previous run that died between its
   // claim and its release strands smokey's seat, and every later
-  // run's deviceless bid then bounces off bidSeatHeldCopy (it
-  // happened; dreev had to clean the sheet by hand). Releasing an
+  // run's deviceless bid then bounces off the bidSeatHeld refusal
+  // (it happened; dreev had to clean the sheet by hand). Releasing an
   // unheld seat is a documented no-op, so this is safe in every state.
   await fetch(API, { method: 'POST',
     body: JSON.stringify({ action: 'release', aname: 'smoketest',
@@ -75,7 +75,7 @@ function ok(cond, label) {
     body: JSON.stringify({ action: 'release', aname: 'smoketest',
       pid: 'pid-smoketest-smokey',
       deviceID: 'not-the-holder' }) })).json();
-  ok(String(r.error).includes('ERROR1306'),
+  ok(r.error && r.error.code === 'notYourSeat',
      'live release by a non-holder refused: ' + JSON.stringify(r).slice(0, 80));
   r = await (await fetch(API, { method: 'POST',
     body: JSON.stringify({ action: 'release', aname: 'smoketest',

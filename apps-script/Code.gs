@@ -44,51 +44,16 @@ const USERS_HEAD    = ['aname', 'pid', 'uname', 'deviceID',
 // refuses loudly past that.
 const ARMOR_ROWS = 10000;
 
-// Microcopy (the server half of stringles.js): everything user-visible
-// that this file generates. Throw strings land verbatim in the client's
-// error banner. stringles.js can't be shared across the deployment
-// boundary, so this block mirrors its role — edit copy here as freely.
-// The ERROR-numbered prefixes are for greppability.
-const badAnameCopy = 'auction name must be alphanumeric';
-const badUnameCopy = 'username must be alphanumeric and start with a letter';
-// The name-length refusals (dreev's copy). Must match stringles.js anameTooLongBanner /
-// unameTooLongBanner EXACTLY (quals check): the client refuses
-// before the wire in the same words, so local and server refusals
-// read as one message.
-const anameTooLongCopy = 'Auction name too long (max 20 characters)';
-const unameTooLongCopy = 'Name too long (max 20 characters)';
-const badDeviceCopy = 'bad deviceID';
-const badDevBlurbCopy = 'bad deviceBlurb';
-const unknownActionCopy = (action) => 'unknown action: ' + action;
-const notReadyCopy = 'not ready to reveal: everyone on the roster'
-  + ' (at least two people) must bid first';
-// (dreev's copy; must match stringles.js
-// blurbTooLongBanner exactly, like its two name siblings)
-const blurbTooLongCopy = 'Description too long (max 2000 characters)';
-// the edit-war refusal's ONE home: the compare-and-swap refuses at
-// save time (the wikis' mid-air-collision convention) and the client
-// banners these words verbatim
-const simulEditsCopy =
-  'Edit war! Copy your changes elsewhere for safekeeping and reload the page';
-const rosterClosedCopy = 'Auction complete — no new participants';
-const nameTakenCopy = 'That name is taken';
-// the frozen-record refusal (dreev's copy): renames, claims, and
-// releases all bounce off it once the auction closes
-const auctionClosedCopy = 'Auction closed, no editing';
-const noSuchOneCopy = (pid) => 'No such participant: ' + pid;
-const badPidCopy = 'bad pid';
-const claimNeedsDeviceCopy = 'ERROR1303: claim requires a deviceID';
-const releaseNeedsDeviceCopy = 'ERROR1305: release requires a deviceID';
-const notYourSeatCopy = 'ERROR1306: Can this error ever happen?'
-  + ' Disclaiming yourself as a participant failed?';
-const emptyBidCopy = 'Bid is empty';
-const bidTooLongCopy = 'bid too long (160 characters max)';
-const gavelFellCopy =
-  'Womp Womp! The auction closed before your bid got through';
-// the bid-hijack refusal (dreev's copy): names the holder's rig and
-// the seat's label
-const bidSeatHeldCopy = (blurb, uname) =>
-  'Someone else (' + blurb + ') already placed a bid as ' + uname + '!';
+// Operator diagnostics — the error channel's only English. The
+// server's deliberate REFUSALS are thrown as { code, ...args }
+// objects and stringles.js's refusalCopy renders the words
+// client-side (a qual pins the two vocabularies equal, both
+// directions). What remains below is the assert family: the sheet or
+// the deploy is broken, and the words are marching orders that must
+// stay readable raw — in a terminal (deploy.js, live-quals), the
+// execution log, or a curl. (Off the error channel this file still
+// generates two English strings, untouched by the codes rework: the
+// bids tab's cheater banner and the root liveness response.)
 // operator-facing, like schemaDriftCopy: a closed auction violating
 // the covenant (revealed ⇒ roster of two-plus, all with bids) was
 // edited by hand or written by pre-freeze code — refuse to render
@@ -107,12 +72,6 @@ const schemaDriftCopy = (name, got, want) =>
   'schema drift: the "' + name + '" tab\'s headers are [' + got
   + '] but this code expects [' + want + '] — rename the tab for'
   + ' posterity (or delete it) and retry: the script rebuilds it fresh';
-// a holder whose claim carried no self-description (must match
-// stringles.js mysteryDevice: it's the same rig-naming fallback)
-const mysteryDeviceCopy = 'mystery device';
-// removing someone who has already bid is refused (reachable only by
-// losing a race: the UI grays that × up front).
-const removeBidderCopy = 'Too late to remove, bid sealed';
 // operator-facing, like schemaDriftCopy: an append one row past the
 // pre-armored grid refuses rather than let Sheets silently
 // reinterpret what lands there
@@ -127,7 +86,7 @@ function doGet(e) {
 function doPost(e) {
   let req;
   try { req = JSON.parse(e.postData.contents); }
-  catch (err) { return respond({ error: 'request body is not valid JSON' }); }
+  catch (err) { return respond({ error: { code: 'badJson' } }); }
   return respond(handle(req));
 }
 
@@ -150,10 +109,14 @@ function handle(req) {
       case 'reveal':   return withLock(() => reveal(req));
       case undefined:  return { ok: 'tauction API is live',
                                 try: '?action=state&aname=tau' };
-      default:         return { error: unknownActionCopy(req.action) };
+      default:         return { error: { code: 'unknownAction',
+                                         action: req.action } };
     }
   } catch (err) {
-    return { error: String(err) };
+    // refusals are { code, ...args } objects, passed through for the
+    // client to render; anything else (assert-family diagnostics,
+    // genuine crashes) is finished text, stringified verbatim
+    return { error: (err && err.code) ? err : String(err) };
   }
 }
 
@@ -175,16 +138,16 @@ function withLock(fn) {
 function cleanAname(s) {
   s = String(s || '').toLowerCase();
   // length first, for the specific words (20 max)
-  if (s.length > 20) throw anameTooLongCopy;
-  if (!/^[a-z0-9]{1,20}$/.test(s)) throw badAnameCopy;
+  if (s.length > 20) throw { code: 'anameTooLong' };
+  if (!/^[a-z0-9]{1,20}$/.test(s)) throw { code: 'badAname' };
   return s;
 }
 
 function cleanUname(s) {
   s = String(s || '').toLowerCase();
-  if (s.length > 20) throw unameTooLongCopy;
+  if (s.length > 20) throw { code: 'unameTooLong' };
   if (!/^[a-z][a-z0-9]{0,19}$/.test(s)) {
-    throw badUnameCopy;
+    throw { code: 'badUname' };
   }
   return s;
 }
@@ -192,14 +155,14 @@ function cleanUname(s) {
 // A deviceID is a client-minted uuid; empty means "release the claim"
 function cleanDeviceID(s) {
   s = String(s == null ? '' : s);
-  if (!/^[a-z0-9-]{0,64}$/.test(s)) throw badDeviceCopy;
+  if (!/^[a-z0-9-]{0,64}$/.test(s)) throw { code: 'badDevice' };
   return s;
 }
 
 // A pid is a client-minted uuid: the person's identity, forever
 function cleanPid(s) {
   s = String(s == null ? '' : s);
-  if (!/^[a-z0-9-]{8,64}$/.test(s)) throw badPidCopy;
+  if (!/^[a-z0-9-]{8,64}$/.test(s)) throw { code: 'badPid' };
   return s;
 }
 
@@ -209,7 +172,7 @@ function cleanPid(s) {
 // system, like everything.)
 function cleanBlurb(s) {
   s = String(s == null ? '' : s);
-  if (!/^[ -~]{0,64}$/.test(s)) throw badDevBlurbCopy;
+  if (!/^[ -~]{0,64}$/.test(s)) throw { code: 'badDevBlurb' };
   return s;
 }
 
@@ -488,7 +451,7 @@ function reveal(req) {
   const bidPids = st.bidders.map(b => b.pid);
   if (!(st.seats.length >= 2
         && st.seats.every(s => bidPids.indexOf(s.pid) !== -1))) {
-    throw notReadyCopy;
+    throw { code: 'notReady' };
   }
   const i = load('auctions').findIndex(r => r.aname === aname);
   // the revealed column holds the moment itself (legacy rows hold '1')
@@ -540,7 +503,7 @@ function ensureSeat(aname, pid, uname) {
 function describe(req) {
   const aname = cleanAname(req.aname);
   const blurb = String(req.blurb == null ? '' : req.blurb);
-  if (blurb.length > 2000) throw blurbTooLongCopy;
+  if (blurb.length > 2000) throw { code: 'blurbTooLong' };
   // the verdict comes BEFORE any write (a refusal must mutate
   // nothing, tmod included) — a missing row reads as the virgin
   // version 0, so a fresh auction's first describe passes
@@ -554,7 +517,7 @@ function describe(req) {
     // under this same write lock — so the client's edit-war diff
     // draws yours-vs-theirs with no second round trip
     const s = getState(aname);
-    s.error = simulEditsCopy;
+    s.error = { code: 'simulEdits' };
     return s;
   }
   touchAuction(aname);
@@ -575,7 +538,7 @@ function addParticipant(req) {
   const aname = cleanAname(req.aname);
   const uname = cleanUname(req.uname);
   const pid = cleanPid(req.pid);
-  if (getState(aname).revealed) throw rosterClosedCopy;
+  if (getState(aname).revealed) throw { code: 'rosterClosed' };
   if (seatIndex(aname, pid) === -1 && seatByName(aname, uname)) {
     return getState(aname);  // the label is seated: mission complete
   }
@@ -596,12 +559,12 @@ function renameParticipant(req) {
   const to = cleanUname(req.to);
   // names freeze at the gavel: a post-close rename could swap
   // around who bid what (dreev's ruling)
-  if (getState(aname).revealed) throw auctionClosedCopy;
+  if (getState(aname).revealed) throw { code: 'auctionClosed' };
   const i = seatIndex(aname, pid);
-  if (i === -1) throw noSuchOneCopy(pid);
+  if (i === -1) throw { code: 'noSuchOne', pid: pid };
   if (load('users')[i].uname === to) return getState(aname);
   const twin = seatByName(aname, to);
-  if (twin && twin.pid !== pid) throw nameTakenCopy;
+  if (twin && twin.pid !== pid) throw { code: 'nameTaken' };
   patch('users', i, { uname: to, tmod: new Date().toISOString() });
   touchAuction(aname);
   return getState(aname);
@@ -617,11 +580,11 @@ function removeParticipant(req) {
   const aname = cleanAname(req.aname);
   const pid = cleanPid(req.pid);
   // the record freezes at the gavel
-  if (getState(aname).revealed) throw auctionClosedCopy;
+  if (getState(aname).revealed) throw { code: 'auctionClosed' };
   const i = seatIndex(aname, pid);
   if (i === -1) return getState(aname);  // absent: a harmless no-op
   if (load('bids').some(r => r.aname === aname && r.pid === pid)) {
-    throw removeBidderCopy;
+    throw { code: 'removeBidder' };
   }
   touchAuction(aname);
   erase('users', i);
@@ -640,12 +603,12 @@ function saveClaim(req) {
   const aname = cleanAname(req.aname);
   const pid = cleanPid(req.pid);
   const deviceID = cleanDeviceID(req.deviceID);
-  if (!deviceID) throw claimNeedsDeviceCopy;
+  if (!deviceID) throw { code: 'claimNeedsDevice' };
   // identity is part of the frozen record, like names and bids: a
   // post-close claim would dress a revealed bid in a stranger's rig
-  if (getState(aname).revealed) throw auctionClosedCopy;
+  if (getState(aname).revealed) throw { code: 'auctionClosed' };
   const deviceBlurb = cleanBlurb(req.deviceBlurb);
-  if (seatIndex(aname, pid) === -1) throw noSuchOneCopy(pid);
+  if (seatIndex(aname, pid) === -1) throw { code: 'noSuchOne', pid: pid };
   touchAuction(aname);
   setDeviceID(aname, pid, deviceID, deviceBlurb);
   return getState(aname);
@@ -657,11 +620,11 @@ function releaseClaim(req) {
   const aname = cleanAname(req.aname);
   const pid = cleanPid(req.pid);
   const deviceID = cleanDeviceID(req.deviceID);
-  if (!deviceID) throw releaseNeedsDeviceCopy;
-  if (getState(aname).revealed) throw auctionClosedCopy;  // frozen too
+  if (!deviceID) throw { code: 'releaseNeedsDevice' };
+  if (getState(aname).revealed) throw { code: 'auctionClosed' };  // frozen too
   const held = deviceOf(aname, pid);
   if (held && held !== deviceID) {
-    throw notYourSeatCopy;
+    throw { code: 'notYourSeat' };
   }
   // only an ACTUAL release writes: refused and no-op requests mutate
   // nothing, not even tmod
@@ -691,12 +654,12 @@ function setDeviceID(aname, pid, deviceID, blurb) {
   });
 }
 
-// The holder's rig, for refusal messages: every seat-taken error names
-// who beat you to it
+// The holder's rig, RAW ('' when the claim carried no self-
+// description; the client's mystery-device fallback decorates it),
+// for the seat-taken refusal that names who beat you to it
 function holderBlurb(aname, pid) {
   const i = seatIndex(aname, pid);
-  const blurb = i === -1 ? '' : load('users')[i].deviceBlurb;
-  return blurb || mysteryDeviceCopy;
+  return i === -1 ? '' : load('users')[i].deviceBlurb;
 }
 
 function placeBid(req) {
@@ -704,13 +667,13 @@ function placeBid(req) {
   const pid = cleanPid(req.pid);
   const uname = cleanUname(req.uname);  // the label, for walk-on seats
   const bid = String(req.bid == null ? '' : req.bid).trim();
-  if (!bid) throw emptyBidCopy;
-  if (bid.length > 160) throw bidTooLongCopy;
+  if (!bid) throw { code: 'emptyBid' };
+  if (bid.length > 160) throw { code: 'bidTooLong' };
   // The gavel drop is a bright line: no bid lands after tfin. This is
   // also the explicit loss notice for an under-the-wire revision that
   // arrived a beat too late.
   if (getState(aname).revealed) {
-    throw gavelFellCopy;
+    throw { code: 'gavelFell' };
   }
   const deviceID = req.deviceID === undefined ? ''
     : cleanDeviceID(req.deviceID);
@@ -727,11 +690,12 @@ function placeBid(req) {
   // Old clients carry no deviceID and count as nobody — fine on an
   // open seat, refused on a held one.
   if (held && held !== deviceID) {
-    throw bidSeatHeldCopy(holderBlurb(aname, pid), uname);
+    throw { code: 'bidSeatHeld', blurb: holderBlurb(aname, pid),
+            uname: uname };
   }
   const twin = seatByName(aname, uname);
   if (seatIndex(aname, pid) === -1 && twin && twin.pid !== pid) {
-    throw nameTakenCopy;
+    throw { code: 'nameTaken' };
   }
   // no partial writes: every row this bid may append is capacity-
   // checked BEFORE the first one lands (a refusal must not leave a

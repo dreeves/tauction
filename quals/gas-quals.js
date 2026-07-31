@@ -34,15 +34,16 @@ const call = (req) => {
   return st;
 };
 
-// Server microcopy DERIVED from Code.gs's block (read back out of the
-// vm context hosting it), so copy edits there never break these quals
-// — they pin the right words in the right place, not the wording
-const COPY = require('vm').runInContext('({ gavelFellCopy,'
-  + ' simulEditsCopy, bidSeatHeldCopy, unknownActionCopy,'
-  + ' mysteryDeviceCopy, schemaDriftCopy, auctionClosedCopy,'
-  + ' rosterClosedCopy, badDevBlurbCopy, badPidCopy, nameTakenCopy,'
-  + ' removeBidderCopy, anameTooLongCopy, unameTooLongCopy,'
-  + ' blurbTooLongCopy })', ctx);
+// The server refuses in CODES ({ code, ...args }; stringles.js
+// renders the words, and the frontend suite welds the two
+// vocabularies), so these quals assert codes, not copy. Only the
+// assert-family diagnostics still carry their words server-side —
+// derived here, so edits there never break these quals
+const COPY = require('vm')
+  .runInContext('({ schemaDriftCopy, patchGhostCopy })', ctx);
+// A refusal's code (undefined on success): the one-liner for
+// asserting WHICH refusal came back
+const code = (st) => st.error && st.error.code;
 // Real Apps Script resets globals every execution; one shared vm
 // context hosts the whole qual run, so drift quals empty the
 // header-check memo by hand to simulate a fresh execution
@@ -201,18 +202,18 @@ ok(!call({ action: 'reveal', aname: 'tau' }).error,
 //    and the loser of an under-the-wire race hears it explicitly
 st = call({ action: 'bid', aname: 'tau', uname: 'carl',
             pid: pid('tau', 'carl'), bid: 'too late' });
-ok(String(st.error) === COPY.gavelFellCopy
+ok(code(st) === 'gavelFell'
    && call({ action: 'state', aname: 'tau' }).bids.length === 2
    && !names(call({ action: 'state', aname: 'tau' })).includes('carl'),
    'a bid after the gavel falls is refused outright: nothing written');
 st = call({ action: 'bid', aname: 'tau', uname: 'alice',
             pid: pid('tau', 'alice'), bid: 'revised!' });
-ok(String(st.error) === COPY.gavelFellCopy
+ok(code(st) === 'gavelFell'
    && call({ action: 'state', aname: 'tau' }).bids[0].bid === 'sushi',
    "even the bidder's own revision bounces: the record is the record");
 st = call({ action: 'rename', aname: 'tau', pid: pid('tau', 'alice'),
             to: 'mallory' });
-ok(String(st.error) === COPY.auctionClosedCopy
+ok(code(st) === 'auctionClosed'
    && names(call({ action: 'state', aname: 'tau' })).includes('alice')
    && call({ action: 'state', aname: 'tau' }).bids
         .some((b) => b.pid === pid('tau', 'alice')),
@@ -225,14 +226,14 @@ ok(String(st.error) === COPY.auctionClosedCopy
 // freezes at the gavel.
 st = call({ action: 'claim', aname: 'tau', pid: pid('tau', 'alice'),
             deviceID: 'd-x', deviceBlurb: 'mallory rig' });
-ok(String(st.error) === COPY.auctionClosedCopy
+ok(code(st) === 'auctionClosed'
    && call({ action: 'state', aname: 'tau' })
         .claims[pid('tau', 'alice')] === undefined,
    "identities freeze at the gavel: a post-close claim can't dress a"
    + " revealed bid in a stranger's rig");
 st = call({ action: 'release', aname: 'tau', pid: pid('tau', 'alice'),
             deviceID: 'd-x' });
-ok(String(st.error) === COPY.auctionClosedCopy,
+ok(code(st) === 'auctionClosed',
    'releases freeze too: no reopening seats after the game');
 // (2026-07-16, per dreev: the roster is CLOSED once revealed — adds
 // refuse rather than merely not-resealing)
@@ -248,7 +249,7 @@ ok(ss.sheets['bids'].colors['2,3'] === null,
 // The old pins blessed permissive removal; now the whole record —
 // seats, bids, cut-row zombie purges — freezes at the gavel.]
 st = call({ action: 'remove', aname: 'tau', pid: pid('tau', 'bob') });
-ok(String(st.error) === COPY.auctionClosedCopy
+ok(code(st) === 'auctionClosed'
    && names(call({ action: 'state', aname: 'tau' })).includes('bob'),
    'removing a seat from a CLOSED auction is refused: the roster is'
    + ' part of the frozen record');
@@ -294,7 +295,7 @@ call({ action: 'bid', aname: 'zombie', uname: 'zomb',
        pid: pid('zombie', 'zomb'), bid: 'undead' });
 st = call({ action: 'remove', aname: 'zombie',
             pid: pid('zombie', 'zomb') });
-ok(String(st.error) === COPY.removeBidderCopy
+ok(code(st) === 'removeBidder'
    && names(call({ action: 'state', aname: 'zombie' })) === 'zomb,keep'
    && call({ action: 'state', aname: 'zombie' }).bidders.length === 1,
    'removing a bidder is refused outright: seat, bid, and roster all'
@@ -358,7 +359,7 @@ st = call({ action: 'bid', aname: 'gluon2', uname: 'solo',
             pid: pid('gluon2', 'solo'), bid: 'first' });
 st = call({ action: 'bid', aname: 'gluon2', uname: 'solo',
             pid: 'pid-gluon2-imposter', bid: 'second' });
-ok(String(st.error) === COPY.nameTakenCopy
+ok(code(st) === 'nameTaken'
    && call({ action: 'state', aname: 'gluon2' }).bidders.length === 1,
    'a doppelganger walk-on (live label, foreign pid) is refused');
 
@@ -386,7 +387,7 @@ ok(!st.error && st.blurb === 'second thoughts' && st.blurbver === 2,
    'an edit based on the current version goes through: version 2');
 st = call({ action: 'describe', aname: 'tau',
             blurb: 'clobber attempt', base: 1 });
-ok(String(st.error) === COPY.simulEditsCopy
+ok(code(st) === 'simulEdits'
    && call({ action: 'state', aname: 'tau' }).blurb === 'second thoughts',
    'an edit based on a STALE version is refused: no silent clobbering');
 // ...and the refusal CARRIES the snapshot that refused it (generated
@@ -398,7 +399,7 @@ ok(st.aname === 'tau' && st.blurb === 'second thoughts'
    'the CAS refusal rides on a full state snapshot: theirs arrives'
    + ' with the verdict');
 st = call({ action: 'describe', aname: 'tau', blurb: 'sneak', base: '' });
-ok(String(st.error) === COPY.simulEditsCopy
+ok(code(st) === 'simulEdits'
    && call({ action: 'state', aname: 'tau' }).blurb === 'second thoughts',
    "'' is not a spelling of virgin (Number('') would coerce to 0"
    + ' silently): a malformed base is a stale base');
@@ -509,7 +510,7 @@ ok(!st.error && st.claims[annP] === 'dev-2'
    'a claim on a held seat TAKES it: last write wins, new rig blurbed');
 st = call({ action: 'release', aname: 'higgs', pid: annP,
             deviceID: 'dev-1' });
-ok(String(st.error).includes('ERROR1306')
+ok(code(st) === 'notYourSeat'
    && call({ action: 'state', aname: 'higgs' }).claims[annP] === 'dev-2',
    'only the CURRENT holder may release a seat');
 st = call({ action: 'release', aname: 'higgs', pid: benP,
@@ -528,8 +529,8 @@ ok(ss.sheets['users'].data.filter(r => r[0] === 'higgs' && r[1] === annP)
      .length === 1, 'claims live on the seat row: upsert, not append');
 st = call({ action: 'bid', aname: 'higgs', uname: 'ann', pid: annP,
             bid: 'a boson', deviceID: 'dev-3' });
-ok(String(st.error) === COPY.bidSeatHeldCopy(COPY.mysteryDeviceCopy, 'ann')
-   && String(st.error).includes('ann')
+ok(code(st) === 'bidSeatHeld' && st.error.blurb === ''
+   && st.error.uname === 'ann'
    && call({ action: 'state', aname: 'higgs' }).bidders.length === 0,
    "a bid can't hijack a held seat: refused, naming the holder's rig"
    + " and the seat's label, and no bid row written");
@@ -539,9 +540,8 @@ ok(!st.error && st.claims[benP] === 'dev-3',
    'bidding an OPEN seat registers your claim on it');
 st = call({ action: 'bid', aname: 'higgs', uname: 'ben', pid: benP,
             bid: 'nope' });
-ok(String(st.error)
-     === COPY.bidSeatHeldCopy(COPY.mysteryDeviceCopy, 'ben')
-   && String(st.error).includes('ben'),
+ok(code(st) === 'bidSeatHeld' && st.error.blurb === ''
+   && st.error.uname === 'ben',
    'a device-less bid (old client) counts as nobody: refused on a'
    + ' held seat too');
 call({ action: 'add', aname: 'higgs', uname: 'cee', pid: ceeP });
@@ -563,7 +563,7 @@ ok(call({ action: 'claim', aname: 'higgs', pid: 'pid-higgs-nobody',
 // to fit (a São Paulo bidder must never lose a bid to an accent)
 st = call({ action: 'claim', aname: 'higgs', pid: annP,
             deviceID: 'dev-1', deviceBlurb: 'Mac in São Paulo' });
-ok(String(st.error) === COPY.badDevBlurbCopy,
+ok(code(st) === 'badDevBlurb',
    'a non-ASCII deviceBlurb is refused: the contract is printable'
    + ' ASCII, and the server never silently fixes inputs');
 ok(call({ action: 'claim', aname: 'higgs', pid: annP,
@@ -620,12 +620,12 @@ call({ action: 'bid', aname: 'cutrename', uname: 'bob',
        pid: pid('cutrename', 'bob'), bid: 'bobs bid' });
 st = call({ action: 'remove', aname: 'cutrename',
             pid: pid('cutrename', 'bob') });
-ok(String(st.error) === COPY.removeBidderCopy,
+ok(code(st) === 'removeBidder',
    "bob has bid, so bob stays: his seat and label are permanent");
 st = call({ action: 'rename', aname: 'cutrename',
             pid: pid('cutrename', 'alice'), to: 'bob' });
 const cutRenameState = call({ action: 'state', aname: 'cutrename' });
-ok(String(st.error) === COPY.nameTakenCopy
+ok(code(st) === 'nameTaken'
    && names(cutRenameState) === 'alice,bob'
    && cutRenameState.bidders[0].pid === pid('cutrename', 'bob'),
    "a bidder's label is reserved by their permanent seat: renames"
@@ -641,12 +641,11 @@ ok(call({ action: 'bid', aname: 'tau2', uname: '1abc',
 ok(call({ action: 'bid', aname: 'tau2', uname: 'a b',
           pid: 'pid-tau2-y', bid: 'x' }).error,
    'name with space rejected');
-ok(String(call({ action: 'bid', aname: 'tau2', uname: 'abc',
-                 pid: 'NOT A PID!', bid: 'x' }).error)
-     === COPY.badPidCopy,
+ok(code(call({ action: 'bid', aname: 'tau2', uname: 'abc',
+               pid: 'NOT A PID!', bid: 'x' })) === 'badPid',
    'garbage pid rejected');
-ok(String(call({ action: 'bid', aname: 'tau2', uname: 'abc',
-                 bid: 'x' }).error) === COPY.badPidCopy,
+ok(code(call({ action: 'bid', aname: 'tau2', uname: 'abc',
+               bid: 'x' })) === 'badPid',
    'a MISSING pid is rejected too: old-shape clients fail loudly,'
    + ' never half-write');
 ok(call({ action: 'bid', aname: 'tau2', uname: 'abc',
@@ -723,8 +722,9 @@ ok(call({ action: 'nonsense' }).error, 'unknown action rejected');
 
 // 10. the fresh-name endpoint is gone (particle names scrapped
 //     2026-07-16 per dreev: users pick their own auction names)
-ok(String(call({ action: 'fresh' }).error)
-     === COPY.unknownActionCopy('fresh'),
+const freshRes = call({ action: 'fresh' });
+ok(code(freshRes) === 'unknownAction'
+   && freshRes.error.action === 'fresh',
    'no server-invented names: fresh is an unknown action now');
 
 // 11. schema drift: the header row IS the schema — positional reads
@@ -778,7 +778,7 @@ call({ action: 'bid', aname: 'frozenx', uname: 'hana',
 call({ action: 'reveal', aname: 'frozenx' });
 st = call({ action: 'remove', aname: 'frozenx',
             pid: pid('frozenx', 'gus') });
-ok(String(st.error) === COPY.auctionClosedCopy
+ok(code(st) === 'auctionClosed'
    && call({ action: 'state', aname: 'frozenx' }).bids
         .some((b) => b.pid === pid('frozenx', 'gus')),
    "the gavel freezes removes wholesale: gus's revealed bid stays on"
@@ -803,14 +803,14 @@ ok(actions.length >= 9 && actions.every((a) =>
      + actions.join(','));
 // each freeze speaks its own copy (Womp Womp for bids, no-new-
 // participants for adds, no-editing for the rest) — all refusals
-const REFUSALS = [COPY.auctionClosedCopy, COPY.gavelFellCopy,
-                  COPY.rosterClosedCopy].map(String);
+const REFUSALS = ['auctionClosed', 'gavelFell', 'rosterClosed'];
 FROZEN.forEach((a) => {
   const r = call({ action: a, aname: 'tau', uname: 'alice',
                    pid: pid('tau', 'alice'), to: 'zzz', bid: 'x',
                    deviceID: 'd-z', base: '' });
-  ok(REFUSALS.includes(String(r.error)),
-     'frozen action refuses on a closed auction: ' + a + ' -> ' + r.error);
+  ok(REFUSALS.includes(code(r)),
+     'frozen action refuses on a closed auction: ' + a + ' -> '
+     + JSON.stringify(r.error));
 });
 
 // 13. the covenant is the SERVER's law, not just this suite's: a
@@ -912,6 +912,15 @@ ctx.armThePit();
 ok(ss.sheets['users'].plainTextRows >= ARMOR
    && ss.sheets['auctions'].plainTextRows >= ARMOR,
    're-arming live tabs in place reaches full armor depth');
+// Drain the ballast (and the memos caching it): the armor probe must
+// not leave the bids tab full, or every later fixture's bids bounce
+// off armorFullCopy — which silently VACATED the ghost-row qual below
+// until the code-refusals rework exposed it (its reveal was refusing
+// notReady-style, bids never having landed)
+for (let i = pit.data.length - 1; i >= 1; i--) {
+  if (pit.data[i][0] === 'ballast') pit.data.splice(i, 1);
+}
+resetTabMemo();
 
 // 16. THE STORAGE FENCE: everything Sheets-flavored lives in the
 //     storage layer; below its fence line the business logic speaks
@@ -934,20 +943,20 @@ ok(fenceAt !== -1 && SHEETY.every((w) => !business.includes(w)),
 //     (names 20 per dreev 2026-07-27, blurb 2000) — exact boundaries
 //     (last, on a throwaway auction: earlier sections pin absolute
 //     sheet-row positions)
-ok(call({ action: 'state', aname: 'a'.repeat(21) }).error
-     === COPY.anameTooLongCopy,
-   'a 21-character auction name is refused with the length words');
+ok(code(call({ action: 'state', aname: 'a'.repeat(21) }))
+     === 'anameTooLong',
+   'a 21-character auction name is refused with the length code');
 ok(!call({ action: 'state', aname: 'a'.repeat(20) }).error,
    'a 20-character auction name is legal: the boundary is exact');
-ok(call({ action: 'add', aname: 'limits', uname: 'b'.repeat(21),
-          pid: 'pid-limits-b21' }).error === COPY.unameTooLongCopy,
-   'a 21-character participant name is refused with the length words');
+ok(code(call({ action: 'add', aname: 'limits', uname: 'b'.repeat(21),
+               pid: 'pid-limits-b21' })) === 'unameTooLong',
+   'a 21-character participant name is refused with the length code');
 ok(!call({ action: 'add', aname: 'limits', uname: 'b'.repeat(20),
            pid: 'pid-limits-b20' }).error,
    'a 20-character participant name is legal');
-ok(call({ action: 'describe', aname: 'limits', base: 0,
-          blurb: 'x'.repeat(2001) }).error === COPY.blurbTooLongCopy,
-   'a 2001-character blurb is refused with the length words');
+ok(code(call({ action: 'describe', aname: 'limits', base: 0,
+               blurb: 'x'.repeat(2001) })) === 'blurbTooLong',
+   'a 2001-character blurb is refused with the length code');
 ok(!call({ action: 'describe', aname: 'limits', base: 0,
            blurb: 'x'.repeat(2000) }).error,
    'a 2000-character blurb is legal');
@@ -960,8 +969,8 @@ call({ action: 'add', aname: 'mutless', uname: 'ann',
 const mutRow = () =>
   ss.sheets['auctions'].data.find((r) => r[0] === 'mutless');
 mutRow()[2] = 'TMOD-SENTINEL';  // hand-poke: any bump erases this
-ok(call({ action: 'describe', aname: 'mutless', base: 'stale',
-          blurb: 'v2' }).error === COPY.simulEditsCopy
+ok(code(call({ action: 'describe', aname: 'mutless', base: 'stale',
+               blurb: 'v2' })) === 'simulEdits'
    && mutRow()[2] === 'TMOD-SENTINEL' && mutRow()[4] === 'v1',
    'a refused describe mutates nothing: no tmod bump, blurb intact');
 ok(call({ action: 'release', aname: 'mutless', pid: 'pid-mutless-ann',
@@ -971,8 +980,8 @@ ok(call({ action: 'release', aname: 'mutless', pid: 'pid-mutless-ann',
 call({ action: 'claim', aname: 'mutless', pid: 'pid-mutless-ann',
   deviceID: 'rig-a', deviceBlurb: 'rig a' });
 mutRow()[2] = 'TMOD-SENTINEL';
-ok(typeof call({ action: 'release', aname: 'mutless',
-     pid: 'pid-mutless-ann', deviceID: 'rig-b' }).error === 'string'
+ok(code(call({ action: 'release', aname: 'mutless',
+     pid: 'pid-mutless-ann', deviceID: 'rig-b' })) === 'notYourSeat'
    && mutRow()[2] === 'TMOD-SENTINEL',
    'a REFUSED release (not your seat) mutates nothing');
 
@@ -990,7 +999,7 @@ const aData18 = ss.sheets['auctions'].data;
 aData18.splice(aData18.findIndex((r) => r[0] === 'ghostrow'), 1);
 const head18 = JSON.stringify(aData18[0]);
 const ghost18 = call({ action: 'reveal', aname: 'ghostrow' });
-ok(typeof ghost18.error === 'string'
+ok(String(ghost18.error) === COPY.patchGhostCopy('auctions')
    && JSON.stringify(aData18[0]) === head18,
    'reveal on a hand-gutted sheet refuses instead of writing tfin'
    + ' into the header row');
@@ -1002,7 +1011,7 @@ const releasedVirgin18 = call({ action: 'release',
   aname: 'mutlessvirgin', pid: 'pid-mutlessvirgin-ann',
   deviceID: 'rig-noop' });
 ok(virgin18.exists === false
-   && staleVirgin18.error === COPY.simulEditsCopy
+   && code(staleVirgin18) === 'simulEdits'
    && releasedVirgin18.exists === false
    && call({ action: 'state', aname: 'mutlessvirgin' }).exists === false,
    'refused describe and no-op release leave a virgin auction virgin');
@@ -1021,7 +1030,7 @@ const sameMs18stale = call({ action: 'describe', aname: 'samems',
   base: sameMs18a.blurbver, blurb: 'stale third' });
 require('vm').runInContext('Date = NativeDate18;', ctx);
 ok(sameMs18a.blurbver === 1 && sameMs18b.blurbver === 2
-   && sameMs18stale.error === COPY.simulEditsCopy
+   && code(sameMs18stale) === 'simulEdits'
    && call({ action: 'state', aname: 'samems' }).blurb === 'second',
    'same-millisecond blurb saves still get distinct CAS identities:'
    + ' the counter never consults the clock');

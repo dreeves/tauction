@@ -49,14 +49,21 @@ The reveal confetti is vendored canvas-confetti v1.9.3
 same library and burst recipe as dreev's calpuz repo — celebrate() in
 app.js owns the parameters.
 
-All user-visible microcopy the client generates lives in
+All user-visible microcopy lives in
 [stringles.js](stringles.js) as commented constants (loaded by
 index.html before app.js), so copy can be edited without touching
-logic. Code.gs's user-visible throw strings live in a mirrored
-microcopy block at its top — a separate deployment can't share the
-file. The quals DERIVE copy from those constants instead of hardcoding
-it (plus two cross-runtime pins where client and server must agree
-verbatim), so copy edits never break the suite.
+logic. That includes the server's words (2026-07-31, retiring the
+mirrored microcopy block and its verbatim cross-runtime pins):
+Code.gs refuses in CODES — the error field carries { code, ...args }
+— and stringles' refusalCopy table renders them client-side (app.js
+refusalText); a frontend qual pins the two vocabularies equal, both
+directions. The error channel's only remaining English is the
+assert-family operator diagnostics (schema drift, covenant, armor,
+patch-ghost), marching orders that must stay readable raw in a
+terminal; off that channel Code.gs still generates the bids tab's
+cheater banner and the root liveness response. The quals
+DERIVE copy from stringles instead of hardcoding it, so copy edits
+never break the suite.
 
 ## One-time setup
 
@@ -171,7 +178,8 @@ positional reads tolerate.
   everywhere. Buttons appear while a field is hot (= dirty, 07-27
   later). Every limit OBJECTS, never chops: 20 chars for both name
   kinds, 160 for bids, 2000 for the blurb — live red ring, local
-  refusal in the server's exact words.
+  refusal in the same stringles words the server's refusal code
+  renders to.
 - Every control is a tab stop (2026-07-27, reversing the 07-16
   tab law: keyboard users must be able to claim/remove/reveal).
   Pointer clicks blur buttons (tooltip hygiene); keyboard clicks
