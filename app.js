@@ -246,9 +246,10 @@ async function locate() {
 let hoverHost = null;  // [data-tip] element under the pointer, if any
 let focusHost = null;  // [data-tip] element holding focus, if any
 
-// An icon-only control (the seal, the ×) has no words of its own, so
-// its tooltip IS its accessible name: one stamp writes both, and the
-// two can never drift apart (the name-audit story qual patrols this).
+// An icon-only control (the ×) — or a control whose label doesn't
+// say why it's gray (the REVEAL button) — leans on its tooltip as
+// accessible context: one stamp writes both, and the two can never
+// drift apart (the name-audit story qual patrols this).
 function setTip(node, words) {
   node.setAttribute('data-tip', words);
   node.setAttribute('aria-label', words);
@@ -257,8 +258,8 @@ function setTip(node, words) {
 async function showTip() {
   const tip = $('tip');
   const host = hoverHost || focusHost;
-  // a host that lost its data-tip while alive (the seal at reveal)
-  // has nothing to say: hidden, never an empty bubble
+  // a host that lost its data-tip while alive (the REVEAL button at
+  // the gavel) has nothing to say: hidden, never an empty bubble
   if (!host || !host.isConnected || !host.getAttribute('data-tip')
       || host.querySelector('input:focus, textarea:focus')) {
     tip.hidden = true;
@@ -275,6 +276,12 @@ async function showTip() {
   tip.style.left = pos.x + 'px';                  // owns the tip now
   tip.style.top = pos.y + 'px';
 }
+
+// A parked tip survives viewport changes (rotation, a narrowed
+// window) — at its STALE coordinates, where it can poke past the new
+// edge and open a sideways scroll. The painter simply re-runs on
+// resize: Floating UI re-fits whatever tip still has a host.
+window.addEventListener('resize', showTip);
 
 function setPath(a) {
   history.replaceState(null, '', '/' + a + location.search);
@@ -301,7 +308,8 @@ function assertState(res) {
     && typeof res.revealed === 'boolean'
     && typeof res.tfin === 'string'
     && (res.tfin === '' || STAMP_RE.test(res.tfin))
-    && typeof res.blurb === 'string' && typeof res.tblurb === 'string'
+    && typeof res.blurb === 'string'
+    && Number.isInteger(res.blurbver) && res.blurbver >= 0
     && res.claims !== null && typeof res.claims === 'object'
     && !Array.isArray(res.claims)
     && Object.values(res.claims).every((v) => typeof v === 'string')
@@ -504,14 +512,20 @@ function render() {
   $('status').classList.remove('stale');
 }
 
-// A field is HOT iff it holds words that differ from its committed
-// baseline (defaultValue, the never-clobber truth) — iff walking away
-// now would leave something uncommitted. The commit buttons ride this
-// class: SAVE/SUBMIT stand exactly while the field is hot, because
-// blur commits NOTHING (dreev's ruling: a blur is a side effect of
-// every OTHER gesture — banner ×es, star taps, reloads — never a
-// decision to save). EVERY text field has a button home, the auction
-// name included (a fence qual closes the class).
+// A field is HOT iff it holds words that differ from its EFFECTIVE
+// committed baseline — the text already on the wire while a volley
+// flies (placeBid's lastBid), the accepted record (defaultValue, the
+// never-clobber truth) otherwise — iff walking away now would leave
+// something unsent. ONE baseline serves the row's geometry and the
+// button's liveness alike (dreev: "could the submit button
+// immediately go away" — at the press the field matches what's
+// flying, so the row closes and the volley's away-tint is the only
+// not-yet-confirmed sign; newer words reopen it). The commit buttons
+// ride this class: SAVE/SUBMIT stand exactly while the field is hot,
+// because blur commits NOTHING (dreev's ruling: a blur is a side
+// effect of every OTHER gesture — banner ×es, star taps, reloads —
+// never a decision to save). EVERY text field has a button home, the
+// auction name included (a fence qual closes the class).
 // DIRTY ONLY, not focused-or-dirty: hotness has geometry — the .gorow opens a
 // line under the field — so it may only ever change at the user's own
 // keystroke, commit, or Escape, moments when nothing else is
@@ -523,19 +537,15 @@ function render() {
 function syncHot(f) {
   const home = f.closest('.rebid, .rename, .fieldcol, .desc, .field');
   if (home === null) return;
-  const dirty = f.value !== f.defaultValue;
-  home.classList.toggle('hot', dirty);
-  // A standing commit button is live only when pressing it would
-  // SEND something (dreev: "shouldn't the submit button
-  // gray out...?"): against a flying volley the effective baseline
-  // is the text already on the wire (placeBid's lastBid — its silent
-  // no-op gets a visible gray), and a frozen field's button stays
-  // frozen with it (updateRow's too-late tip rides that same
-  // disabled).
   const base = home.classList.contains('busy')
     ? f.dataset.sent : f.defaultValue;
+  const dirty = f.value !== base;
+  home.classList.toggle('hot', dirty);
+  // a frozen field's dead draft keeps its grayed button as the
+  // visible reason it will never send (updateRow's too-late tip
+  // rides that same disabled)
   const go = home.querySelector('.gorow .go');
-  if (go) go.disabled = f.disabled || f.value === base;
+  if (go) go.disabled = f.disabled || !dirty;
   saveDraft(f, dirty);
 }
 
@@ -637,17 +647,27 @@ function renderDesc() {
   // CAS token even while the editor is focused.
   if (edit.value === state.blurb) {
     edit.defaultValue = state.blurb;
-    edit.dataset.base = state.tblurb;
+    setBlurbBase(state.blurbver);
     edit.classList.remove('error');
   } else if (edit !== document.activeElement
              && edit.value === edit.defaultValue) {
     edit.value = state.blurb;
     edit.defaultValue = state.blurb;
-    edit.dataset.base = state.tblurb;
+    setBlurbBase(state.blurbver);
   }
   paintWar();  // the war popup, while open, mirrors state too: the
                // diff freshens itself as snapshots land
   syncHot(edit);
+}
+
+// The blurb version this client is working from — at once the CAS
+// base and the pencil's tooltip (dreev's copy; 0 = never described).
+// ONE setter moves both, so the number the pencil shows can never
+// drift from the base the next SAVE will send: optimistically ahead
+// while a save flies, synced to the server wherever the words agree.
+function setBlurbBase(v) {
+  $('descedit').dataset.base = String(v);
+  setTip($('desctoggle'), descVerTip(Number(v)));
 }
 
 // The corner ✎ (grayed while editing; the glyph lives in
@@ -778,7 +798,7 @@ function paintWar() {
   if (!$('war-dlg').open) return;
   const edit = $('descedit');
   const slot = $('war-diff');
-  if (state.tblurb === edit.dataset.base) {
+  if (String(state.blurbver) === edit.dataset.base) {
     if ($('status').classList.contains('stale')) {
       slot.textContent = warWords;
     } else if (!slot.querySelector('.gavel')) {
@@ -786,7 +806,7 @@ function paintWar() {
     }
     return;
   }
-  const key = state.tblurb + '\u0000' + edit.value;
+  const key = state.blurbver + '\u0000' + edit.value;
   if (slot.dataset.key === key) return;
   slot.dataset.key = key;
   slot.replaceChildren(diffEl(state.blurb, edit.value));
@@ -811,7 +831,7 @@ function discardDesc() {
   const rec = state;
   edit.value = rec.blurb;
   edit.defaultValue = rec.blurb;
-  edit.dataset.base = rec.tblurb;
+  setBlurbBase(rec.blurbver);
   edit.classList.remove('error');
   $('desc').classList.add('viewing');
   const view = $('descview');
@@ -836,9 +856,32 @@ function commitDesc() {
   if (edit.value !== edit.defaultValue) {
     const draft = edit.value;
     const cleanBase = edit.defaultValue;  // pre-edit server truth
+    // THE LOCAL VERDICT (dreev: the war took a round trip to pop):
+    // when a poll has already delivered a foreign version, the
+    // conflict is knowable right here — refused before the wire in
+    // the server's exact words (the limits-objection doctrine), the
+    // war painting theirs from the state in hand, no fetch, no
+    // gavel. The server's CAS stays the backstop for sub-poll
+    // races. Disclosed if; strictly-greater, because during our own
+    // flight the optimistic base runs AHEAD of state.
+    if (state.blurbver > Number(edit.dataset.base)) {
+      edit.classList.add('error');
+      openWar(simulEditsBanner);
+      return;
+    }
+    const sentBase = Number(edit.dataset.base);
     queueLazyOp(() => ({ action: 'describe', aname: aname, blurb: draft,
-                         base: edit.dataset.base }), (ref) => {
+                         base: sentBase }), (ref) => {
       settleCommit($('desc'));  // the words' ride is over, either way
+      // the failed write's version claim is VOID no matter who owns
+      // the field now — walked back iff still the NEWEST claim (a
+      // newer save's own settle governs its own): compare-and-
+      // restore, the CAS discipline applied to our own optimism.
+      // Leaving a dead claim standing let the next save silently win
+      // an edit war its author never saw (the newerdesc qual).
+      if (edit.dataset.base === String(sentBase + 1)) {
+        setBlurbBase(sentBase);
+      }
       if (edit.value !== draft || edit.defaultValue !== draft) return;
       // The commit bounced off the compare-and-swap (someone's edit
       // beat ours): back into the editor, your words intact and the
@@ -859,11 +902,16 @@ function commitDesc() {
       // local length check it is the only refusal a describe has
       // left); transport death shows only the weather banner (16)
       if (ref) openWar(ref.error);
-    }, (res) => {
-      settleCommit($('desc'));
-      edit.dataset.base = res.tblurb;
-    });
-    edit.defaultValue = draft;  // ours is the working base now
+    }, () => settleCommit($('desc')));
+    // (a SUCCESS settle leaves the base alone: res.blurbver is
+    // exactly the claim the click already staked, and restating it
+    // could stomp a newer save's standing claim)
+    edit.defaultValue = draft;  // ours is the working base now —
+    // VERSION INCLUDED: the counter's next value is knowable at the
+    // click (base+1, minted under the same lock that serializes
+    // saves), so the pencil says it now and the settle merely
+    // confirms (dreev: "what happened to optimistic writes?")
+    setBlurbBase(sentBase + 1);
     edit.classList.remove('error');
     // paint the draft NOW — rendering is pure client work; the write
     // settles in the background. If its CAS bounces, the recovery
@@ -998,22 +1046,24 @@ function renderStatus() {
     : roll.slice(0, -1).join(', ') + ', and ' + roll[roll.length - 1];
   const ready = !state.revealed && seats.length >= 2
     && missing.length === 0;
-  // the revealed 🎉 stays ENABLED: reveal is idempotent server-side,
-  // so a pointless press is harmless — and a button that is never
-  // disabled can never be washed out by a UA stylesheet
-  $('seal').disabled = !ready && !state.revealed;
-  $('seal').classList.toggle('ready', ready);
+  // the reveal is idempotent server-side, so a stray press is
+  // harmless either way; once revealed the button yields its slot to
+  // the Closed stamp (CSS, off #status.revealed) and the visible
+  // stamp is the screen reader's truth too
+  $('reveal').disabled = !ready && !state.revealed;
+  $('reveal').classList.toggle('ready', ready);
   // the roster is CLOSED once revealed (the server refuses adds too)
   $('roster-input').disabled = state.revealed;
-  // the lit 🎉 explains itself (dreev): revealed needs no tooltip —
-  // but a screen reader hears nothing obvious, so the name stays
-  if (state.revealed) {
-    $('seal').removeAttribute('data-tip');
-    $('seal').setAttribute('aria-label', revealedLabel);
+  // the tip explains the GRAY, nothing else: an armed button's
+  // REVEAL! is its own offer (dreev killed the redundant 'Reveal
+  // bids') and the Closed stamp its own receipt — and the visible
+  // label is the accessible name, so the stamped aria-label goes too
+  if (ready || state.revealed) {
+    $('reveal').removeAttribute('data-tip');
+    $('reveal').removeAttribute('aria-label');
   } else {
-    setTip($('seal'),
-      ready ? revealTip
-      : seats.length === 0 ? needTwoTip
+    setTip($('reveal'),
+      seats.length === 0 ? needTwoTip
       : seats.length === 1 ? needOneMoreTip
       : waitingTip(listed));
   }
@@ -1755,7 +1805,8 @@ async function placeBid(pid, form) {
             bcount: (base ? base.bcount : 0) + 1 };
   renderStatus();
   syncHot(editor);  // the effective baseline just moved to the wire:
-                    // SUBMIT grays until the words diverge again
+                    // the row closes (hot rides that same baseline)
+                    // until the words diverge again
   // the radio locks the moment you commit: a mid-flight identity
   // hop would orphan the flying bid (the settle's render recomputes
   // the lock from state truth)
@@ -1966,11 +2017,12 @@ function settleWrite(res, at, onRefusal) {
 }
 
 function pressReveal() {
-  // (the press does NOT disable the seal: the reveal is idempotent
+  // (the press does NOT disable the button: the reveal is idempotent
   // server-side and rides the op chain, so a double press is a
   // harmless no-op — and disabling a focused button BLURS it in
   // real Chrome, which would eject a keyboard user at the moment
-  // of their reveal.)
+  // of their reveal. At the settle the button yields to the Closed
+  // stamp; focus falls with it, its job done.)
   // the reveal is the most table-wide op there is: the big gavel
   // hammers over the grayed ledger while it round-trips (the settle's
   // render lifts the stale)
@@ -2099,7 +2151,7 @@ function paintCached() {
 // (which runs the real Code.gs) are the fence.
 function virginState(a) {
   return { aname: a, exists: false, seats: [], bidders: [],
-           revealed: false, tfin: '', blurb: '', tblurb: '',
+           revealed: false, tfin: '', blurb: '', blurbver: 0,
            claims: umap(), blurbs: umap(), bids: null };
 }
 
@@ -2168,11 +2220,8 @@ function wireUp() {
   // (dreev caught the padlock resting on the HTML's old "Reveal
   // bids!"): first a name, then bidders. Any real render paints
   // over it.
-  setTip($('seal'), needNameTip);
-  // the pencil and the + row's field: bare glyphs to the eye, so
-  // their names are stamped here (the pencil's is a stringle; the
-  // field reuses its commit button's own words)
-  $('desctoggle').setAttribute('aria-label', editDescLabel);
+  setTip($('reveal'), needNameTip);
+  // the + row's field reuses its commit button's own words
   $('roster-input').setAttribute('aria-label', addCopy);
 
   // Universal button hygiene: an activated button doesn't keep
@@ -2239,7 +2288,7 @@ function wireUp() {
   $('banner-x').addEventListener('click', () => {
     $('banner').hidden = true;
   });
-  $('seal').addEventListener('click', pressReveal);
+  $('reveal').addEventListener('click', pressReveal);
   $('desctoggle').addEventListener('click', editDesc);
   // the empty pane's invitation = the textarea's own placeholder,
   // single-sourced (the empty-state CSS label reads this attribute)
@@ -2262,19 +2311,20 @@ function wireUp() {
   $('war-mine').textContent = overwriteCopy;
   $('war-mine').addEventListener('click', () => {
     $('war-dlg').close();
-    $('descedit').dataset.base = state.tblurb;  // informed now: the
-                          // token the war's own fetch brought home
+    setBlurbBase(state.blurbver);  // informed now: the version the
+                                   // war's own fetch brought home
     commitDesc();
   });
   $('roster-go').textContent = addCopy;
-  // The blurb's compare-and-swap base is BORN '', matching the
-  // server's tblurb for a never-described auction: a page that has
-  // adopted no snapshot and a blurb nobody ever described are the
-  // same virgin state, and the two spellings must agree — an unset
-  // base read as foreign against '' and cried simultaneous-edits at
-  // whoever typed before the first snapshot landed (dreev's
+  $('reveal').textContent = revealCopy;
+  // The blurb's compare-and-swap base is BORN 0 (pencil tip
+  // included), matching the server's blurbver for a never-described
+  // auction: a page that has adopted no snapshot and a blurb nobody
+  // ever described are the same virgin state, and the two spellings
+  // must agree — a foreign-looking base would cry simultaneous-edits
+  // at whoever typed before the first snapshot landed (dreev's
   // fresh-URL report).
-  $('descedit').dataset.base = '';
+  setBlurbBase(0);
   // Disclosed if: leaving a CLEAN editor discards — a pure mode
   // flip, no write, undone by the ✎ (and this is how Escape's
   // revert-then-blur lands as DISCARD, README blurb spec item 6).

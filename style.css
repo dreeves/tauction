@@ -522,48 +522,82 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
 #status .tiles { transition: opacity 0.25s; }
 #status.stale .tiles { opacity: 0.35; transition-delay: 0.3s; }
 
-/* One icon, three states: a 🔒 while bids are sealed (full-strength:
-   it states a fact, it isn't a disabled control), the same 🔒 pulsing
-   please-click-me when pressable, 🎉 once revealed */
-/* The pulse lives on the ::after GLYPH, never on the button:
-   opacity/filter/transform on the button would dim its ::before
-   tooltip and open a stacking context that paints the tip behind the
-   rows below (dreev's grayed-tooltip bug) */
+/* The padlock LAMP beside BIDS: a passive state light, drawn inline
+   in currentColor (shackle, body, keyhole) — line vocabulary shared
+   with the corner share glyph, full ink because it states a fact.
+   The REVEAL button below the ledger owns the action and every
+   tooltip; the lamp's whole vocabulary is its shackle. */
 .seal {
-  font-size: 0.95rem;
-  line-height: 1;
-  background: none;
-  border: none;
-  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  width: 1rem;
+  height: 1rem;
+  color: var(--fg);
 }
 
-/* The full-alpha color is the load-bearing part: UA sheets give
-   disabled buttons a low-alpha text color (Chrome: rgba(16,16,16,.3))
-   and color-emoji glyphs MULTIPLY by that alpha — every grayed 🔒/🎉
-   sighting traced here. opacity: 1 belts iOS Safari's dimming too. */
-.seal:disabled { cursor: default; opacity: 1; color: var(--fg); }
-
-/* the 🎉 is a lit lamp, not a control: nothing to press */
-#status.revealed .seal { cursor: default; }
-
-.seal::after {
-  content: '🔒';
-  display: inline-block;  /* pseudo needs a box to transform (lockpulse) */
+.seal svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
 }
 
-.seal.ready::after { animation: lockpulse 1.6s ease-in-out infinite; }
+.seal .keyhole { fill: currentColor; stroke: none; }
 
-@keyframes lockpulse {
-  0%, 100% { transform: scale(1); }
-  50%      { transform: scale(1.3); }
-}
-
-#status.revealed .seal::after { content: '🎉'; }
-
-/* ...but during the ceremony's wind-up the seal still says sealed:
-   the flip joins the strike's beat (celebrate() drops .prestrike at
+/* the shackle swings open at the reveal (rotating about its seated
+   right leg), and holds shut through the ceremony's wind-up: the
+   flip joins the strike's beat (celebrate() drops .prestrike at
    STRIKE_MS) rather than leaking ahead of the verdict */
-#status.revealed.prestrike .seal::after { content: '🔒'; }
+.seal .shackle {
+  transform-box: view-box;
+  transform-origin: 11px 7.2px;
+  transition: transform 0.35s ease;
+}
+
+#status.revealed:not(.prestrike) .seal .shackle {
+  transform: rotate(35deg);
+}
+
+/* THE REVEAL BUTTON: the auction's one big switch, full width under
+   the ledger. Grayed while the auction waits on anyone; armed —
+   accent-filled, glow-pulsing — when every seat has bid; replaced
+   by the Closed stamp at the reveal (the control's job is done and
+   the stamp is its receipt; the + row retires on the same cue). */
+.reveal {
+  display: block;
+  width: 100%;
+  margin-top: 1.1rem;
+  padding: 0.8rem;
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: default;
+}
+
+.reveal:not(:disabled) {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+  cursor: pointer;
+  animation: armglow 1.6s ease-in-out infinite;
+}
+
+.reveal:not(:disabled):hover { filter: brightness(1.08); }
+
+@keyframes armglow {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50%      { box-shadow: 0 0 14px 2px
+               color-mix(in srgb, var(--accent) 55%, transparent); }
+}
+
+#status.revealed .reveal { display: none; }
 
 #status.revealed { border-color: var(--ok-fg); }
 
@@ -1348,9 +1382,12 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
 
 @media (prefers-reduced-motion: reduce) {
   .tile-name, .tile-bid, .bid-card.slot, .gavel .mallet,
-  .gavel .bang, .gavel .block, #status.just-revealed, .seal.ready::after {
+  .gavel .bang, .gavel .block, #status.just-revealed,
+  .reveal:not(:disabled) {
     animation: none;
   }
+
+  .seal .shackle { transition: none; }
 }
 
 /* The footer whispers: no rule line (the whitespace separates), no
@@ -1707,15 +1744,11 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
     font-size: 2rem;
   }
 
-  /* the padlock sits a thumb's width from the card's right edge, so
-     its hit box grows LEFTWARD over the dead "BIDS" label — symmetric
-     growth poked past a 320px viewport and made the page scroll
-     sideways */
-  .seal {
-    font-size: 1.3rem;
-    padding: 0.85rem 0.4rem 0.85rem 1.45rem;
-    margin: -0.85rem -0.4rem -0.85rem -1.45rem;
-  }
+  /* the padlock lamp is no touch target — it just reads at thumb
+     distance; the REVEAL button is already a whole thumb's landing */
+  .seal { width: 1.2rem; height: 1.2rem; }
+
+  .reveal { font-size: 1.15rem; padding: 1rem; }
 
   .desctoggle {
     font-size: 1.5rem;

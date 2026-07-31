@@ -24,11 +24,10 @@ const claimedByTip = (blurb) => 'Claimed by someone (' + blurb + ')';
 const removeTip = (uname) => 'Remove @' + uname;
 const tooLateRemoveTip = (uname) => 'Too late to remove @' + uname;
 
-// The padlock's tooltips (the revealed 🎉 wears none — dreev:
-// obvious is obvious); the resting page wears needTwoTip (the truth
-// of an empty roster).
-const revealTip = 'Reveal bids';
-// the resting (unnamed-page) padlock: name first, then bidders
+// The REVEAL button's tooltips — they explain the GRAY, nothing
+// else (armed and revealed wear none — dreev: obvious is obvious);
+// the resting page wears needTwoTip (the truth of an empty roster).
+// the resting (unnamed-page) button: name first, then bidders
 const needNameTip = 'Auction needs a name, then at least two bidders';
 const needTwoTip = 'Need at least two bidders';
 const needOneMoreTip = 'Need at least one more bidder';
@@ -44,6 +43,12 @@ const bidWord = 'bid';
 const resubmittedTip = (tini, tmod) =>
   'First submitted ' + tini + ' ago, resubmitted ' + tmod + ' ago';
 
+// The REVEAL button: the auction's one big switch, under the ledger.
+// It wears every tooltip above (the padlock beside BIDS is a passive
+// lamp, tipless and unclickable) and the Closed line replaces it once
+// thrown. Copy is dreev's, exclamation point and all.
+const revealCopy = 'REVEAL!';
+
 // The Closed line under a finished auction
 const closedLine = (stamp) => 'Closed ' + stamp;
 
@@ -53,11 +58,10 @@ const closedLine = (stamp) => 'Closed ' + stamp;
 // and a state glyph tells the state of play across a row of tabs at
 // a glance. The glyph quadruple is dreev's ruling:
 // waiting on bidders, everyone-waiting-on-YOU (the standout — you
-// are the blocker), all-in-awaiting-the-press (🔓 lives on here:
-// retired from the seal button, where the pulsing 🔒 says press-me
-// better, but a title can't pulse), and revealed. (No generated
-// English here: the name is the user's, "tauction" is the
-// product's, the glyphs are glyphs.)
+// are the blocker), all-in-awaiting-the-press (🔓 lives here: on the
+// page the armed REVEAL button says press-me, but a title needs a
+// glyph), and revealed. (No generated English here: the name is the
+// user's, "tauction" is the product's, the glyphs are glyphs.)
 const waitingGlyph = '🔒';
 const yourMoveGlyph = '⭐';
 const readyGlyph = '🔓';
@@ -97,14 +101,10 @@ const warTitle = (take) => take <= 1
 const keepTheirsCopy = 'Keep theirs';
 const overwriteCopy = 'Overwrite with mine';
 
-// Screen-reader names for controls whose visible face is a bare
-// glyph (a tooltip can be seen but not heard).
-// TODO: the ✎ pencil's aria-label; conveys "edit the description"
-const editDescLabel = 'Descriptionem mutare';
-// TODO: the revealed padlock's aria-label; conveys "bids revealed"
-// (the visible 🎉 wears no tooltip — obvious is obvious — but a
-// screen reader hears nothing obvious)
-const revealedLabel = 'Licitationes revelatae';
+// The ✎ pencil's tooltip (doubling as its accessible name): the
+// blurb's version counter — 0 = never described; every committed
+// SAVE or Overwrite increments it. Copy is dreev's.
+const descVerTip = (v) => 'Auction description (v' + v + ')';
 
 const startCopy = (aname) => aname === '' ? 'Create the auction'
                                           : 'Create the ' + aname + ' auction';
@@ -139,8 +139,8 @@ const blurbTooLongBanner = 'Description too long (max 2000 characters)';
 // Someone saved the description while you were editing yours (also
 // thrown by the server's compare-and-swap; must match it exactly so
 // the back-to-back banners read as one)
-//const simulEditsBanner = 
-//  'Edit war! Copy your changes elsewhere for safekeeping and reload the page';
+const simulEditsBanner =
+  'Edit war! Copy your changes elsewhere for safekeeping and reload the page';
 
 // Plumbing failures we expect to never see
 const e2152 = (msg) => 'ERROR2152: ' + msg;  // poll fetch failed

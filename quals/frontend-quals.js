@@ -120,13 +120,14 @@ const STR = new Function(STRINGLES
   + ' consensusStamp,'
   + ' claimedByTip, claimTip, mysteryDevice, nameTakenBanner,'
   + ' bidTooLongBanner,'
-  + ' moneyGlyphs, revealTip, needNameTip, removeTip,'
+  + ' moneyGlyphs, needNameTip, removeTip,'
   + ' tooLateRemoveTip, resubmittedTip, nameStoneTip,'
   + ' submittedTip, yourBidWord,'
   + ' waitingGlyph, yourMoveGlyph, readyGlyph, revealedGlyph,'
   + ' tabTitle, saveCopy, addCopy, submitCopy, tooLateGoTip, startCopy,'
   + ' discardCopy, warTitle, keepTheirsCopy, overwriteCopy,'
-  + ' anameTooLongBanner, unameTooLongBanner, blurbTooLongBanner };')();
+  + ' anameTooLongBanner, unameTooLongBanner, blurbTooLongBanner,'
+  + ' revealCopy, descVerTip, simulEditsBanner };')();
 const STAMP = STR.stampCopy;
 
 // ...and the server's half, out of the vm context hosting Code.gs
@@ -587,7 +588,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     uname: 'bob', pid: 'pid-localready-bob',
     bid: 'bob bid', deviceID: 'bob-device', deviceBlurb: 'Bob rig' });
   const dLocalReady = await makePage('/localready?api=' + API_URL);
-  const localSeal = dLocalReady.window.document.getElementById('seal');
+  const localSeal = dLocalReady.window.document.getElementById('reveal');
   ok(!localSeal.disabled && localSeal.classList.contains('ready'),
      'the two complete server seats begin reveal-ready');
   mockDelay = 300;
@@ -794,7 +795,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      weather AND the words come back — a failed write must never
      eat typed work. Resultata pre-fix: the error survived, the
      words did not (the recovery only ran for server refusals). */
-  gas.handle({ action: 'describe', aname: 'wifieat', base: '',
+  gas.handle({ action: 'describe', aname: 'wifieat', base: 0,
     blurb: 'the record' });
   gas.handle({ action: 'add', aname: 'wifieat',
     uname: 'ann', pid: 'pid-wifieat-ann' });
@@ -834,7 +835,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      server may have committed and only its response died. Recovery
      must compare the next state with the submitted goal, settling it
      clean when it landed and keeping it dirty only when it did not. */
-  gas.handle({ action: 'describe', aname: 'maybeate', base: '',
+  gas.handle({ action: 'describe', aname: 'maybeate', base: 0,
     blurb: 'the record' });
   gas.handle({ action: 'add', aname: 'maybeate',
     uname: 'ann', pid: 'pid-maybeate-ann' });
@@ -853,7 +854,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const maybeState = gas.handle({ action: 'state', aname: 'maybeate' });
   ok(maybeDesc.value === 'the committed amendment'
      && maybeDesc.defaultValue === 'the committed amendment'
-     && maybeDesc.dataset.base === maybeState.tblurb
+     && maybeDesc.dataset.base === String(maybeState.blurbver)
      && !maybeDesc.classList.contains('error')
      && !maybeDoc.getElementById('desc').classList.contains('hot'),
      'a SAVE whose response alone was lost reconciles as committed:'
@@ -1109,7 +1110,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      Expectata: this client's serialized saves both land in order.
      Resultata pre-fix: C carried A's compare-and-swap stamp and
      falsely collided with this same client's successful B. */
-  gas.handle({ action: 'describe', aname: 'rapiddesc', base: '',
+  gas.handle({ action: 'describe', aname: 'rapiddesc', base: 0,
     blurb: 'A version' });
   gas.handle({ action: 'add', aname: 'rapiddesc',
     uname: 'ann', pid: 'pid-rapiddesc-ann' });
@@ -1146,7 +1147,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      under the mid-air-collision convention (2026-07-28) C's own save
      bounces too, in the server's words, rather than silently winning
      an edit war C's author never saw. */
-  gas.handle({ action: 'describe', aname: 'newerdesc', base: '',
+  gas.handle({ action: 'describe', aname: 'newerdesc', base: 0,
     blurb: 'A version' });
   gas.handle({ action: 'add', aname: 'newerdesc',
     uname: 'ann', pid: 'pid-newerdesc-ann' });
@@ -1166,7 +1167,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   newerDoc.getElementById('descedit').focus();
   const beforeA2 = gas.handle({ action: 'state', aname: 'newerdesc' });
   gas.handle({ action: 'describe', aname: 'newerdesc',
-    base: beforeA2.tblurb, blurb: 'A2 version' });
+    base: beforeA2.blurbver, blurb: 'A2 version' });
   await until(() => !newerDoc.getElementById('banner').hidden);
   mockDelay = 0;
   ok(newerDoc.getElementById('descedit').value === 'C version'
@@ -1268,7 +1269,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      diff of yours vs theirs, Keep theirs / Overwrite with mine —
      while the words stay red in the open editor. The banner stays
      hidden: the popup carries this news. */
-  gas.handle({ action: 'describe', aname: 'warzone', base: '',
+  gas.handle({ action: 'describe', aname: 'warzone', base: 0,
     blurb: 'line one\nline two\nline three' });
   gas.handle({ action: 'add', aname: 'warzone',
     uname: 'ann', pid: 'pid-warzone-ann' });
@@ -1281,7 +1282,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   warDoc.getElementById('descedit').dispatchEvent(
     new dWar.window.Event('input', { bubbles: true }));
   gas.handle({ action: 'describe', aname: 'warzone',
-    base: gas.handle({ action: 'state', aname: 'warzone' }).tblurb,
+    base: gas.handle({ action: 'state', aname: 'warzone' }).blurbver,
     blurb: 'line one\nline 2 theirs\nline three' });  // the rival
   const warCallsAtSave = apiCalls.length;
   warDoc.getElementById('descgo').click();
@@ -1369,7 +1370,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   warDoc.getElementById('descedit').dispatchEvent(
     new dWar.window.Event('input', { bubbles: true }));
   gas.handle({ action: 'describe', aname: 'warzone',
-    base: gas.handle({ action: 'state', aname: 'warzone' }).tblurb,
+    base: gas.handle({ action: 'state', aname: 'warzone' }).blurbver,
     blurb: 'theirs again' });
   warDoc.getElementById('descgo').click();
   await until(() => warDoc.getElementById('war-dlg').open);
@@ -1395,7 +1396,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   warDoc.getElementById('descedit').dispatchEvent(
     new dWar.window.Event('input', { bubbles: true }));
   gas.handle({ action: 'describe', aname: 'warzone',
-    base: gas.handle({ action: 'state', aname: 'warzone' }).tblurb,
+    base: gas.handle({ action: 'state', aname: 'warzone' }).blurbver,
     blurb: 'third rival' });
   warDoc.getElementById('descgo').click();
   await until(() => warDoc.getElementById('war-dlg').open);
@@ -1415,7 +1416,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
 
   /* ...the diff never executes user text (anti-postel: the blurb is
      a shared field) */
-  gas.handle({ action: 'describe', aname: 'xsswar', base: '',
+  gas.handle({ action: 'describe', aname: 'xsswar', base: 0,
     blurb: 'plain' });
   gas.handle({ action: 'add', aname: 'xsswar',
     uname: 'ann', pid: 'pid-xsswar-ann' });
@@ -1427,7 +1428,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   dXw.window.document.getElementById('descedit').dispatchEvent(
     new dXw.window.Event('input', { bubbles: true }));
   gas.handle({ action: 'describe', aname: 'xsswar',
-    base: gas.handle({ action: 'state', aname: 'xsswar' }).tblurb,
+    base: gas.handle({ action: 'state', aname: 'xsswar' }).blurbver,
     blurb: '<script>alert(2)</script>' });
   dXw.window.document.getElementById('descgo').click();
   await until(() => dXw.window.document.getElementById('war-dlg').open);
@@ -1448,7 +1449,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      Expectata: the mini hammering gavel — an empty diff slot is an
      untrusted picture — then the diff when the trailing write
      settles. */
-  gas.handle({ action: 'describe', aname: 'slotgav', base: '',
+  gas.handle({ action: 'describe', aname: 'slotgav', base: 0,
     blurb: 'alpha' });
   gas.handle({ action: 'add', aname: 'slotgav',
     uname: 'ann', pid: 'pid-slotgav-ann' });
@@ -1460,7 +1461,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   slotDoc.getElementById('descedit').dispatchEvent(
     new dSlot.window.Event('input', { bubbles: true }));
   gas.handle({ action: 'describe', aname: 'slotgav',
-    base: gas.handle({ action: 'state', aname: 'slotgav' }).tblurb,
+    base: gas.handle({ action: 'state', aname: 'slotgav' }).blurbver,
     blurb: 'theirs' });
   mockDelay = 150;  // every hop crawls
   slotDoc.getElementById('descgo').click();
@@ -1488,7 +1489,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      gavel hammering forever on a dead wire; a healed take repaints
      the real diff. Resultata pre-paintWar-in-refresh's-catch: the
      gavel hammered until the wire healed on its own. */
-  gas.handle({ action: 'describe', aname: 'downwar', base: '',
+  gas.handle({ action: 'describe', aname: 'downwar', base: 0,
     blurb: 'alpha' });
   gas.handle({ action: 'add', aname: 'downwar',
     uname: 'ann', pid: 'pid-downwar-ann' });
@@ -1500,7 +1501,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   downDoc.getElementById('descedit').dispatchEvent(
     new dDown.window.Event('input', { bubbles: true }));
   gas.handle({ action: 'describe', aname: 'downwar',
-    base: gas.handle({ action: 'state', aname: 'downwar' }).tblurb,
+    base: gas.handle({ action: 'state', aname: 'downwar' }).blurbver,
     blurb: 'theirs' });
   mockDelay = 100;  // let the POST leave before the wire dies
   downDoc.getElementById('descgo').click();
@@ -1664,7 +1665,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && optiRow.querySelector('.x').disabled
      && optiRow.querySelector('.tile-bid').getAttribute('data-tip')
           === STR.submittedTip(STR.yourBidWord, '0s')
-     && !optiDoc.getElementById('seal').disabled
+     && !optiDoc.getElementById('reveal').disabled
      && optiDoc.title.startsWith(STR.readyGlyph)
      && optiDoc.querySelector('#tiles .rebid').classList
           .contains('busy'),
@@ -1703,7 +1704,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(!row(deadDoc, 'ann').classList.contains('has-bid')
      && row(deadDoc, 'ann').querySelector('.tile-bid')
           .getAttribute('data-tip') === STR.awaitingTip
-     && deadDoc.getElementById('seal').disabled
+     && deadDoc.getElementById('reveal').disabled
      && myEditor(deadDoc).value === 'doomed words'
      && !deadDoc.querySelector('#tiles .rebid').classList
           .contains('busy'),
@@ -1791,7 +1792,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      the arrival says nothing — his words and the rendered pane both
      stand — and HIS save is refused in the server's words, because
      his draft was based on nothing. */
-  gas.handle({ action: 'describe', aname: 'preexdesc', base: '',
+  gas.handle({ action: 'describe', aname: 'preexdesc', base: 0,
     blurb: 'House rules.' });
   mockDelay = 300;
   const dPreex = await makePage('/preexdesc?api=' + API_URL);
@@ -1829,12 +1830,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      and again on every reload. */
   gas.handle({ action: 'add', aname: 'ghost',
     uname: 'ann', pid: 'pid-ghost-ann' });
-  gas.handle({ action: 'describe', aname: 'ghost', base: '',
+  gas.handle({ action: 'describe', aname: 'ghost', base: 0,
     blurb: 'first words' });
   const ghostCache = JSON.stringify(
     gas.handle({ action: 'state', aname: 'ghost' }));
   gas.handle({ action: 'describe', aname: 'ghost',
-    base: gas.handle({ action: 'state', aname: 'ghost' }).tblurb,
+    base: gas.handle({ action: 'state', aname: 'ghost' }).blurbver,
     blurb: 'moved on' });
   const dGhost = await makePage('/ghost?api=' + API_URL, (w) => {
     w.localStorage.setItem('tauction-state:ghost', ghostCache);
@@ -1856,7 +1857,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      a participant or bid, and a bare page types that name. Expectata:
      the occupied-name gate offers its URL. Resultata pre-fix: the gate
      inferred existence from roster/bids and entered the auction. */
-  gas.handle({ action: 'describe', aname: 'desconly', base: '',
+  gas.handle({ action: 'describe', aname: 'desconly', base: 0,
     blurb: '' });
   const dDescOnly = await makePage('/?api=' + API_URL);
   type(dDescOnly, 'aname', 'desconly');
@@ -2049,8 +2050,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   let dom = await makePage('/?api=' + API_URL);
   let doc = dom.window.document;
   ok(dom.window.location.pathname === '/', 'a bare visit stays at /');
-  ok(doc.getElementById('seal').disabled
-     && doc.getElementById('seal').getAttribute('data-tip')
+  ok(doc.getElementById('reveal').disabled
+     && doc.getElementById('reveal').getAttribute('data-tip')
           === STR.needNameTip,
      "the unnamed page's padlock is gray with dreev's"
      + ' name-first tip (it once rested on the HTML\'s "Reveal'
@@ -2118,7 +2119,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(doc.querySelector('#status .th-bid #seal'),
      'the padlock sits with BIDS');
   ok(tiles(doc).length === 0, 'an auction with no roster is just an empty box');
-  ok(doc.getElementById('seal').getAttribute('data-tip')
+  ok(doc.getElementById('reveal').getAttribute('data-tip')
        === STR.needTwoTip,
      'empty roster: the tip names the real blocker — and counts it'
      + ' right (two needed, not "one more" than nobody)');
@@ -2408,7 +2409,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' by construction');
   const base = gas.handle({ action: 'state', aname: 'diary' });
   gas.handle({ action: 'describe', aname: 'diary',
-    blurb: 'de rebus emptis', base: base.tblurb });
+    blurb: 'de rebus emptis', base: base.blurbver });
   await jog();
   ok(has('✎ description (15 chars)'),
      'a description edit narrates its new length, not its text');
@@ -2705,12 +2706,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(doc.querySelector('#status .closed').textContent === '',
      'no Closed line while the auction lives');
   ok(doc.getElementById('seal'), 'seal-state badge present');
-  ok(doc.getElementById('seal').getAttribute('data-tip')
+  ok(doc.getElementById('reveal').getAttribute('data-tip')
        === STR.waitingTip('alice' + STR.youTag + ' and bob'),
      'padlock tip NAMES the stragglers, tagging you as you');
   addName(dom, 'carol');
   await until(() => names(gas.handle({ action: 'state', aname: 'tau' })) === 'alice,bob,carol');
-  ok(doc.getElementById('seal').getAttribute('data-tip')
+  ok(doc.getElementById('reveal').getAttribute('data-tip')
        === STR.waitingTip('alice' + STR.youTag + ', bob, and carol'),
      'three stragglers: Oxford comma and all');
   row(doc, 'carol').querySelector('.x').click();
@@ -2826,10 +2827,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(row(doc, 'alice').querySelector('.x').parentElement
        === row(doc, 'alice'),
      'the × belongs to the whole row, not the bid cell');
-  ok(doc.getElementById('seal').disabled
-     && !doc.getElementById('seal').classList.contains('ready'),
+  ok(doc.getElementById('reveal').disabled
+     && !doc.getElementById('reveal').classList.contains('ready'),
      'padlock locked while bob is outstanding');
-  ok(doc.getElementById('seal').getAttribute('data-tip')
+  ok(doc.getElementById('reveal').getAttribute('data-tip')
        === STR.waitingTip('bob'),
      'one straggler: named alone, no (you) since he is not');
 
@@ -2844,9 +2845,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'your own fresh-auction bid is never crossed out');
   ok(!domF.window.document.getElementById('status').classList.contains('revealed'),
      'solo bid stays sealed (no instant self-reveal, no latch footgun)');
-  ok(domF.window.document.getElementById('seal').disabled,
+  ok(domF.window.document.getElementById('reveal').disabled,
      'padlock stays locked for a solo bidder');
-  ok(domF.window.document.getElementById('seal').getAttribute('data-tip')
+  ok(domF.window.document.getElementById('reveal').getAttribute('data-tip')
        === STR.needOneMoreTip,
      'solo bidder: bidding cannot unlock a roster of one, and the tip'
      + ' says so instead of inventing someone to wait for');
@@ -3194,9 +3195,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   dsDoc.getElementById('descedit').value = '# Brunch\n\n**bring** cash';
   dsDoc.getElementById('descedit').dispatchEvent(
     new domDs.window.Event('input', { bubbles: true }));
-  ok(!dsDoc.getElementById('desctoggle').hasAttribute('data-tip'),
-     'the pencil explains itself by icon: no tooltip [dreev retired'
-     + ' his toggle-tip copy 2026-07-17]');
+  ok(dsDoc.getElementById('desctoggle').getAttribute('data-tip')
+       === STR.descVerTip(0),
+     "the pencil's tooltip is the blurb's version counter [dreev's"
+     + ' 2026-07-30 blurbver spec, superseding the 07-17 no-tip'
+     + ' ruling]');
   // SAVE = commit + flip to rendered (dreev revived the button
   // 2026-07-27; clicking away commits nothing, anywhere)
   dsDoc.getElementById('descgo').click();
@@ -3254,7 +3257,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      italics inside the code span. Expectata: what's in backticks
      comes out verbatim — while code can still LABEL a link, and
      emphasis outside code still works. */
-  gas.handle({ action: 'describe', aname: 'codespan', base: '',
+  gas.handle({ action: 'describe', aname: 'codespan', base: 0,
     blurb: 'ecce `a*b*c` et `**x**` et [`y`](https://e.com) et *z*' });
   gas.handle({ action: 'add', aname: 'codespan',
     uname: 'c', pid: 'pid-codespan-c' });
@@ -3276,7 +3279,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'emphasis outside the backticks still works');
 
   // hostile markdown renders inert (escape-first, whitelisted links)
-  gas.handle({ action: 'describe', aname: 'evil', base: '',
+  gas.handle({ action: 'describe', aname: 'evil', base: 0,
     blurb: '<script>window.pwned=1</script>\n\n'
       + '[x](javascript:alert(1)) <img src=x onerror=alert(1)>' });
   gas.handle({ action: 'add', aname: 'evil',
@@ -3439,7 +3442,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   cwEd.dispatchEvent(new cw.window.Event('input', { bubbles: true }));
   // winifred's save lands from her own machine...
   gas.handle({ action: 'describe', aname: 'clob', blurb: 'per winifred',
-    base: gas.handle({ action: 'state', aname: 'clob' }).tblurb });
+    base: gas.handle({ action: 'state', aname: 'clob' }).blurbver });
   // ...and the next poll says NOTHING to cletus (dreev 2026-07-28,
   // the mid-air-collision convention: conflicts surface at SAVE,
   // never mid-composition) — wait for her words to be ingested (the
@@ -3871,7 +3874,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   /* ...and the SAME convention's fences on the optimistic buttons,
      where instant retirement plays the disable's role: a double
      press sends ONE write. */
-  gas.handle({ action: 'describe', aname: 'dblsave', base: '',
+  gas.handle({ action: 'describe', aname: 'dblsave', base: 0,
     blurb: '' });
   const dDbl = await makePage('/dblsave?api=' + API_URL);
   const dblDoc = dDbl.window.document;
@@ -4539,10 +4542,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     w.FloatingUIDOM.computePosition = (host) =>
       new w.Promise((res) => held.push([host, res]));
     w.document.querySelector('label[for="aname"]').focus();  // summons 1
-    // summons 2: the resting seal is DISABLED, which jsdom won't
-    // focus() since it lost its tabindex (2t) — the focusin dispatch
-    // is the summons the app actually listens for (3095's pattern)
-    w.document.getElementById('seal').dispatchEvent(
+    // summons 2: the resting REVEAL button is DISABLED, which jsdom
+    // won't focus() — the focusin dispatch is the summons the app
+    // actually listens for (3095's pattern)
+    w.document.getElementById('reveal').dispatchEvent(
       new w.FocusEvent('focusin', { bubbles: true }));
     held[1][1]({ x: 222, y: 22 });   // newest resolves first...
     await sleep(10);
@@ -4550,7 +4553,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     await sleep(10);
     ok(w.document.getElementById('tip').style.left === '222px'
        && w.document.getElementById('tip').textContent
-            === w.document.getElementById('seal')
+            === w.document.getElementById('reveal')
                  .getAttribute('data-tip'),
        'a stale async position never lands on a newer tip: the newest'
        + ' summons owns it');
@@ -4597,38 +4600,39 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(dTip2.window.document.getElementById('tip').hidden,
      'a removed host takes its tip with it: no haunting');
   // ...and a host that merely LOSES its data-tip while alive (the
-  // seal is the one that does: the lit 🎉 explains itself, so the
-  // reveal strips its tip) must take the open tip with it too.
-  // Replicata: park on the ready padlock; the reveal lands from
-  // elsewhere. Resultata pre-fix: the tip stayed up as an EMPTY
-  // bubble until the pointer moved. Expectata: it vanishes.
+  // REVEAL button is the one that does: the tip explains the gray,
+  // so ARMING strips it) must take the open tip with it too.
+  // Replicata: park on the waiting REVEAL button; the last bid lands
+  // from elsewhere and the button arms. Resultata pre-fix: the tip
+  // stayed up as an EMPTY bubble until the pointer moved. Expectata:
+  // it vanishes — REVEAL! speaks for itself.
   gas.handle({ action: 'add', aname: 'tipgone',
     uname: 'ann', pid: 'pid-tipgone-ann' });
   gas.handle({ action: 'add', aname: 'tipgone',
     uname: 'bo', pid: 'pid-tipgone-bo' });
   gas.handle({ action: 'bid', aname: 'tipgone',
     uname: 'ann', pid: 'pid-tipgone-ann', bid: 'a' });
-  gas.handle({ action: 'bid', aname: 'tipgone',
-    uname: 'bo', pid: 'pid-tipgone-bo', bid: 'b' });
   const dTip3 = await makePage('/tipgone?api=' + API_URL);
   await sleep(20);
-  const sealT = dTip3.window.document.getElementById('seal');
+  const sealT = dTip3.window.document.getElementById('reveal');
   sealT.focus();
   sealT.dispatchEvent(new dTip3.window.FocusEvent('focusin',
     { bubbles: true }));
   await sleep(10);
   ok(!dTip3.window.document.getElementById('tip').hidden
      && dTip3.window.document.getElementById('tip').textContent
-          === STR.revealTip,
-     'parked on the ready padlock: its tip is up');
-  gas.handle({ action: 'reveal', aname: 'tipgone' });  // from elsewhere
-  await until(() => dTip3.window.document.getElementById('status')
-    .classList.contains('revealed'));
+          === STR.waitingTip('bo'),
+     'parked on the waiting REVEAL button: its tip is up, naming'
+     + ' the straggler');
+  gas.handle({ action: 'bid', aname: 'tipgone',  // the last bid
+    uname: 'bo', pid: 'pid-tipgone-bo', bid: 'b' });  // from elsewhere
+  dTip3.window.__intervals.find((i) => i.ms === 5000).fn();
+  await until(() => !sealT.disabled);
   await sleep(10);
   ok(!sealT.hasAttribute('data-tip')
      && dTip3.window.document.getElementById('tip').hidden,
-     "the reveal takes the padlock's tip: the open tip vanishes"
-     + ' instead of lingering as an empty bubble');
+     "arming takes the button's tip: the open tip vanishes instead"
+     + ' of lingering as an empty bubble');
 
   /* --- 2u. name, enter, bid (dreev's add-self flow) --------------------
      [Tab retired as a commit 2026-07-27 — it wrote alice to the
@@ -5052,16 +5056,17 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(!doc2.getElementById('status').classList.contains('revealed')
      && !doc2.getElementById('status').textContent.includes('three tacos'),
      'roster complete: still sealed until someone presses reveal');
-  const seal2 = doc2.getElementById('seal');
+  const seal2 = doc2.getElementById('reveal');
   ok(!seal2.disabled && seal2.classList.contains('ready'),
-     'padlock unlocks when the roster is complete');
-  ok(seal2.getAttribute('data-tip') === STR.revealTip,
-     'everyone in: the tip offers the reveal');
+     'the REVEAL button arms when the roster is complete');
+  ok(!seal2.hasAttribute('data-tip') && !seal2.hasAttribute('aria-label'),
+     'everyone in: the armed button needs no tip — REVEAL! is its'
+     + ' own offer and its own accessible name');
   const preRevealTau = gas.handle({ action: 'state', aname: 'tau' });
   mockDelay = 150;
   seal2.click();
   ok(doc2.getElementById('status').classList.contains('stale'),
-     'pressing the padlock shows busy AT ONCE: the gavel hammers while'
+     'pressing REVEAL shows busy AT ONCE: the gavel hammers while'
      + ' the reveal round-trips (dreev: "nothing seems to happen")');
   await until(() =>
     doc2.getElementById('status').classList.contains('revealed'));
@@ -5080,8 +5085,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && doc2.getElementById('status').classList.contains('just-revealed'),
      'reveal lights the tada and glows, once');
   ok(doc2.getElementById('status').classList.contains('prestrike'),
-     'but until the mallet lands the seal still SAYS sealed: the 🎉'
-     + " flip joins the strike's beat with SOLD (dreev lined them up)"
+     'but until the mallet lands the shackle still SAYS sealed: its'
+     + " swing joins the strike's beat with SOLD (dreev lined them up)"
      + ' — the bids themselves unmask right away');
   await until(() => !doc2.getElementById('status').classList
     .contains('prestrike'));
@@ -5119,7 +5124,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'every star grays at the gavel: identity is part of the frozen'
      + ' record (found hunting dreev\'s one-more-bug)');
   ok(row(doc2, 'alice').querySelector('.rename input').disabled
-     && !dom2.window.document.getElementById('seal')
+     && !dom2.window.document.getElementById('reveal')
           .hasAttribute('data-tip'),
      'the gavel freezes the NAMES too (dreev: a post-close rename'
      + ' could swap who bid what), and the lit tada needs no tip —'
@@ -5189,7 +5194,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // not), so the qual supplies the blur the gesture implies
   myEditor(domSW.window.document).blur();
   mockDelay = 0;               // ...and the reveal press is instant
-  domSW.window.document.getElementById('seal').click();
+  domSW.window.document.getElementById('reveal').click();
   await settled(domSW);
   await until(() => gas.handle({ action: 'state', aname: 'selfwire' })
     .revealed);
@@ -5285,7 +5290,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   typeBid(domJk, 'york');   // the minds meet
   submitBid(domJk);
   await settled(domJk);
-  domJk.window.document.getElementById('seal').click();
+  domJk.window.document.getElementById('reveal').click();
   await until(() => domJk.window.document.getElementById('status')
     .classList.contains('revealed'));
   const jkStamp = domJk.window.document
@@ -6022,10 +6027,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     pid: 'pid-drum-ben', bid: 'tuppence' });
   const domDrum = await makePage('/drumroll?api=' + API_URL);
   const ddoc = domDrum.window.document;
-  await until(() => !ddoc.getElementById('seal').disabled
+  await until(() => !ddoc.getElementById('reveal').disabled
     && !ddoc.getElementById('status').classList.contains('stale'));
   mockDelay = 800;   // the verdict's round trip
-  ddoc.getElementById('seal').dispatchEvent(
+  ddoc.getElementById('reveal').dispatchEvent(
     new domDrum.window.MouseEvent('click', { bubbles: true }));
   ok(ddoc.getElementById('status').classList.contains('stale'),
      'the reveal raises its drumroll gray');
@@ -6044,6 +6049,207 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(!ddoc.getElementById('status').classList.contains('stale'),
      'the verdict settles, the drumroll ends');
   mockDelay = 0;
+
+  /* --- THE REVEAL BUTTON (dreev's spec, 2026-07-30) --------------------
+     The padlock was too subtle a control. The auction's one big
+     switch is a full-width REVEAL! button under the ledger: grayed
+     until everyone on a 2+ roster has bid, armed when pressable,
+     and replaced by the Closed stamp once thrown. The padlock and
+     party lamp stay beside BIDS but as a passive drawn lamp — no
+     clickability, no tooltips; every tip it wore lives on the
+     button now. */
+  ok(/<button id="reveal" class="reveal"/.test(INDEX_HTML),
+     'index.html carries the REVEAL button');
+  ok(/<span id="seal" class="seal"[^>]*aria-hidden="true"/.test(INDEX_HTML),
+     'the padlock is a passive aria-hidden span, not a button');
+  ok(INDEX_HTML.indexOf('id="reveal"') < INDEX_HTML.indexOf('id="closed"')
+     && INDEX_HTML.indexOf('id="reveal"') > INDEX_HTML.indexOf('id="tiles"'),
+     'the button sits under the ledger, in the slot the Closed stamp'
+     + ' will take');
+  {
+    const domUn = await makePage('/?api=' + API_URL);
+    const udoc = domUn.window.document;
+    ok(udoc.getElementById('reveal').textContent === STR.revealCopy,
+       "the button wears dreev's copy from stringles, verbatim");
+    ok(udoc.getElementById('reveal').disabled
+       && udoc.getElementById('reveal').getAttribute('data-tip')
+            === STR.needNameTip,
+       'unnamed page: the button is gray and wears the resting tip');
+    ok(!udoc.getElementById('seal').hasAttribute('data-tip')
+       && udoc.getElementById('seal').tagName === 'SPAN',
+       'the lamp wears no tooltip and is no tab stop: passive');
+    /* the + row's you-star hint (dreev's nitpick, 2026-07-30):
+       nobody is you on an unnamed page either, so the hint shows
+       from BIRTH — unclaimed is the section's HTML resting state
+       (the .desc.viewing precedent), corrected by every render, not
+       a class only renders may grant. Pre-fix the hint appeared
+       only once naming let renderStatus run: suppressed, where the
+       whole section is merely dimmed. */
+    ok(udoc.getElementById('status').classList.contains('unclaimed'),
+       'the unnamed page is born unclaimed: the you-star hint rests'
+       + ' on the + row from the start, dimmed with its section');
+  }
+  {
+    gas.handle({ action: 'add', aname: 'bigswitch', uname: 'ada',
+      pid: 'pid-big-ada' });
+    gas.handle({ action: 'add', aname: 'bigswitch', uname: 'ben',
+      pid: 'pid-big-ben' });
+    gas.handle({ action: 'bid', aname: 'bigswitch', uname: 'ada',
+      pid: 'pid-big-ada', bid: 'a farthing' });
+    gas.handle({ action: 'bid', aname: 'bigswitch', uname: 'ben',
+      pid: 'pid-big-ben', bid: 'tuppence' });
+    const domBig = await makePage('/bigswitch?api=' + API_URL);
+    const bdoc = domBig.window.document;
+    await until(() => !bdoc.getElementById('reveal').disabled);
+    ok(bdoc.getElementById('reveal').classList.contains('ready')
+       && !bdoc.getElementById('reveal').hasAttribute('data-tip'),
+       'all bids in: the button arms and SHEDS its tooltip — REVEAL!'
+       + ' says everything (dreev killed the redundant tip)');
+    ok(!bdoc.getElementById('seal').hasAttribute('data-tip'),
+       'the armed state puts no tip back on the lamp');
+    bdoc.getElementById('reveal').dispatchEvent(
+      new domBig.window.MouseEvent('click', { bubbles: true }));
+    await until(() => bdoc.getElementById('status').classList
+      .contains('revealed'));
+    ok(bdoc.getElementById('closed').textContent.startsWith('Closed '),
+       'thrown: the Closed stamp stands in the button\'s slot'
+       + ' (the CSS swap rides #status.revealed)');
+    ok(!bdoc.getElementById('seal').hasAttribute('data-tip'),
+       'revealed: the lamp still keeps its counsel');
+  }
+
+  /* --- BLURBVER (dreev's spec, 2026-07-30): the pencil's tooltip is
+     the blurb's version counter, straight off the CAS token — which
+     is now a plain number instead of the old timestamp+hash (an
+     integer under the write lock can never collide; the stamp
+     needed a bolted-on random tail). 0 = never described; every
+     committed SAVE or Overwrite increments. --------------------- */
+  {
+    const domVer = await makePage('/verstory?api=' + API_URL);
+    const vdoc = domVer.window.document;
+    ok(vdoc.getElementById('desctoggle').getAttribute('data-tip')
+         === STR.descVerTip(0),
+       "a virgin page's pencil says version 0, in dreev's words");
+    vdoc.getElementById('desctoggle').click();
+    type(domVer, 'descedit', 'first words');
+    vdoc.getElementById('descgo').click();
+    ok(vdoc.getElementById('desctoggle').getAttribute('data-tip')
+         === STR.descVerTip(1),
+       'SAVE increments the pencil at the click');
+    await until(() => gas.handle({ action: 'state', aname: 'verstory' })
+      .blurbver === 1);
+    ok(true, '...and the server agrees at the settle');
+    vdoc.getElementById('desctoggle').click();
+    type(domVer, 'descedit', 'second words');
+    /* the version is OPTIMISTIC like every other write (dreev: "what
+       happened to optimistic writes?"): the counter's whole beauty is
+       that the next version is knowable at SAVE — base+1 — so the
+       pencil says it at the click, exactly as defaultValue moves at
+       the click, and the settle merely confirms */
+    mockDelay = 400;
+    vdoc.getElementById('descgo').click();
+    ok(vdoc.getElementById('desctoggle').getAttribute('data-tip')
+         === STR.descVerTip(2)
+       && gas.handle({ action: 'state', aname: 'verstory' })
+            .blurbver === 1,
+       'SAVE increments the pencil AT THE CLICK — the server still'
+       + ' says 1: the version is optimistic like the words');
+    await until(() => gas.handle({ action: 'state', aname: 'verstory' })
+      .blurbver === 2);
+    mockDelay = 0;
+    await until(() => vdoc.getElementById('desctoggle')
+      .getAttribute('data-tip') === STR.descVerTip(2));
+    ok(gas.handle({ action: 'state', aname: 'verstory' }).blurbver === 2,
+       'and the settle confirms what the click promised');
+  }
+
+  /* --- SUBMIT collapses at the press (dreev 2026-07-30: "could the
+     submit button immediately go away") ---------------------------
+     Hotness rides the EFFECTIVE committed baseline — the text on the
+     wire while a volley flies (placeBid's lastBid), the accepted
+     record otherwise. One baseline for the row's geometry and the
+     button's liveness where there were two: at the press the field
+     matches what's flying, so the row closes and the volley tint is
+     the only not-yet-confirmed sign. Typing again reopens it. */
+  {
+    const domZip = await makePage('/zipbid?api=' + API_URL);
+    addName(domZip, 'zed');  // self-claims; the editor arrives
+    const zdoc = domZip.window.document;
+    await until(() => zdoc.querySelector('.tile.mine .rebid textarea'));
+    mockDelay = 400;
+    const zed = zdoc.querySelector('.tile.mine .rebid textarea');
+    typeBid(domZip, 'a shiny farthing');
+    zed.dispatchEvent(  // typeBid sets value only; hotness rides the
+      new domZip.window.Event('input', { bubbles: true }));  // keystroke
+    ok(zdoc.querySelector('.tile.mine .rebid').classList.contains('hot'),
+       'typed words open the row: SUBMIT stands');
+    submitBid(domZip);
+    ok(!zdoc.querySelector('.tile.mine .rebid').classList.contains('hot')
+       && zdoc.querySelector('.tile.mine .rebid').classList
+            .contains('busy'),
+       'the press CLOSES the row at once — the button is gone, the'
+       + ' away-tint carries not-yet-confirmed — while the bid still'
+       + ' flies');
+    typeBid(domZip, 'a shiny farthing plus tax');
+    zed.dispatchEvent(
+      new domZip.window.Event('input', { bubbles: true }));
+    ok(zdoc.querySelector('.tile.mine .rebid').classList.contains('hot'),
+       'newer words reopen the row: down-to-the-wire revision lives');
+    submitBid(domZip);
+    await until(() => writesInFlight === 0);
+    mockDelay = 0;
+    await settled(domZip);
+    ok(zdoc.querySelector('.tile.mine .rebid textarea').defaultValue
+         === 'a shiny farthing plus tax'
+       && !zdoc.querySelector('.tile.mine .rebid').classList
+            .contains('hot'),
+       'the volley settles onto the last word, row closed');
+  }
+
+  /* --- the LOCAL war verdict (dreev 2026-07-30: "it takes like a
+     full second for the edit-war popup") --------------------------
+     When a poll has already delivered a foreign version, the
+     conflict is knowable without the wire: SAVE refuses locally in
+     the server's exact words (the limits-objection doctrine) and the
+     war paints theirs from the state in hand — no round trip, no
+     loading gavel. The server's CAS stays the backstop for sub-poll
+     races. */
+  ok(STR.simulEditsBanner === SCOPY.simulEditsCopy,
+     'the local verdict speaks the server\'s words verbatim (the'
+     + ' revived cross-runtime pin)');
+  {
+    gas.handle({ action: 'describe', aname: 'warlocal', base: 0,
+      blurb: 'first truth' });
+    const domWL = await makePage('/warlocal?api=' + API_URL);
+    const wdoc = domWL.window.document;
+    await until(() => wdoc.getElementById('descedit').dataset.base === '1');
+    wdoc.getElementById('desctoggle').click();
+    type(domWL, 'descedit', 'my rival words');
+    gas.handle({ action: 'describe', aname: 'warlocal', base: 1,
+      blurb: 'their newer truth' });  // the foreign save...
+    domWL.window.__intervals.find((i) => i.ms === 5000).fn();  // ...a
+    await until(() =>  // poll delivers it (the dirty editor's base
+      domWL.window.__logs.some((l) =>  // rightly stays put)
+        String(l).startsWith('✎')));
+    mockDelay = 400;  // any wire trip would be visible now
+    wdoc.getElementById('descgo').click();
+    ok(wdoc.getElementById('war-dlg').open
+       && wdoc.querySelector('#war-diff .diff-row') !== null
+       && writesInFlight === 0
+       && wdoc.getElementById('war-title').textContent
+            === STR.warTitle(1),
+       'a knowable conflict wars AT THE CLICK: dialog up, diff drawn'
+       + ' from the state in hand, NOTHING on the wire');
+    mockDelay = 0;
+    wdoc.querySelector('#war-dlg .war-btns #war-keep').click();
+    await until(() => !wdoc.getElementById('war-dlg').open);
+    ok(wdoc.getElementById('descedit').value === 'their newer truth'
+       && wdoc.getElementById('descedit').dataset.base === '2'
+       && gas.handle({ action: 'state', aname: 'warlocal' })
+            .blurbver === 2,
+       'Keep theirs adopts the record, base and all — and the local'
+       + ' verdict truly sent NOTHING: the server never moved');
+  }
 
   console.log('frontend-quals: all ' + passed + ' assertions passed');
   process.exit(0);

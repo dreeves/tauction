@@ -449,16 +449,14 @@ async function bid(page, bidText) {
         const m = c.match(/(?:rgba\([^)]+,\s*|\/\s*)([\d.]+)\)\s*$/);
         return m ? parseFloat(m[1]) : 1;
       };
-      const cs = getComputedStyle(document.querySelector('#status .seal'));
-      const ca = getComputedStyle(
-        document.querySelector('#status .seal'), '::after');
-      // color-emoji glyphs MULTIPLY by the fill color's alpha, and
-      // Chrome's UA sheet gives disabled buttons a 0.3-alpha color —
-      // the actual culprit behind every grayed padlock/tada sighting
-      return ca.opacity === '1' && ca.filter === 'none'
-        && alpha(cs.color) === 1;
-    }), 'the padlock shows full-strength while sealed: full-alpha'
-       + ' color, so the emoji renders solid in every browser');
+      const lamp = document.querySelector('#status .seal');
+      return alpha(getComputedStyle(lamp).color) === 1
+        && getComputedStyle(lamp.querySelector('.shackle')).transform
+             === 'none'
+        && !!lamp.querySelector('.lockbody')
+        && !!lamp.querySelector('.keyhole');
+    }), 'the drawn padlock lamp reads full-ink while sealed, its'
+       + ' shackle seated on the body');
     ok(await alice.evaluate(() =>
       document.querySelectorAll('#tiles .tu').length === 2
       && document.querySelector('.tile[data-uname="alice"] .tu.selected')
@@ -717,7 +715,7 @@ async function bid(page, bidText) {
         - (star.left + star.right) / 2) < 2;
     }), "the legend's star sits on the identity-control axis");
     ok(await alice.evaluate(() =>
-      ['#tiles .tile.has-bid .x', '#seal'].every((sel) => {
+      ['#tiles .tile.has-bid .x', '#reveal'].every((sel) => {
         // dreev's bug: opacity on a grayed control dimmed its tooltip
         // AND opened a stacking context that painted it behind the
         // rows below; graying must never touch the tooltip's host
@@ -801,7 +799,13 @@ async function bid(page, bidText) {
     ok(overflow <= 0, 'no horizontal overflow on phone (' + overflow + 'px)');
     await alice.setViewport(NARROW);
     await alice.waitForFunction(() => innerWidth === 320);
-    ok(await alice.evaluate(() => {
+    // a parked tip refits on resize ASYNCHRONOUSLY (showTip awaits
+    // Floating UI): wait out the refit rather than sampling the beat
+    // between the narrow and its landing — a real overflow fails
+    // this wait loudly by timeout
+    await alice.waitForFunction(() =>
+      document.scrollingElement.scrollWidth <= innerWidth);
+    const narrowLegs = await alice.evaluate(() => {
       const near = (a, b) => Math.abs(a - b) < 1;
       const textLeft = (e) => {
         const r = document.createRange();
@@ -821,15 +825,40 @@ async function bid(page, bidText) {
       const bidText = box.left + parseFloat(css.borderLeftWidth)
         + parseFloat(css.paddingLeft);
       const thBid = document.querySelector('.th-bid');
-      return document.scrollingElement.scrollWidth <= innerWidth
-        && thBid.scrollWidth <= thBid.clientWidth + 1
-        && box.width >= 3 * parseFloat(getComputedStyle(
-          document.documentElement).fontSize)
-        && near(textLeft(document.querySelector('.th-person')), whoText)
-        && near(textLeft(thBid), bidText)
-        && near(add.left, name.left) && near(add.right, name.right);
-    }), 'at 320px the same text axes hold, both fields stay usable,'
-       + ' and nothing scrolls sideways');
+      const bad = [];  // each failed leg NAMES itself with its numbers
+      if (document.scrollingElement.scrollWidth > innerWidth) {
+        const wide = [...document.querySelectorAll('*')]
+          .filter((e) => e.getBoundingClientRect().right > innerWidth)
+          .slice(0, 5)
+          .map((e) => e.tagName + '#' + e.id + '.' + e.className + '@'
+            + Math.round(e.getBoundingClientRect().right));
+        bad.push('sideways scroll ' + document.scrollingElement.scrollWidth
+          + ' > ' + innerWidth + ' [' + wide.join(', ') + ']');
+      }
+      if (thBid.scrollWidth > thBid.clientWidth + 1) {
+        bad.push('th-bid clipped ' + thBid.scrollWidth + ' > '
+          + thBid.clientWidth);
+      }
+      if (box.width < 3 * parseFloat(getComputedStyle(
+            document.documentElement).fontSize)) {
+        bad.push('bid box starved at ' + box.width + 'px');
+      }
+      if (!near(textLeft(document.querySelector('.th-person')), whoText)) {
+        bad.push('person axis '
+          + textLeft(document.querySelector('.th-person')) + ' vs ' + whoText);
+      }
+      if (!near(textLeft(thBid), bidText)) {
+        bad.push('bid axis ' + textLeft(thBid) + ' vs ' + bidText);
+      }
+      if (!near(add.left, name.left) || !near(add.right, name.right)) {
+        bad.push('add-row edges ' + [add.left, name.left, add.right,
+          name.right].join('/'));
+      }
+      return bad;
+    });
+    ok(narrowLegs.length === 0,
+       'at 320px the same text axes hold, both fields stay usable,'
+       + ' and nothing scrolls sideways — ' + narrowLegs.join('; '));
     await shoot(alice, 'story1-alice-narrow');
     await alice.hover('.tile:not(.mine) .tu');
     await alice.waitForFunction(() =>
@@ -841,6 +870,10 @@ async function bid(page, bidText) {
     await alice.setViewport(PHONE);
     await alice.waitForFunction(() => innerWidth === 390);
     await alice.mouse.move(5, 400);
+    // the earlier Tab parked focus on the pencil, whose version tip
+    // (dreev's blurbver spec) legitimately stays while focused —
+    // drop the focus so no summons stands, then the tip must hide
+    await alice.evaluate(() => document.activeElement.blur());
     await alice.waitForFunction(() =>
       document.getElementById('tip').hidden);
     await shoot(alice, 'story1-alice-phone');
@@ -1002,8 +1035,8 @@ async function bid(page, bidText) {
        + ' else, says the tip, naming the rig — while open seats stay'
        + ' hollow');
     ok(await bob.evaluate(() => getComputedStyle(
-         document.querySelector('#status .seal'), '::after').content)
-       .then((c) => c.includes('\u{1F512}')), 'closed padlock while sealed');
+         document.querySelector('#status .seal .shackle')).transform)
+       .then((t) => t === 'none'), 'closed padlock while sealed');
     await shoot(bob, 'story2-bob-sealed');
 
     await claimRow(bob, 'bob');
@@ -1022,22 +1055,25 @@ async function bid(page, bidText) {
       document.querySelectorAll('#tiles .tile.has-bid').length === 2);
     ok(!(await text(bob, '#status')).includes('three tacos'),
        'complete but sealed: nothing reveals without a press');
-    await bob.waitForFunction(() => !document.getElementById('seal').disabled);
+    await bob.waitForFunction(() => !document.getElementById('reveal').disabled);
     opDelay = 900;  // the reveal round-trips like everything else
-    ok(await bob.evaluate(() =>
-      getComputedStyle(document.getElementById('seal'), '::after')
-        .animationName === 'lockpulse'
-      && getComputedStyle(document.getElementById('seal')).transform
-        === 'none'),
-       'the pressable padlock pulses for attention — on the glyph, so'
-       + " the button never opens a stacking context under its tooltip");
-    await bob.click('#seal');
+    ok(await bob.evaluate(() => {
+      const rv = getComputedStyle(document.getElementById('reveal'));
+      return rv.animationName === 'armglow' && rv.transform === 'none'
+        && rv.opacity === '1' && rv.filter === 'none'
+        && getComputedStyle(document.querySelector(
+             '#status .seal .shackle')).transform === 'none';
+    }),
+       'the armed REVEAL button glow-pulses for attention — shadow'
+       + ' only, never opening a stacking context under its tooltip —'
+       + ' and the lamp holds its shackle shut');
+    await bob.click('#reveal');
     await bob.waitForFunction(() => {  // 0.15s fade: wait, don't sample
       const g = document.querySelector('#status > .gavel');
       return getComputedStyle(g).opacity === '1';
     });
     ok(true, 'the big gavel hammers while the reveal is in flight —'
-       + ' pressing the padlock visibly DOES something');
+       + ' pressing REVEAL visibly DOES something');
     opDelay = 0;
     await bob.waitForFunction(() =>
       document.getElementById('status').textContent.includes('three tacos'));
@@ -1046,16 +1082,18 @@ async function bid(page, bidText) {
     // no tip at all now (dreev: obvious is obvious)
     await bob.mouse.move(10, 600);
     ok(await bob.evaluate(() =>
-      document.activeElement !== document.getElementById('seal')),
-       "pressing the padlock doesn't leave its tooltip stuck (the"
+      document.activeElement !== document.getElementById('reveal')),
+       "pressing REVEAL doesn't leave its tooltip stuck (the"
        + ' universal blur-on-activation rule)');
+    ok(await bob.evaluate(() =>
+      getComputedStyle(document.getElementById('reveal')).display
+        === 'none'
+      && getComputedStyle(document.getElementById('closed')).display
+        !== 'none'),
+       'the thrown switch yields its slot to the Closed stamp');
     ok(await bob.$eval('.tile.mine .rebid textarea', (e) => e.value)
        === 'my entire kingdom',
-       "pressing the padlock reveals everything: alice's card + his own row");
-    await bob.waitForFunction(() =>  // fade-in: wait, don't sample
-      parseFloat(getComputedStyle(document.querySelector('#status .seal'))
-        .opacity) === 1);
-    ok(true, 'the icon comes to full strength at the reveal');
+       "pressing REVEAL reveals everything: alice's card + his own row");
     ok(await bob.$eval('.tile.mine .rebid textarea', (e) => e.disabled),
        'the gavel drop is a bright line: the editor goes dead at the'
        + ' reveal');
@@ -1092,19 +1130,19 @@ async function bid(page, bidText) {
     // the flip now rides the STRIKE's beat (dreev lined up SOLD and
     // the tada), so wait for it rather than sampling the wind-up
     await bob.waitForFunction(() => getComputedStyle(
-      document.querySelector('#status .seal'), '::after').content
-        .includes('\u{1F389}'));
+      document.querySelector('#status .seal .shackle')).transform
+        !== 'none');
     ok(true,
-       'the padlock becomes the tada at the strike: one icon, three states');
+       'the shackle swings open at the strike: one lamp, two states');
     ok(await bob.evaluate(() => {
       const alpha = (c) => {
         const m = c.match(/(?:rgba\([^)]+,\s*|\/\s*)([\d.]+)\)\s*$/);
         return m ? parseFloat(m[1]) : 1;
       };
-      const s2 = document.getElementById('seal');
-      return !s2.disabled && alpha(getComputedStyle(s2).color) === 1;
-    }), 'the tada is never a disabled control at all (reveal is'
-       + ' idempotent), so no UA sheet can wash it out');
+      return alpha(getComputedStyle(
+        document.querySelector('#status .seal')).color) === 1;
+    }), 'the open lamp reads full-ink: a span, never a disableable'
+       + ' control, so no UA sheet can ever wash it');
     // The ceremony is a transient: gate on its LOUDEST early moment
     // (canvas-confetti mounts its canvas at the strike) and assert
     // everything else in that same beat — sampling at the tail flaked
@@ -1120,8 +1158,8 @@ async function bid(page, bidText) {
              === 'gavel-verdict'
         && getComputedStyle(g).animationName === 'gavel-vanish'
         && st && getComputedStyle(st).animationName === 'stamp-slam'
-        && getComputedStyle(document.querySelector('#status .seal'),
-             '::after').content.includes('\u{1F389}')
+        && getComputedStyle(document.querySelector(
+             '#status .seal .shackle')).transform !== 'none'
         && getComputedStyle(cv).position === 'fixed'
         && getComputedStyle(cv).pointerEvents === 'none'
         && box.width === window.innerWidth
@@ -1162,7 +1200,7 @@ async function bid(page, bidText) {
       // invisible, until the last long-lived piece times out)
       !document.querySelector('#status .fete'), { timeout: 6000 });
     ok(true, 'the ceremony packs up after itself');
-    ok(await bob.$eval('#seal', (e) => e.getAttribute('data-tip'))
+    ok(await bob.$eval('#reveal', (e) => e.getAttribute('data-tip'))
        === null,
        'the revealed tada wears NO tip at all (dreev: obvious is'
        + ' obvious)');
@@ -1248,8 +1286,8 @@ async function bid(page, bidText) {
        "the walk-on's bid grays his × on arrival: a bid protects its"
        + ' seat');
     await alice.click('.tile[data-uname="evy"] .x');
-    await alice.waitForFunction(() => !document.getElementById('seal').disabled);
-    await alice.click('#seal');
+    await alice.waitForFunction(() => !document.getElementById('reveal').disabled);
+    await alice.click('#reveal');
     await alice.waitForFunction(() =>
       document.getElementById('status').textContent.includes('i bid 2 dishes'));
     ok(true, '× the straggler, press the padlock: end-early');
@@ -1495,8 +1533,8 @@ async function bid(page, bidText) {
     await thumb2.tap('.tile.mine .rebid .go');
     await thumb2.waitForSelector('.tile.mine.has-bid');
     await thumb.waitForFunction(() =>  // the poll delivers bob's bid
-      !document.getElementById('seal').disabled);
-    await thumb.tap('#seal');
+      !document.getElementById('reveal').disabled);
+    await thumb.tap('#reveal');
     await thumb.waitForFunction(() =>
       document.getElementById('status').classList.contains('revealed'));
     ok(await thumb.evaluate(() =>
@@ -1518,7 +1556,7 @@ async function bid(page, bidText) {
       uname: 'alice', pid: 'pid-fat-alice' });
     gas.handle({ action: 'add', aname: 'fatfinger',
       uname: 'bob', pid: 'pid-fat-bob' });
-    gas.handle({ action: 'describe', aname: 'fatfinger', base: '',
+    gas.handle({ action: 'describe', aname: 'fatfinger', base: 0,
       blurb: 'A blurb, so the pencil shows.' });
     const fat = await makePage(browser, mobileViewport);
     await fat.goto(BASE + '/fatfinger', { waitUntil: 'networkidle0' });
@@ -1534,7 +1572,7 @@ async function bid(page, bidText) {
        'coarse pointer: every field and the blurb read at >=16px'
        + ' (no iOS zoom-jump): ' + JSON.stringify(fatFonts));
     const fatHits = await fat.evaluate(() =>
-      ['.tile:not(.mine) .tu', '.tile:not(.mine) .x', '#seal',
+      ['.tile:not(.mine) .tu', '.tile:not(.mine) .x', '#reveal',
        '#desctoggle', '#share', '#help',
        '.tile.mine .rebid .go'].map((sel) => {
         const r = document.querySelector(sel).getBoundingClientRect();
@@ -1963,8 +2001,8 @@ async function bid(page, bidText) {
     // bid even while the caret sits in it
     await p2.click('.tile.mine .rebid textarea');
     await p1.waitForFunction(() =>
-      !document.getElementById('seal').disabled);
-    await p1.tap('#seal');
+      !document.getElementById('reveal').disabled);
+    await p1.tap('#reveal');
     await p1.waitForFunction(() =>  // the OTHER thumb's bid unmasks
       document.getElementById('status').textContent
         .includes('my parking spot'));
@@ -2120,7 +2158,7 @@ async function bid(page, bidText) {
        always shows the database's blurb — his unsaved words die with
        the tab, exactly what the refusal banner told him to expect. */
     gas.handle({ action: 'describe', aname: 'clobstory',
-      blurb: 'original', base: '' });
+      blurb: 'original', base: 0 });
     const cle = await makePage(browser, DESKTOP);
     await cle.goto(BASE + '/clobstory', { waitUntil: 'networkidle0' });
     await cle.click('#desctoggle');  // pencil: to the source (focuses)
@@ -2129,7 +2167,7 @@ async function bid(page, bidText) {
     // winifred lands from her own machine mid-draft...
     gas.handle({ action: 'describe', aname: 'clobstory',
       blurb: 'per winifred',
-      base: gas.handle({ action: 'state', aname: 'clobstory' }).tblurb });
+      base: gas.handle({ action: 'state', aname: 'clobstory' }).blurbver });
     // ...and the next polls say NOTHING to cletus: his words, his
     // caret, no banner — conflicts are save-time business
     await new Promise((r) => setTimeout(r, 6000));  // a full poll
@@ -2208,7 +2246,7 @@ async function bid(page, bidText) {
     await cle.keyboard.type(' — cletus insists');
     gas.handle({ action: 'describe', aname: 'clobstory',
       blurb: 'winifred again',
-      base: gas.handle({ action: 'state', aname: 'clobstory' }).tblurb });
+      base: gas.handle({ action: 'state', aname: 'clobstory' }).blurbver });
     await cle.click('#descgo');
     await cle.waitForFunction(() =>
       document.getElementById('war-dlg').open);
@@ -2249,7 +2287,7 @@ async function bid(page, bidText) {
     await phw.keyboard.type('phone draft ');
     gas.handle({ action: 'describe', aname: 'clobstory',
       blurb: 'rival for the phone',
-      base: gas.handle({ action: 'state', aname: 'clobstory' }).tblurb });
+      base: gas.handle({ action: 'state', aname: 'clobstory' }).blurbver });
     await phw.click('#descgo');
     await phw.waitForFunction(() =>
       document.getElementById('war-dlg').open);
@@ -2325,9 +2363,9 @@ async function bid(page, bidText) {
     // The banner overlays the auction card, so the label beneath is
     // honestly unhoverable (hit-testing; the OLD qual compared
     // computed z without ever showing a tip — vacuous). Summon from
-    // the seal instead: the tip must show with the banner standing,
-    // at a ladder height above the banner's.
-    await zpage.hover('#seal');
+    // the REVEAL button instead: the tip must show with the banner
+    // standing, at a ladder height above the banner's.
+    await zpage.hover('#reveal');
     await zpage.waitForFunction(() =>
       !document.getElementById('tip').hidden);
     ok(await zpage.evaluate(() =>
@@ -2450,23 +2488,30 @@ async function bid(page, bidText) {
     await mo.keyboard.press('Enter');
     await mo.waitForFunction(() =>
       document.querySelectorAll('#tiles .tile.has-bid').length === 2);
+    // the flying bid paints has-bid at SUBMIT (the aloft merge); the
+    // banner retires at the SETTLE — wait for the volley to land,
+    // not the optimistic paint (this sampled the gap and flaked)
+    await mo.waitForFunction(() => !document.querySelector('.rebid.busy'));
     ok(await mo.evaluate(() =>
       document.getElementById('banner').hidden),
        'and the successful settle retires the stale objection banner');
-    await mo.waitForFunction(() => !document.getElementById('seal').disabled);
+    await mo.waitForFunction(() => !document.getElementById('reveal').disabled);
     // the reveal, BY KEYBOARD (the 07-16 tab law died 2026-07-27:
-    // every control is a tab stop and Enter activates it) — and the
-    // keyboard's click must not trip the pointer blur-on-activation
-    // rule: focus stays on the seal
-    await mo.evaluate(() => document.getElementById('seal').focus());
+    // every control is a tab stop and Enter activates it). At the
+    // settle the button yields its slot to the Closed stamp, so
+    // focus falls with it — the pin is that Enter CLOSES the
+    // auction, not where focus lands afterward.
+    ok(await mo.evaluate(() =>
+      document.getElementById('reveal').tabIndex !== -1),
+       'the REVEAL button is a tab stop: reachable without a pointer');
+    await mo.evaluate(() => document.getElementById('reveal').focus());
     await mo.keyboard.press('Enter');
     await mo.waitForFunction((t) => document.getElementById('status')
       .textContent.includes(t), {}, LONGBID);
     ok(await mo.evaluate(() =>
-      document.activeElement === document.getElementById('seal')
-      && document.getElementById('seal').tabIndex !== -1),
-       'the padlock answers the keyboard and keeps its focus: a'
-       + ' keyboard-driven auction can actually close');
+      document.getElementById('status').classList.contains('revealed')),
+       'the REVEAL button answers the keyboard: a keyboard-driven'
+       + ' auction can actually close');
     ok(await mo.evaluate(() => {
       const long = document.querySelector(
         '.tile[data-uname="leo"] .bid-card');
@@ -2527,8 +2572,8 @@ async function bid(page, bidText) {
     }), "sealed, the two-line poem wears the same one-line decoy as"
        + " the one-liner: a bid's shape is part of its secret");
     await poet.waitForFunction(() =>
-      !document.getElementById('seal').disabled);
-    await poet.click('#seal');
+      !document.getElementById('reveal').disabled);
+    await poet.click('#reveal');
     await reader.waitForFunction(() =>
       document.getElementById('status').classList.contains('revealed'));
     ok(await reader.evaluate(() => {
@@ -2545,6 +2590,106 @@ async function bid(page, bidText) {
         && document.documentElement.scrollWidth <= window.innerWidth;
     }), 'revealed, the poem keeps its line break — the card grows'
        + ' downward, never sideways off the page');
+
+    /* ============ THE LIVE-WIRE STORY (dreev 2026-07-30: "more
+       realistic quals" — he tests with chrome and firefox against
+       the live deploy, where every call takes seconds and both
+       browsers write at once; the suite's instant wire hid that
+       whole regime). Two browsers on one auction at live-shaped
+       latency, doing what a real pair does: simultaneous adds
+       inside the arrival gray, bids (the instant-feedback laws), a
+       blurb edit-war (the local verdict), and the reveal — with
+       convergence and the busy signs asserted at every beat. */
+    readDelay = 1200;
+    opDelay = 1200;
+    const wa = await makePage(browser, DESKTOP);
+    const wb = await makePage(browser, DESKTOP);
+    await Promise.all([
+      wa.goto(BASE + '/livewire', { waitUntil: 'domcontentloaded' }),
+      wb.goto(BASE + '/livewire', { waitUntil: 'domcontentloaded' }),
+    ]);
+    await wa.waitForSelector('#roster-input');
+    await wb.waitForSelector('#roster-input');
+    await addName(wa, 'ann');   // both type inside the arrival gray,
+    await addName(wb, 'ben');   // simultaneously
+    ok(await wa.$eval('#tiles', (e) =>  // the self-claimed row's name
+         !!e.querySelector('.tile[data-uname="ann"]'))  // lives in an
+       && await wb.$eval('#tiles', (e) =>  // INPUT: key on the row,
+         !!e.querySelector('.tile[data-uname="ben"]')),  // not text
+       'live wire: both adds paint at the keystroke, both browsers');
+    await wa.waitForFunction(() => !document.getElementById('status')
+      .classList.contains('stale'));
+    await wb.waitForFunction(() => !document.getElementById('status')
+      .classList.contains('stale'));
+    ok(true, 'the arrival answers retire both gavels without waiting'
+       + ' out the contended writes');
+    await wa.waitForFunction(() =>
+      document.querySelectorAll('#tiles .tile').length === 2);
+    await wb.waitForFunction(() =>
+      document.querySelectorAll('#tiles .tile').length === 2);
+    ok(true, 'both browsers converge on ann and ben over the slow wire');
+    await wa.waitForSelector('.tile.mine .rebid textarea');
+    await bid(wa, 'a kingdom');
+    ok(await wa.evaluate(() => {
+      const r = document.querySelector('.tile.mine .rebid');
+      return !r.classList.contains('hot')
+        && r.classList.contains('busy');
+    }), 'the press closes the row at once on the slow wire: the'
+       + ' away-tint is the only not-yet-confirmed sign');
+    await wb.waitForFunction(() =>
+      document.querySelectorAll('#tiles .tile.has-bid').length === 1);
+    ok(true, "ann's bid crosses to the other browser");
+    await wb.waitForSelector('.tile.mine .rebid textarea');
+    await bid(wb, 'a farthing');
+    // the edit war: B describes; A's poll delivers it; B saves AGAIN
+    // while A edits; A's SAVE wars AT THE CLICK — no round trip
+    await wb.click('#desctoggle');
+    await wb.type('#descedit', 'rules by ben');
+    await wb.click('#descgo');
+    await wa.waitForFunction(() =>
+      document.getElementById('descview').textContent
+        .includes('rules by ben'));
+    await wa.click('#desctoggle');
+    await wa.type('#descedit', ' plus ann');
+    const waLogs = [];  // the chronicle is the observable: it
+    wa.on('console', (m) => waLogs.push(m.text()));  // narrates the
+    await wb.click('#desctoggle');    // foreign save's arrival with ✎
+    await wb.type('#descedit', ' the second');
+    await wb.click('#descgo');
+    // wait until A's poll has DELIVERED ben's second save (the dirty
+    // editor rightly keeps its base; only the state moves)
+    for (let i = 0; !waLogs.some((t) => t.startsWith('✎')); i++) {
+      if (i >= 300) throw new Error("ben's save never reached ann");
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    await wa.click('#descgo');
+    ok(await wa.evaluate(() =>
+      document.getElementById('war-dlg').open
+      && document.querySelector('#war-diff .diff-row') !== null),
+       'a knowable conflict wars AT THE CLICK on the slow wire: the'
+       + ' diff is drawn from the state in hand, no fetch, no gavel');
+    await wa.click('#war-keep');
+    await wa.waitForFunction(() =>
+      !document.getElementById('war-dlg').open);
+    ok(await wa.$eval('#descedit', (e) =>
+         e.value === 'rules by ben the second'),
+       'Keep theirs adopts the record on the spot');
+    // the reveal, from B; A converges without a touch
+    await wb.waitForFunction(() =>
+      !document.getElementById('reveal').disabled);
+    await wb.click('#reveal');
+    await wa.waitForFunction(() =>
+      document.getElementById('status').classList.contains('revealed'));
+    ok(await wa.evaluate(() =>
+         document.getElementById('status').textContent
+           .includes('a farthing'))
+       && await wb.evaluate(() =>
+         document.getElementById('status').textContent
+           .includes('a kingdom')),
+       'revealed: each browser reads the other\'s bid, converged over'
+       + ' the slow wire');
+    readDelay = 0;
+    opDelay = 0;
 
     ok(pageErrors.length === 0,
        'ZERO page errors across every story flow (the net catches'

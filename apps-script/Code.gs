@@ -21,7 +21,7 @@ const SHEET_ID = '1hclphAZ3zQIq14Nip1ZxTDSoE9ygXqAv27RwP1hiMA8';
 // renames are one-cell label edits: no bid re-keying, no client
 // rename transactions, no orphaned identities.
 const AUCTIONS_HEAD = ['aname', 'tini', 'tmod', 'tfin', 'blurb',
-                       'tblurb'];
+                       'blurbver'];
 // The bids tab is an append-only LOG: every submission is its own
 // row, nothing is ever overwritten, and the payload's tini/tmod/
 // bcount are DERIVED
@@ -414,7 +414,16 @@ function getState(aname) {
   const tfin = arow ? arow.tfin : '';  // the reveal moment, ISO
   const revealed = tfin !== '';
   const blurb = arow ? arow.blurb : '';    // freeform markdown
-  const tblurb = arow ? arow.tblurb : '';  // its own edit stamp (CAS)
+  // the blurb's version counter (CAS token AND the pencil tooltip's
+  // number): 0 = never described, +1 per committed save. Sheets may
+  // hand the cell back as a string; a cell that isn't a whole number
+  // is corruption and refuses loudly.
+  const blurbver = arow
+    ? Number(arow.blurbver === '' ? NaN : arow.blurbver) : 0;
+  if (!Number.isInteger(blurbver) || blurbver < 0) {
+    throw 'auctions.blurbver corrupt for ' + aname + ': '
+      + JSON.stringify(arow && arow.blurbver);
+  }
 
   // A person's standing bid is their LATEST log row at or before tfin
   // (<=, dreev's call: a bid stamped the gavel's own millisecond made
@@ -449,7 +458,7 @@ function getState(aname) {
   return {
     aname: aname, exists: arow !== undefined,
     seats: seats, bidders: bidders, revealed: revealed,
-    tfin: tfin, blurb: blurb, tblurb: tblurb,
+    tfin: tfin, blurb: blurb, blurbver: blurbver,
     claims: claims, blurbs: blurbs,
     bids: revealed ? people.map(a => ({ pid: a.pid, bid: a.bid }))
                    : null,
@@ -500,8 +509,11 @@ function unmaskBids(aname) {
 function touchAuction(aname) {
   const now = new Date().toISOString();
   const i = load('auctions').findIndex(r => r.aname === aname);
-  if (i === -1) insert('auctions', { aname: aname, tini: now, tmod: now });
-  else patch('auctions', i, { tmod: now });
+  // blurbver is born an explicit 0: an empty version cell is never a
+  // legitimate spelling (getState refuses it as corruption)
+  if (i === -1) {
+    insert('auctions', { aname: aname, tini: now, tmod: now, blurbver: 0 });
+  } else patch('auctions', i, { tmod: now });
 }
 
 // Make sure a seat exists for this pid+label; adding is idempotent
@@ -517,19 +529,25 @@ function ensureSeat(aname, pid, uname) {
 
 // The auction blurb: freeform markdown, editable by anyone at any
 // time — before or after the close. Concurrent edits are guarded by
-// compare-and-swap: the request carries the tblurb stamp the edit was
-// based on, and a stale base is refused loudly rather than silently
-// clobbering someone's words.
+// compare-and-swap on blurbver: the request carries the version the
+// edit was based on, and a stale base is refused loudly rather than
+// silently clobbering someone's words. The version is a plain
+// counter — 0 = never described, +1 per committed save, incremented
+// under this write lock — so identities can never collide, no clock
+// consulted, and the same number is the pencil tooltip's.
 function describe(req) {
   const aname = cleanAname(req.aname);
   const blurb = String(req.blurb == null ? '' : req.blurb);
   if (blurb.length > 2000) throw blurbTooLongCopy;
   // the verdict comes BEFORE any write (a refusal must mutate
-  // nothing, tmod included) — a missing row reads as the
-  // virgin '' token, so a fresh auction's first describe passes
-  const pre = load('auctions').findIndex(r => r.aname === aname);
-  const current = pre === -1 ? '' : load('auctions')[pre].tblurb;
-  if (String(req.base == null ? '' : req.base) !== current) {
+  // nothing, tmod included) — a missing row reads as the virgin
+  // version 0, so a fresh auction's first describe passes
+  const current = getState(aname).blurbver;
+  // one spelling of virgin: the number 0 (an absent base reads as a
+  // legacy caller; '' would coerce to 0 silently, so it may not)
+  const base = req.base == null || req.base === ''
+    ? NaN : Number(req.base);
+  if (base !== current) {
     // the refusal CARRIES the snapshot that refused it — generated
     // under this same write lock — so the client's edit-war diff
     // draws yours-vs-theirs with no second round trip
@@ -539,11 +557,7 @@ function describe(req) {
   }
   touchAuction(aname);
   const i = load('auctions').findIndex(r => r.aname === aname);
-  // the token is for CAS identity, not chronology: the random tail
-  // keeps two same-millisecond saves from sharing it
-  patch('auctions', i, { blurb: blurb,
-                         tblurb: new Date().toISOString() + '/'
-                           + Math.random().toString(36).slice(2, 10) });
+  patch('auctions', i, { blurb: blurb, blurbver: current + 1 });
   return getState(aname);
 }
 

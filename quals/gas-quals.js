@@ -364,39 +364,51 @@ ok(String(st.error) === COPY.nameTakenCopy
 
 // 7b. the auction description: arbitrary markdown, editable by anyone
 //     before OR after the close, guarded against silent clobbers by
-//     compare-and-swap on dtmod (send the stamp your edit was based
-//     on; a stale base is refused loudly)
+//     compare-and-swap on blurbver (send the version your edit was
+//     based on; a stale base is refused loudly). The version is a
+//     plain counter — 0 = never described; every committed SAVE or
+//     Overwrite increments it under the write lock — so it can never
+//     collide the way a wall-clock stamp could, and it doubles as
+//     the pencil tooltip's number.
 st = call({ action: 'state', aname: 'tau' });
-ok(st.blurb === '' && st.tblurb === '', 'no blurb to start');
+ok(st.blurb === '' && st.blurbver === 0,
+   'no blurb to start: version 0, a number');
+ok(!('tblurb' in st),
+   'the payload carries no tblurb: the stamp era is fully out');
 st = call({ action: 'describe', aname: 'tau',
-            blurb: '# Brunch\n\nBring **cash**.', base: '' });
+            blurb: '# Brunch\n\nBring **cash**.', base: 0 });
 ok(!st.error && st.blurb === '# Brunch\n\nBring **cash**.'
-   && /^\d{4}-/.test(st.tblurb),
-   'a blurb lands, newlines and all, and stamps tblurb');
-const dt1 = st.tblurb;
-{ const t = Date.now(); while (Date.now() - t < 3); }  // stamps differ
+   && st.blurbver === 1,
+   'a blurb lands, newlines and all, and increments to version 1');
 st = call({ action: 'describe', aname: 'tau',
-            blurb: 'second thoughts', base: dt1 });
-ok(!st.error && st.blurb === 'second thoughts' && st.tblurb !== dt1,
-   'an edit based on the current stamp goes through');
+            blurb: 'second thoughts', base: 1 });
+ok(!st.error && st.blurb === 'second thoughts' && st.blurbver === 2,
+   'an edit based on the current version goes through: version 2');
 st = call({ action: 'describe', aname: 'tau',
-            blurb: 'clobber attempt', base: dt1 });
+            blurb: 'clobber attempt', base: 1 });
 ok(String(st.error) === COPY.simulEditsCopy
    && call({ action: 'state', aname: 'tau' }).blurb === 'second thoughts',
-   'an edit based on a STALE stamp is refused: no silent clobbering');
+   'an edit based on a STALE version is refused: no silent clobbering');
 // ...and the refusal CARRIES the snapshot that refused it (generated
 // under the same write lock), so the client's war diff needs no
 // second round trip — same payload a success returns, plus the error
 ok(st.aname === 'tau' && st.blurb === 'second thoughts'
-   && st.tblurb === call({ action: 'state', aname: 'tau' }).tblurb
+   && st.blurbver === call({ action: 'state', aname: 'tau' }).blurbver
    && Array.isArray(st.bidders),
    'the CAS refusal rides on a full state snapshot: theirs arrives'
    + ' with the verdict');
+st = call({ action: 'describe', aname: 'tau', blurb: 'sneak', base: '' });
+ok(String(st.error) === COPY.simulEditsCopy
+   && call({ action: 'state', aname: 'tau' }).blurb === 'second thoughts',
+   "'' is not a spelling of virgin (Number('') would coerce to 0"
+   + ' silently): a malformed base is a stale base');
 st = call({ action: 'describe', aname: 'tau', blurb: 'x'.repeat(2001),
-            base: call({ action: 'state', aname: 'tau' }).tblurb });
+            base: call({ action: 'state', aname: 'tau' }).blurbver });
 ok(st.error, 'a novel is refused (2000 chars is plenty)');
+ok(call({ action: 'state', aname: 'tau' }).blurbver === 2,
+   'a refusal moves no version: the counter counts COMMITS only');
 ok(!call({ action: 'describe', aname: 'tau', blurb: 'post-close note',
-           base: call({ action: 'state', aname: 'tau' }).tblurb }).error,
+           base: call({ action: 'state', aname: 'tau' }).blurbver }).error,
    'the blurb stays editable after the gavel: tau is revealed');
 
 // 7c. Replicata: save only a description, with no roster or bids.
@@ -404,7 +416,7 @@ ok(!call({ action: 'describe', aname: 'tau', blurb: 'post-close note',
 //     occupancy does not confuse it with a virgin name. Resultata
 //     pre-fix: those two states had no explicit distinguishing field.
 st = call({ action: 'describe', aname: 'desconly',
-            blurb: 'description without participants', base: '' });
+            blurb: 'description without participants', base: 0 });
 ok(st.exists === true && st.seats.length === 0 && st.bidders.length === 0,
    'description-only auction reports existing despite an empty ledger');
 
@@ -930,16 +942,16 @@ ok(call({ action: 'add', aname: 'limits', uname: 'b'.repeat(21),
 ok(!call({ action: 'add', aname: 'limits', uname: 'b'.repeat(20),
            pid: 'pid-limits-b20' }).error,
    'a 20-character participant name is legal');
-ok(call({ action: 'describe', aname: 'limits', base: '',
+ok(call({ action: 'describe', aname: 'limits', base: 0,
           blurb: 'x'.repeat(2001) }).error === COPY.blurbTooLongCopy,
    'a 2001-character blurb is refused with the length words');
-ok(!call({ action: 'describe', aname: 'limits', base: '',
+ok(!call({ action: 'describe', aname: 'limits', base: 0,
            blurb: 'x'.repeat(2000) }).error,
    'a 2000-character blurb is legal');
 
 // 18. refusals and no-ops mutate NOTHING, and hand-gutted sheets
 //     refuse rather than corrupt (Sol's audit, 2026-07-29)
-call({ action: 'describe', aname: 'mutless', base: '', blurb: 'v1' });
+call({ action: 'describe', aname: 'mutless', base: 0, blurb: 'v1' });
 call({ action: 'add', aname: 'mutless', uname: 'ann',
   pid: 'pid-mutless-ann' });
 const mutRow = () =>
@@ -999,15 +1011,16 @@ require('vm').runInContext(
   + ' static now() { return 1785267296789; }'
   + ' };', ctx);
 const sameMs18a = call({ action: 'describe', aname: 'samems',
-  base: '', blurb: 'first' });
+  base: 0, blurb: 'first' });
 const sameMs18b = call({ action: 'describe', aname: 'samems',
-  base: sameMs18a.tblurb, blurb: 'second' });
+  base: sameMs18a.blurbver, blurb: 'second' });
 const sameMs18stale = call({ action: 'describe', aname: 'samems',
-  base: sameMs18a.tblurb, blurb: 'stale third' });
+  base: sameMs18a.blurbver, blurb: 'stale third' });
 require('vm').runInContext('Date = NativeDate18;', ctx);
-ok(sameMs18a.tblurb !== sameMs18b.tblurb
+ok(sameMs18a.blurbver === 1 && sameMs18b.blurbver === 2
    && sameMs18stale.error === COPY.simulEditsCopy
    && call({ action: 'state', aname: 'samems' }).blurb === 'second',
-   'same-millisecond blurb saves still get distinct CAS identities');
+   'same-millisecond blurb saves still get distinct CAS identities:'
+   + ' the counter never consults the clock');
 
 console.log('gas-quals: all ' + passed + ' assertions passed');
