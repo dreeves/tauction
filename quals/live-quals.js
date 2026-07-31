@@ -42,9 +42,9 @@ function ok(cond, label) {
      'live state shape matches what app.js expects: ' + JSON.stringify(r).slice(0, 120));
   // Self-HEALING preamble: a previous run that died between its
   // claim and its release strands smokey's seat, and every later
-  // run's deviceless bid then bounces off ERROR1312 (it happened;
-  // dreev had to clean the sheet by hand). Releasing an unheld seat
-  // is a documented no-op, so this is safe in every state.
+  // run's deviceless bid then bounces off bidSeatHeldCopy (it
+  // happened; dreev had to clean the sheet by hand). Releasing an
+  // unheld seat is a documented no-op, so this is safe in every state.
   await fetch(API, { method: 'POST',
     body: JSON.stringify({ action: 'release', aname: 'smoketest',
       pid: 'pid-smoketest-smokey', deviceID: 'smoke-dev' }) });

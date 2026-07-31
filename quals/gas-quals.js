@@ -528,17 +528,20 @@ ok(ss.sheets['users'].data.filter(r => r[0] === 'higgs' && r[1] === annP)
      .length === 1, 'claims live on the seat row: upsert, not append');
 st = call({ action: 'bid', aname: 'higgs', uname: 'ann', pid: annP,
             bid: 'a boson', deviceID: 'dev-3' });
-ok(String(st.error) === COPY.bidSeatHeldCopy(COPY.mysteryDeviceCopy)
+ok(String(st.error) === COPY.bidSeatHeldCopy(COPY.mysteryDeviceCopy, 'ann')
+   && String(st.error).includes('ann')
    && call({ action: 'state', aname: 'higgs' }).bidders.length === 0,
-   "a bid can't hijack a held seat: refused, naming the holder's rig,"
-   + ' and no bid row written');
+   "a bid can't hijack a held seat: refused, naming the holder's rig"
+   + " and the seat's label, and no bid row written");
 st = call({ action: 'bid', aname: 'higgs', uname: 'ben', pid: benP,
             bid: 'legal', deviceID: 'dev-3' });
 ok(!st.error && st.claims[benP] === 'dev-3',
    'bidding an OPEN seat registers your claim on it');
 st = call({ action: 'bid', aname: 'higgs', uname: 'ben', pid: benP,
             bid: 'nope' });
-ok(String(st.error).includes('ERROR1312'),
+ok(String(st.error)
+     === COPY.bidSeatHeldCopy(COPY.mysteryDeviceCopy, 'ben')
+   && String(st.error).includes('ben'),
    'a device-less bid (old client) counts as nobody: refused on a'
    + ' held seat too');
 call({ action: 'add', aname: 'higgs', uname: 'cee', pid: ceeP });

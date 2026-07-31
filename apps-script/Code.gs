@@ -85,8 +85,10 @@ const emptyBidCopy = 'Bid is empty';
 const bidTooLongCopy = 'bid too long (160 characters max)';
 const gavelFellCopy =
   'Womp Womp! The auction closed before your bid got through';
-const bidSeatHeldCopy = (blurb) =>
-  'ERROR1312: Claimed by someone (' + blurb + ')';
+// the bid-hijack refusal (dreev's copy): names the holder's rig and
+// the seat's label
+const bidSeatHeldCopy = (blurb, uname) =>
+  'Someone else (' + blurb + ') already placed a bid as ' + uname + '!';
 // operator-facing, like schemaDriftCopy: a closed auction violating
 // the covenant (revealed ⇒ roster of two-plus, all with bids) was
 // edited by hand or written by pre-freeze code — refuse to render
@@ -725,7 +727,7 @@ function placeBid(req) {
   // Old clients carry no deviceID and count as nobody — fine on an
   // open seat, refused on a held one.
   if (held && held !== deviceID) {
-    throw bidSeatHeldCopy(holderBlurb(aname, pid));
+    throw bidSeatHeldCopy(holderBlurb(aname, pid), uname);
   }
   const twin = seatByName(aname, uname);
   if (seatIndex(aname, pid) === -1 && twin && twin.pid !== pid) {
