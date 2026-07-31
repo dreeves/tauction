@@ -158,6 +158,12 @@ let settleSeq = 0;        // bumped when a write SETTLES: a read
                           // its response (the server may not have
                           // committed a write before then)
 let refreshing = false;
+let revealInFlight = false;  // the verdict's round trip: the ONE
+                          // write whose gray+gavel (the drumroll)
+                          // must hold until its own settle — every
+                          // other write leaves the busy sign to the
+                          // arrival/transport machinery (see the
+                          // discarded-snapshot unpin in refresh)
 let seenRevealed = false; // has ANY response — adopted (ingest) or
                           // merely peeked at (peekTitle) — shown this
                           // page the latch? Reveal is one-way, so
@@ -433,6 +439,21 @@ async function refresh() {
       // commits a write somewhere between our send and its response)
       else if (res.aname === aname && writesPending === 0
                && settleSeq === seqAtRequest) { ingest(res); render(); }
+      // The server ANSWERED for this page but adoption must wait out
+      // an in-flight or just-settled write (the snapshot can lack
+      // it). The gray+gavel still retires NOW: the wire is alive,
+      // the arrival question is answered, and an optimistic picture
+      // awaiting its settle is exactly as trustworthy as a calm
+      // page's — where the same write rides signless. Pre-fix, a
+      // write queued during the arrival gray pinned the gavel until
+      // its own settle, which on a lock-contended live server ran
+      // dreev's "spins, stops, spins more" for tens of seconds
+      // (2026-07-30, two browsers adding simultaneously). Disclosed
+      // exception: the reveal's drumroll belongs to the verdict and
+      // only its settle may lift it.
+      else if (res.aname === aname && !revealInFlight) {
+        $('status').classList.remove('stale');
+      }
     }
   } catch (e) {
     banner(e2152(e.message));
@@ -1954,6 +1975,9 @@ function pressReveal() {
   // hammers over the grayed ledger while it round-trips (the settle's
   // render lifts the stale)
   $('status').classList.add('stale');
+  revealInFlight = true;  // ...and that stale is the VERDICT's: a
+                          // poll answer landing mid-flight must not
+                          // cut the drumroll (refresh's unpin)
   const at = startWrite();
   // the reveal rides the op chain like every other write: it must
   // never overtake your own still-flying revision on the wire (your
@@ -1966,6 +1990,7 @@ function pressReveal() {
       banner(e2155(e.message));
     }
     settleWrite(res, at);  // exactly once, whatever happened
+    revealInFlight = false;
   });
 }
 

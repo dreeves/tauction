@@ -2069,6 +2069,15 @@ async function bid(page, bidText) {
        'two adds on a fresh slow-wire page paint at the keystrokes');
     readDelay = 0;
     opDelay = 0;
+    // The pinned-gavel fix decoupled the gray from the writes: calm
+    // arrives at the ARRIVAL ANSWER, mid-adds. So wait on the real
+    // condition — the server holding both seats — not on the gavel
+    // (which was only ever a proxy for the settle).
+    for (let i = 0; gas.handle({ action: 'state', aname: 'eagertype' })
+           .seats.length < 2; i++) {
+      if (i >= 200) throw new Error('eagertype adds never landed');
+      await new Promise((r) => setTimeout(r, 50));
+    }
     await eag.waitForFunction(() =>
       !document.getElementById('status').classList.contains('stale'));
     ok(gas.handle({ action: 'state', aname: 'eagertype' })

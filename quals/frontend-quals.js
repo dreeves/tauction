@@ -5968,6 +5968,83 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && row(sdoc, 'uma') !== null,
      'a successful settle retires the stale banner');
 
+  /* --- the pinned gavel: a write mustn't stretch the arrival gray ------
+     Replicata (dreev 2026-07-30, chrome and firefox adding alice and
+     bob simultaneously): load /pinned and add a name the instant the
+     page paints, while the arrival GET is still on the wire — on live
+     Apps Script every call is seconds, and the other browser's write
+     holds the script lock, so the add's settle lands many seconds out.
+     Expectata: the moment the server ANSWERS for this page, the
+     arrival gray+gavel retires — the wire is alive, and an optimistic
+     picture awaiting its settle is exactly as trustworthy as a calm
+     page's (where the same add rides signless). The roster completes
+     at the write's settle or the next poll, as ever.
+     Resultata pre-fix: every response landing beside the in-flight
+     write was discarded WHOLESALE — unpinning rode only ingest+render
+     — so the gavel hammered from load until the contended add's
+     settle: dreev's "spins, stops, spins more" (each hammer cycle
+     holds a beat at the strike, so one long pin reads as an endless
+     stuttering spinner). */
+  mockDelay = 200;   // the arrival GET: on the wire at the keystroke
+  const domPin = await makePage('/pinned?api=' + API_URL);
+  const pinDoc = domPin.window.document;
+  ok(pinDoc.getElementById('status').classList.contains('stale'),
+     'born stale: the arrival gray is up when the add is typed');
+  mockDelay = 800;   // the contended add: its settle sits far beyond
+                     // the arrival answer
+  addName(domPin, 'alice');
+  await until(() => !pinDoc.getElementById('status').classList
+    .contains('stale'));
+  ok(writesInFlight === 1,
+     'the gavel retired at the arrival ANSWER, with the add still'
+     + ' flying — the write settle is no longer what unpins');
+  ok(row(pinDoc, 'alice') !== null,
+     '...and the optimistic row stood through the discarded snapshot');
+  await until(() => writesInFlight === 0);
+  await until(() => row(pinDoc, 'alice') !== null
+    && !pinDoc.getElementById('status').classList.contains('stale'));
+  mockDelay = 0;
+
+  /* --- ...but the reveal's drumroll is NOT an arrival gray -------------
+     The reveal owns its stale on purpose ("the most table-wide op
+     there is": the big gavel hammers over the grayed ledger while
+     the verdict round-trips, and the settle's render lifts it). A
+     poll answer landing mid-flight must NOT cut the drumroll short —
+     the fence that separates the pinned-gavel fix from a naive
+     unpin-on-any-answer. */
+  gas.handle({ action: 'add', aname: 'drumroll', uname: 'ada',
+    pid: 'pid-drum-ada' });
+  gas.handle({ action: 'add', aname: 'drumroll', uname: 'ben',
+    pid: 'pid-drum-ben' });
+  gas.handle({ action: 'bid', aname: 'drumroll', uname: 'ada',
+    pid: 'pid-drum-ada', bid: 'a farthing' });
+  gas.handle({ action: 'bid', aname: 'drumroll', uname: 'ben',
+    pid: 'pid-drum-ben', bid: 'tuppence' });
+  const domDrum = await makePage('/drumroll?api=' + API_URL);
+  const ddoc = domDrum.window.document;
+  await until(() => !ddoc.getElementById('seal').disabled
+    && !ddoc.getElementById('status').classList.contains('stale'));
+  mockDelay = 800;   // the verdict's round trip
+  ddoc.getElementById('seal').dispatchEvent(
+    new domDrum.window.MouseEvent('click', { bubbles: true }));
+  ok(ddoc.getElementById('status').classList.contains('stale'),
+     'the reveal raises its drumroll gray');
+  await sleep(0);    // flush microtasks: the reveal rides the op
+                     // chain, and its fetch must CAPTURE the 800
+                     // before the knob turns (mockFetch reads the
+                     // knob at fetch time, not queue time)
+  mockDelay = 50;    // a fast poll answer, landing mid-verdict
+  domDrum.window.__intervals.find((i) => i.ms === 5000).fn();
+  await sleep(150);  // the poll's answer has landed (and been discarded)
+  ok(ddoc.getElementById('status').classList.contains('stale'),
+     "a poll answer mid-verdict does NOT cut the drumroll: the"
+     + " reveal's stale belongs to its settle alone");
+  await until(() => ddoc.getElementById('status').classList
+    .contains('revealed'));
+  ok(!ddoc.getElementById('status').classList.contains('stale'),
+     'the verdict settles, the drumroll ends');
+  mockDelay = 0;
+
   console.log('frontend-quals: all ' + passed + ' assertions passed');
   process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });

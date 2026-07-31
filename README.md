@@ -49,6 +49,10 @@ Previously for the golems:
 
 4. Can you do deep research on web design with the goal of predicting the first complaint a professional web designer would have about this app?
 
+5. Remove all the path dependence / historical documenation from the code comments. If a bug or whatever is fixed, we don't need the history.
+
 Next for the golems:
 
-1. Remove all the path dependence / historical documenation from the code comments. If a bug or whatever is fixed, we don't need the history.
+1. Tooltip on the pencil: "Auction description, version 0" and every time someone hits SAVE or Overwrite, that number increments. Stored in the database as "blurbver". Does that simplify the code? Does an incremented number work just as well as the hash or timestamp or whatever we've been using?
+
+2. Instead of clicking the padlock, which is too subtle, I think there should be a big button that starts out grayed-out and eventually gets replaced by the "Closed 2026-07..." string. Button text: "REVEAL!" and maybe go crazy with an image of Lady Justice about to pull off her blindfold or something else fun if you can find or create something. Maybe Lady Justice doesn't make sense, specifically, come to think of it. We can keep the padlock and ta-da next to the word BIDS but nix the clickability and tooltips. All the tooltips for the padlock transfer to the REVEAL button instead.
