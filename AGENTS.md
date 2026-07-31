@@ -61,9 +61,17 @@ directions. The error channel's only remaining English is the
 assert-family operator diagnostics (schema drift, covenant, armor,
 patch-ghost), marching orders that must stay readable raw in a
 terminal; off that channel Code.gs still generates the bids tab's
-cheater banner and the root liveness response. The quals
-DERIVE copy from stringles instead of hardcoding it, so copy edits
-never break the suite.
+cheater banner and the root liveness response. stringles splits the
+refusals by REACHABILITY: gameRefusals (honest play can hit them —
+races, length limits) vs plumbingRefusals (dreev's ERROR15xx family,
+hand-rolled requests only), spread-merged into refusalCopy; a qual
+pins the ERROR-number convention to that membership. Coverage is
+closed by construction end to end: gas qual 19 requires every
+throwable code to be provoked from the real API somewhere in the
+suite, qual 20 does the same for the assert-family diagnostics, and
+the frontend weld renders every table entry from a stub error. The
+quals DERIVE copy from stringles instead of hardcoding it, so copy
+edits never break the suite.
 
 ## One-time setup
 
@@ -90,13 +98,16 @@ sets `liveServer.settings.file` so unknown paths serve the app there too.
 
 [serve.py](serve.py) mimics GitHub Pages: misses get [404.html](404.html) —
 which is an exact copy of index.html (quals enforce it; after editing
-index.html run `cp index.html 404.html`). So every `/slug` serves the app
+index.html run `cp index.html 404.html`). `npm run deploy` re-derives
+it before its qual gate — deploying is a build — but the qual command
+itself never runs sync-404: an auditor doesn't rewrite what it
+inspects (serve-quals pins that). So every `/slug` serves the app
 directly: 404 status, but never a 404 page.
 
 ## Deploying Code.gs
 
 ```sh
-npm run deploy   # quals, then clasp push + redeploy same URL + live smoke
+npm run deploy   # sync-404 + quals, then clasp push + redeploy same URL + live smoke
 ```
 
 One-time setup: toggle on the [Apps Script API](https://script.google.com/home/usersettings),

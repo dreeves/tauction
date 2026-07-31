@@ -129,7 +129,8 @@ const STR = new Function(STRINGLES
   + ' tabTitle, saveCopy, addCopy, submitCopy, tooLateGoTip, startCopy,'
   + ' discardCopy, warTitle, keepTheirsCopy, overwriteCopy,'
   + ' anameTooLongBanner, unameTooLongBanner, blurbTooLongBanner,'
-  + ' revealCopy, descVerTip, simulEditsBanner, refusalCopy };')();
+  + ' revealCopy, descVerTip, simulEditsBanner, refusalCopy,'
+  + ' gameRefusals, plumbingRefusals };')();
 const STAMP = STR.stampCopy;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -3418,6 +3419,26 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        'refusalCopy covers exactly the codes Code.gs throws — server ['
        + [...thrown].sort().join(' ') + '] vs stringles ['
        + rendered.sort().join(' ') + ']');
+    // ...and the ERROR-number convention IS the class membership:
+    // plumbingRefusals (refusals no honest client can elicit) all
+    // render with a greppable ERROR number, gameRefusals never do —
+    // so reclassifying a refusal means moving it between tables, on
+    // purpose. Every entry must also RENDER from a stub error: a
+    // copy fn that crashes or returns nothing is a dead banner.
+    const stub = { pid: 'p-0', action: 'x', blurb: '', uname: 'u' };
+    const numbered = (t) => Object.keys(t).filter((c) =>
+      /^ERROR\d{4}: /.test(t[c](stub)));
+    ok(Object.values(STR.refusalCopy).every((f) =>
+         typeof f(stub) === 'string' && f(stub).length > 0)
+       && numbered(STR.plumbingRefusals).length
+            === Object.keys(STR.plumbingRefusals).length
+       && numbered(STR.gameRefusals).length === 0
+       && rendered.length === Object.keys(STR.gameRefusals).length
+            + Object.keys(STR.plumbingRefusals).length,
+       'every refusal renders words from a stub error, ERROR-numbered'
+       + ' exactly when plumbing-class ('
+       + Object.keys(STR.gameRefusals).length + ' game + '
+       + Object.keys(STR.plumbingRefusals).length + ' plumbing)');
   }
 
   /* --- 2q. BLUR COMMITS NOTHING, anywhere (dreev 2026-07-27) ----------

@@ -21,8 +21,19 @@ const names = (st) => st.seats.map((s) => s.uname).join(',');
 // roster — fabricated by pre-freeze code plus tab recreations): once
 // revealed, at least two live roster seats, every one of them with a
 // bid, forever (the freezes make it eternal).
+// The refusal-coverage ledger: every code observed anywhere in the
+// run, checked at suite end against every code Code.gs can throw —
+// so no refusal can exist without a qual that provokes it
+const seenCodes = new Set();
+// ...and the assert-family sibling ledger: the finished-string
+// diagnostics (broken sheet, broken deploy) observed during the run
+const seenAssertWords = new Set();
 const call = (req) => {
   const st = ctx.handle(req);
+  if (st && st.error) {
+    if (st.error.code) seenCodes.add(st.error.code);
+    else seenAssertWords.add(String(st.error));
+  }
   if (st && !st.error && st.revealed) {
     ok(st.seats.length >= 2
        && st.seats.every((s) =>
@@ -42,8 +53,13 @@ const call = (req) => {
 const COPY = require('vm')
   .runInContext('({ schemaDriftCopy, patchGhostCopy })', ctx);
 // A refusal's code (undefined on success): the one-liner for
-// asserting WHICH refusal came back
-const code = (st) => st.error && st.error.code;
+// asserting WHICH refusal came back. Feeds the coverage ledger too —
+// everything it reads is a real response
+const code = (st) => {
+  const c = st && st.error && st.error.code;
+  if (c) seenCodes.add(c);
+  return c;
+};
 // Real Apps Script resets globals every execution; one shared vm
 // context hosts the whole qual run, so drift quals empty the
 // header-check memo by hand to simulate a fresh execution
@@ -513,6 +529,11 @@ st = call({ action: 'release', aname: 'higgs', pid: annP,
 ok(code(st) === 'notYourSeat'
    && call({ action: 'state', aname: 'higgs' }).claims[annP] === 'dev-2',
    'only the CURRENT holder may release a seat');
+st = call({ action: 'release', aname: 'higgs', pid: annP });
+ok(code(st) === 'releaseNeedsDevice'
+   && call({ action: 'state', aname: 'higgs' }).claims[annP] === 'dev-2',
+   'a device-less release is refused: vacating a seat means saying'
+   + ' WHO is leaving');
 st = call({ action: 'release', aname: 'higgs', pid: benP,
             deviceID: 'dev-9' });
 ok(!st.error, 'releasing an unheld seat is a no-op (a merely-local'
@@ -726,6 +747,12 @@ const freshRes = call({ action: 'fresh' });
 ok(code(freshRes) === 'unknownAction'
    && freshRes.error.action === 'fresh',
    'no server-invented names: fresh is an unknown action now');
+// the one refusal minted OUTSIDE handle(): doPost's own JSON parse,
+// provoked through the real doPost
+const rawPost = JSON.parse(
+  ctx.doPost({ postData: { contents: '{not json' } }).body);
+ok(code(rawPost) === 'badJson',
+   'a non-JSON POST body is refused with a code, not a crash');
 
 // 11. schema drift: the header row IS the schema — positional reads
 //     against a tab from an older deploy would misread every row, so
@@ -820,7 +847,7 @@ FROZEN.forEach((a) => {
 //     no bids anywhere)
 ss.sheets['users'].appendRow(['tau', 'pid-tau-ghost', 'ghost', '', '',
   '2026-07-18T00:00:00.000Z', '2026-07-18T00:00:00.000Z']);
-st = ctx.handle({ action: 'state', aname: 'tau' });
+st = call({ action: 'state', aname: 'tau' });
 ok(String(st.error).includes('covenant'),
    'a corrupted closed auction states its corruption instead of'
    + ' rendering it: ' + st.error);
@@ -984,6 +1011,24 @@ ok(code(call({ action: 'release', aname: 'mutless',
      pid: 'pid-mutless-ann', deviceID: 'rig-b' })) === 'notYourSeat'
    && mutRow()[2] === 'TMOD-SENTINEL',
    'a REFUSED release (not your seat) mutates nothing');
+// ...and the two inline assert-family diagnostics, provoked: a
+// hand-mangled version cell, and a storage-layer write to a field
+// the schema doesn't know
+call({ action: 'describe', aname: 'rotver', blurb: 'v1', base: 0 });
+ss.sheets['auctions'].data.find((r) => r[0] === 'rotver')[5] = 'MMXXVI';
+st = call({ action: 'state', aname: 'rotver' });
+ok(String(st.error).includes('blurbver corrupt')
+   && String(st.error).includes('MMXXVI'),
+   'a non-integer blurbver cell is corruption, refused loudly naming'
+   + ' the cell contents');
+let patchErr = '';
+try {
+  require('vm').runInContext("patch('auctions', 0, { bogus: 'x' })", ctx);
+} catch (e) { patchErr = String(e); }
+seenAssertWords.add(patchErr);  // vm probe bypasses call()'s ledger
+ok(patchErr === 'patch: field not in auctions',
+   "patch() refuses a field the schema doesn't know: the storage"
+   + ' layer never writes blind');
 
 // reveal on a ghost auction: users and bids rows exist, the auctions
 // row hand-deleted — refuse loudly, never write tfin into the HEADER
@@ -1034,5 +1079,38 @@ ok(sameMs18a.blurbver === 1 && sameMs18b.blurbver === 2
    && call({ action: 'state', aname: 'samems' }).blurb === 'second',
    'same-millisecond blurb saves still get distinct CAS identities:'
    + ' the counter never consults the clock');
+
+// 19. REFUSAL COVERAGE, closed by construction: every code Code.gs
+//     can throw must have been provoked from the real API at least
+//     once somewhere above (the ledger lives in call()). A new
+//     refusal without a qual eliciting it fails here by name.
+{
+  const throwable = [...CODE_GS.matchAll(/code: '([A-Za-z0-9]+)'/g)]
+    .map((m) => m[1]);
+  const missing = [...new Set(throwable)]
+    .filter((c) => !seenCodes.has(c)).sort();
+  ok(throwable.length > 0 && missing.length === 0,
+     'every refusal the server can send is provoked by this suite —'
+     + ' unprovoked: [' + missing.join(' ') + ']');
+}
+
+// 20. ASSERT-FAMILY COVERAGE, qual 19's sibling: every non-code
+//     throw in Code.gs is an assert-family diagnostic (broken sheet
+//     or broken deploy). Each is registered here by a distinctive
+//     substring and must have been provoked somewhere above (the
+//     ledger in call(), plus the storage-layer probe's manual add).
+//     A new assert throw moves the site count and fails by name.
+{
+  const ASSERT_WORDS = ['covenant broken', 'schema drift',
+    'row to write', 'plain-text armor', 'patch: field not in',
+    'blurbver corrupt'];
+  const sites = [...CODE_GS.matchAll(/\bthrow (?!\{ code:)/g)].length;
+  const unprovoked = ASSERT_WORDS.filter((w) =>
+    ![...seenAssertWords].some((s) => s.includes(w)));
+  ok(sites === ASSERT_WORDS.length + 1 && unprovoked.length === 0,
+     'every assert-family diagnostic is registered and provoked ('
+     + sites + ' non-code throw sites; armorFull throws from two);'
+     + ' unprovoked: [' + unprovoked.join(' | ') + ']');
+}
 
 console.log('gas-quals: all ' + passed + ' assertions passed');

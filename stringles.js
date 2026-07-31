@@ -157,41 +157,20 @@ const copyFailBanner = (msg) => 'Could not copy: ' + msg;
 // ONE home; the throw strings left in Code.gs are assert-style
 // operator diagnostics (broken sheet, drifted schema), not copy.
 // Uniformly arrow fns of the error object; parameterless codes
-// ignore it.
-// These ERRORXXXX errors are things we don't expect an end user to ever be able
-// to see.
-const refusalCopy = {
-  // transport/plumbing refusals: a malformed POST body, an action
-  // this server doesn't know (old server vs newer client)
-  badJson: () => 'ERROR1509: request body not valid JSON',
-  unknownAction: (e) => 'ERROR1510: unknown action: ' + e.action,
-  // the validators' refusals (the client pre-checks these same
-  // limits locally, in these same words, via the shared consts)
+// ignore it. TWO tables by reachability, merged at the bottom — and
+// a qual pins the ERROR-number convention to the membership, so
+// reclassifying a refusal means moving it between tables.
+
+// Refusals an honest end user can hit in normal play — losing a race,
+// mostly (a rival's bid mid-flight, a simultaneous save, the gavel
+// beating your revision), plus the length limits' server backstop.
+const gameRefusals = {
   anameTooLong: () => anameTooLongBanner,
-  badAname: () => 'ERROR1511: auction name must be alphanumeric',
   unameTooLong: () => unameTooLongBanner,
-  badUname: () => 
-    'ERROR1512: username must be alphanumeric and start with a letter',
-  badDevice: () => 'ERROR1513: bad deviceID',
-  badPid: () => 'ERROR1514: bad pid',
-  badDevBlurb: () => 'ERROR1515: bad deviceBlurb',
-  // the reveal button pressed before the roster is complete (a race:
-  // the client grays it until ready)
-  notReady: () => 'ERROR1516: not ready to reveal: everyone on the roster'
-    + ' (at least two people) must bid first',
   blurbTooLong: () => blurbTooLongBanner,
-  simulEdits: () => simulEditsBanner,
-  rosterClosed: () => 'ERROR1517: Auction complete — no new participants',
-  nameTaken: () => nameTakenBanner,
-  // the frozen-record refusal (dreev's copy): renames, claims, and
-  // releases all bounce off it once the auction closes
-  auctionClosed: () => 'ERROR1518: Auction closed, no editing',
-  noSuchOne: (e) => 'ERROR1519: No such participant: ' + e.pid,
-  claimNeedsDevice: () => 'ERROR1520: claim requires a deviceID',
-  releaseNeedsDevice: () => 'ERROR1521: release requires a deviceID',
-  notYourSeat: () => 'ERROR1522: Disclaiming yourself as a participant failed',
-  emptyBid: () => 'ERROR1523: Bid is empty',
   bidTooLong: () => bidTooLongBanner,
+  nameTaken: () => nameTakenBanner,
+  simulEdits: () => simulEditsBanner,
   gavelFell: () =>
     'Womp Womp! The auction closed before your bid got through',
   // the bid-hijack refusal (dreev's copy): names the holder's rig
@@ -200,7 +179,40 @@ const refusalCopy = {
   // holder's deviceBlurb raw, '' included)
   bidSeatHeld: (e) => 'Someone else (' + (e.blurb || mysteryDevice)
     + ') already placed a bid as ' + e.uname + '!',
+};
+
+// These ERRORXXXX errors are things we don't expect an end user to ever be able
+// to see.
+// (Reaching one takes a hand-rolled request, a broken client, or a
+// version-skewed one — this family is kin to the client's own e215x
+// plumbing constants above.)
+const plumbingRefusals = {
+  // transport refusals: a malformed POST body, an action this server
+  // doesn't know (old server vs newer client)
+  badJson: () => 'ERROR1509: request body not valid JSON',
+  unknownAction: (e) => 'ERROR1510: unknown action: ' + e.action,
+  badAname: () => 'ERROR1511: auction name must be alphanumeric',
+  badUname: () =>
+    'ERROR1512: username must be alphanumeric and start with a letter',
+  badDevice: () => 'ERROR1513: bad deviceID',
+  badPid: () => 'ERROR1514: bad pid',
+  badDevBlurb: () => 'ERROR1515: bad deviceBlurb',
+  // the reveal button pressed before the roster is complete (the
+  // client grays it until ready)
+  notReady: () => 'ERROR1516: not ready to reveal: everyone on the roster'
+    + ' (at least two people) must bid first',
+  rosterClosed: () => 'ERROR1517: Auction complete — no new participants',
+  // the frozen-record refusal (dreev's copy): renames, claims, and
+  // releases all bounce off it once the auction closes
+  auctionClosed: () => 'ERROR1518: Auction closed, no editing',
+  noSuchOne: (e) => 'ERROR1519: No such participant: ' + e.pid,
+  claimNeedsDevice: () => 'ERROR1520: claim requires a deviceID',
+  releaseNeedsDevice: () => 'ERROR1521: release requires a deviceID',
+  notYourSeat: () => 'ERROR1522: Disclaiming yourself as a participant failed',
+  emptyBid: () => 'ERROR1523: Bid is empty',
   // removing someone who has already bid is refused (reachable only
   // by losing a race: the UI grays that × up front)
   removeBidder: () => 'ERROR1524: Too late to remove, bid sealed',
 };
+
+const refusalCopy = { ...gameRefusals, ...plumbingRefusals };
