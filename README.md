@@ -13,7 +13,7 @@ Backend is
 Note that Google sheets are editable by anyone, logged in to Google or not, but that only works with a proper browser.
 Programmatic writes require oAuth.
 
-There's a bunch of setup info and deploy instructions currently in black hole of AI-generated text at the bottom of [AGENTS.md](AGENTS.md).
+There's a bunch of setup info and deploy instructions currently in a black hole of AI-generated text at the bottom of [AGENTS.md](AGENTS.md).
 
 ### Spec for editing the auction description
 
@@ -41,20 +41,10 @@ We refer to the auction description internally as the blurb.
 
 Previously for the golems:
 
-1. Tell me if i'm thinking about this wrong but could this be more mobile-friendly just by making everything a little bigger? any better ideas for making it more mobile-friendly?
+1. I don't like how an unsubmitted bid gets completely lost if you claim another participant as you.
 
-2. i'm wondering if i should have you rewrite this thing from scratch. look at the sheer length of sourcery.html for such a simple app. either i, the human, or you, the ai, are really bad at this. or both, i suppose.
+2. Can you do deep research on web design with the goal of predicting the first complaint a professional web designer would have about this app?
 
-3. I don't like how an unsubmitted bid gets completely lost if you claim another participant as you.
-
-4. Can you do deep research on web design with the goal of predicting the first complaint a professional web designer would have about this app?
-
-5. Remove all the path dependence / historical documenation from the code comments. If a bug or whatever is fixed, we don't need the history.
+3. Remove all the path dependence / historical documenation from the code comments. If a bug or whatever is fixed, we don't need the history.
 
 Next for the golems:
-
-1. Tooltip on the pencil: "Auction description, version 0" and every time someone hits SAVE or Overwrite, that number increments. Stored in the database as "blurbver". Does that simplify the code? Does an incremented number work just as well as the hash or timestamp or whatever we've been using?
-
-2. Instead of clicking the padlock, which is too subtle, I think there should be a big button that starts out grayed-out and eventually gets replaced by the "Closed 2026-07..." string. Button text: "REVEAL!" and maybe go crazy with an image of Lady Justice about to pull off her blindfold or something else fun if you can find or create something. Maybe Lady Justice doesn't make sense, specifically, come to think of it. We can keep the padlock and ta-da next to the word BIDS but nix the clickability and tooltips. All the tooltips for the padlock transfer to the REVEAL button instead.
-
-3. Kill the redundant "Reveal bids" tooltip when the REVEAL button is clickable.

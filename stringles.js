@@ -68,13 +68,11 @@ const readyGlyph = '🔓';
 const revealedGlyph = '🎉';
 const tabTitle = (glyph, aname) => glyph + ' ' + aname + ' · tauction';
 
-// The reveal ceremony's rubber stamp, and the money it rains
-const stampCopy = 'SOLD';
-const moneyGlyphs = ['$', '¥', '£', '\u{1fa99}', '⚖️'];
-
-// The jackpot stamp, for when every revealed bid turns out IDENTICAL:
-// Schelling's coordination game (see the help copy), won.
-const consensusStamp = 'CONSENSUS';
+// Rubber stamp copy for the reveal, plus confetti characters
+const stampCopy = 'VOILÀ';
+const moneyGlyphs = ['¥', '🪙', '⚖️', '£', '€', '$'];
+// Or if all the bids are identical:
+const consensusStamp = 'JINX';
 
 // The commit buttons (dreev's copy; one constant per button, so a
 // rename of one can never leak onto another): SAVE rides the blurb,
