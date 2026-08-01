@@ -52,6 +52,10 @@ const call = (req) => {
 // derived here, so edits there never break these quals
 const COPY = require('vm')
   .runInContext('({ schemaDriftCopy, patchGhostCopy })', ctx);
+// the auctions schema's width, derived — the drift quals poke and
+// truncate around the row's true edge, wherever it grows to
+const AHEAD_LEN = require('vm')
+  .runInContext('AUCTIONS_HEAD.length', ctx);
 // A refusal's code (undefined on success): the one-liner for
 // asserting WHICH refusal came back. Feeds the coverage ledger too —
 // everything it reads is a real response
@@ -117,7 +121,7 @@ ok(ss.sheets['bids'].data[1][2] === '3 tacos', 'bid trimmed');
 ok(ss.sheets['auctions'].data[1][0] === 'tau', 'default settings row created');
 ok(ss.sheets['bids'].data[0][4] === "IT'S CHEATING TO LOOK HERE DURING AN AUCTION"
    && ss.sheets['bids'].data[0][5] === undefined
-   && ss.sheets['auctions'].data[0].length === 6,
+   && ss.sheets['auctions'].data[0].length === AHEAD_LEN,
    'cheater banner right after the bids headers; none on auctions');
 ok(ss.sheets['bids'].colors['2,3'] === '#ffffff',
    'sealed bid painted white-on-white');
@@ -775,12 +779,12 @@ uhead[3] = 'deviceID';
 resetTabMemo();
 ok(!call({ action: 'state', aname: 'tau' }).error,
    'headers restored: same tabs read fine again');
-ss.sheets['auctions'].data[0][6] = 'appended-attribute';
+ss.sheets['auctions'].data[0][AHEAD_LEN] = 'appended-attribute';
 resetTabMemo();
 ok(!call({ action: 'state', aname: 'tau' }).error,
    'columns appended past the schema are legal, not drift (future'
    + ' per-person attributes grow rightward)');
-ss.sheets['auctions'].data[0].length = 6;
+ss.sheets['auctions'].data[0].length = AHEAD_LEN;
 const bhead = ss.sheets['bids'].data[0];
 ss.sheets['bids'].data[0] = [];  // cleared-but-not-deleted tab
 resetTabMemo();
@@ -822,8 +826,10 @@ const CODE_GS = require('fs').readFileSync(
 const actions = [...CODE_GS.matchAll(/case '(\w+)':/g)].map((m) => m[1]);
 const FROZEN = ['bid', 'add', 'rename', 'claim', 'release', 'remove'];
 const OPEN = ['state', 'reveal',   // reads and the idempotent latch
-              'describe'];         // the blurb: editable post-close
+              'describe',          // the blurb: editable post-close
                                    // by dreev's explicit design
+              'editing'];          // ...and its presence heartbeat
+                                   // rides the same exemption
 ok(actions.length >= 9 && actions.every((a) =>
      FROZEN.includes(a) || OPEN.includes(a)),
    'every API action has a declared post-close policy: '
@@ -1079,6 +1085,56 @@ ok(sameMs18a.blurbver === 1 && sameMs18b.blurbver === 2
    && call({ action: 'state', aname: 'samems' }).blurb === 'second',
    'same-millisecond blurb saves still get distinct CAS identities:'
    + ' the counter never consults the clock');
+
+// 18c. EDITING PRESENCE (dreev 2026-07-31): while a blurb editor is
+//      open its client heartbeats, and every state carries who's at
+//      the desk — pid for the seated, deviceBlurb for walk-ins — in
+//      ONE slot, last heartbeat wins, honor system. A vanished
+//      editor (closed tab) ages out at the TTL; an explicit stop
+//      (SAVE/DISCARD) clears at once, but only the holder's own.
+call({ action: 'add', aname: 'nib', uname: 'ann', pid: pid('nib', 'ann') });
+st = call({ action: 'editing', aname: 'nib', pid: pid('nib', 'ann'),
+            deviceID: 'dev-nib-a', deviceBlurb: 'Mac Chrome' });
+ok(!st.error && st.editor !== undefined
+   && st.editor.pid === pid('nib', 'ann')
+   && st.editor.device === 'dev-nib-a'
+   && st.editor.blurb === 'Mac Chrome',
+   'an editing heartbeat surfaces the editor in the state payload');
+st = call({ action: 'editing', aname: 'nib', deviceID: 'dev-nib-w',
+            deviceBlurb: 'iPhone Safari' });
+ok(!st.error && st.editor !== undefined && st.editor.pid === ''
+   && st.editor.device === 'dev-nib-w'
+   && st.editor.blurb === 'iPhone Safari',
+   'an unseated walk-in heartbeats with a blurb only, and the single'
+   + ' slot goes to the last heartbeat');
+st = call({ action: 'editing', aname: 'nib', deviceID: 'dev-nib-a',
+            stop: true });
+ok(!st.error && st.editor !== undefined
+   && st.editor.device === 'dev-nib-w',
+   "a FOREIGN stop doesn't clear a live rival's presence");
+st = call({ action: 'editing', aname: 'nib', deviceID: 'dev-nib-w',
+            stop: true });
+ok(!st.error && st.editor === undefined,
+   'the holder stopping (SAVE or DISCARD sends it) clears the'
+   + ' presence at once');
+call({ action: 'editing', aname: 'nib', deviceID: 'dev-nib-w',
+       deviceBlurb: 'iPhone Safari' });
+require('vm').runInContext(
+  'var NativeDateNib = Date;'
+  + ' Date = class extends NativeDateNib {'
+  + ' static now() { return NativeDateNib.now() + 26000; } };', ctx);
+ok(call({ action: 'state', aname: 'nib' }).editor === undefined,
+   'a vanished editor ages out at the TTL: 26s of silence and the'
+   + ' pencil rests');
+require('vm').runInContext('Date = NativeDateNib;', ctx);
+call({ action: 'editing', aname: 'nib', deviceID: 'dev-nib-w',
+       stop: true });  // scene hygiene: leave no residual presence
+st = call({ action: 'editing', aname: 'tau', deviceID: 'd-z',
+            deviceBlurb: 'late rig' });
+ok(!st.error && st.editor !== undefined && st.editor.pid === '',
+   "editing presence works on a CLOSED auction too (the blurb is the"
+   + ' one field the gavel never froze)');
+call({ action: 'editing', aname: 'tau', deviceID: 'd-z', stop: true });
 
 // 19. REFUSAL COVERAGE, closed by construction: every code Code.gs
 //     can throw must have been provoked from the real API at least

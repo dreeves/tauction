@@ -105,6 +105,12 @@ const overwriteCopy = 'Overwrite with mine';
 // SAVE or Overwrite increments it. Copy is dreev's.
 const descVerTip = (v) => 'Auction description (v' + v + ')';
 
+// ...and its editing-presence suffix (dreev's copy): appended while
+// someone ELSE's editor is open on this blurb — their uname if
+// seated, else someoneOn(their device blurb, mysteryDevice-backed)
+const editingBy = (who) => '— currently being edited by ' + who;
+const someoneOn = (blurb) => 'someone (' + blurb + ')';
+
 const startCopy = (aname) => aname === '' ? 'Create the auction'
                                           : 'Create the ' + aname + ' auction';
 
@@ -149,6 +155,7 @@ const e2154 = (msg) => 'ERROR2154: ' + msg;  // roster op POST failed
 const e2155 = (msg) => 'ERROR2155: ' + msg;  // reveal POST failed
 const e2156 = 'ERROR2156: Missing API constant in app.js';
 const e2157 = (msg) => 'ERROR2157: ' + msg;  // auction-name probe failed
+const e2158 = (msg) => 'ERROR2158: ' + msg;  // editing-presence beat failed
 const copyFailBanner = (msg) => 'Could not copy: ' + msg;
 
 // The server's refusals, one entry per code Code.gs can send (a qual

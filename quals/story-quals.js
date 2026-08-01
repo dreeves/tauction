@@ -287,7 +287,8 @@ async function bid(page, bidText) {
            === 'coffee'
       && getComputedStyle(document.getElementById('desctoggle'))
            .display !== 'none'
-      && document.getElementById('desctoggle').textContent.length > 0),
+      && document.getElementById('desctoggle').querySelector('svg')
+           !== null),
        'SAVE commits and renders rich (h1 + bold); the'
        + ' pencil appears, the only way back to the source');
     ok(await alice.evaluate(() => {
@@ -2591,6 +2592,38 @@ async function bid(page, bidText) {
         && document.documentElement.scrollWidth <= window.innerWidth;
     }), 'revealed, the poem keeps its line break — the card grows'
        + ' downward, never sideways off the page');
+
+    /* ========== The scribbling pencil (dreev 2026-07-31) ==========
+       dalia opens the blurb editor; on eric's screen the discourse
+       pencil takes accent ink and rocks about its tip, its tooltip
+       naming her; her DISCARD rests it again — all through the real
+       heartbeat, poll, and CSS animation. */
+    const dalia = await makePage(browser, DESKTOP);
+    await dalia.goto(BASE + '/quillst', { waitUntil: 'networkidle0' });
+    await addName(dalia, 'dalia');
+    await dalia.waitForSelector('.tile.mine');
+    await shoot(dalia, 'story-pencil-discourse');
+    const eric = await makePage(browser, DESKTOP);
+    await eric.goto(BASE + '/quillst', { waitUntil: 'networkidle0' });
+    await eric.waitForSelector('.tile[data-uname="dalia"]');
+    await dalia.click('#desctoggle');
+    await eric.waitForFunction(() => document.getElementById('desc')
+      .classList.contains('scribbling'));
+    ok(await eric.$eval('#desctoggle', (e) => e.dataset.tip)
+         === await eric.evaluate(() =>
+              descVerTip(0) + ' ' + editingBy('dalia')),
+       "eric's pencil tip names dalia the moment her editor opens");
+    ok(await eric.$eval('.desctoggle svg',
+         (e) => getComputedStyle(e).animationName) === 'scribble',
+       'the busy pencil rocks: the scribble animation is live');
+    await shoot(eric, 'story-scribbling-pencil');
+    await dalia.click('#descdiscard');
+    await eric.waitForFunction(() => !document.getElementById('desc')
+      .classList.contains('scribbling'));
+    ok(await eric.$eval('#desctoggle', (e) => e.dataset.tip)
+         === await eric.evaluate(() => descVerTip(0)),
+       "dalia's DISCARD rests eric's pencil, the tip back to the"
+       + ' bare version');
 
     /* ============ THE LIVE-WIRE STORY (dreev 2026-07-30: "more
        realistic quals" — he tests with chrome and firefox against

@@ -150,7 +150,7 @@ label hanging off a pid (see the shipped pid spec below).
 
 | tab | columns |
 |---|---|
-| `auctions` | aname, tini, tmod, tfin, blurb, tblurb |
+| `auctions` | aname, tini, tmod, tfin, blurb, blurbver, tedit, editorPid, editorDevice, editorBlurb |
 | `users` | aname, pid, uname, deviceID, deviceBlurb, tini, tmod |
 | `bids` | aname, pid, bid, tbid |
 
@@ -165,8 +165,11 @@ time-modified, `tfin` = time-final (the reveal moment, ISO), `tbid` =
 a bid submission's moment, `deviceID` = the claiming browser's anonymous
 uuid ('' when unclaimed), `deviceBlurb` = that browser's self-reported
 description ("Mac Chrome en-US in Portland, OR"), `blurb` = the
-auction's freeform markdown description, `tblurb` = its own edit stamp
-(compare-and-swap guard for concurrent edits).
+auction's freeform markdown description, `blurbver` = its
+plain-counter version (0 = virgin, +1 per committed save; the
+compare-and-swap token for concurrent edits — superseded `tblurb`),
+`tedit` + `editorPid`/`editorDevice`/`editorBlurb` = the blurb's one
+editing-presence slot (see Behavior).
 
 A users row IS a roster seat (insertion order = display order). Roster
 edits are row-level `add`/`remove` actions — commutative, so concurrent
@@ -191,6 +194,17 @@ positional reads tolerate.
   kinds, 160 for bids, 2000 for the blurb — live red ring, local
   refusal in the same stringles words the server's refusal code
   renders to.
+- Editing presence (dreev 2026-07-31): an open blurb editor
+  heartbeats (the `editing` action) every 10s — skipping beats while
+  its tab is hidden — into the auctions row's ONE editor slot, fresh
+  for 25s (server clock both ends). Every state names the fresh
+  editor, and other pages' pencil (discourse.org's, vendored FA6 SVG)
+  scribbles: accent ink, write-wiggle, tooltip suffixed with dreev's
+  currently-being-edited-by copy (seat uname, else someone-(rig)).
+  SAVE and DISCARD send the stop (clearing only the caller's own
+  slot); a closed tab ages out; a VIRGIN auction takes no presence
+  (an editor-open is not a commitment). Honor system, last heartbeat
+  wins, like claims.
 - Every control is a tab stop (2026-07-27, reversing the 07-16
   tab law: keyboard users must be able to claim/remove/reveal).
   Pointer clicks blur buttons (tooltip hygiene); keyboard clicks

@@ -305,9 +305,20 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   background: none;
   /* icon-sized and full-ink: the ✎/💾 pair was illegibly tiny at
      the 0.7rem faint gray the #/¶ wore — and the pencil is now THE
-     edit affordance, so it must read at a glance */
-  font-size: 1.15rem;
+     edit affordance, so it must read at a glance. 1.3rem since the
+     discourse-style SVG pencil (dreev: bigger and clearer) took
+     over from the ✎ font glyph */
+  font-size: 1.3rem;
   color: var(--muted);
+}
+
+/* the vendored pencil rides the font size (the empty-state rule
+   below shrinks it via font-size alone) and inherits every ink
+   state through currentColor */
+.desctoggle svg {
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.125em;
 }
 
 .desctoggle:hover { color: var(--accent); }
@@ -339,6 +350,21 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 body.unnamed .desctoggle {
   color: color-mix(in srgb, var(--muted) 30%, transparent);
   pointer-events: none;
+}
+
+/* SOMEONE'S AT THE DESK (dreev 2026-07-31): while a rival's blurb
+   editor is open (state.editor, heartbeat-fresh) the pencil takes
+   accent ink and rocks gently about its graphite tip — the subtlest
+   same-shape signal — and the tooltip names the editor */
+.desc.scribbling .desctoggle { color: var(--accent); }
+.desc.scribbling .desctoggle svg {
+  transform-origin: 15% 85%;
+  animation: scribble 1.5s ease-in-out infinite alternate;
+}
+
+@keyframes scribble {
+  from { transform: rotate(-6deg); }
+  to   { transform: rotate(3deg); }
 }
 
 /* -------------------------- commit buttons ----------------------------- */

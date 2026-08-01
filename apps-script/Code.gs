@@ -20,8 +20,14 @@ const SHEET_ID = '1hclphAZ3zQIq14Nip1ZxTDSoE9ygXqAv27RwP1hiMA8';
 // memory all key on it — and the uname is just its display label, so
 // renames are one-cell label edits: no bid re-keying, no client
 // rename transactions, no orphaned identities.
+// tedit + editor* are the blurb's EDITING-PRESENCE slot (one per
+// auction): tedit stamps the latest heartbeat from an open editor,
+// editorPid names the seated editor ('' for a walk-in), and
+// editorDevice/editorBlurb carry the editing browser's identity and
+// self-description. Ephemeral by TTL — see noteEditing.
 const AUCTIONS_HEAD = ['aname', 'tini', 'tmod', 'tfin', 'blurb',
-                       'blurbver'];
+                       'blurbver', 'tedit', 'editorPid',
+                       'editorDevice', 'editorBlurb'];
 // The bids tab is an append-only LOG: every submission is its own
 // row, nothing is ever overwritten, and the payload's tini/tmod/
 // bcount are DERIVED
@@ -103,6 +109,7 @@ function handle(req) {
       case 'claim':    return withLock(() => saveClaim(req));
       case 'release':  return withLock(() => releaseClaim(req));
       case 'describe': return withLock(() => describe(req));
+      case 'editing':  return withLock(() => noteEditing(req));
       case 'add':      return withLock(() => addParticipant(req));
       case 'remove':   return withLock(() => removeParticipant(req));
       case 'rename':   return withLock(() => renameParticipant(req));
@@ -389,6 +396,14 @@ function getState(aname) {
     throw 'auctions.blurbver corrupt for ' + aname + ': '
       + JSON.stringify(arow && arow.blurbver);
   }
+  // the editing-presence slot, shown only while the last heartbeat
+  // is fresh (both stamps are this server's clock — no client skew);
+  // a vanished editor ages out right here, no sweeper needed
+  const editor = arow && arow.tedit
+    && Date.now() - new Date(arow.tedit).getTime() < EDITOR_TTL_MS
+      ? { pid: arow.editorPid, device: arow.editorDevice,
+          blurb: arow.editorBlurb }
+      : undefined;
 
   // A person's standing bid is their LATEST log row at or before tfin
   // (<=, dreev's call: a bid stamped the gavel's own millisecond made
@@ -423,7 +438,7 @@ function getState(aname) {
   return {
     aname: aname, exists: arow !== undefined,
     seats: seats, bidders: bidders, revealed: revealed,
-    tfin: tfin, blurb: blurb, blurbver: blurbver,
+    tfin: tfin, blurb: blurb, blurbver: blurbver, editor: editor,
     claims: claims, blurbs: blurbs,
     bids: revealed ? people.map(a => ({ pid: a.pid, bid: a.bid }))
                    : null,
@@ -523,6 +538,38 @@ function describe(req) {
   touchAuction(aname);
   const i = load('auctions').findIndex(r => r.aname === aname);
   patch('auctions', i, { blurb: blurb, blurbver: current + 1 });
+  return getState(aname);
+}
+
+// The blurb editor's presence heartbeat (dreev 2026-07-31): while an
+// editor is open its client pings every ~10s and getState shows the
+// editor to everyone while the last ping is fresh (EDITOR_TTL_MS
+// covers two missed beats plus slack — a closed tab simply ages
+// out). ONE slot per auction, last heartbeat wins, honor system,
+// same spirit as claims. Two disclosed ifs: a rowless (virgin)
+// auction takes no presence — an editor-open is not a commitment,
+// and virgin auctions stay virgin (the mutlessvirgin law) — and a
+// stop clears only the caller's own presence, so a raced DISCARD
+// can't erase a live rival. The gavel doesn't apply: the blurb is
+// editable post-close, so its presence rides the same exemption.
+const EDITOR_TTL_MS = 25000;
+function noteEditing(req) {
+  const aname = cleanAname(req.aname);
+  const pid = req.pid ? cleanPid(req.pid) : '';  // '' = unseated
+  const deviceID = cleanDeviceID(req.deviceID);
+  const deviceBlurb = cleanBlurb(req.deviceBlurb);
+  const i = load('auctions').findIndex(r => r.aname === aname);
+  if (i !== -1) {
+    if (req.stop) {
+      if (load('auctions')[i].editorDevice === deviceID) {
+        patch('auctions', i, { tedit: '' });
+      }
+    } else {
+      patch('auctions', i, { tedit: new Date().toISOString(),
+                             editorPid: pid, editorDevice: deviceID,
+                             editorBlurb: deviceBlurb });
+    }
+  }
   return getState(aname);
 }
 

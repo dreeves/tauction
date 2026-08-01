@@ -129,7 +129,8 @@ const STR = new Function(STRINGLES
   + ' tabTitle, saveCopy, addCopy, submitCopy, tooLateGoTip, startCopy,'
   + ' discardCopy, warTitle, keepTheirsCopy, overwriteCopy,'
   + ' anameTooLongBanner, unameTooLongBanner, blurbTooLongBanner,'
-  + ' revealCopy, descVerTip, simulEditsBanner, refusalCopy,'
+  + ' revealCopy, descVerTip, editingBy, someoneOn,'
+  + ' simulEditsBanner, refusalCopy,'
   + ' gameRefusals, plumbingRefusals };')();
 const STAMP = STR.stampCopy;
 
@@ -3439,6 +3440,91 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        + ' exactly when plumbing-class ('
        + Object.keys(STR.gameRefusals).length + ' game + '
        + Object.keys(STR.plumbingRefusals).length + ' plumbing)');
+  }
+
+  /* --- 2r. EDITING PRESENCE on the pencil (dreev 2026-07-31) ----------
+     While anyone's blurb editor is open, everyone ELSE's pencil
+     scribbles (accent + write-wiggle class) and its tooltip names
+     them — the seat's uname if seated, someone-(rig) if not. Own
+     editing never scribbles at itself. The open editor heartbeats;
+     SAVE and DISCARD both send the stop. */
+  {
+    // mint the auctions row first: a VIRGIN auction takes no
+    // presence, by design (an editor-open is not a commitment)
+    gas.handle({ action: 'add', aname: 'quill', uname: 'quincy',
+                 pid: 'pid-quill-quincy' });
+    const dEd = await makePage('/quill?api=' + API_URL, (w) => {
+      w.localStorage.setItem('tauction-device', 'rig-ed');
+    });
+    const edDoc = dEd.window.document;
+    edDoc.getElementById('desctoggle').click();  // the editor opens
+    await until(() => apiCalls.some((c) => c.action === 'editing'
+                                        && !c.stop) && drained());
+    const dVw = await makePage('/quill?api=' + API_URL, (w) => {
+      w.localStorage.setItem('tauction-device', 'rig-vw');
+    });
+    const vwDoc = dVw.window.document;
+    await until(() => vwDoc.getElementById('desc').classList
+      .contains('scribbling'));
+    ok(vwDoc.getElementById('desctoggle').dataset.tip
+         .startsWith(STR.descVerTip(0) + ' '
+           + STR.editingBy(STR.someoneOn('').slice(0, -1))),
+       "a rival's open editor scribbles the pencil, the tip naming"
+       + ' their walk-in rig (someone-(...))');
+    // the editor's own page never scribbles at itself (device leg)
+    dEd.window.__intervals.find((i) => i.ms === 5000).fn();
+    await sleep(150);
+    ok(!edDoc.getElementById('desc').classList.contains('scribbling'),
+       'own presence never scribbles at itself');
+    // the open editor drums: its registered beat re-pings on demand
+    const beatsBefore = apiCalls.filter((c) =>
+      c.action === 'editing' && !c.stop).length;
+    dEd.window.__intervals.find((i) => i.ms === 10000).fn();
+    await until(() => apiCalls.filter((c) =>
+      c.action === 'editing' && !c.stop).length === beatsBefore + 1);
+    ok(true, 'the open editor heartbeats on its registered cadence');
+    // DISCARD sends the stop; the viewer's next poll rests the pencil
+    edDoc.getElementById('descdiscard').click();
+    await until(() => apiCalls.some((c) => c.action === 'editing'
+                                        && c.stop) && drained());
+    dVw.window.__intervals.find((i) => i.ms === 5000).fn();
+    await until(() => !vwDoc.getElementById('desc').classList
+      .contains('scribbling'));
+    ok(vwDoc.getElementById('desctoggle').dataset.tip
+         === STR.descVerTip(0),
+       'DISCARD stops the presence: the pencil rests, the tip back'
+       + ' to the bare version');
+    // a SEATED editor is named by uname (rename-proof seat lookup)
+    gas.handle({ action: 'add', aname: 'quill', uname: 'quilla',
+                 pid: 'pid-quill-quilla' });
+    gas.handle({ action: 'editing', aname: 'quill',
+                 pid: 'pid-quill-quilla', deviceID: 'rig-x',
+                 deviceBlurb: 'x rig' });
+    dVw.window.__intervals.find((i) => i.ms === 5000).fn();
+    await until(() => vwDoc.getElementById('desc').classList
+      .contains('scribbling'));
+    ok(vwDoc.getElementById('desctoggle').dataset.tip
+         === STR.descVerTip(0) + ' ' + STR.editingBy('quilla'),
+       'a seated editor is named by their uname');
+    gas.handle({ action: 'editing', aname: 'quill', deviceID: 'rig-x',
+                 stop: true });  // scene hygiene
+    // SAVE sends the stop too (and the save itself rides first)
+    edDoc.getElementById('desctoggle').click();
+    await until(() => apiCalls.filter((c) => c.action === 'editing'
+                                          && !c.stop).length
+                        > beatsBefore + 1 && drained());
+    const stopsBefore = apiCalls.filter((c) =>
+      c.action === 'editing' && c.stop).length;
+    edDoc.getElementById('descedit').value = 'quill words';
+    edDoc.getElementById('descedit').dispatchEvent(
+      new dEd.window.Event('input', { bubbles: true }));
+    edDoc.getElementById('descgo').click();
+    await until(() => apiCalls.filter((c) =>
+      c.action === 'editing' && c.stop).length === stopsBefore + 1
+      && drained());
+    ok(gas.handle({ action: 'state', aname: 'quill' }).blurb
+         === 'quill words',
+       'SAVE lands the words and stops the presence in one gesture');
   }
 
   /* --- 2q. BLUR COMMITS NOTHING, anywhere (dreev 2026-07-27) ----------

@@ -668,6 +668,7 @@ function renderDesc() {
   paintWar();  // the war popup, while open, mirrors state too: the
                // diff freshens itself as snapshots land
   syncHot(edit);
+  syncPencil();  // presence rides every snapshot: scribble or rest
 }
 
 // The blurb version this client is working from — at once the CAS
@@ -677,7 +678,69 @@ function renderDesc() {
 // while a save flies, synced to the server wherever the words agree.
 function setBlurbBase(v) {
   $('descedit').dataset.base = String(v);
-  setTip($('desctoggle'), descVerTip(Number(v)));
+  syncPencil();
+}
+
+// The pencil's ONE dresser: composes the version tooltip with the
+// editing-presence suffix when someone ELSE is at the desk (their
+// seat's uname — a rename-proof lookup — or someone-(rig) for a
+// walk-in), and toggles the scribbling class (accent ink +
+// write-wiggle). Own presence — this device, or this pid heartbeat-
+// ing from another rig — never scribbles at itself.
+function syncPencil() {
+  const v = Number($('descedit').dataset.base);
+  const ed = state === null ? undefined : state.editor;
+  const mine = ed !== undefined
+    && ((ed.pid !== '' && ed.pid === mypid()) || ed.device === DEVICE);
+  const show = ed !== undefined && !mine;
+  $('desc').classList.toggle('scribbling', show);
+  let tip = descVerTip(v);
+  if (show) {
+    const seat = seats.find((s) => s.pid === ed.pid);
+    tip += ' ' + editingBy(seat !== undefined ? seat.uname
+      : someoneOn(ed.blurb || mysteryDevice));
+  }
+  setTip($('desctoggle'), tip);
+}
+
+/* The editing-presence heartbeat (dreev 2026-07-31): while THIS
+   page's blurb editor is open it pings the server every EDIT_BEAT_MS
+   naming itself (pid when seated, rig blurb regardless), so everyone
+   else's pencil can scribble. SAVE and DISCARD send the explicit
+   stop; a closed tab simply ages out server-side (the TTL); hidden
+   tabs skip beats, so a backgrounded draft's presence expires until
+   its tab returns. */
+const EDIT_BEAT_MS = 10000;
+let editBeatTimer = null;
+
+function sendEditBeat(stop) {
+  const body = { action: 'editing', aname: aname, pid: mypid(),
+                 deviceID: DEVICE, deviceBlurb: DEVBLURB };
+  if (stop) body.stop = true;
+  apiPost(body).then((res) => {
+    if (res.error) banner(refusalText(res.error));
+  }).catch((e) => { banner(e2158(e.message)); });
+}
+
+// ONE reconciling owner for the beat timer, called after every
+// editor-mode flip (open, DISCARD, SAVE, the war's reopen): the
+// DOM's own .viewing class is the truth the timer follows. Two
+// disclosed ifs reconcile timer-state to it; the aname gate keeps a
+// keyboard-opened editor on the unnamed page from pinging nowhere.
+function syncEditBeats() {
+  const editing = aname !== ''
+    && !$('desc').classList.contains('viewing');
+  if (editing && editBeatTimer === null) {
+    sendEditBeat(false);
+    editBeatTimer = setInterval(() => {
+      if (!document.hidden) sendEditBeat(false);
+    }, EDIT_BEAT_MS);
+  }
+  if (!editing && editBeatTimer !== null) {
+    clearInterval(editBeatTimer);
+    editBeatTimer = null;
+    sendEditBeat(true);
+  }
 }
 
 // The corner ✎ (grayed while editing; the glyph lives in
@@ -690,6 +753,7 @@ function editDesc() {
   warTake = 0;   // a fresh editing session starts at take zero
   $('desc').classList.remove('viewing');
   $('descedit').focus();
+  syncEditBeats();
 }
 
 // The war diff's engine: longest-common-subsequence over LINES
@@ -848,6 +912,7 @@ function discardDesc() {
   view.dataset.md = rec.blurb;
   view.innerHTML = mdRender(rec.blurb);
   syncHot(edit);
+  syncEditBeats();
 }
 
 // SAVE: commit any change and flip back to rendered. Disclosed ifs:
@@ -904,6 +969,7 @@ function commitDesc() {
       edit.classList.add('error');
       $('desc').classList.remove('viewing');
       syncHot(edit);  // dirty again: SAVE back on duty at once
+      syncEditBeats();  // ...and the reopened editor drums again
       // reopen but never STEAL: the caret returns only if the page
       // is idle (the arrival-caret law) — if you've moved on to
       // another field, the red editor waits its turn
@@ -934,6 +1000,7 @@ function commitDesc() {
   $('desc').classList.add('viewing');  // the editor closes on SAVE,
                                        // empty blurb or not (item 9)
   syncHot(edit);  // committed: the field cools, SAVE stands down
+  syncEditBeats();
 }
 
 // This browser's identity ledger: aname -> pid (which seat is YOU,
