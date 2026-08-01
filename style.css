@@ -346,10 +346,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   content: attr(data-hint) ' ';
 }
 
-/* ...and GRAYS while the page is unnamed, inert to the pointer */
-body.unnamed .desctoggle {
+/* ...and GRAYS while disabled (the unnamed page; app.js syncs the
+   attribute) — the house disabled pattern, no pointer-events games:
+   a disabled button is inert to pointer AND keyboard natively */
+.desctoggle:disabled {
   color: color-mix(in srgb, var(--muted) 30%, transparent);
-  pointer-events: none;
 }
 
 /* SOMEONE'S AT THE DESK (dreev 2026-07-31): while a rival's blurb

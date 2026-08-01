@@ -724,12 +724,12 @@ function sendEditBeat(stop) {
 
 // ONE reconciling owner for the beat timer, called after every
 // editor-mode flip (open, DISCARD, SAVE, the war's reopen): the
-// DOM's own .viewing class is the truth the timer follows. Two
-// disclosed ifs reconcile timer-state to it; the aname gate keeps a
-// keyboard-opened editor on the unnamed page from pinging nowhere.
+// DOM's own .viewing class is the truth the timer follows, and two
+// disclosed ifs reconcile timer-state to it. (No unnamed-page gate:
+// the unnamed pencil is DISABLED, so an editor without an auction
+// is unrepresentable.)
 function syncEditBeats() {
-  const editing = aname !== ''
-    && !$('desc').classList.contains('viewing');
+  const editing = !$('desc').classList.contains('viewing');
   if (editing && editBeatTimer === null) {
     sendEditBeat(false);
     editBeatTimer = setInterval(() => {
@@ -2267,6 +2267,7 @@ async function switchAuction(a) {
     document.querySelector('label[for="aname"]')
       .setAttribute('data-tip', nameStoneTip);
     $('share').disabled = false;  // the page is somewhere now
+    $('desctoggle').disabled = false;  // the pencil wakes with it
     document.body.classList.remove('unnamed');  // ...and wakes whole
     $('banner').hidden = true;  // landing somewhere real clears any
                                 // dead-end sign still standing
@@ -2567,8 +2568,12 @@ async function init() {
   if (m) aname = m[1].toLowerCase();
   $('aname').value = aname;
   $('aname').defaultValue = aname;  // the baseline Escape reverts to
-  // the one-action-page state, explicit (its CSS gray rides this)
+  // the one-action-page state, explicit (its CSS gray rides this).
+  // The pencil is DISABLED outright with it (the house gray pattern,
+  // like the stars and ×s): an editor for an auction that doesn't
+  // exist must be unrepresentable, keyboard included
   document.body.classList.toggle('unnamed', aname === '');
+  $('desctoggle').disabled = aname === '';
 
   if (!configured) {
     banner(e2156);

@@ -3525,6 +3525,60 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     ok(gas.handle({ action: 'state', aname: 'quill' }).blurb
          === 'quill words',
        'SAVE lands the words and stops the presence in one gesture');
+    // THE WAR-REOPEN FENCE: a CAS bounce reopens the editor, and the
+    // beats must resume with it — a mid-war editor is still an open
+    // editor, and presence silently expiring mid-war was the
+    // unfenced path the anti-magic audit flagged
+    edDoc.getElementById('desctoggle').click();  // editing again
+    await until(() => !edDoc.getElementById('desc').classList
+      .contains('viewing') && drained());
+    edDoc.getElementById('descedit').value = 'quill words v2';
+    edDoc.getElementById('descedit').dispatchEvent(
+      new dEd.window.Event('input', { bubbles: true }));
+    // the rival save lands SUB-POLL (server-side only, and no await
+    // before the SAVE click, so no poll can deliver it first): the
+    // page's stale base rides into the server CAS and bounces
+    gas.handle({ action: 'describe', aname: 'quill',
+      base: gas.handle({ action: 'state', aname: 'quill' }).blurbver,
+      blurb: 'rival words' });
+    const beatsAtSave = apiCalls.filter((c) =>
+      c.action === 'editing' && !c.stop).length;
+    edDoc.getElementById('descgo').click();
+    await until(() => edDoc.getElementById('war-dlg').open
+      && drained());
+    ok(!edDoc.getElementById('desc').classList.contains('viewing')
+       && apiCalls.filter((c) => c.action === 'editing'
+                               && !c.stop).length === beatsAtSave + 1,
+       'the CAS-bounce reopen resumes the heartbeat: a mid-war editor'
+       + ' is still an open editor');
+    edDoc.getElementById('war-keep').click();  // surrender closes it
+    await until(() => edDoc.getElementById('desc').classList
+      .contains('viewing') && drained());
+  }
+
+  /* --- 2s. the unnamed pencil is DISABLED (dreev 2026-07-31, from
+     the anti-magic audit): gray via the house disabled pattern —
+     not pointer-events, which left a keyboard path into an editor
+     for an auction that doesn't exist. Unrepresentable now; the
+     beat machinery needs no aname gate. */
+  {
+    const dUn = await makePage('/?api=' + API_URL);
+    const unDoc = dUn.window.document;
+    ok(unDoc.getElementById('desctoggle').disabled,
+       'the unnamed page disables the pencil outright');
+    unDoc.getElementById('desctoggle').click();
+    await sleep(120);
+    ok(unDoc.getElementById('desc').classList.contains('viewing')
+       && !apiCalls.some((c) => c.action === 'editing'
+                              && !c.aname),
+       'no gesture opens the unnamed editor; no beat ever pings an'
+       + ' auction with no name');
+    // ...and the name-commit wake enables it (the second owner site)
+    type(dUn, 'aname', 'pencilwake');
+    commitName(dUn);
+    await until(() => !unDoc.body.classList.contains('unnamed'));
+    ok(!unDoc.getElementById('desctoggle').disabled,
+       'committing a name wakes the pencil with the page');
   }
 
   /* --- 2q. BLUR COMMITS NOTHING, anywhere (dreev 2026-07-27) ----------
