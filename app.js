@@ -1583,9 +1583,14 @@ function updateRow(t, seat, b, mine, known, locked) {
 // raw text is entity-escaped before any markup applies, so nothing an
 // author writes can smuggle live HTML in — only OUR transforms emit
 // tags, and link hrefs must be http(s), so javascript: links never
-// become links at all. Covers #/##/### headings, **bold**, *italic*,
-// `code`, [text](url), - and 1. lists, > quotes, --- rules, and
-// blank-line paragraphs (single newlines are <br>s).
+// become links at all. Covers # through ###### headings, **bold**,
+// *italic*, `code`, [text](url), - and 1. lists, > quotes, ---
+// rules, and blank-line paragraphs (single newlines are <br>s).
+// LINE-wise (dreev 2026-08-01, replacing blank-line-block atomicity
+// that read normally-typed markdown — a heading right atop its list
+// — as one literal paragraph): each line is classified once,
+// consecutive same-kind lines group into one element, and blank
+// lines only separate paragraphs.
 function mdRender(md) {
   const esc = md.replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -1605,33 +1610,48 @@ function mdRender(md) {
         '<a href="$2" target="_blank" rel="noopener">$1</a>')
       .replace(/<<(\d+)>>/g, (_, i) => stash[i]);
   };
-  // blank blocks (an empty source, stray leading/trailing blank
-  // lines) render as NOTHING, never as <p></p> — an empty record
-  // must leave the pane truly :empty (the empty-state CSS keys on it)
-  return esc.split(/\n{2,}/).filter((b) => b.trim() !== '').map((b) => {
-    const lines = b.split('\n');
-    const h = lines.length === 1 && lines[0].match(/^(#{1,3}) (.*)$/);
-    if (h) {
-      const n = h[1].length;
-      return '<h' + n + '>' + inline(h[2]) + '</h' + n + '>';
+  // The grammar's dispatch: one kind per construct. Blank lines are
+  // a kind too — their runs render as NOTHING, never <p></p>, so an
+  // empty record leaves the pane truly :empty (the empty-state CSS
+  // keys on it).
+  const kind = (l) =>
+    l.trim() === '' ? 'blank'
+      : /^#{1,6} /.test(l) ? 'h'
+      : /^\s*(-{3,}|\*{3,})\s*$/.test(l) ? 'hr'
+      : /^\s*[-*] /.test(l) ? 'ul'
+      : /^\s*\d+[.)] /.test(l) ? 'ol'
+      : /^\s*&gt; ?/.test(l) ? 'quote'
+      : 'p';
+  const runs = [];  // consecutive same-kind lines, grouped
+  let run = null;
+  esc.split('\n').forEach((l) => {
+    const k = kind(l);
+    // headings and rules are one-LINE constructs: never merged
+    if (run !== null && run.kind === k && k !== 'h' && k !== 'hr') {
+      run.lines.push(l);
+      return;
     }
-    if (/^\s*(-{3,}|\*{3,})\s*$/.test(b)) return '<hr>';
-    if (lines.every((l) => /^\s*[-*] /.test(l))) {
-      return '<ul>' + lines.map((l) =>
-        '<li>' + inline(l.replace(/^\s*[-*] /, '')) + '</li>').join('')
-        + '</ul>';
-    }
-    if (lines.every((l) => /^\s*\d+[.)] /.test(l))) {
-      return '<ol>' + lines.map((l) =>
-        '<li>' + inline(l.replace(/^\s*\d+[.)] /, '')) + '</li>')
-        .join('') + '</ol>';
-    }
-    if (lines.every((l) => /^\s*&gt; ?/.test(l))) {
-      return '<blockquote>' + inline(lines.map((l) =>
-        l.replace(/^\s*&gt; ?/, '')).join('<br>')) + '</blockquote>';
-    }
-    return '<p>' + inline(lines.join('<br>')) + '</p>';
-  }).join('');
+    run = { kind: k, lines: [l] };
+    runs.push(run);
+  });
+  const items = (ls, marker, tag) => '<' + tag + '>' + ls.map((l) =>
+    '<li>' + inline(l.replace(marker, '')) + '</li>').join('')
+    + '</' + tag + '>';
+  const emit = {
+    blank: () => '',
+    hr: () => '<hr>',
+    h: (ls) => {
+      const m = ls[0].match(/^(#{1,6}) (.*)$/);
+      return '<h' + m[1].length + '>' + inline(m[2])
+        + '</h' + m[1].length + '>';
+    },
+    ul: (ls) => items(ls, /^\s*[-*] /, 'ul'),
+    ol: (ls) => items(ls, /^\s*\d+[.)] /, 'ol'),
+    quote: (ls) => '<blockquote>' + inline(ls.map((l) =>
+      l.replace(/^\s*&gt; ?/, '')).join('<br>')) + '</blockquote>',
+    p: (ls) => '<p>' + inline(ls.join('<br>')) + '</p>',
+  };
+  return runs.map((r) => emit[r.kind](r.lines)).join('');
 }
 
 // "2026-07-16 13:01 Thu" — dreev's exact Closed-line format, in the

@@ -3311,13 +3311,15 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const mdRender = domMd.window.eval(
     STRINGLES + '\n;\n' + APP_JS + '\n;mdRender');
   const mdProbe = domMd.window.document.createElement('div');
-  const MD_TAGS = ['P', 'BR', 'H1', 'H2', 'H3', 'HR', 'UL', 'OL', 'LI',
+  const MD_TAGS = ['P', 'BR', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
+                   'HR', 'UL', 'OL', 'LI',
                    'BLOCKQUOTE', 'CODE', 'STRONG', 'EM', 'A'];
   // (the whole-link tokens are load-bearing: random shards of [ ] ( )
   // essentially never assemble a valid link, so without them the <a>
   // invariants sat unexercised — caught by the coverage floor below)
   const MD_SOUP = ['`', '*', '**', '[', ']', '(', ')', '# ', '## ',
-    '### ', '[t](https://e.co/x)', '[`t`](https://e.co/x)',
+    '### ', '#### ', '##### ', '###### ',
+    '[t](https://e.co/x)', '[`t`](https://e.co/x)',
     '- ', '1. ', '> ', '---', '\n', '\n\n', ' ', 'tau',
     'https://e.co/p?a=1&b=2', '<script>alert(1)</script>',
     '<img src=x onerror=alert(1)>', '](javascript:alert(1))', '"',
@@ -3381,6 +3383,48 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(MD_TAGS.every((t) => mdSeen[t] > 0),
      'the soup exercises every whitelisted tag, sat: '
        + JSON.stringify(mdSeen));
+
+  /* --- 2p5. NORMALLY-TYPED markdown (dreev 2026-08-01: "we seem to
+     have lost most of markdown rendering") — headings and lists must
+     bind where people actually put them: directly against their
+     neighboring lines, no blank-line ceremony. Replicata: '# Rules'
+     atop two bullets rendered as one literal paragraph, because
+     blocks were classified atomically (solo-line headings,
+     every-line lists). The renderer works LINE-wise now: consecutive
+     same-kind lines group into one element; blank lines only
+     separate paragraphs. */
+  {
+    mdProbe.innerHTML = mdRender('# Rules\n- bring cash\n'
+      + '- no lowballs\nSee **notes** below.\n\n## Fine print\n'
+      + '1. one\n2. two');
+    ok(mdProbe.querySelector('h1') !== null
+       && mdProbe.querySelector('h1').textContent === 'Rules'
+       && [...mdProbe.querySelectorAll('ul li')]
+            .map((l) => l.textContent).join('|')
+            === 'bring cash|no lowballs'
+       && mdProbe.querySelector('p strong') !== null
+       && mdProbe.querySelector('h2') !== null
+       && [...mdProbe.querySelectorAll('ol li')]
+            .map((l) => l.textContent).join('|') === 'one|two'
+       && !mdProbe.textContent.includes('#')
+       && !mdProbe.textContent.includes('- '),
+       'headings and lists bind line-wise, right against their'
+       + ' neighbors — no blank-line ceremony');
+    mdProbe.innerHTML = '';
+    ok(mdRender('> a\n> b\nafter')
+         === '<blockquote>a<br>b</blockquote><p>after</p>'
+       && mdRender('---\ntext') === '<hr><p>text</p>',
+       'quotes and rules end exactly where their lines end');
+    ok(mdRender('#### four\n##### five\n###### six')
+         === '<h4>four</h4><h5>five</h5><h6>six</h6>',
+       'the whole ladder: headings h1 through h6, each line its own');
+    ok(mdRender('a\nb\n\nc') === '<p>a<br>b</p><p>c</p>'
+       && mdRender('\n\n') === '' && mdRender('') === '',
+       'paragraph semantics keep: single newlines are <br>s, blank'
+       + ' lines split, and emptiness renders NOTHING (the'
+       + ' empty-state CSS keys on :empty)');
+  }
+
   // the clobber dance: two windows, one description
   const dA = await makePage('/descy?api=' + API_URL);
   const dB = await makePage('/descy?api=' + API_URL);
