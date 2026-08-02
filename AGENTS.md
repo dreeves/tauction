@@ -115,7 +115,9 @@ run `npx clasp login`, and put the script ID (Apps Script editor → Project
 Settings → IDs) into [.clasp.json](.clasp.json). After that, no browser —
 the repo is the source of truth and the manifest
 ([appsscript.json](apps-script/appsscript.json)) pins the web app's
-execute-as-me/anyone settings.
+execute-as-me/anyone settings and enables the Advanced Sheets Service
+(loadAll's one-batchGet-per-request read; same spreadsheets scope,
+though the first deploy after enabling may ask for consent once).
 
 Schema changes: each tab's header row is checked against the code's
 `*_HEAD` constants on first touch per execution; a mismatched tab makes

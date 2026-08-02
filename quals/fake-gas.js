@@ -13,6 +13,7 @@ class FakeRange {
   }
   setValues(vals) {
     this.sheet.tally.writes++;
+    this.sheet.tally.unflushed = true;
     for (let r = 0; r < this.numRows; r++) {
       const rowIdx = this.row - 1 + r;
       while (this.sheet.data.length <= rowIdx) this.sheet.data.push([]);
@@ -85,8 +86,16 @@ class FakeSheet {
     return new FakeRange(this, 1, 1, Math.max(1, this.data.length),
       Math.max(1, ...this.data.map((r) => r.length)));
   }
-  appendRow(arr) { this.tally.writes++; this.data.push(arr.slice()); }
-  deleteRow(n) { this.tally.writes++; this.data.splice(n - 1, 1); }
+  appendRow(arr) {
+    this.tally.writes++;
+    this.tally.unflushed = true;
+    this.data.push(arr.slice());
+  }
+  deleteRow(n) {
+    this.tally.writes++;
+    this.tally.unflushed = true;
+    this.data.splice(n - 1, 1);
+  }
   getMaxRows() { return 1000; }
   setFrozenRows() {}
 }
@@ -99,12 +108,49 @@ module.exports = function makeGas() {
     insertSheet(n) { return (this.sheets[n] = new FakeSheet(n, tally)); },
   };
   const ctx = {
-    SpreadsheetApp: { openById: () => { tally.opens++; return ss; } },
+    SpreadsheetApp: {
+      openById: () => { tally.opens++; return ss; },
+      flush: () => { tally.unflushed = false; },
+    },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     ContentService: {
       createTextOutput: (s) => ({ body: s, setMimeType() { return this; } }),
       MimeType: { JSON: 'json' },
     },
+    // The Advanced Sheets Service, batchGet only: ONE metered read
+    // for any number of ranges. Fidelity quirks mirrored from the
+    // real values API: trailing empty cells are trimmed from each
+    // row, and a blank sheet's valueRange carries no values key.
+    Sheets: { Spreadsheets: { Values: {
+      batchGet: (id, opts) => {
+        // The real values API reads the backend over REST and CANNOT
+        // see buffered SpreadsheetApp writes (live-quals caught a
+        // claim missing from its own response). The fake enforces
+        // the barrier loudly so the offline suite catches what only
+        // the live smoke caught. (Direct ss.sheets pokes model
+        // out-of-band sheet edits, which the REST read WOULD see.)
+        if (tally.unflushed) {
+          throw new Error('batchGet with unflushed SpreadsheetApp'
+            + ' writes — the real values API cannot see them; call'
+            + ' SpreadsheetApp.flush() first');
+        }
+        tally.reads++;
+        return { valueRanges: opts.ranges.map((name) => {
+          const rows = ss.sheets[name].data.map((r) => {
+            let n = r.length;
+            while (n > 0 && (r[n - 1] === '' || r[n - 1] === undefined)) {
+              n--;
+            }
+            return r.slice(0, n);
+          });
+          while (rows.length > 0 && rows[rows.length - 1].length === 0) {
+            rows.pop();
+          }
+          return rows.length === 0 ? { range: name }
+                                   : { range: name, values: rows };
+        }) };
+      },
+    } } },
     Logger: { log: () => {} },
   };
   vm.createContext(ctx);
@@ -124,7 +170,8 @@ module.exports = function makeGas() {
   const reset = () => vm.runInContext(RESET, ctx);
   ['handle', 'doGet', 'doPost'].forEach((f) => {
     const raw = ctx[f];
-    ctx[f] = (e) => { reset(); return raw(e); };
+    // an execution boundary auto-flushes in real Apps Script
+    ctx[f] = (e) => { reset(); tally.unflushed = false; return raw(e); };
   });
   ctx.__ss = ss;  // the fake spreadsheet, for asserting on sheet contents
   ctx.__tally = tally;  // reads/writes/opens, for the budget quals

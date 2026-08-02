@@ -892,13 +892,16 @@ const budget = (req, reads, writes, label) => {
        + ' reads, ' + (t.writes - w0) + '/' + writes + ' writes, '
        + (t.opens - o0) + '/1 opens');
 };
-budget({ action: 'state', aname: 'thrift' }, 6, 0, 'a state read');
+// The batch era (dreev 2026-08-02): loadAll fetches every tab in ONE
+// batchGet, headers checked from the same payload — so a read costs
+// 1, and a write-then-read action costs 2 (the post-write refresh)
+budget({ action: 'state', aname: 'thrift' }, 1, 0, 'a state read');
 budget({ action: 'add', aname: 'thrift', uname: 'cee',
-         pid: pid('thrift', 'cee') }, 8, 2,
+         pid: pid('thrift', 'cee') }, 2, 2,
   'seating a participant');
 budget({ action: 'bid', aname: 'thrift', uname: 'ann',
          pid: pid('thrift', 'ann'), bid: 'a4',
-         deviceID: 'dev-thrift' }, 10, 5,
+         deviceID: 'dev-thrift' }, 2, 5,
   're-bidding (the hot path, a pile of three behind it)');
 
 // 15. THE ARMOR (gridScience, 2026-07-18: rows born when appendRow

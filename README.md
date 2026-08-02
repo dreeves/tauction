@@ -50,3 +50,7 @@ Previously for the golems:
 Next for the golems:
 
 1. Let's use the same pencil icon discourse.org does. It's a little bigger and clearer.
+
+1. When not on wifi it seems everyone's phone claims to be in San Jose or Sacramento or Seattle (in reality we were all in Portland). Why is that and is there anything in the device data that can tell us not to trust the location?
+
+1. Can we make this... brighter, cleaner, more video-game-ish? Or what about a 1980s Apple II aesthetic? Can you go down some rabbit holes and come up with something sock-off-knocking?

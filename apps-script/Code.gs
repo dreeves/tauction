@@ -203,31 +203,25 @@ const TAB_WARNINGS =
 // Per-execution memos (globals reset each Apps Script execution).
 // Every Sheets service call costs ~50-150ms and the script lock is
 // held for the whole parade, so the call count IS the latency: one
-// spreadsheet handle, one header-checked Sheet per tab, one data
-// read per tab per request. Within a locked execution nothing else
-// can write the sheet, so a first read is good for the whole
-// request; wrote() drops a tab's records after a value write. The
-// budget quals pin the per-action call counts.
+// spreadsheet handle, one Sheet handle per tab, and ONE values read
+// for the whole database (loadAll's batchGet). Within a locked
+// execution nothing else can write the sheet, so a batch is good
+// until wrote() drops a tab's records after a value write — the next
+// load() then re-batches everything, same one-call price. The budget
+// quals pin the per-action call counts.
 let ssMemo = null;
 const sheetMemo = {};
 const rowsMemo = {};
 
+// The write-side Sheet handle; creates (and armors) a missing tab.
+// Header verification lives in loadAll, read-side, free from the
+// batch payload.
 function tab(kind) {
   if (sheetMemo[kind] !== undefined) return sheetMemo[kind];
   if (ssMemo === null) ssMemo = SpreadsheetApp.openById(SHEET_ID);
   const headers = TABS[kind];
   let sh = ssMemo.getSheetByName(kind);
-  if (sh) {
-    // The header row IS the schema. Everything reads positionally, so
-    // a drifted tab would misread every row — refuse loudly
-    // instead. Only the first headers.length cells count: columns
-    // appended to the right (and the cheater banner) are legal.
-    const got = sh.getRange(1, 1, 1, headers.length).getValues()[0]
-      .map(String);
-    if (!headers.every((h, i) => got[i] === h)) {
-      throw schemaDriftCopy(kind, got.join(', '), headers.join(', '));
-    }
-  } else {
+  if (!sh) {
     sh = ssMemo.insertSheet(kind);
     // Pre-grow the grid and lay the plain-text armor down whole (see
     // ARMOR_ROWS): newborn grid rows don't inherit it, so it must be
@@ -250,19 +244,48 @@ function tab(kind) {
   return sh;
 }
 
+// ONE metered read for the whole database: every tab's values in a
+// single batchGet (Advanced Sheets Service, enabled in the
+// manifest), refreshing every tab's records together. The header row
+// IS the schema, checked here from the same payload: everything
+// reads positionally, so a drifted tab would misread every row —
+// refuse loudly instead. Only the first headers.length cells count:
+// columns appended to the right (and the cheater banner) are legal.
+// (The values API trims trailing empty cells, hence the undefined
+// guard: a short row's missing cells are ''.)
+function loadAll() {
+  Object.keys(TABS).forEach(tab);  // every tab exists before we ask
+  // SpreadsheetApp writes are BUFFERED, and the values API reads the
+  // backend over REST where unflushed writes don't exist yet (the
+  // live smoke caught a fresh claim missing from its own response).
+  // The flush is the write barrier; the fake refuses a batchGet
+  // without it.
+  SpreadsheetApp.flush();
+  const got = Sheets.Spreadsheets.Values.batchGet(SHEET_ID,
+    { ranges: Object.keys(TABS) }).valueRanges;
+  Object.keys(TABS).forEach((kind, i) => {
+    const rows = got[i].values || [[]];  // a blank tab omits values
+    const headers = TABS[kind];
+    const head = (rows[0] || []).slice(0, headers.length).map(String);
+    if (!headers.every((h, j) => head[j] === h)) {
+      throw schemaDriftCopy(kind, head.join(', '),
+                            headers.join(', '));
+    }
+    rowsMemo[kind] = rows.slice(1).map(r => {
+      const rec = {};
+      headers.forEach((h, c) => {
+        rec[h] = String(r[c] === undefined ? '' : r[c]);
+      });
+      return rec;
+    });
+  });
+}
+
 // A tab's data rows as records — each row zipped with the schema,
 // every value a string; columns appended past the schema are legal
-// and simply invisible here. One Sheets read per tab per execution.
+// and simply invisible here.
 function load(kind) {
-  if (rowsMemo[kind] === undefined) {
-    const head = TABS[kind];
-    rowsMemo[kind] = tab(kind).getDataRange().getValues().slice(1)
-      .map(r => {
-        const rec = {};
-        head.forEach((h, c) => { rec[h] = String(r[c]); });
-        return rec;
-      });
-  }
+  if (rowsMemo[kind] === undefined) loadAll();
   return rowsMemo[kind];
 }
 
