@@ -39,7 +39,7 @@ We refer to the auction description internally as the blurb.
 
 ---
 
-Previously for the golems:
+Previously:
 
 1. I don't like how an unsubmitted bid gets completely lost if you claim another participant as you.
 
@@ -47,9 +47,9 @@ Previously for the golems:
 
 3. Remove all the path dependence / historical documenation from the code comments. If a bug or whatever is fixed, we don't need the history.
 
-Next for the golems:
+Next:
 
-1. Let's use the same pencil icon discourse.org does. It's a little bigger and clearer.
+1. Database migration
 
 1. When not on wifi it seems everyone's phone claims to be in San Jose or Sacramento or Seattle (in reality we were all in Portland). Why is that and is there anything in the device data that can tell us not to trust the location?
 

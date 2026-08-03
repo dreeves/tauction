@@ -682,25 +682,29 @@ function setBlurbBase(v) {
 }
 
 // The pencil's ONE dresser: composes the version tooltip with the
-// editing-presence suffix when someone ELSE is at the desk (their
-// seat's uname — a rename-proof lookup — or someone-(rig) for a
-// walk-in), and toggles the scribbling class (accent ink +
-// write-wiggle). Own presence — this device, or this pid heartbeat-
-// ing from another rig — never scribbles at itself.
+// editing-presence suffix when anyone ELSE is at the desk (each
+// named by their seat's uname — a rename-proof lookup — or
+// someone-(rig) for a walk-in), and toggles the scribbling class
+// (accent ink + write-wiggle). Own presence — this device, or this
+// pid heartbeating from another rig — never scribbles at itself.
+// (state.editors is absent only across the deploy gap to an older
+// server; treated as an empty desk.)
 function syncPencil() {
   const v = Number($('descedit').dataset.base);
-  const ed = state === null ? undefined : state.editor;
-  const mine = ed !== undefined
-    && ((ed.pid !== '' && ed.pid === mypid()) || ed.device === DEVICE);
-  const show = ed !== undefined && !mine;
-  $('desc').classList.toggle('scribbling', show);
-  let tip = descVerTip(v);
-  if (show) {
-    const seat = seats.find((s) => s.pid === ed.pid);
-    tip += ' ' + editingBy(seat !== undefined ? seat.uname
-      : someoneOn(ed.blurb || mysteryDevice));
-  }
-  setTip($('desctoggle'), tip);
+  const eds = state === null || state.editors === undefined
+    ? [] : state.editors;
+  const rivals = eds.filter((e) =>
+    !((e.pid !== '' && e.pid === mypid()) || e.device === DEVICE));
+  $('desc').classList.toggle('scribbling', rivals.length > 0);
+  const names = rivals.map((e) => {
+    const seat = seats.find((s) => s.pid === e.pid);
+    return seat !== undefined ? seat.uname
+      : someoneOn(e.blurb || mysteryDevice);
+  });
+  setTip($('desctoggle'), descVerTip(v)
+    + (names.length === 0 ? ''
+       : ' ' + (names.length === 1 ? editingBy(names[0])
+                                   : editingByMany(names))));
 }
 
 /* The editing-presence heartbeat (dreev 2026-07-31): while THIS

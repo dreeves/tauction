@@ -12,22 +12,15 @@ const SHEET_ID = '1hclphAZ3zQIq14Nip1ZxTDSoE9ygXqAv27RwP1hiMA8';
 
 // Column vocabulary (dreev's): tini = time-initial (created), tmod =
 // time-modified, tfin = time-final (the reveal moment), tbid = a
-// submission's moment, deviceID = the claiming browser's anonymous
-// uuid, deviceBlurb = its self-description ("a Mac (Chrome)").
+// submission's moment, deviceID = a browser's anonymous uuid.
 //
 // THE PID: a person id, a uuid minted client-side at add-time.
 // The pid IS the identity — seats, bids, claims, and the client's
 // memory all key on it — and the uname is just its display label, so
 // renames are one-cell label edits: no bid re-keying, no client
 // rename transactions, no orphaned identities.
-// tedit + editor* are the blurb's EDITING-PRESENCE slot (one per
-// auction): tedit stamps the latest heartbeat from an open editor,
-// editorPid names the seated editor ('' for a walk-in), and
-// editorDevice/editorBlurb carry the editing browser's identity and
-// self-description. Ephemeral by TTL — see noteEditing.
 const AUCTIONS_HEAD = ['aname', 'tini', 'tmod', 'tfin', 'blurb',
-                       'blurbver', 'tedit', 'editorPid',
-                       'editorDevice', 'editorBlurb'];
+                       'blurbver'];
 // The bids tab is an append-only LOG: every submission is its own
 // row, nothing is ever overwritten, and the payload's tini/tmod/
 // bcount are DERIVED
@@ -39,7 +32,20 @@ const BIDS_HEAD     = ['aname', 'pid', 'bid', 'tbid'];
 // bidless by definition). Future per-person
 // attributes (weights/shares) append as columns to the right.
 const USERS_HEAD    = ['aname', 'pid', 'uname', 'deviceID',
-                       'deviceBlurb', 'tini', 'tmod'];
+                       'tini', 'tmod'];
+
+// THE DEVICES TABLE (dreev 2026-08-02): one row per device ever
+// seen, the rig self-description's ONE home ("Mac Chrome in
+// Portland, OR"). Everything else stores deviceID REFERENCES and
+// getState joins. Rows are written devices-FIRST — touchDevice
+// before any write that references the device — so a dangling
+// reference can never be minted.
+// editingAname/editingPid/tedit are the device's EDITING-PRESENCE
+// slot (per-device, so a whole desk crowd can show at once): which
+// auction's blurb this device has open, as whom ('' = walk-in), and
+// the latest heartbeat. Ephemeral by TTL — see noteEditing.
+const DEVICES_HEAD  = ['deviceID', 'blurb', 'tini', 'tmod',
+                       'editingAname', 'editingPid', 'tedit'];
 
 // Every cell that will ever hold data is armored plain-text at tab
 // creation: Sheets otherwise reinterprets writes ("007" -> 7, "3/4"
@@ -195,7 +201,7 @@ function cleanBlurb(s) {
    ===================================================================== */
 
 const TABS = { auctions: AUCTIONS_HEAD, bids: BIDS_HEAD,
-               users: USERS_HEAD };
+               users: USERS_HEAD, devices: DEVICES_HEAD };
 // the bids tab is where peeking would spoil the sealing; warn there only
 const TAB_WARNINGS =
   { bids: "IT'S CHEATING TO LOOK HERE DURING AN AUCTION" };
@@ -392,14 +398,19 @@ function getState(aname) {
   // someone holds. Every seat is live — removal deletes, and bidders
   // cannot be removed — so the seats ARE the roster that gates the
   // reveal.
+  // the devices join: deviceID -> its one self-description row
+  const rig = Object.create(null);
+  load('devices').forEach(r => {
+    if (r.blurb) rig[r.deviceID] = r.blurb;
+  });
   const seats = [];
   const claims = Object.create(null);
-  const blurbs = Object.create(null);  // pid -> the holder's self-reported rig
+  const blurbs = Object.create(null);  // pid -> the holder's rig
   load('users').forEach(r => {
     if (r.aname !== aname) return;
     seats.push({ pid: r.pid, uname: r.uname });
     if (r.deviceID) claims[r.pid] = r.deviceID;
-    if (r.deviceID && r.deviceBlurb) blurbs[r.pid] = r.deviceBlurb;
+    if (r.deviceID && rig[r.deviceID]) blurbs[r.pid] = rig[r.deviceID];
   });
   const roster = seats;
 
@@ -419,14 +430,18 @@ function getState(aname) {
     throw 'auctions.blurbver corrupt for ' + aname + ': '
       + JSON.stringify(arow && arow.blurbver);
   }
-  // the editing-presence slot, shown only while the last heartbeat
-  // is fresh (both stamps are this server's clock — no client skew);
-  // a vanished editor ages out right here, no sweeper needed
-  const editor = arow && arow.tedit
-    && Date.now() - new Date(arow.tedit).getTime() < EDITOR_TTL_MS
-      ? { pid: arow.editorPid, device: arow.editorDevice,
-          blurb: arow.editorBlurb }
-      : undefined;
+  // the desk crowd: every device whose editing slot points here and
+  // whose last heartbeat is fresh (both stamps are this server's
+  // clock — no skew); a vanished editor ages out right here, no
+  // sweeper needed
+  const editors = [];
+  load('devices').forEach(r => {
+    if (r.editingAname === aname && r.tedit
+        && Date.now() - new Date(r.tedit).getTime() < EDITOR_TTL_MS) {
+      editors.push({ pid: r.editingPid, device: r.deviceID,
+                     blurb: r.blurb });
+    }
+  });
 
   // A person's standing bid is their LATEST log row at or before tfin
   // (<=, dreev's call: a bid stamped the gavel's own millisecond made
@@ -461,7 +476,7 @@ function getState(aname) {
   return {
     aname: aname, exists: arow !== undefined,
     seats: seats, bidders: bidders, revealed: revealed,
-    tfin: tfin, blurb: blurb, blurbver: blurbver, editor: editor,
+    tfin: tfin, blurb: blurb, blurbver: blurbver, editors: editors,
     claims: claims, blurbs: blurbs,
     bids: revealed ? people.map(a => ({ pid: a.pid, bid: a.bid }))
                    : null,
@@ -526,8 +541,7 @@ function ensureSeat(aname, pid, uname) {
   const now = new Date().toISOString();
   if (seatIndex(aname, pid) !== -1) return;
   insert('users', { aname: aname, pid: pid, uname: uname,
-                    deviceID: '', deviceBlurb: '', tini: now,
-                    tmod: now });
+                    deviceID: '', tini: now, tmod: now });
 }
 
 // The auction blurb: freeform markdown, editable by anyone at any
@@ -564,34 +578,34 @@ function describe(req) {
   return getState(aname);
 }
 
-// The blurb editor's presence heartbeat (dreev 2026-07-31): while an
-// editor is open its client pings every ~10s and getState shows the
-// editor to everyone while the last ping is fresh (EDITOR_TTL_MS
-// covers two missed beats plus slack — a closed tab simply ages
-// out). ONE slot per auction, last heartbeat wins, honor system,
-// same spirit as claims. Two disclosed ifs: a rowless (virgin)
-// auction takes no presence — an editor-open is not a commitment,
-// and virgin auctions stay virgin (the mutlessvirgin law) — and a
-// stop clears only the caller's own presence, so a raced DISCARD
-// can't erase a live rival. The gavel doesn't apply: the blurb is
-// editable post-close, so its presence rides the same exemption.
+// The blurb editor's presence heartbeat (dreev 2026-07-31; per-
+// device rows 2026-08-02): while an editor is open its client pings
+// every ~10s into its OWN devices row, and getState shows every
+// editor whose last ping is fresh (EDITOR_TTL_MS covers two missed
+// beats plus slack — a closed tab simply ages out). One slot per
+// DEVICE — the whole desk crowd shows at once, and a foreign clear
+// is structurally impossible, since a device only ever writes its
+// own row. Disclosed if: a stop clears the slot only while it still
+// points at this auction (a newer beat for another auction owns the
+// row now). The gavel doesn't apply: the blurb is editable
+// post-close, so its presence rides the same exemption; and the
+// auctions tab is never touched, so virgin auctions take presence
+// and stay virgin.
 const EDITOR_TTL_MS = 25000;
 function noteEditing(req) {
   const aname = cleanAname(req.aname);
   const pid = req.pid ? cleanPid(req.pid) : '';  // '' = unseated
   const deviceID = cleanDeviceID(req.deviceID);
+  if (!deviceID) throw { code: 'editingNeedsDevice' };
   const deviceBlurb = cleanBlurb(req.deviceBlurb);
-  const i = load('auctions').findIndex(r => r.aname === aname);
-  if (i !== -1) {
-    if (req.stop) {
-      if (load('auctions')[i].editorDevice === deviceID) {
-        patch('auctions', i, { tedit: '' });
-      }
-    } else {
-      patch('auctions', i, { tedit: new Date().toISOString(),
-                             editorPid: pid, editorDevice: deviceID,
-                             editorBlurb: deviceBlurb });
+  const i = touchDevice(deviceID, deviceBlurb);  // devices first
+  if (req.stop) {
+    if (load('devices')[i].editingAname === aname) {
+      patch('devices', i, { tedit: '' });
     }
+  } else {
+    patch('devices', i, { editingAname: aname, editingPid: pid,
+                          tedit: new Date().toISOString() });
   }
   return getState(aname);
 }
@@ -679,8 +693,9 @@ function saveClaim(req) {
   if (getState(aname).revealed) throw { code: 'auctionClosed' };
   const deviceBlurb = cleanBlurb(req.deviceBlurb);
   if (seatIndex(aname, pid) === -1) throw { code: 'noSuchOne', pid: pid };
+  touchDevice(deviceID, deviceBlurb);  // devices first, always
   touchAuction(aname);
-  setDeviceID(aname, pid, deviceID, deviceBlurb);
+  setDeviceID(aname, pid, deviceID);
   return getState(aname);
 }
 
@@ -711,25 +726,46 @@ function deviceOf(aname, pid) {
   return i === -1 ? '' : load('users')[i].deviceID;
 }
 
-function setDeviceID(aname, pid, deviceID, blurb) {
+function setDeviceID(aname, pid, deviceID) {
   const now = new Date().toISOString();
   load('users').forEach((r, i) => {
     if (r.aname !== aname) return;
     if (r.pid === pid) {
-      patch('users', i, { deviceID: deviceID,
-                          deviceBlurb: blurb || '', tmod: now });
+      patch('users', i, { deviceID: deviceID, tmod: now });
     } else if (deviceID && r.deviceID === deviceID) {
-      patch('users', i, { deviceID: '', deviceBlurb: '', tmod: now });
+      patch('users', i, { deviceID: '', tmod: now });
     }
   });
 }
 
-// The holder's rig, RAW ('' when the claim carried no self-
-// description; the client's mystery-device fallback decorates it),
-// for the seat-taken refusal that names who beat you to it
+// Upsert the device's one row — devices FIRST, before any write that
+// references it (so a dangling reference is unmintable; a refusal
+// after it leaves at worst a harmless orphan row) — and return its
+// record index. Two disclosed ifs beyond the upsert itself: an
+// unchanged blurb costs no write, and a '' report never erases a
+// known blurb — ignorance is not news, the device didn't stop being
+// a Mac. '' deviceID (old clients, nobody) touches nothing: -1.
+function touchDevice(deviceID, blurb) {
+  if (!deviceID) return -1;
+  const now = new Date().toISOString();
+  const i = load('devices').findIndex(r => r.deviceID === deviceID);
+  if (i === -1) {
+    return insert('devices', { deviceID: deviceID, blurb: blurb,
+                               tini: now, tmod: now });
+  }
+  if (blurb && load('devices')[i].blurb !== blurb) {
+    patch('devices', i, { blurb: blurb, tmod: now });
+  }
+  return i;
+}
+
+// The holder's rig, RAW from its devices row ('' when the device
+// never described itself; the client's mystery-device fallback
+// decorates it), for the seat-taken refusal that names who beat you
 function holderBlurb(aname, pid) {
-  const i = seatIndex(aname, pid);
-  return i === -1 ? '' : load('users')[i].deviceBlurb;
+  const dev = load('devices')
+    .find(r => r.deviceID === deviceOf(aname, pid));
+  return dev === undefined ? '' : dev.blurb;
 }
 
 function placeBid(req) {
@@ -772,10 +808,11 @@ function placeBid(req) {
   // half-created seat)
   assertRoom('bids');
   if (seatIndex(aname, pid) === -1) assertRoom('users');
+  touchDevice(deviceID, deviceBlurb);  // devices first, always
   touchAuction(aname);
   ensureSeat(aname, pid, uname);
   if (deviceID) {
-    setDeviceID(aname, pid, deviceID, deviceBlurb);
+    setDeviceID(aname, pid, deviceID);
   }
 
   // every submission is its own log row; the read side derives the

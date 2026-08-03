@@ -110,6 +110,9 @@ const descVerTip = (v) => 'Auction description (v' + v + ')';
 // seated, else someoneOn(their device blurb, mysteryDevice-backed)
 const editingBy = (who) => '— currently being edited by ' + who;
 const someoneOn = (blurb) => 'someone (' + blurb + ')';
+// The following might be dumb if we don't have names for the people editing:
+const editingByMany = (whos) =>
+  '— currently being edited by {' + whos.join(', ') + '}';
 
 const startCopy = (aname) => aname === '' ? 'Create the auction'
                                           : 'Create the ' + aname + ' auction';
@@ -215,6 +218,7 @@ const plumbingRefusals = {
   noSuchOne: (e) => 'ERROR1519: No such participant: ' + e.pid,
   claimNeedsDevice: () => 'ERROR1520: claim requires a deviceID',
   releaseNeedsDevice: () => 'ERROR1521: release requires a deviceID',
+  editingNeedsDevice: () => 'ERROR1525: editing requires a deviceID',
   notYourSeat: () => 'ERROR1522: Disclaiming yourself as a participant failed',
   emptyBid: () => 'ERROR1523: Bid is empty',
   // removing someone who has already bid is refused (reachable only

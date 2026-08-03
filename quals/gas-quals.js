@@ -56,6 +56,7 @@ const COPY = require('vm')
 // truncate around the row's true edge, wherever it grows to
 const AHEAD_LEN = require('vm')
   .runInContext('AUCTIONS_HEAD.length', ctx);
+const UHEAD = require('vm').runInContext('USERS_HEAD', ctx);
 // A refusal's code (undefined on success): the one-liner for
 // asserting WHICH refusal came back. Feeds the coverage ledger too —
 // everything it reads is a real response
@@ -554,7 +555,7 @@ ok(ss.sheets['users'].data.filter(r => r[0] === 'higgs' && r[1] === annP)
      .length === 1, 'claims live on the seat row: upsert, not append');
 st = call({ action: 'bid', aname: 'higgs', uname: 'ann', pid: annP,
             bid: 'a boson', deviceID: 'dev-3' });
-ok(code(st) === 'bidSeatHeld' && st.error.blurb === ''
+ok(code(st) === 'bidSeatHeld' && st.error.blurb === 'a Mac (Chrome)'
    && st.error.uname === 'ann'
    && call({ action: 'state', aname: 'higgs' }).bidders.length === 0,
    "a bid can't hijack a held seat: refused, naming the holder's rig"
@@ -767,8 +768,8 @@ uhead[3] = 'device';  // the pre-rename column name
 resetTabMemo();
 st = call({ action: 'state', aname: 'tau' });
 ok(String(st.error) === COPY.schemaDriftCopy('users',
-     'aname, pid, uname, device, deviceBlurb, tini, tmod',
-     'aname, pid, uname, deviceID, deviceBlurb, tini, tmod'),
+     UHEAD.map((h, i) => i === 3 ? 'device' : h).join(', '),
+     UHEAD.join(', ')),
    'a drifted tab refuses reads, naming the tab and both layouts');
 st = call({ action: 'bid', aname: 'tau3', uname: 'zoe',
             pid: pid('tau3', 'zoe'), bid: 'nope' });
@@ -851,7 +852,7 @@ FROZEN.forEach((a) => {
 //     covenant-breaking state is REFUSED loudly, never rendered as
 //     nonsense (replicata: test0916 — revealed, roster [alice],
 //     no bids anywhere)
-ss.sheets['users'].appendRow(['tau', 'pid-tau-ghost', 'ghost', '', '',
+ss.sheets['users'].appendRow(['tau', 'pid-tau-ghost', 'ghost', '',
   '2026-07-18T00:00:00.000Z', '2026-07-18T00:00:00.000Z']);
 st = call({ action: 'state', aname: 'tau' });
 ok(String(st.error).includes('covenant'),
@@ -1089,55 +1090,121 @@ ok(sameMs18a.blurbver === 1 && sameMs18b.blurbver === 2
    'same-millisecond blurb saves still get distinct CAS identities:'
    + ' the counter never consults the clock');
 
-// 18c. EDITING PRESENCE (dreev 2026-07-31): while a blurb editor is
-//      open its client heartbeats, and every state carries who's at
-//      the desk — pid for the seated, deviceBlurb for walk-ins — in
-//      ONE slot, last heartbeat wins, honor system. A vanished
-//      editor (closed tab) ages out at the TTL; an explicit stop
-//      (SAVE/DISCARD) clears at once, but only the holder's own.
+// 18c. EDITING PRESENCE (dreev 2026-07-31; PER-DEVICE ROWS
+//      2026-08-02): an open blurb editor heartbeats into ITS OWN
+//      devices row (editingAname/editingPid/tedit), so state.editors
+//      carries the whole desk crowd — every fresh editor, not a
+//      last-write-wins slot. A vanished editor ages out at the TTL;
+//      SAVE/DISCARD clear only the device's own slot (a foreign
+//      clear is structurally impossible: you only write your row).
 call({ action: 'add', aname: 'nib', uname: 'ann', pid: pid('nib', 'ann') });
 st = call({ action: 'editing', aname: 'nib', pid: pid('nib', 'ann'),
             deviceID: 'dev-nib-a', deviceBlurb: 'Mac Chrome' });
-ok(!st.error && st.editor !== undefined
-   && st.editor.pid === pid('nib', 'ann')
-   && st.editor.device === 'dev-nib-a'
-   && st.editor.blurb === 'Mac Chrome',
+ok(!st.error && st.editors.length === 1
+   && st.editors[0].pid === pid('nib', 'ann')
+   && st.editors[0].device === 'dev-nib-a'
+   && st.editors[0].blurb === 'Mac Chrome',
    'an editing heartbeat surfaces the editor in the state payload');
 st = call({ action: 'editing', aname: 'nib', deviceID: 'dev-nib-w',
             deviceBlurb: 'iPhone Safari' });
-ok(!st.error && st.editor !== undefined && st.editor.pid === ''
-   && st.editor.device === 'dev-nib-w'
-   && st.editor.blurb === 'iPhone Safari',
-   'an unseated walk-in heartbeats with a blurb only, and the single'
-   + ' slot goes to the last heartbeat');
+ok(!st.error && st.editors.length === 2
+   && st.editors.some((e) => e.pid === '' && e.device === 'dev-nib-w'
+        && e.blurb === 'iPhone Safari'),
+   'a second (walk-in) editor JOINS the crowd: per-device rows,'
+   + ' nobody clobbers anybody');
 st = call({ action: 'editing', aname: 'nib', deviceID: 'dev-nib-a',
             stop: true });
-ok(!st.error && st.editor !== undefined
-   && st.editor.device === 'dev-nib-w',
-   "a FOREIGN stop doesn't clear a live rival's presence");
+ok(!st.error && st.editors.length === 1
+   && st.editors[0].device === 'dev-nib-w',
+   "a stop clears only the stopping device's own slot");
 st = call({ action: 'editing', aname: 'nib', deviceID: 'dev-nib-w',
             stop: true });
-ok(!st.error && st.editor === undefined,
-   'the holder stopping (SAVE or DISCARD sends it) clears the'
-   + ' presence at once');
+ok(!st.error && st.editors.length === 0,
+   'the last editor stopping empties the desk');
 call({ action: 'editing', aname: 'nib', deviceID: 'dev-nib-w',
        deviceBlurb: 'iPhone Safari' });
 require('vm').runInContext(
   'var NativeDateNib = Date;'
   + ' Date = class extends NativeDateNib {'
   + ' static now() { return NativeDateNib.now() + 26000; } };', ctx);
-ok(call({ action: 'state', aname: 'nib' }).editor === undefined,
+ok(call({ action: 'state', aname: 'nib' }).editors.length === 0,
    'a vanished editor ages out at the TTL: 26s of silence and the'
    + ' pencil rests');
 require('vm').runInContext('Date = NativeDateNib;', ctx);
-call({ action: 'editing', aname: 'nib', deviceID: 'dev-nib-w',
-       stop: true });  // scene hygiene: leave no residual presence
+st = call({ action: 'editing', aname: 'nib2x', deviceID: 'dev-nib-w' });
+ok(call({ action: 'state', aname: 'nib' }).editors.length === 0
+   && st.editors.length === 1,
+   "ONE slot per device: editing elsewhere moves the device's"
+   + ' presence (the two-tabs-one-device trade, chosen)');
+call({ action: 'editing', aname: 'nib2x', deviceID: 'dev-nib-w',
+       stop: true });
+// the auction-slot special case DISSOLVED with per-device rows: a
+// VIRGIN auction takes presence too (the slot never touches the
+// auctions tab), and stays virgin doing it
+st = call({ action: 'editing', aname: 'virginib',
+            deviceID: 'dev-nib-w', deviceBlurb: 'iPhone Safari' });
+ok(!st.error && st.editors.length === 1 && st.exists === false
+   && !ss.sheets['auctions'].data.some((r) => r[0] === 'virginib'),
+   'presence works on a VIRGIN auction and mints no auctions row:'
+   + ' the slot lives on the device');
+call({ action: 'editing', aname: 'virginib', deviceID: 'dev-nib-w',
+       stop: true });
 st = call({ action: 'editing', aname: 'tau', deviceID: 'd-z',
             deviceBlurb: 'late rig' });
-ok(!st.error && st.editor !== undefined && st.editor.pid === '',
+ok(!st.error && st.editors.length === 1 && st.editors[0].pid === '',
    "editing presence works on a CLOSED auction too (the blurb is the"
    + ' one field the gavel never froze)');
 call({ action: 'editing', aname: 'tau', deviceID: 'd-z', stop: true });
+ok(code(call({ action: 'editing', aname: 'tau' }))
+     === 'editingNeedsDevice',
+   'a device-less beat is refused like its claim/release siblings:'
+   + ' presence needs to say WHOSE');
+
+// 18d. THE DEVICES TABLE (dreev 2026-08-02): one row per device —
+//      deviceID, blurb, tini, tmod — the rig description's ONE home;
+//      users and auctions carry deviceID REFERENCES only and
+//      getState joins. Rows are written devices-FIRST so a dangling
+//      reference can never be minted; upserts fire only on change,
+//      so the steady state costs zero extra writes; and a '' report
+//      never erases a known blurb (ignorance is not news — the
+//      device didn't stop being a Mac).
+call({ action: 'add', aname: 'rig', uname: 'ada', pid: pid('rig', 'ada') });
+st = call({ action: 'claim', aname: 'rig', pid: pid('rig', 'ada'),
+            deviceID: 'dev-rig-1', deviceBlurb: 'Mac Chrome' });
+ok(!st.error && st.blurbs[pid('rig', 'ada')] === 'Mac Chrome'
+   && ss.sheets['devices'].data.some((r) =>
+        r[0] === 'dev-rig-1' && r[1] === 'Mac Chrome'),
+   'a claim mints the devices row and the blurbs map joins from it');
+const devWrites = ctx.__tally.writes;
+st = call({ action: 'claim', aname: 'rig', pid: pid('rig', 'ada'),
+            deviceID: 'dev-rig-1', deviceBlurb: 'Mac Chrome' });
+ok(!st.error
+   && ss.sheets['devices'].data.filter((r) => r[0] === 'dev-rig-1')
+        .length === 1
+   && ctx.__tally.writes - devWrites <= 2,
+   're-claiming with an unchanged blurb rewrites nothing in devices:'
+   + ' upsert only on change');
+st = call({ action: 'claim', aname: 'rig', pid: pid('rig', 'ada'),
+            deviceID: 'dev-rig-1',
+            deviceBlurb: 'Mac Chrome in Portland, OR' });
+ok(!st.error
+   && st.blurbs[pid('rig', 'ada')] === 'Mac Chrome in Portland, OR',
+   "a changed blurb (the geo finally landed) updates the device's"
+   + ' one row');
+st = call({ action: 'claim', aname: 'rig', pid: pid('rig', 'ada'),
+            deviceID: 'dev-rig-1' });
+ok(!st.error
+   && st.blurbs[pid('rig', 'ada')] === 'Mac Chrome in Portland, OR',
+   "a blurbless claim never erases the known rig: '' is ignorance,"
+   + ' not news');
+call({ action: 'add', aname: 'rig2', uname: 'ada',
+       pid: pid('rig2', 'ada') });
+st = call({ action: 'claim', aname: 'rig2', pid: pid('rig2', 'ada'),
+            deviceID: 'dev-rig-1' });
+ok(!st.error && st.blurbs[pid('rig2', 'ada')]
+     === 'Mac Chrome in Portland, OR',
+   'the rig is known ACROSS auctions: one device, one row, every'
+   + ' claimed seat wears it');
 
 // 19. REFUSAL COVERAGE, closed by construction: every code Code.gs
 //     can throw must have been provoked from the real API at least
@@ -1170,6 +1237,23 @@ call({ action: 'editing', aname: 'tau', deviceID: 'd-z', stop: true });
      'every assert-family diagnostic is registered and provoked ('
      + sites + ' non-code throw sites; armorFull throws from two);'
      + ' unprovoked: [' + unprovoked.join(' | ') + ']');
+}
+
+// 21. REFERENCE INTEGRITY, swept over every scenario above: each
+//     nonempty deviceID the sheet references — seat claims,
+//     presence slots — must have its devices row. Devices-first
+//     write ordering makes a dangling reference unmintable in code;
+//     this sweep proves it empirically across the whole suite's
+//     traffic.
+{
+  const known = new Set(ss.sheets['devices'].data.slice(1)
+    .map((r) => r[0]));
+  const refs = ss.sheets['users'].data.slice(1).map((r) => r[3])
+    .filter((d) => d !== '' && d !== undefined);
+  const dangling = [...new Set(refs.filter((d) => !known.has(d)))];
+  ok(dangling.length === 0,
+     'every referenced deviceID has its devices row — dangling: ['
+     + dangling.sort().join(' ') + ']');
 }
 
 console.log('gas-quals: all ' + passed + ' assertions passed');

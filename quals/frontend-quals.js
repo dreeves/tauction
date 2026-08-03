@@ -129,7 +129,7 @@ const STR = new Function(STRINGLES
   + ' tabTitle, saveCopy, addCopy, submitCopy, tooLateGoTip, startCopy,'
   + ' discardCopy, warTitle, keepTheirsCopy, overwriteCopy,'
   + ' anameTooLongBanner, unameTooLongBanner, blurbTooLongBanner,'
-  + ' revealCopy, descVerTip, editingBy, someoneOn,'
+  + ' revealCopy, descVerTip, editingBy, editingByMany, someoneOn,'
   + ' simulEditsBanner, refusalCopy,'
   + ' gameRefusals, plumbingRefusals };')();
 const STAMP = STR.stampCopy;
@@ -3550,6 +3550,26 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     ok(vwDoc.getElementById('desctoggle').dataset.tip
          === STR.descVerTip(0) + ' ' + STR.editingBy('quilla'),
        'a seated editor is named by their uname');
+    // ...a rename-proof name: the tip reads the seat, not a snapshot
+    gas.handle({ action: 'rename', aname: 'quill',
+                 pid: 'pid-quill-quilla', to: 'quillb' });
+    dVw.window.__intervals.find((i) => i.ms === 5000).fn();
+    await until(() => vwDoc.getElementById('desctoggle').dataset.tip
+      === STR.descVerTip(0) + ' ' + STR.editingBy('quillb'));
+    ok(true, "renaming the editor retitles the pencil's tip live");
+    // TWO at the desk: per-device presence makes the crowd visible,
+    // in the plural copy (Latin TODO until dreev words it)
+    gas.handle({ action: 'editing', aname: 'quill',
+                 deviceID: 'rig-y', deviceBlurb: 'y rig' });
+    dVw.window.__intervals.find((i) => i.ms === 5000).fn();
+    await until(() => vwDoc.getElementById('desctoggle').dataset.tip
+      === STR.descVerTip(0) + ' '
+        + STR.editingByMany(['quillb', STR.someoneOn('y rig')]));
+    ok(vwDoc.getElementById('desc').classList.contains('scribbling'),
+       'a second editor pluralizes the tip, everyone named, pencil'
+       + ' still scribbling');
+    gas.handle({ action: 'editing', aname: 'quill', deviceID: 'rig-y',
+                 stop: true });
     gas.handle({ action: 'editing', aname: 'quill', deviceID: 'rig-x',
                  stop: true });  // scene hygiene
     // SAVE sends the stop too (and the save itself rides first)

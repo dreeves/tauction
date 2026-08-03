@@ -152,9 +152,10 @@ label hanging off a pid (see the shipped pid spec below).
 
 | tab | columns |
 |---|---|
-| `auctions` | aname, tini, tmod, tfin, blurb, blurbver, tedit, editorPid, editorDevice, editorBlurb |
-| `users` | aname, pid, uname, deviceID, deviceBlurb, tini, tmod |
+| `auctions` | aname, tini, tmod, tfin, blurb, blurbver |
+| `users` | aname, pid, uname, deviceID, tini, tmod |
 | `bids` | aname, pid, bid, tbid |
+| `devices` | deviceID, blurb, tini, tmod, editingAname, editingPid, tedit |
 
 The bids tab is an append-only LOG (2026-07-17): every submission is
 its own row, nothing is overwritten, and a person's standing bid is
@@ -164,14 +165,17 @@ carries `tini`/`tmod`/`bcount` per bidder — derived at read time
 
 Column vocabulary: `tini` = time-initial (created), `tmod` =
 time-modified, `tfin` = time-final (the reveal moment, ISO), `tbid` =
-a bid submission's moment, `deviceID` = the claiming browser's anonymous
-uuid ('' when unclaimed), `deviceBlurb` = that browser's self-reported
-description ("Mac Chrome en-US in Portland, OR"), `blurb` = the
-auction's freeform markdown description, `blurbver` = its
-plain-counter version (0 = virgin, +1 per committed save; the
-compare-and-swap token for concurrent edits — superseded `tblurb`),
-`tedit` + `editorPid`/`editorDevice`/`editorBlurb` = the blurb's one
-editing-presence slot (see Behavior).
+a bid submission's moment, `deviceID` = a browser's anonymous uuid
+('' when a seat is unclaimed), `blurb` on auctions = the freeform
+markdown description with `blurbver` its plain-counter version (0 =
+virgin, +1 per committed save; the compare-and-swap token — 
+superseded `tblurb`), `blurb` on devices = that browser's
+self-reported rig ("Mac Chrome en-US in Portland, OR"), the ONE home
+every claimed-by tooltip and refusal joins from (2026-08-02,
+superseding per-seat `deviceBlurb` snapshots; devices rows are
+written FIRST, so a deviceID reference can never dangle), and
+`editingAname`/`editingPid`/`tedit` = the device's editing-presence
+slot (see Behavior).
 
 A users row IS a roster seat (insertion order = display order). Roster
 edits are row-level `add`/`remove` actions — commutative, so concurrent
@@ -196,17 +200,21 @@ positional reads tolerate.
   kinds, 160 for bids, 2000 for the blurb — live red ring, local
   refusal in the same stringles words the server's refusal code
   renders to.
-- Editing presence (dreev 2026-07-31): an open blurb editor
-  heartbeats (the `editing` action) every 10s — skipping beats while
-  its tab is hidden — into the auctions row's ONE editor slot, fresh
-  for 25s (server clock both ends). Every state names the fresh
-  editor, and other pages' pencil (discourse.org's, vendored FA6 SVG)
-  scribbles: accent ink, write-wiggle, tooltip suffixed with dreev's
-  currently-being-edited-by copy (seat uname, else someone-(rig)).
-  SAVE and DISCARD send the stop (clearing only the caller's own
-  slot); a closed tab ages out; a VIRGIN auction takes no presence
-  (an editor-open is not a commitment). Honor system, last heartbeat
-  wins, like claims.
+- Editing presence (dreev 2026-07-31; per-device rows 08-02): an
+  open blurb editor heartbeats (the `editing` action) every 10s —
+  skipping beats while its tab is hidden — into its own devices row,
+  fresh for 25s (server clock both ends). Every state carries
+  `editors`, the whole desk crowd, and other pages' pencil
+  (discourse.org's, vendored FA6 SVG) scribbles: accent ink,
+  write-wiggle, tooltip suffixed with dreev's
+  currently-being-edited-by copy (seat uname, else someone-(rig));
+  two-plus editors use the plural copy (Latin TODO awaiting dreev's
+  words). SAVE and DISCARD send the stop, which clears only the
+  device's own slot (a foreign clear is structurally impossible);
+  a closed tab ages out; virgin auctions take presence and stay
+  virgin (the slot never touches the auctions tab). One slot per
+  DEVICE: the same browser editing two auctions shows only its
+  latest — the chosen two-tabs trade. Honor system throughout.
 - Every control is a tab stop (2026-07-27, reversing the 07-16
   tab law: keyboard users must be able to claim/remove/reveal).
   Pointer clicks blur buttons (tooltip hygiene); keyboard clicks
