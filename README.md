@@ -15,6 +15,39 @@ Programmatic writes require oAuth.
 
 There's a bunch of setup info and deploy instructions currently in a black hole of AI-generated text at the bottom of [AGENTS.md](AGENTS.md).
 
+### Database Schema
+
+AUCTIONS
+* slug -- the name of the auction, and primary key [previously aname]
+* tini -- timestamp that the auction was created aka created-at
+* tmod -- timestamp that the auction was most recently modified aka modified-at [including blurb edits?]
+* tfin -- timestamp that the auction closed
+* blurb -- auction description that anyone can edit
+* bver -- blurb version number (initially 0) incremented on each edit [previously blurbver]
+
+DEVICES
+* devid -- primary key computed by the client
+* userid -- the user using this device
+* tini -- created-at timestamp
+* tmod -- modified-at timestamp
+* blurb? copy of the blurb from the auctions table?
+* slug?
+* edit timestamp?
+
+USERS
+* userid -- primary key
+* uname -- username and display name
+* devid -- the most recent device this user used
+* tini -- created-at timestamp
+* tmod -- modified-at timestamp
+* slug -- most recent auction this user participated in? [can someone participate in multiple auctions at once?]
+
+BIDS
+* slug -- the auction this bid was submitted in
+* userid -- the user submitting this bid [previously pid]
+* bid -- the exact string the user submitted as their bid
+* tbid -- the bid's timestamp; only the most recent for a given user/auction counts
+
 ### Spec for editing the auction description
 
 We refer to the auction description internally as the blurb.
