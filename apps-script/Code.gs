@@ -14,7 +14,7 @@ const SHEET_ID = '1hclphAZ3zQIq14Nip1ZxTDSoE9ygXqAv27RwP1hiMA8';
 // time-modified, tfin = time-final (the reveal moment), tbid = a
 // submission's moment, devid = a browser's anonymous uuid.
 //
-// THE PID: a person id, a uuid minted client-side at add-time.
+// THE USERID: a person id, a uuid minted client-side at add-time.
 // The userid IS the identity — seats, bids, claims, and the client's
 // memory all key on it — and the uname is just its display label, so
 // renames are one-cell label edits: no bid re-keying, no client
@@ -718,7 +718,7 @@ function saveClaim(req) {
   if (seatIndex(slug, userid) === -1) throw { code: 'noSuchOne', userid: userid };
   touchDevice(devid, rig);  // devices first, always
   ensureAuction(slug);
-  setDeviceID(slug, userid, devid);
+  setDevid(slug, userid, devid);
   return getState(slug);
 }
 
@@ -738,7 +738,7 @@ function releaseClaim(req) {
   // nothing, not even tmod
   if (held) {
     ensureAuction(slug);
-    setDeviceID(slug, userid, '');
+    setDevid(slug, userid, '');
   }
   return getState(slug);
 }
@@ -749,7 +749,7 @@ function deviceOf(slug, userid) {
   return i === -1 ? '' : load('seats')[i].devid;
 }
 
-function setDeviceID(slug, userid, devid) {
+function setDevid(slug, userid, devid) {
   const now = new Date().toISOString();
   load('seats').forEach((r, i) => {
     if (r.slug !== slug) return;
@@ -835,7 +835,7 @@ function placeBid(req) {
   ensureAuction(slug);
   ensureSeat(slug, userid, uname);
   if (devid) {
-    setDeviceID(slug, userid, devid);
+    setDevid(slug, userid, devid);
   }
 
   // every submission is its own log row; the read side derives the
