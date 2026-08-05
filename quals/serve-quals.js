@@ -54,7 +54,7 @@ function ok(cond, label) {
 
     let r = await fetch(BASE + '/');
     ok(r.status === 200, 'GET / is 200');
-    ok((await r.text()).includes('id="aname"'), 'GET / serves the app');
+    ok((await r.text()).includes('id="slug"'), 'GET / serves the app');
 
     r = await fetch(BASE + '/style.css');
     ok(r.status === 200, 'real files still served');
@@ -69,7 +69,7 @@ function ok(cond, label) {
        'GET /tau serves 404.html verbatim');
 
     r = await fetch(BASE + '/no/such/file.png');
-    ok(r.status === 404 && (await r.text()).includes('id="aname"'),
+    ok(r.status === 404 && (await r.text()).includes('id="slug"'),
        'arbitrary misses serve the app too');
 
     console.log('serve-quals: all ' + passed + ' assertions passed');

@@ -67,7 +67,7 @@ const waitingGlyph = '🔒';
 const yourMoveGlyph = '⭐';
 const readyGlyph = '🔓';
 const revealedGlyph = '🎉';
-const tabTitle = (glyph, aname) => glyph + ' ' + aname + ' · tauction';
+const tabTitle = (glyph, slug) => glyph + ' ' + slug + ' · tauction';
 
 // Rubber stamp copy for the reveal, plus confetti characters
 const stampCopy = 'VOILÀ';
@@ -114,8 +114,8 @@ const someoneOn = (blurb) => 'someone (' + blurb + ')';
 const editingByMany = (whos) =>
   '— currently being edited by {' + whos.join(', ') + '}';
 
-const startCopy = (aname) => aname === '' ? 'Create the auction'
-                                          : 'Create the ' + aname + ' auction';
+const startCopy = (slug) => slug === '' ? 'Create the auction'
+                                          : 'Create the ' + slug + ' auction';
 
 const tooLateGoTip = 'Auction closed — too late to submit a revised bid';
 
@@ -141,7 +141,7 @@ const nameTakenBanner = 'That name is taken';
 // constant, so both read as one message)
 const bidTooLongBanner = 'bid too long (160 characters max)';
 
-const anameTooLongBanner = 'Auction name too long (max 20 characters)';
+const slugTooLongBanner = 'Auction name too long (max 20 characters)';
 const unameTooLongBanner = 'Name too long (max 20 characters)';
 const blurbTooLongBanner = 'Description too long (max 2000 characters)';
 
@@ -175,7 +175,7 @@ const copyFailBanner = (msg) => 'Could not copy: ' + msg;
 // mostly (a rival's bid mid-flight, a simultaneous save, the gavel
 // beating your revision), plus the length limits' server backstop.
 const gameRefusals = {
-  anameTooLong: () => anameTooLongBanner,
+  slugTooLong: () => slugTooLongBanner,
   unameTooLong: () => unameTooLongBanner,
   blurbTooLong: () => blurbTooLongBanner,
   bidTooLong: () => bidTooLongBanner,
@@ -186,8 +186,8 @@ const gameRefusals = {
   // the bid-hijack refusal (dreev's copy): names the holder's rig
   // and the seat's label. The mystery-device fallback is applied
   // here, same as the claimed-by tooltip's (the server sends the
-  // holder's deviceBlurb raw, '' included)
-  bidSeatHeld: (e) => 'Someone else (' + (e.blurb || mysteryDevice)
+  // holder's rig raw, '' included)
+  bidSeatHeld: (e) => 'Someone else (' + (e.rig || mysteryDevice)
     + ') already placed a bid as ' + e.uname + '!',
 };
 
@@ -201,12 +201,12 @@ const plumbingRefusals = {
   // doesn't know (old server vs newer client)
   badJson: () => 'ERROR1509: request body not valid JSON',
   unknownAction: (e) => 'ERROR1510: unknown action: ' + e.action,
-  badAname: () => 'ERROR1511: auction name must be alphanumeric',
+  badSlug: () => 'ERROR1511: auction name must be alphanumeric',
   badUname: () =>
     'ERROR1512: username must be alphanumeric and start with a letter',
-  badDevice: () => 'ERROR1513: bad deviceID',
-  badPid: () => 'ERROR1514: bad pid',
-  badDevBlurb: () => 'ERROR1515: bad deviceBlurb',
+  badDevid: () => 'ERROR1513: bad devid',
+  badUserid: () => 'ERROR1514: bad userid',
+  badRig: () => 'ERROR1515: bad rig',
   // the reveal button pressed before the roster is complete (the
   // client grays it until ready)
   notReady: () => 'ERROR1516: not ready to reveal: everyone on the roster'
@@ -215,10 +215,10 @@ const plumbingRefusals = {
   // the frozen-record refusal (dreev's copy): renames, claims, and
   // releases all bounce off it once the auction closes
   auctionClosed: () => 'ERROR1518: Auction closed, no editing',
-  noSuchOne: (e) => 'ERROR1519: No such participant: ' + e.pid,
-  claimNeedsDevice: () => 'ERROR1520: claim requires a deviceID',
-  releaseNeedsDevice: () => 'ERROR1521: release requires a deviceID',
-  editingNeedsDevice: () => 'ERROR1525: editing requires a deviceID',
+  noSuchOne: (e) => 'ERROR1519: No such participant: ' + e.userid,
+  claimNeedsDevice: () => 'ERROR1520: claim requires a devid',
+  releaseNeedsDevice: () => 'ERROR1521: release requires a devid',
+  editingNeedsDevice: () => 'ERROR1525: editing requires a devid',
   notYourSeat: () => 'ERROR1522: Disclaiming yourself as a participant failed',
   emptyBid: () => 'ERROR1523: Bid is empty',
   // removing someone who has already bid is refused (reachable only

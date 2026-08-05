@@ -145,17 +145,21 @@ Chrome installed) with layout assertions, dropping screenshots in
 
 ## Data model
 
-Vocabulary: an **aname** is an auction's name (also its URL slug); a
-**pid** is a person id (client-minted uuid) — the identity that seats,
-bids, and claims key on; a **uname** is a bidder's username, a display
-label hanging off a pid (see the shipped pid spec below).
+Vocabulary (renamed 2026-08-04 per dreev's schema rework — the pid
+spec below keeps its historical names): a **slug** is an auction's
+name (also its URL path; was aname); a **userid** (was pid) is a
+person id (client-minted uuid) — the identity that seats, bids, and
+claims key on, PER-AUCTION (dreev's ruling: renames don't span
+auctions, so there is no global users table); a **uname** is a
+display label hanging off a seat; a **devid** (was deviceID) is a
+browser's anonymous uuid; a **rig** is a device's self-description.
 
 | tab | columns |
 |---|---|
-| `auctions` | aname, tini, tmod, tfin, blurb, blurbver |
-| `users` | aname, pid, uname, deviceID, tini, tmod |
-| `bids` | aname, pid, bid, tbid |
-| `devices` | deviceID, blurb, tini, tmod, editingAname, editingPid, tedit |
+| `auctions` | slug, tini, tfin, blurb, bver, tbed |
+| `seats` | slug, userid, uname, devid, tini, tmod |
+| `bids` | slug, userid, bid, tbid, devid |
+| `devices` | devid, rig, tini, tmod, blug, bluid, tblug |
 
 The bids tab is an append-only LOG (2026-07-17): every submission is
 its own row, nothing is overwritten, and a person's standing bid is
@@ -163,21 +167,25 @@ their latest row at or before `tfin` (`<=`). The API payload still
 carries `tini`/`tmod`/`bcount` per bidder — derived at read time
 (first tbid, latest tbid, row count).
 
-Column vocabulary: `tini` = time-initial (created), `tmod` =
-time-modified, `tfin` = time-final (the reveal moment, ISO), `tbid` =
-a bid submission's moment, `deviceID` = a browser's anonymous uuid
-('' when a seat is unclaimed), `blurb` on auctions = the freeform
-markdown description with `blurbver` its plain-counter version (0 =
-virgin, +1 per committed save; the compare-and-swap token — 
-superseded `tblurb`), `blurb` on devices = that browser's
-self-reported rig ("Mac Chrome en-US in Portland, OR"), the ONE home
-every claimed-by tooltip and refusal joins from (2026-08-02,
-superseding per-seat `deviceBlurb` snapshots; devices rows are
-written FIRST, so a deviceID reference can never dangle), and
-`editingAname`/`editingPid`/`tedit` = the device's editing-presence
-slot (see Behavior).
+Column vocabulary: `tini` = time-initial (created), `tmod` = last
+write to the row (seats/devices only; auctions has NO tmod — nothing
+read it and it cost a write per action), `tfin` = time-final (the
+reveal moment, ISO; minted >= the last tbid so the <= cutoff can't
+drop a bid), `tbid` = a bid submission's moment (minted strictly
+increasing per auction — max(now, prev+1ms) — so ties are unmintable,
+order is clock-recoverable, and a duplicate refuses at read as a
+forged log), `tbed` = the blurb's last-edit stamp (rides the save's
+patch slab free), `bver` = the blurb's plain-counter version (0 =
+virgin, +1 per committed save; the compare-and-swap token),
+`bids.devid` = the submitting browser (cheating forensics), `rig` =
+a device's self-description ("Mac Chrome en-US in Portland, OR"),
+the ONE home every claimed-by tooltip and refusal joins from
+(devices rows are written FIRST, so a devid reference can never
+dangle), and `blug`/`bluid`/`tblug` = the device's editing-presence
+slot: which auction's blurb it has open, as whom, latest heartbeat
+(see Behavior).
 
-A users row IS a roster seat (insertion order = display order). Roster
+A seats row IS a roster seat (insertion order = display order). Roster
 edits are row-level `add`/`remove` actions — commutative, so concurrent
 edits from different people can't clobber each other. Future per-person
 attributes (weights/shares) append as columns on the right, which

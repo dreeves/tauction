@@ -19,16 +19,16 @@ const gas = require('./fake-gas')();
 /* ------------------------- the fetch bridge --------------------------- */
 
 const API_URL = 'https://script.example/exec';
-// pid-era payloads carry seats [{pid, uname}]; names() flattens the
+// userid-era payloads carry seats [{userid, uname}]; names() flattens the
 // labels for roster-shaped asserts (mirrors gas-quals)
 const names = (st) => st.seats.map((s) => s.uname).join(',');
-// a seat's pid, looked up by its label (UI-minted pids are random)
+// a seat's userid, looked up by its label (UI-minted pids are random)
 const pidOf = (st, uname) =>
-  (st.seats.find((s) => s.uname === uname) || {}).pid;
+  (st.seats.find((s) => s.uname === uname) || {}).userid;
 const bidderNamed = (st, uname) =>
-  st.bidders.find((b) => b.pid === pidOf(st, uname));
+  st.bidders.find((b) => b.userid === pidOf(st, uname));
 const bidNamed = (st, uname) =>
-  (st.bids || []).find((b) => b.pid === pidOf(st, uname));
+  (st.bids || []).find((b) => b.userid === pidOf(st, uname));
 let apiCalls = [];
 let geoHits = 0;  // ipwho.is fixture servings (the cache quals count)
 let geoFixture = { city: 'Portland', region_code: 'OR' };  // what it serves
@@ -128,7 +128,7 @@ const STR = new Function(STRINGLES
   + ' waitingGlyph, yourMoveGlyph, readyGlyph, revealedGlyph,'
   + ' tabTitle, saveCopy, addCopy, submitCopy, tooLateGoTip, startCopy,'
   + ' discardCopy, warTitle, keepTheirsCopy, overwriteCopy,'
-  + ' anameTooLongBanner, unameTooLongBanner, blurbTooLongBanner,'
+  + ' slugTooLongBanner, unameTooLongBanner, blurbTooLongBanner,'
   + ' revealCopy, descVerTip, editingBy, editingByMany, someoneOn,'
   + ' simulEditsBanner, refusalCopy,'
   + ' gameRefusals, plumbingRefusals };')();
@@ -223,7 +223,7 @@ function type(dom, id, text) {
 // Commit whatever is typed in the auction-name field (the enter
 // path: names commit only on deliberate gestures, never a timer)
 function commitName(dom) {
-  dom.window.document.getElementById('aname').dispatchEvent(
+  dom.window.document.getElementById('slug').dispatchEvent(
     new dom.window.KeyboardEvent('keydown',
       { key: 'Enter', bubbles: true, cancelable: true }));
 }
@@ -333,7 +333,7 @@ const Z_LADDER = {
   '.fete': 5,                // the SOLD stamp moment
   '#banner': 4,              // ambient news over content
   '.gavel': 2,               // the busy sign over the grayed ledger
-  '.corner': 2,              // share/help float over the aname card
+  '.corner': 2,              // share/help float over the slug card
 };                           // (the confetti canvas is fired at
                              // zIndex 5: above the page, below the
                              // summoned tips at 6)
@@ -546,7 +546,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(INDEX_HTML.includes('rel="manifest"'),
      'index.html links the manifest');
   /* --- link previews, the static tier (dreev chose (a): crawlers
-     don't run JS, so per-auction blurbs/counts are unreachable from
+     don't run JS, so per-auction rigs/counts are unreachable from
      static Pages — same card for every link) --------------------- */
   const og = (p) => (INDEX_HTML.match(
     new RegExp('property="og:' + p + '" content="([^"]*)"')) || [])[1];
@@ -575,16 +575,16 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      that write is still optimistic. Expectata: carol immediately
      blocks reveal and the tip names her. Resultata pre-fix: reveal
      stayed ready because its computation read the old server roster. */
-  gas.handle({ action: 'add', aname: 'localready',
-    uname: 'ann', pid: 'pid-localready-ann' });
-  gas.handle({ action: 'add', aname: 'localready',
-    uname: 'bob', pid: 'pid-localready-bob' });
-  gas.handle({ action: 'bid', aname: 'localready',
-    uname: 'ann', pid: 'pid-localready-ann',
-    bid: 'ann bid', deviceID: 'ann-device', deviceBlurb: 'Ann rig' });
-  gas.handle({ action: 'bid', aname: 'localready',
-    uname: 'bob', pid: 'pid-localready-bob',
-    bid: 'bob bid', deviceID: 'bob-device', deviceBlurb: 'Bob rig' });
+  gas.handle({ action: 'add', slug: 'localready',
+    uname: 'ann', userid: 'userid-localready-ann' });
+  gas.handle({ action: 'add', slug: 'localready',
+    uname: 'bob', userid: 'userid-localready-bob' });
+  gas.handle({ action: 'bid', slug: 'localready',
+    uname: 'ann', userid: 'userid-localready-ann',
+    bid: 'ann bid', devid: 'ann-device', rig: 'Ann rig' });
+  gas.handle({ action: 'bid', slug: 'localready',
+    uname: 'bob', userid: 'userid-localready-bob',
+    bid: 'bob bid', devid: 'bob-device', rig: 'Bob rig' });
   const dLocalReady = await makePage('/localready?api=' + API_URL);
   const localSeal = dLocalReady.window.document.getElementById('reveal');
   ok(!localSeal.disabled && localSeal.classList.contains('ready'),
@@ -605,10 +605,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      no armed SUBMIT whose press does nothing, no immortal draft.
      Resultata pre-fix: the padded value stayed visibly dirty
      forever. */
-  gas.handle({ action: 'add', aname: 'padbid',
-    uname: 'ann', pid: 'pid-padbid-ann' });
+  gas.handle({ action: 'add', slug: 'padbid',
+    uname: 'ann', userid: 'userid-padbid-ann' });
   const dPad = await makePage('/padbid?api=' + API_URL, (w) => {
-    w.localStorage.setItem('tauction-pids', '{"padbid":"pid-padbid-ann"}');
+    w.localStorage.setItem('tauction-pids', '{"padbid":"userid-padbid-ann"}');
   });
   typeBid(dPad, '  same bid  ');
   myEditor(dPad.window.document).dispatchEvent(
@@ -630,11 +630,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      FOLLOW YOU — the draft is the browser's, not the seat's — into
      bob's editor; Escape discards them there; and a SUBMIT carried
      this way commits as BOB. Resultata pre-fix: the draft sat parked
-     invisibly under alice's pid. */
-  gas.handle({ action: 'add', aname: 'follow',
-    uname: 'alice', pid: 'pid-follow-alice' });
-  gas.handle({ action: 'add', aname: 'follow',
-    uname: 'bob', pid: 'pid-follow-bob' });
+     invisibly under alice's userid. */
+  gas.handle({ action: 'add', slug: 'follow',
+    uname: 'alice', userid: 'userid-follow-alice' });
+  gas.handle({ action: 'add', slug: 'follow',
+    uname: 'bob', userid: 'userid-follow-bob' });
   const dFollow = await makePage('/follow?api=' + API_URL);
   claimRow(dFollow, 'alice');
   await until(() => myEditor(dFollow.window.document) !== null
@@ -666,10 +666,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     { bubbles: true }));
   submitBid(dFollow);
   await settled(dFollow);
-  ok(gas.handle({ action: 'state', aname: 'follow' }).bidders
-       .some((b) => b.pid === 'pid-follow-bob')
-     && !gas.handle({ action: 'state', aname: 'follow' }).bidders
-       .some((b) => b.pid === 'pid-follow-alice')
+  ok(gas.handle({ action: 'state', slug: 'follow' }).bidders
+       .some((b) => b.userid === 'userid-follow-bob')
+     && !gas.handle({ action: 'state', slug: 'follow' }).bidders
+       .some((b) => b.userid === 'userid-follow-alice')
      && !('bid' in JSON.parse(dFollow.window.localStorage
           .getItem('tauction-drafts:follow') || '{}')),
      'SUBMIT commits as BOB, alice untouched, the draft slot pruned');
@@ -677,15 +677,15 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   /* ...the carried draft can land on a seat that already HOLDS a
      committed bid: it rides above the baseline as an ordinary dirty
      draft, and Escape reverts to that seat's own committed words */
-  gas.handle({ action: 'add', aname: 'followbid',
-    uname: 'ann', pid: 'pid-followbid-ann' });
-  gas.handle({ action: 'add', aname: 'followbid',
-    uname: 'bea', pid: 'pid-followbid-bea' });
-  gas.handle({ action: 'bid', aname: 'followbid',
-    pid: 'pid-followbid-bea', uname: 'bea', bid: 'beas standing bid',
-    deviceID: 'bea-rig', deviceBlurb: 'bea rig' });
-  gas.handle({ action: 'release', aname: 'followbid',
-    pid: 'pid-followbid-bea', deviceID: 'bea-rig' });  // seat open
+  gas.handle({ action: 'add', slug: 'followbid',
+    uname: 'ann', userid: 'userid-followbid-ann' });
+  gas.handle({ action: 'add', slug: 'followbid',
+    uname: 'bea', userid: 'userid-followbid-bea' });
+  gas.handle({ action: 'bid', slug: 'followbid',
+    userid: 'userid-followbid-bea', uname: 'bea', bid: 'beas standing bid',
+    devid: 'bea-rig', rig: 'bea rig' });
+  gas.handle({ action: 'release', slug: 'followbid',
+    userid: 'userid-followbid-bea', devid: 'bea-rig' });  // seat open
   const dFB = await makePage('/followbid?api=' + API_URL);
   claimRow(dFB, 'ann');
   await until(() => myEditor(dFB.window.document) !== null && drained());
@@ -713,26 +713,26 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' baseline (no browser can unseal what it never knew) and'
      + ' prunes the slot');
 
-  /* ...a LEGACY per-pid slot (the pre-2026-07-28 shape) is inert:
+  /* ...a LEGACY per-userid slot (the pre-2026-07-28 shape) is inert:
      never restored, never crashing, per the retired-slot precedent */
-  gas.handle({ action: 'add', aname: 'legacyslot',
-    uname: 'ann', pid: 'pid-legacyslot-ann' });
+  gas.handle({ action: 'add', slug: 'legacyslot',
+    uname: 'ann', userid: 'userid-legacyslot-ann' });
   const dLeg = await makePage('/legacyslot?api=' + API_URL, (w) => {
     w.localStorage.setItem('tauction-pids',
-      '{"legacyslot":"pid-legacyslot-ann"}');
+      '{"legacyslot":"userid-legacyslot-ann"}');
     w.localStorage.setItem('tauction-drafts:legacyslot',
-      '{"bid:pid-legacyslot-ann":"ghost of the old shape"}');
+      '{"bid:userid-legacyslot-ann":"ghost of the old shape"}');
   });
   await sleep(80);
   ok(myEditor(dLeg.window.document).value === ''
      && !dLeg.window.document.getElementById('banner').textContent
           .includes('ghost'),
-     'a legacy per-pid slot stays inert: no restore, no crash');
+     'a legacy per-userid slot stays inert: no restore, no crash');
 
   /* ...and the draft survives ×ing your own row and re-adding
      yourself: gone with the editor, home at its rebirth */
-  gas.handle({ action: 'add', aname: 'xdraft',
-    uname: 'ann', pid: 'pid-xdraft-ann' });
+  gas.handle({ action: 'add', slug: 'xdraft',
+    uname: 'ann', userid: 'userid-xdraft-ann' });
   const dX = await makePage('/xdraft?api=' + API_URL);
   addName(dX, 'me');  // self-claims (2j)
   await until(() => myEditor(dX.window.document) !== null && drained());
@@ -752,13 +752,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      editor holds the waiting draft. Resultata pre-fix: the restore
      ran only at the arrival edge, so the late-born editor came up
      empty — and the clean-sweep then DELETED the stored draft. */
-  gas.handle({ action: 'add', aname: 'latedraft',
-    uname: 'ann', pid: 'pid-latedraft-ann' });
-  gas.handle({ action: 'add', aname: 'latedraft',
-    uname: 'bo', pid: 'pid-latedraft-bo' });
+  gas.handle({ action: 'add', slug: 'latedraft',
+    uname: 'ann', userid: 'userid-latedraft-ann' });
+  gas.handle({ action: 'add', slug: 'latedraft',
+    uname: 'bo', userid: 'userid-latedraft-bo' });
   const dLate = await makePage('/latedraft?api=' + API_URL, (w) => {
     w.localStorage.setItem('tauction-pids',
-      '{"latedraft":"pid-latedraft-ann"}');
+      '{"latedraft":"userid-latedraft-ann"}');
   });
   const lateDoc = dLate.window.document;
   const lateEd = myEditor(lateDoc);
@@ -793,10 +793,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      weather AND the words come back — a failed write must never
      eat typed work. Resultata pre-fix: the error survived, the
      words did not (the recovery only ran for server refusals). */
-  gas.handle({ action: 'describe', aname: 'wifieat', base: 0,
+  gas.handle({ action: 'describe', slug: 'wifieat', base: 0,
     blurb: 'the record' });
-  gas.handle({ action: 'add', aname: 'wifieat',
-    uname: 'ann', pid: 'pid-wifieat-ann' });
+  gas.handle({ action: 'add', slug: 'wifieat',
+    uname: 'ann', userid: 'userid-wifieat-ann' });
   const dEat = await makePage('/wifieat?api=' + API_URL);
   const eatDoc = dEat.window.document;
   eatDoc.getElementById('desctoggle').click();
@@ -833,10 +833,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      server may have committed and only its response died. Recovery
      must compare the next state with the submitted goal, settling it
      clean when it landed and keeping it dirty only when it did not. */
-  gas.handle({ action: 'describe', aname: 'maybeate', base: 0,
+  gas.handle({ action: 'describe', slug: 'maybeate', base: 0,
     blurb: 'the record' });
-  gas.handle({ action: 'add', aname: 'maybeate',
-    uname: 'ann', pid: 'pid-maybeate-ann' });
+  gas.handle({ action: 'add', slug: 'maybeate',
+    uname: 'ann', userid: 'userid-maybeate-ann' });
   const dMaybe = await makePage('/maybeate?api=' + API_URL);
   const maybeDoc = dMaybe.window.document;
   maybeDoc.getElementById('desctoggle').click();
@@ -846,13 +846,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     { bubbles: true }));
   dropWriteResponse = 'describe';
   maybeDoc.getElementById('descgo').click();
-  await until(() => gas.handle({ action: 'state', aname: 'maybeate' })
+  await until(() => gas.handle({ action: 'state', slug: 'maybeate' })
     .blurb === 'the committed amendment');
   await sleep(100);
-  const maybeState = gas.handle({ action: 'state', aname: 'maybeate' });
+  const maybeState = gas.handle({ action: 'state', slug: 'maybeate' });
   ok(maybeDesc.value === 'the committed amendment'
      && maybeDesc.defaultValue === 'the committed amendment'
-     && maybeDesc.dataset.base === String(maybeState.blurbver)
+     && maybeDesc.dataset.base === String(maybeState.bver)
      && !maybeDesc.classList.contains('error')
      && !maybeDoc.getElementById('desc').classList.contains('hot'),
      'a SAVE whose response alone was lost reconciles as committed:'
@@ -866,7 +866,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   dropWriteResponse = 'rename';
   maybeName.form.requestSubmit();
   await until(() => pidOf(gas.handle({ action: 'state',
-    aname: 'maybeate' }), 'annette') === 'pid-maybeate-ann');
+    slug: 'maybeate' }), 'annette') === 'userid-maybeate-ann');
   await sleep(100);
   ok(maybeName.value === 'annette'
      && maybeName.defaultValue === 'annette'
@@ -874,13 +874,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && !maybeName.closest('.rename').classList.contains('hot'),
      'a rename whose response alone was lost reconciles as committed');
 
-  gas.handle({ action: 'add', aname: 'maybeate',
-    uname: 'bob', pid: 'pid-maybeate-bob-remote' });
+  gas.handle({ action: 'add', slug: 'maybeate',
+    uname: 'bob', userid: 'userid-maybeate-bob-remote' });
   type(dMaybe, 'roster-input', 'bob');
   dropWriteResponse = 'add';
   submitName(dMaybe);
   await until(() => pidOf(gas.handle({ action: 'state',
-    aname: 'maybeate' }), 'bob') === 'pid-maybeate-bob-remote');
+    slug: 'maybeate' }), 'bob') === 'userid-maybeate-bob-remote');
   await sleep(100);
   const maybeAdd = maybeDoc.getElementById('roster-input');
   ok(maybeAdd.value === ''
@@ -897,18 +897,18 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      and the field agrees with the server. Resultata pre-fix: the
      late refusal restored 'carl' over the committed 'gamma' — DOM
      said gamma, eyes saw carl. */
-  gas.handle({ action: 'add', aname: 'staleref',
-    uname: 'ann', pid: 'pid-staleref-ann' });
-  gas.handle({ action: 'add', aname: 'staleref',
-    uname: 'bob', pid: 'pid-staleref-bob' });
+  gas.handle({ action: 'add', slug: 'staleref',
+    uname: 'ann', userid: 'userid-staleref-ann' });
+  gas.handle({ action: 'add', slug: 'staleref',
+    uname: 'bob', userid: 'userid-staleref-bob' });
   const dRef = await makePage('/staleref?api=' + API_URL);
-  gas.handle({ action: 'add', aname: 'staleref',
-    uname: 'carl', pid: 'pid-staleref-carl' });  // remote; no poll yet
+  gas.handle({ action: 'add', slug: 'staleref',
+    uname: 'carl', userid: 'userid-staleref-carl' });  // remote; no poll yet
   mockDelay = 300;
   renameTo(dRef, 'bob', 'carl');   // local guard blind; server refuses
   renameTo(dRef, 'carl', 'gamma'); // the newer intent, queued behind
   await until(() => pidOf(gas.handle({ action: 'state',
-    aname: 'staleref' }), 'gamma') === 'pid-staleref-bob');
+    slug: 'staleref' }), 'gamma') === 'userid-staleref-bob');
   mockDelay = 0;
   const refInp = row(dRef.window.document, 'gamma')
     && row(dRef.window.document, 'gamma').querySelector('.rename input');
@@ -917,13 +917,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      "a stale refusal never repaints a newer name: the field says"
      + ' gamma, the server says gamma, nobody says carl');
 
-  gas.handle({ action: 'add', aname: 'staletype',
-    uname: 'ann', pid: 'pid-staletype-ann' });
-  gas.handle({ action: 'add', aname: 'staletype',
-    uname: 'bob', pid: 'pid-staletype-bob' });
+  gas.handle({ action: 'add', slug: 'staletype',
+    uname: 'ann', userid: 'userid-staletype-ann' });
+  gas.handle({ action: 'add', slug: 'staletype',
+    uname: 'bob', userid: 'userid-staletype-bob' });
   const dType = await makePage('/staletype?api=' + API_URL);
-  gas.handle({ action: 'add', aname: 'staletype',
-    uname: 'carl', pid: 'pid-staletype-carl' });
+  gas.handle({ action: 'add', slug: 'staletype',
+    uname: 'carl', userid: 'userid-staletype-carl' });
   const typeInp = row(dType.window.document, 'bob')
     .querySelector('.rename input');
   typeInp.focus();
@@ -943,8 +943,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && typeInp.defaultValue === 'bob'
      && typeInp.closest('.rename').classList.contains('hot')
      && !typeInp.classList.contains('error')
-     && pidOf(gas.handle({ action: 'state', aname: 'staletype' }), 'bob')
-          === 'pid-staletype-bob',
+     && pidOf(gas.handle({ action: 'state', slug: 'staletype' }), 'bob')
+          === 'userid-staletype-bob',
      'a refused rename preserves newer typing but rebases it on the'
      + ' accepted server name, so Escape still tells the truth');
 
@@ -953,16 +953,16 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      away. Expectata: no edit, no commit — the row converges to
      robert. Resultata pre-fix: the blur posted the STALE text and
      undid the remote rename. */
-  gas.handle({ action: 'add', aname: 'stalefocus',
-    uname: 'ann', pid: 'pid-stalefocus-ann' });
-  gas.handle({ action: 'add', aname: 'stalefocus',
-    uname: 'bob', pid: 'pid-stalefocus-bob' });
+  gas.handle({ action: 'add', slug: 'stalefocus',
+    uname: 'ann', userid: 'userid-stalefocus-ann' });
+  gas.handle({ action: 'add', slug: 'stalefocus',
+    uname: 'bob', userid: 'userid-stalefocus-bob' });
   const dStale = await makePage('/stalefocus?api=' + API_URL);
   const staleDoc = dStale.window.document;
   const staleInp = row(staleDoc, 'bob').querySelector('.rename input');
   staleInp.focus();  // parked caret, no edit
-  gas.handle({ action: 'rename', aname: 'stalefocus',
-    pid: 'pid-stalefocus-bob', to: 'robert' });
+  gas.handle({ action: 'rename', slug: 'stalefocus',
+    userid: 'userid-stalefocus-bob', to: 'robert' });
   await until(() => row(staleDoc, 'robert') !== null);
   ok(staleInp.value === 'bob' && staleInp.defaultValue === 'bob',
      'the remote label is adopted while the focused field keeps its'
@@ -970,8 +970,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   staleInp.blur();
   await sleep(150);
   ok(apiCalls.every((c) => c.action !== 'rename'
-       || c.aname !== 'stalefocus')
-     && names(gas.handle({ action: 'state', aname: 'stalefocus' }))
+       || c.slug !== 'stalefocus')
+     && names(gas.handle({ action: 'state', slug: 'stalefocus' }))
           === 'ann,robert',
      'leaving an untouched name commits NOTHING: a parked caret'
      + " can't undo somebody else's rename");
@@ -984,16 +984,16 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const staleEnter = row(staleDoc, 'robert')
     .querySelector('.rename input');
   staleEnter.focus();
-  gas.handle({ action: 'rename', aname: 'stalefocus',
-    pid: 'pid-stalefocus-bob', to: 'roberta' });
+  gas.handle({ action: 'rename', slug: 'stalefocus',
+    userid: 'userid-stalefocus-bob', to: 'roberta' });
   await until(() => row(staleDoc, 'roberta') !== null);
   const staleRenamePosts = apiCalls.filter((c) => c.action === 'rename'
-    && c.aname === 'stalefocus').length;
+    && c.slug === 'stalefocus').length;
   staleEnter.form.requestSubmit();
   await sleep(150);
   ok(apiCalls.filter((c) => c.action === 'rename'
-       && c.aname === 'stalefocus').length === staleRenamePosts
-     && names(gas.handle({ action: 'state', aname: 'stalefocus' }))
+       && c.slug === 'stalefocus').length === staleRenamePosts
+     && names(gas.handle({ action: 'state', slug: 'stalefocus' }))
           === 'ann,roberta'
      && staleEnter.value === 'roberta'
      && staleEnter.defaultValue === 'roberta',
@@ -1013,7 +1013,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   staleAnn.blur();           // ...and the blur the disable fires
   await sleep(150);
   ok(apiCalls.every((c) => c.action !== 'rename'
-       || c.aname !== 'stalefocus'),
+       || c.slug !== 'stalefocus'),
      "a frozen field's blur posts nothing: the dying draft stays,"
      + ' unsent, like a bid caught by the gavel');
   staleAnn.disabled = false;  // (jsdom fixture cleanup)
@@ -1022,10 +1022,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      Expectata (2026-07-28, save-on-blur unames): a name can't be
      nothing — the blur-commit's empty path snaps the committed name
      straight back, and nothing goes to the wire. */
-  gas.handle({ action: 'add', aname: 'emptyrename',
-    uname: 'ann', pid: 'pid-emptyrename-ann' });
-  gas.handle({ action: 'add', aname: 'emptyrename',
-    uname: 'bob', pid: 'pid-emptyrename-bob' });
+  gas.handle({ action: 'add', slug: 'emptyrename',
+    uname: 'ann', userid: 'userid-emptyrename-ann' });
+  gas.handle({ action: 'add', slug: 'emptyrename',
+    uname: 'bob', userid: 'userid-emptyrename-bob' });
   const dEmptyRename = await makePage('/emptyrename?api=' + API_URL);
   const emptyName = row(dEmptyRename.window.document, 'bob')
     .querySelector('.rename input');
@@ -1038,27 +1038,27 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(emptyName.value === 'bob' && emptyName.defaultValue === 'bob'
      && !emptyName.closest('.rename').classList.contains('hot')
      && apiCalls.every((r) => r.action !== 'rename'
-          || r.aname !== 'emptyrename'),
+          || r.slug !== 'emptyrename'),
      'leaving an emptied name snaps the committed name back — a name'
      + " can't be nothing, and nothing went to the wire");
 
   /* Replicata: erase a standing bid and leave the editor. Expectata
      (2026-07-27): the empty draft stays, hot, and nothing is sent —
      no phantom withdrawal, bcount untouched; Escape restores. */
-  gas.handle({ action: 'add', aname: 'emptybid',
-    uname: 'ann', pid: 'pid-emptybid-ann' });
-  gas.handle({ action: 'add', aname: 'emptybid',
-    uname: 'bob', pid: 'pid-emptybid-bob' });
-  gas.handle({ action: 'bid', aname: 'emptybid',
-    uname: 'ann', pid: 'pid-emptybid-ann',
-    bid: 'standing bid', deviceID: 'empty-device',
-    deviceBlurb: 'Empty rig' });
+  gas.handle({ action: 'add', slug: 'emptybid',
+    uname: 'ann', userid: 'userid-emptybid-ann' });
+  gas.handle({ action: 'add', slug: 'emptybid',
+    uname: 'bob', userid: 'userid-emptybid-bob' });
+  gas.handle({ action: 'bid', slug: 'emptybid',
+    uname: 'ann', userid: 'userid-emptybid-ann',
+    bid: 'standing bid', devid: 'empty-device',
+    rig: 'Empty rig' });
   const dEmptyBid = await makePage('/emptybid?api=' + API_URL, (w) => {
     w.localStorage.setItem('tauction-device', 'empty-device');
     w.localStorage.setItem('tauction-pids',
-      '{"emptybid":"pid-emptybid-ann"}');
+      '{"emptybid":"userid-emptybid-ann"}');
     w.localStorage.setItem('tauction-mybids:emptybid',
-      '{"pid-emptybid-ann":"standing bid"}');
+      '{"userid-emptybid-ann":"standing bid"}');
   });
   const standingBid = row(dEmptyBid.window.document, 'ann')
     .querySelector('.rebid textarea');
@@ -1071,8 +1071,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(standingBid.value === ''
      && standingBid.defaultValue === 'standing bid'
      && standingBid.closest('.rebid').classList.contains('hot')
-     && gas.handle({ action: 'state', aname: 'emptybid' })
-          .bidders.find((b) => b.pid === 'pid-emptybid-ann').bcount === 1,
+     && gas.handle({ action: 'state', slug: 'emptybid' })
+          .bidders.find((b) => b.userid === 'userid-emptybid-ann').bcount === 1,
      'leaving an emptied standing bid sends no withdrawal: the empty'
      + ' draft waits, hot');
   standingBid.focus();
@@ -1081,13 +1081,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(standingBid.value === 'standing bid'
      && !standingBid.closest('.rebid').classList.contains('hot'),
      'Escape restores the standing bid and the field cools');
-  gas.handle({ action: 'add', aname: 'blankbid',
-    uname: 'ann', pid: 'pid-blankbid-ann' });
-  gas.handle({ action: 'add', aname: 'blankbid',
-    uname: 'bob', pid: 'pid-blankbid-bob' });
+  gas.handle({ action: 'add', slug: 'blankbid',
+    uname: 'ann', userid: 'userid-blankbid-ann' });
+  gas.handle({ action: 'add', slug: 'blankbid',
+    uname: 'bob', userid: 'userid-blankbid-bob' });
   const dBlankBid = await makePage('/blankbid?api=' + API_URL, (w) => {
     w.localStorage.setItem('tauction-pids',
-      '{"blankbid":"pid-blankbid-ann"}');
+      '{"blankbid":"userid-blankbid-ann"}');
   });
   const blankBid = row(dBlankBid.window.document, 'ann')
     .querySelector('.rebid textarea');
@@ -1100,7 +1100,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(blankBid.value === '   ' && blankBid.defaultValue === ''
      && !blankBid.classList.contains('error')
      && bidderNamed(gas.handle(
-          { action: 'state', aname: 'blankbid' }), 'ann') === undefined,
+          { action: 'state', slug: 'blankbid' }), 'ann') === undefined,
      'a blank never-saved draft is likewise nobody\'s business: it'
      + ' waits, and no write ever went');
 
@@ -1108,10 +1108,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      Expectata: this client's serialized saves both land in order.
      Resultata pre-fix: C carried A's compare-and-swap stamp and
      falsely collided with this same client's successful B. */
-  gas.handle({ action: 'describe', aname: 'rapiddesc', base: 0,
+  gas.handle({ action: 'describe', slug: 'rapiddesc', base: 0,
     blurb: 'A version' });
-  gas.handle({ action: 'add', aname: 'rapiddesc',
-    uname: 'ann', pid: 'pid-rapiddesc-ann' });
+  gas.handle({ action: 'add', slug: 'rapiddesc',
+    uname: 'ann', userid: 'userid-rapiddesc-ann' });
   const dRapidDesc = await makePage('/rapiddesc?api=' + API_URL);
   const rapidDoc = dRapidDesc.window.document;
   mockDelay = 300;
@@ -1125,13 +1125,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   rapidDoc.getElementById('descedit').dispatchEvent(
     new dRapidDesc.window.Event('input', { bubbles: true }));
   rapidDoc.getElementById('descgo').click();
-  await until(() => gas.handle({ action: 'state', aname: 'rapiddesc' })
+  await until(() => gas.handle({ action: 'state', slug: 'rapiddesc' })
     .blurb === 'C version'
     || !rapidDoc.getElementById('banner').hidden);
   await until(() => !rapidDoc.getElementById('status').classList
     .contains('stale'));
   mockDelay = 0;
-  ok(gas.handle({ action: 'state', aname: 'rapiddesc' }).blurb
+  ok(gas.handle({ action: 'state', slug: 'rapiddesc' }).blurb
        === 'C version'
      && rapidDoc.getElementById('descedit').value === 'C version'
      && !rapidDoc.getElementById('descedit').classList.contains('error')
@@ -1145,10 +1145,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      under the mid-air-collision convention (2026-07-28) C's own save
      bounces too, in the server's words, rather than silently winning
      an edit war C's author never saw. */
-  gas.handle({ action: 'describe', aname: 'newerdesc', base: 0,
+  gas.handle({ action: 'describe', slug: 'newerdesc', base: 0,
     blurb: 'A version' });
-  gas.handle({ action: 'add', aname: 'newerdesc',
-    uname: 'ann', pid: 'pid-newerdesc-ann' });
+  gas.handle({ action: 'add', slug: 'newerdesc',
+    uname: 'ann', userid: 'userid-newerdesc-ann' });
   const dNewerDesc = await makePage('/newerdesc?api=' + API_URL);
   const newerDoc = dNewerDesc.window.document;
   mockDelay = 400;
@@ -1163,13 +1163,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   newerDoc.getElementById('descedit').dispatchEvent(
     new dNewerDesc.window.Event('input', { bubbles: true }));
   newerDoc.getElementById('descedit').focus();
-  const beforeA2 = gas.handle({ action: 'state', aname: 'newerdesc' });
-  gas.handle({ action: 'describe', aname: 'newerdesc',
-    base: beforeA2.blurbver, blurb: 'A2 version' });
+  const beforeA2 = gas.handle({ action: 'state', slug: 'newerdesc' });
+  gas.handle({ action: 'describe', slug: 'newerdesc',
+    base: beforeA2.bver, blurb: 'A2 version' });
   await until(() => !newerDoc.getElementById('banner').hidden);
   mockDelay = 0;
   ok(newerDoc.getElementById('descedit').value === 'C version'
-     && gas.handle({ action: 'state', aname: 'newerdesc' }).blurb
+     && gas.handle({ action: 'state', slug: 'newerdesc' }).blurb
           === 'A2 version',
      'an older refused description never overwrites a newer local draft');
   newerDoc.getElementById('banner-x').click();
@@ -1178,7 +1178,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(newerDoc.getElementById('war-title').textContent
        === STR.warTitle(1)
      && newerDoc.getElementById('banner').hidden
-     && gas.handle({ action: 'state', aname: 'newerdesc' }).blurb
+     && gas.handle({ action: 'state', slug: 'newerdesc' }).blurb
           === 'A2 version'
      && newerDoc.getElementById('descedit').value === 'C version',
      'saving C bounces too — into the war popup (the banner stands'
@@ -1194,14 +1194,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      and grays itself), with a live preview, and leave by SAVE,
      DISCARD, Escape, or a clean blur. Resultata pre-spec: an empty
      blurb arrived in edit mode, no pencil, no DISCARD, no preview. */
-  gas.handle({ action: 'add', aname: 'blurbspec',
-    uname: 'ann', pid: 'pid-blurbspec-ann' });
+  gas.handle({ action: 'add', slug: 'blurbspec',
+    uname: 'ann', userid: 'userid-blurbspec-ann' });
   const dBS = await makePage('/blurbspec?api=' + API_URL);
   const bsDoc = dBS.window.document;
   ok(bsDoc.getElementById('desc').classList.contains('viewing'),
      'item 1: the card rests RENDERED, empty blurb or not');
   const bsPolls = () => apiCalls.filter((c) => c.action === 'state'
-    && c.aname === 'blurbspec').length;
+    && c.slug === 'blurbspec').length;
   const bsPolls0 = bsPolls();
   bsDoc.getElementById('desctoggle').click();
   ok(!bsDoc.getElementById('desc').classList.contains('viewing')
@@ -1227,7 +1227,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && bsDoc.getElementById('descedit').value === ''
      && bsDoc.getElementById('descview').textContent === ''
      && apiCalls.filter((c) => c.action === 'describe'
-          && c.aname === 'blurbspec').length === 0,
+          && c.slug === 'blurbspec').length === 0,
      'item 7: DISCARD closes to rendered, drops the words, writes'
      + ' nothing — and the pane shows the record again');
   bsDoc.getElementById('desctoggle').click();
@@ -1254,7 +1254,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' commits nothing');
   type(dBS, 'descedit', 'saved words');
   bsDoc.getElementById('descgo').click();
-  await until(() => gas.handle({ action: 'state', aname: 'blurbspec' })
+  await until(() => gas.handle({ action: 'state', slug: 'blurbspec' })
     .blurb === 'saved words');
   ok(bsDoc.getElementById('desc').classList.contains('viewing')
      && bsDoc.getElementById('descview').textContent
@@ -1267,10 +1267,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      diff of yours vs theirs, Keep theirs / Overwrite with mine —
      while the words stay red in the open editor. The banner stays
      hidden: the popup carries this news. */
-  gas.handle({ action: 'describe', aname: 'warzone', base: 0,
+  gas.handle({ action: 'describe', slug: 'warzone', base: 0,
     blurb: 'line one\nline two\nline three' });
-  gas.handle({ action: 'add', aname: 'warzone',
-    uname: 'ann', pid: 'pid-warzone-ann' });
+  gas.handle({ action: 'add', slug: 'warzone',
+    uname: 'ann', userid: 'userid-warzone-ann' });
   const dWar = await makePage('/warzone?api=' + API_URL);
   const warDoc = dWar.window.document;
   warDoc.getElementById('desctoggle').click();
@@ -1279,8 +1279,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     = 'line one\nline 2 mine\nline three';
   warDoc.getElementById('descedit').dispatchEvent(
     new dWar.window.Event('input', { bubbles: true }));
-  gas.handle({ action: 'describe', aname: 'warzone',
-    base: gas.handle({ action: 'state', aname: 'warzone' }).blurbver,
+  gas.handle({ action: 'describe', slug: 'warzone',
+    base: gas.handle({ action: 'state', slug: 'warzone' }).bver,
     blurb: 'line one\nline 2 theirs\nline three' });  // the rival
   const warCallsAtSave = apiCalls.length;
   warDoc.getElementById('descgo').click();
@@ -1320,7 +1320,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      an in-flight poll could swallow entirely, stranding the popup
      on its gavel until the NEXT poll (~7s). */
   ok(!apiCalls.slice(warCallsAtSave).some((c) =>
-       c.action === 'state' && c.aname === 'warzone'),
+       c.action === 'state' && c.slug === 'warzone'),
      'the war diff draws from the refusal itself: no recovery fetch,'
      + ' no gavel beat, no poll roulette');
   // dismissal decides nothing (item 12); the next SAVE is take 2
@@ -1342,7 +1342,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && warDoc.getElementById('desc').classList.contains('viewing')
      && warDoc.getElementById('descview').textContent
           .includes('line 2 theirs')
-     && gas.handle({ action: 'state', aname: 'warzone' }).blurb
+     && gas.handle({ action: 'state', slug: 'warzone' }).blurb
           === 'line one\nline 2 theirs\nline three',
      'Keep theirs: the editor closes, the pane shows the record,'
      + ' nothing was written');
@@ -1367,8 +1367,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   warDoc.getElementById('descedit').value = 'mine, informed';
   warDoc.getElementById('descedit').dispatchEvent(
     new dWar.window.Event('input', { bubbles: true }));
-  gas.handle({ action: 'describe', aname: 'warzone',
-    base: gas.handle({ action: 'state', aname: 'warzone' }).blurbver,
+  gas.handle({ action: 'describe', slug: 'warzone',
+    base: gas.handle({ action: 'state', slug: 'warzone' }).bver,
     blurb: 'theirs again' });
   warDoc.getElementById('descgo').click();
   await until(() => warDoc.getElementById('war-dlg').open);
@@ -1377,7 +1377,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'a fresh editing session starts a fresh war: take 1 again');
   await until(() => warDoc.querySelector('#war-diff .diff-row'));
   warDoc.getElementById('war-mine').click();
-  await until(() => gas.handle({ action: 'state', aname: 'warzone' })
+  await until(() => gas.handle({ action: 'state', slug: 'warzone' })
     .blurb === 'mine, informed');
   ok(!warDoc.getElementById('war-dlg').open
      && warDoc.getElementById('desc').classList.contains('viewing')
@@ -1393,8 +1393,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   warDoc.getElementById('descedit').value = 'third draft';
   warDoc.getElementById('descedit').dispatchEvent(
     new dWar.window.Event('input', { bubbles: true }));
-  gas.handle({ action: 'describe', aname: 'warzone',
-    base: gas.handle({ action: 'state', aname: 'warzone' }).blurbver,
+  gas.handle({ action: 'describe', slug: 'warzone',
+    base: gas.handle({ action: 'state', slug: 'warzone' }).bver,
     blurb: 'third rival' });
   warDoc.getElementById('descgo').click();
   await until(() => warDoc.getElementById('war-dlg').open);
@@ -1407,17 +1407,17 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
           .includes('third rival')
      && warDoc.getElementById('descedit').value === 'third rival'
      && !warDoc.getElementById('descedit').classList.contains('error')
-     && gas.handle({ action: 'state', aname: 'warzone' }).blurb
+     && gas.handle({ action: 'state', slug: 'warzone' }).blurb
           === 'third rival',
      'item 12: DISCARD after dismissal = Keep theirs — theirs'
      + ' adopted, editor closed, nothing written');
 
   /* ...the diff never executes user text (anti-postel: the blurb is
      a shared field) */
-  gas.handle({ action: 'describe', aname: 'xsswar', base: 0,
+  gas.handle({ action: 'describe', slug: 'xsswar', base: 0,
     blurb: 'plain' });
-  gas.handle({ action: 'add', aname: 'xsswar',
-    uname: 'ann', pid: 'pid-xsswar-ann' });
+  gas.handle({ action: 'add', slug: 'xsswar',
+    uname: 'ann', userid: 'userid-xsswar-ann' });
   const dXw = await makePage('/xsswar?api=' + API_URL);
   dXw.window.document.getElementById('desctoggle').click();
   await until(() => drained());
@@ -1425,8 +1425,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     = '<img src=x onerror=alert(1)>';
   dXw.window.document.getElementById('descedit').dispatchEvent(
     new dXw.window.Event('input', { bubbles: true }));
-  gas.handle({ action: 'describe', aname: 'xsswar',
-    base: gas.handle({ action: 'state', aname: 'xsswar' }).blurbver,
+  gas.handle({ action: 'describe', slug: 'xsswar',
+    base: gas.handle({ action: 'state', slug: 'xsswar' }).bver,
     blurb: '<script>alert(2)</script>' });
   dXw.window.document.getElementById('descgo').click();
   await until(() => dXw.window.document.getElementById('war-dlg').open);
@@ -1447,10 +1447,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      Expectata: the mini hammering gavel — an empty diff slot is an
      untrusted picture — then the diff when the trailing write
      settles. */
-  gas.handle({ action: 'describe', aname: 'slotgav', base: 0,
+  gas.handle({ action: 'describe', slug: 'slotgav', base: 0,
     blurb: 'alpha' });
-  gas.handle({ action: 'add', aname: 'slotgav',
-    uname: 'ann', pid: 'pid-slotgav-ann' });
+  gas.handle({ action: 'add', slug: 'slotgav',
+    uname: 'ann', userid: 'userid-slotgav-ann' });
   const dSlot = await makePage('/slotgav?api=' + API_URL);
   const slotDoc = dSlot.window.document;
   slotDoc.getElementById('desctoggle').click();
@@ -1458,8 +1458,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   slotDoc.getElementById('descedit').value = 'mine';
   slotDoc.getElementById('descedit').dispatchEvent(
     new dSlot.window.Event('input', { bubbles: true }));
-  gas.handle({ action: 'describe', aname: 'slotgav',
-    base: gas.handle({ action: 'state', aname: 'slotgav' }).blurbver,
+  gas.handle({ action: 'describe', slug: 'slotgav',
+    base: gas.handle({ action: 'state', slug: 'slotgav' }).bver,
     blurb: 'theirs' });
   mockDelay = 150;  // every hop crawls
   slotDoc.getElementById('descgo').click();
@@ -1487,10 +1487,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      gavel hammering forever on a dead wire; a healed take repaints
      the real diff. Resultata pre-paintWar-in-refresh's-catch: the
      gavel hammered until the wire healed on its own. */
-  gas.handle({ action: 'describe', aname: 'downwar', base: 0,
+  gas.handle({ action: 'describe', slug: 'downwar', base: 0,
     blurb: 'alpha' });
-  gas.handle({ action: 'add', aname: 'downwar',
-    uname: 'ann', pid: 'pid-downwar-ann' });
+  gas.handle({ action: 'add', slug: 'downwar',
+    uname: 'ann', userid: 'userid-downwar-ann' });
   const dDown = await makePage('/downwar?api=' + API_URL);
   const downDoc = dDown.window.document;
   downDoc.getElementById('desctoggle').click();
@@ -1498,8 +1498,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   downDoc.getElementById('descedit').value = 'mine';
   downDoc.getElementById('descedit').dispatchEvent(
     new dDown.window.Event('input', { bubbles: true }));
-  gas.handle({ action: 'describe', aname: 'downwar',
-    base: gas.handle({ action: 'state', aname: 'downwar' }).blurbver,
+  gas.handle({ action: 'describe', slug: 'downwar',
+    base: gas.handle({ action: 'state', slug: 'downwar' }).bver,
     blurb: 'theirs' });
   mockDelay = 100;  // let the POST leave before the wire dies
   downDoc.getElementById('descgo').click();
@@ -1557,9 +1557,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'typing in the blurb before the first snapshot is not a'
      + ' simultaneous edit: no banner, the draft undisturbed');
   virginDoc.getElementById('descgo').click();
-  await until(() => gas.handle({ action: 'state', aname: 'virgindesc' })
+  await until(() => gas.handle({ action: 'state', slug: 'virgindesc' })
     .blurb === 'my words');
-  ok(gas.handle({ action: 'state', aname: 'virgindesc' })
+  ok(gas.handle({ action: 'state', slug: 'virgindesc' })
        .blurb === 'my words'
      && virginDoc.getElementById('banner').hidden,
      'and the pre-arrival draft saves cleanly');
@@ -1576,11 +1576,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   type(dEager, 'descedit', 'first words');
   eagerDoc.getElementById('descgo').click();
   mockDelay = 0;
-  await until(() => gas.handle({ action: 'state', aname: 'eagerdesc' })
+  await until(() => gas.handle({ action: 'state', slug: 'eagerdesc' })
     .blurb === 'first words');
   await until(() => !eagerDoc.getElementById('status').classList
     .contains('stale'));
-  ok(gas.handle({ action: 'state', aname: 'eagerdesc' })
+  ok(gas.handle({ action: 'state', slug: 'eagerdesc' })
        .blurb === 'first words'
      && eagerDoc.getElementById('banner').hidden
      && !eagerDoc.getElementById('descedit').classList.contains('error'),
@@ -1607,7 +1607,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' trip gates the optimistic paint');
   mockDelay = 0;
   await until(() => drained());
-  await until(() => (gas.handle({ action: 'state', aname: 'virginseed' })
+  await until(() => (gas.handle({ action: 'state', slug: 'virginseed' })
     .seats || []).length === 1);
   await sleep(120);
   ok(seedDoc.querySelectorAll('#tiles .tile').length === 1
@@ -1626,7 +1626,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      even with every later call slow. */
   const dCre8 = await makePage('/?api=' + API_URL);
   const cre8Doc = dCre8.window.document;
-  type(dCre8, 'aname', 'seedcreate');
+  type(dCre8, 'slug', 'seedcreate');
   commitName(dCre8);
   await until(() => !cre8Doc.body.classList.contains('unnamed'));
   mockDelay = 300;
@@ -1643,12 +1643,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      waiting on you. Expectata: the ledger counts the flying bid
      EVERYWHERE the moment SUBMIT fires — like a roster add — and
      the volley's away-tint is what says not-yet-confirmed. */
-  gas.handle({ action: 'add', aname: 'opti', uname: 'ann',
-    pid: 'pid-opti-ann' });
-  gas.handle({ action: 'add', aname: 'opti', uname: 'bob',
-    pid: 'pid-opti-bob' });
-  gas.handle({ action: 'bid', aname: 'opti', pid: 'pid-opti-bob',
-    uname: 'bob', bid: 'tacos', deviceID: 'dev-opti-bob' });
+  gas.handle({ action: 'add', slug: 'opti', uname: 'ann',
+    userid: 'userid-opti-ann' });
+  gas.handle({ action: 'add', slug: 'opti', uname: 'bob',
+    userid: 'userid-opti-bob' });
+  gas.handle({ action: 'bid', slug: 'opti', userid: 'userid-opti-bob',
+    uname: 'bob', bid: 'tacos', devid: 'dev-opti-bob' });
   const dOpti = await makePage('/opti?api=' + API_URL);
   const optiDoc = dOpti.window.document;
   claimRow(dOpti, 'ann');
@@ -1675,16 +1675,16 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(optiRow.classList.contains('has-bid')
      && !optiDoc.querySelector('#tiles .rebid').classList
           .contains('busy')
-     && gas.handle({ action: 'state', aname: 'opti' })
+     && gas.handle({ action: 'state', slug: 'opti' })
           .bidders.length === 2,
      'the settle confirms the same picture: tint gone, record in');
 
   /* ...and the truthful revert: the wire eats a FIRST bid, so the
      optimistic picture must walk back to awaiting, loudly. */
-  gas.handle({ action: 'add', aname: 'optidead', uname: 'ann',
-    pid: 'pid-optidead-ann' });
-  gas.handle({ action: 'add', aname: 'optidead', uname: 'bob',
-    pid: 'pid-optidead-bob' });
+  gas.handle({ action: 'add', slug: 'optidead', uname: 'ann',
+    userid: 'userid-optidead-ann' });
+  gas.handle({ action: 'add', slug: 'optidead', uname: 'bob',
+    userid: 'userid-optidead-bob' });
   const dDead = await makePage('/optidead?api=' + API_URL);
   const deadDoc = dDead.window.document;
   claimRow(dDead, 'ann');
@@ -1713,8 +1713,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      commit gesture and its quiet fade IS the confirmation — per
      field: blurb, rename, add, and the auction name (whose pending
      window is its create probe). */
-  gas.handle({ action: 'add', aname: 'tint', uname: 'ann',
-    pid: 'pid-tint-ann' });
+  gas.handle({ action: 'add', slug: 'tint', uname: 'ann',
+    userid: 'userid-tint-ann' });
   const dTint = await makePage('/tint?api=' + API_URL);
   const tintDoc = dTint.window.document;
   mockDelay = 300;
@@ -1753,13 +1753,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const dNamec = await makePage('/?api=' + API_URL);
   const namecDoc = dNamec.window.document;
   mockDelay = 300;
-  type(dNamec, 'aname', 'tintname');
+  type(dNamec, 'slug', 'tintname');
   commitName(dNamec);
-  ok(namecDoc.getElementById('aname').classList.contains('committed'),
+  ok(namecDoc.getElementById('slug').classList.contains('committed'),
      'committing a name tints it while its create probe rides');
   await until(() => !namecDoc.body.classList.contains('unnamed'));
   await sleep(50);
-  ok(!namecDoc.getElementById('aname').classList.contains('committed'),
+  ok(!namecDoc.getElementById('slug').classList.contains('committed'),
      "the probe's settle clears the name's tint");
   mockDelay = 0;
 
@@ -1790,7 +1790,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      the arrival says nothing — his words and the rendered pane both
      stand — and HIS save is refused in the server's words, because
      his draft was based on nothing. */
-  gas.handle({ action: 'describe', aname: 'preexdesc', base: 0,
+  gas.handle({ action: 'describe', slug: 'preexdesc', base: 0,
     blurb: 'House rules.' });
   mockDelay = 300;
   const dPreex = await makePage('/preexdesc?api=' + API_URL);
@@ -1811,7 +1811,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   preexDoc.getElementById('desctoggle').click();
   preexDoc.getElementById('descgo').click();
   await until(() => preexDoc.getElementById('war-dlg').open);
-  ok(gas.handle({ action: 'state', aname: 'preexdesc' })
+  ok(gas.handle({ action: 'state', slug: 'preexdesc' })
        .blurb === 'House rules.'
      && preexDoc.getElementById('war-title').textContent
           === STR.warTitle(1),
@@ -1826,14 +1826,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      dead draft stays dead. Resultata pre-fix: the ghost draft came
      home, met the moved blurb, and cried edit-war on a fresh page —
      and again on every reload. */
-  gas.handle({ action: 'add', aname: 'ghost',
-    uname: 'ann', pid: 'pid-ghost-ann' });
-  gas.handle({ action: 'describe', aname: 'ghost', base: 0,
+  gas.handle({ action: 'add', slug: 'ghost',
+    uname: 'ann', userid: 'userid-ghost-ann' });
+  gas.handle({ action: 'describe', slug: 'ghost', base: 0,
     blurb: 'first words' });
   const ghostCache = JSON.stringify(
-    gas.handle({ action: 'state', aname: 'ghost' }));
-  gas.handle({ action: 'describe', aname: 'ghost',
-    base: gas.handle({ action: 'state', aname: 'ghost' }).blurbver,
+    gas.handle({ action: 'state', slug: 'ghost' }));
+  gas.handle({ action: 'describe', slug: 'ghost',
+    base: gas.handle({ action: 'state', slug: 'ghost' }).bver,
     blurb: 'moved on' });
   const dGhost = await makePage('/ghost?api=' + API_URL, (w) => {
     w.localStorage.setItem('tauction-state:ghost', ghostCache);
@@ -1855,10 +1855,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      a participant or bid, and a bare page types that name. Expectata:
      the occupied-name gate offers its URL. Resultata pre-fix: the gate
      inferred existence from roster/bids and entered the auction. */
-  gas.handle({ action: 'describe', aname: 'desconly', base: 0,
+  gas.handle({ action: 'describe', slug: 'desconly', base: 0,
     blurb: '' });
   const dDescOnly = await makePage('/?api=' + API_URL);
-  type(dDescOnly, 'aname', 'desconly');
+  type(dDescOnly, 'slug', 'desconly');
   commitName(dDescOnly);
   await until(() => dDescOnly.window.location.pathname !== '/'
     || !dDescOnly.window.document.getElementById('banner').hidden);
@@ -1878,7 +1878,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     ? Promise.resolve({ json: () => Promise.resolve(
       { error: { code: 'nameTaken' } }) })
     : ordinaryFetch(url, opts);
-  type(dProbeError, 'aname', 'probeerror');
+  type(dProbeError, 'slug', 'probeerror');
   commitName(dProbeError);
   await until(() => !dProbeError.window.document
     .getElementById('banner').hidden);
@@ -1894,19 +1894,19 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      undefined looked false, so the page committed the name and only
      then crashed when ingest finally checked the shape. */
   const malformedState = JSON.parse(JSON.stringify(
-    gas.handle({ action: 'state', aname: 'malformedprobe' })));
+    gas.handle({ action: 'state', slug: 'malformedprobe' })));
   delete malformedState.exists;
   const dMalformed = await makePage('/?api=' + API_URL);
   const malformedFetch = dMalformed.window.fetch;
   dMalformed.window.fetch = (url, opts) => String(url).startsWith(API_URL)
     ? Promise.resolve({ json: () => Promise.resolve(malformedState) })
     : malformedFetch(url, opts);
-  type(dMalformed, 'aname', 'malformedprobe');
+  type(dMalformed, 'slug', 'malformedprobe');
   commitName(dMalformed);
   await until(() => dMalformed.window.location.pathname !== '/'
     || !dMalformed.window.document.getElementById('banner').hidden);
   ok(dMalformed.window.location.pathname === '/'
-     && !dMalformed.window.document.getElementById('aname').disabled
+     && !dMalformed.window.document.getElementById('slug').disabled
      && dMalformed.window.document.getElementById('banner').textContent
           .includes('assert: bad state shape'),
      'a malformed probe fails loudly while the page stays unnamed');
@@ -1916,8 +1916,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      named constructor. Expectata: constructor is an ordinary row.
      Resultata pre-fix: inherited Object members impersonated claim,
      bid, and row entries, and rendering crashed before building it. */
-  gas.handle({ action: 'add', aname: 'constructormap',
-    uname: 'constructor', pid: 'constructor' });
+  gas.handle({ action: 'add', slug: 'constructormap',
+    uname: 'constructor', userid: 'constructor' });
   const dConstructor = await makePage('/constructormap?api=' + API_URL,
     (w) => { w.localStorage.setItem('tauction-pids',
       '{"constructormap":"constructor"}'); });
@@ -1931,56 +1931,56 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   submitBid(dConstructor);
   await settled(dConstructor);
   const constructorState = gas.handle(
-    { action: 'state', aname: 'constructormap' });
+    { action: 'state', slug: 'constructormap' });
   ok(myEditor(dConstructor.window.document).value === 'constructor bid'
-     && constructorState.bidders.find((b) => b.pid === 'constructor')
+     && constructorState.bidders.find((b) => b.userid === 'constructor')
           .bcount === 1,
      'constructor submits and remembers its bid through the same safe'
-     + ' pid maps');
+     + ' userid maps');
 
-  /* --- renames in the pid era: plain ops on a fixed identity -----------
+  /* --- renames in the userid era: plain ops on a fixed identity -----------
      (2026-07-19, the migration that DELETED the client's rename-
-     transaction machinery: a rename is a label edit keyed by pid, so
+     transaction machinery: a rename is a label edit keyed by userid, so
      the old stale-chain hazard — alice→beta→gamma grabbing someone
      else's remote beta — is unrepresentable: the wire never carries
      a from-name at all. These quals replace the four transaction-era
      pins whose machinery no longer exists.) */
-  gas.handle({ action: 'add', aname: 'renops',
-    uname: 'alice', pid: 'pid-renops-alice' });
-  gas.handle({ action: 'add', aname: 'renops',
-    uname: 'carol', pid: 'pid-renops-carol' });
-  gas.handle({ action: 'bid', aname: 'renops',
-    uname: 'alice', pid: 'pid-renops-alice', bid: 'alice bid',
-    deviceID: 'ren-device', deviceBlurb: 'Ren rig' });
+  gas.handle({ action: 'add', slug: 'renops',
+    uname: 'alice', userid: 'userid-renops-alice' });
+  gas.handle({ action: 'add', slug: 'renops',
+    uname: 'carol', userid: 'userid-renops-carol' });
+  gas.handle({ action: 'bid', slug: 'renops',
+    uname: 'alice', userid: 'userid-renops-alice', bid: 'alice bid',
+    devid: 'ren-device', rig: 'Ren rig' });
   const dRen = await makePage('/renops?api=' + API_URL, (w) => {
     w.localStorage.setItem('tauction-device', 'ren-device');
     w.localStorage.setItem('tauction-pids',
-      '{"renops":"pid-renops-alice"}');
+      '{"renops":"userid-renops-alice"}');
     w.localStorage.setItem('tauction-mybids:renops',
-      '{"pid-renops-alice":"alice bid"}');
+      '{"userid-renops-alice":"alice bid"}');
   });
   // chained edits, mid-flight: two plain serialized ops, both keyed
-  // by the pid — no dependency, no transaction, nothing to roll back
+  // by the userid — no dependency, no transaction, nothing to roll back
   mockDelay = 300;
   renameTo(dRen, 'alice', 'beta');
   renameTo(dRen, 'beta', 'gamma');
   ok(row(dRen.window.document, 'gamma') !== null
      && row(dRen.window.document, 'gamma').classList.contains('mine')
      && dRen.window.localStorage.getItem('tauction-mybids:renops')
-          === '{"pid-renops-alice":"alice bid"}'
+          === '{"userid-renops-alice":"alice bid"}'
      && dRen.window.localStorage.getItem('tauction-pids')
-          === '{"renops":"pid-renops-alice"}',
+          === '{"renops":"userid-renops-alice"}',
      'chained renames advance the label instantly; identity and bid'
-     + ' memory never move — the pid IS the identity');
-  await until(() => gas.handle({ action: 'state', aname: 'renops' })
+     + ' memory never move — the userid IS the identity');
+  await until(() => gas.handle({ action: 'state', slug: 'renops' })
     .seats.some((s) => s.uname === 'gamma'));
   mockDelay = 0;
   const renCalls = apiCalls.filter((c) => c.action === 'rename'
-    && c.aname === 'renops');
+    && c.slug === 'renops');
   ok(renCalls.length === 2
-     && renCalls.every((c) => c.pid === 'pid-renops-alice')
+     && renCalls.every((c) => c.userid === 'userid-renops-alice')
      && renCalls[1].to === 'gamma',
-     'both legs went out as pid-keyed ops: no from-name exists to go'
+     'both legs went out as userid-keyed ops: no from-name exists to go'
      + ' stale');
   await settled(dRen);
   ok(row(dRen.window.document, 'gamma').classList.contains('mine')
@@ -1990,8 +1990,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // the server-side label race (a collision the local guard cannot
   // see): the refusal reddens the field, keeps the typed text for
   // fixing, and the recovery snapshot restores the committed label
-  gas.handle({ action: 'add', aname: 'renops',
-    uname: 'zeta', pid: 'pid-renops-zeta' });  // unseen: no poll yet
+  gas.handle({ action: 'add', slug: 'renops',
+    uname: 'zeta', userid: 'userid-renops-zeta' });  // unseen: no poll yet
   renameTo(dRen, 'gamma', 'zeta');
   await until(() => !dRen.window.document
     .getElementById('banner').hidden);
@@ -2013,10 +2013,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      the field. Expectata: alicia is now the committed baseline, so
      Escape is a no-op. Resultata pre-fix: defaultValue was still alice,
      so Escape submitted a second rename and reversed the first one. */
-  gas.handle({ action: 'add', aname: 'renescape',
-    uname: 'alice', pid: 'pid-renescape-alice' });
-  gas.handle({ action: 'add', aname: 'renescape',
-    uname: 'bob', pid: 'pid-renescape-bob' });
+  gas.handle({ action: 'add', slug: 'renescape',
+    uname: 'alice', userid: 'userid-renescape-alice' });
+  gas.handle({ action: 'add', slug: 'renescape',
+    uname: 'bob', userid: 'userid-renescape-bob' });
   const dRenEscape = await makePage('/renescape?api=' + API_URL);
   const renEscapeDoc = dRenEscape.window.document;
   const renEscapeInput = row(renEscapeDoc, 'alice')
@@ -2026,22 +2026,22 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   renEscapeInput.form.dispatchEvent(new dRenEscape.window.Event('submit',
     { bubbles: true, cancelable: true }));
   await until(() => names(gas.handle({ action: 'state',
-    aname: 'renescape' })) === 'alicia,bob'
+    slug: 'renescape' })) === 'alicia,bob'
     && !renEscapeDoc.getElementById('status').classList.contains('stale'));
   ok(renEscapeInput.value === 'alicia'
      && renEscapeInput.defaultValue === 'alicia'
      && renEscapeDoc.activeElement === renEscapeInput,
      'an accepted focused rename advances value and committed baseline');
   const renEscapeCalls = apiCalls.filter((c) => c.action === 'rename'
-    && c.aname === 'renescape').length;
+    && c.slug === 'renescape').length;
   renEscapeInput.dispatchEvent(new dRenEscape.window.KeyboardEvent('keydown',
     { key: 'Escape', bubbles: true }));
   await sleep(50);
   ok(row(renEscapeDoc, 'alicia') !== null
-     && names(gas.handle({ action: 'state', aname: 'renescape' }))
+     && names(gas.handle({ action: 'state', slug: 'renescape' }))
           === 'alicia,bob'
      && apiCalls.filter((c) => c.action === 'rename'
-          && c.aname === 'renescape').length === renEscapeCalls,
+          && c.slug === 'renescape').length === renEscapeCalls,
      'Escape after an accepted focused rename is a no-op: one request,'
      + ' one committed label');
 
@@ -2057,11 +2057,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' bids!" — the resting stamp needs no branch)');
   ok(!apiCalls.some((c) => c.action === 'fresh'),
      'no fresh-name round trip: particle names are gone');
-  ok(doc.activeElement === doc.getElementById('aname')
-     && doc.getElementById('aname').value === '',
+  ok(doc.activeElement === doc.getElementById('slug')
+     && doc.getElementById('slug').value === '',
      'the empty auction field holds the caret: naming it is your move');
-  ok(!doc.getElementById('aname').hasAttribute('data-tip')
-     && doc.querySelector('label[for="aname"]').getAttribute('data-tip')
+  ok(!doc.getElementById('slug').hasAttribute('data-tip')
+     && doc.querySelector('label[for="slug"]').getAttribute('data-tip')
           !== STR.nameStoneTip,
      'the LIVE name field needs no tooltip of its own, and its label'
      + ' wears the editable-state copy');
@@ -2069,15 +2069,15 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && doc.getElementById('roster-input').disabled,
      'the unnamed ledger IDLES (+ row disabled) — never BUSY: stale'
      + ' here meant a gavel hammering forever');
-  type(dom, 'aname', 'Fresh-1!');
+  type(dom, 'slug', 'Fresh-1!');
   commitName(dom);
-  ok(doc.getElementById('aname').value === 'fresh1', 'slug sanitized');
+  ok(doc.getElementById('slug').value === 'fresh1', 'slug sanitized');
   await until(() =>  // debounce + the gate's lookup: wait, don't sample
     dom.window.location.pathname === '/fresh1');
   ok(dom.window.location.pathname === '/fresh1'
      && dom.window.location.search.includes('api='),
      'naming it navigates, keeping ?api=');
-  ok(doc.getElementById('aname').disabled,
+  ok(doc.getElementById('slug').disabled,
      'NAMES ARE CHOSEN ONCE (dreev, dissolving the navigator/name'
      + ' dual meaning): the field disables the moment the name'
      + ' commits — the URL is the navigation now');
@@ -2088,8 +2088,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      call, retiring the input's own alea-iacta-est tip): the field
      sheds its box (CSS) and the LABEL's existing tip flips to the
      committed-name copy — the name is the URL now, not a field. */
-  ok(!doc.getElementById('aname').hasAttribute('data-tip')
-     && doc.querySelector('label[for="aname"]').getAttribute('data-tip')
+  ok(!doc.getElementById('slug').hasAttribute('data-tip')
+     && doc.querySelector('label[for="slug"]').getAttribute('data-tip')
           === STR.nameStoneTip,
      "the committed name's label flips to the frozen-state copy; the"
      + ' input itself hosts no tip');
@@ -2099,8 +2099,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // (was a count of [data-tip][tabindex="-1"] === 1, from when the
   // label was the only tap-focusable non-tab-stop; every button joined
   // that club 2026-07-16 per dreev, so pin the label itself instead)
-  ok(doc.querySelector('label[for="aname"]').getAttribute('data-tip')
-     && doc.querySelector('label[for="aname"]').tabIndex === -1
+  ok(doc.querySelector('label[for="slug"]').getAttribute('data-tip')
+     && doc.querySelector('label[for="slug"]').tabIndex === -1
      && !doc.querySelector('.tip'),
      'the auction label is its own tooltip host (tap-focusable, not a'
      + ' tab stop); the ? icons are gone');
@@ -2112,7 +2112,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(!doc.querySelector('#status .card-title'),
      'no separate section heading above the column headings');
   ok(!doc.querySelector('#status .th-person [data-tip]')
-     && doc.querySelector('label[for="aname"][data-tip]'),
+     && doc.querySelector('label[for="slug"][data-tip]'),
      'PARTICIPANTS explains itself in the help popup — no tooltip; the'
      + ' auction label keeps its own');
   ok(doc.querySelector('#status .th-bid #seal'),
@@ -2133,7 +2133,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' you would appear');
   ok(doc.getElementById('roster-input').getAttribute('enterkeyhint')
        === 'next'
-     && doc.getElementById('aname').getAttribute('enterkeyhint') === 'done',
+     && doc.getElementById('slug').getAttribute('enterkeyhint') === 'done',
      "mobile return keys: Next over the + row (add, keep adding), Done"
      + " over the auction name");
   ok(!doc.getElementById('status').classList.contains('revealed'),
@@ -2146,11 +2146,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      paints its cached rows instantly (grayed till the live fetch), and
      a first-time browser sees just the grayed box and the gavel (the
      old ⋯ pulse sat as a phantom blank line above the + row). */
-  gas.handle({ action: 'add', aname: 'warm',
-    uname: 'ann', pid: 'pid-warm-ann' });
-  gas.handle({ action: 'add', aname: 'warm',
-    uname: 'ben', pid: 'pid-warm-ben' });
-  const seeded = gas.handle({ action: 'state', aname: 'warm' });
+  gas.handle({ action: 'add', slug: 'warm',
+    uname: 'ann', userid: 'userid-warm-ann' });
+  gas.handle({ action: 'add', slug: 'warm',
+    uname: 'ben', userid: 'userid-warm-ben' });
+  const seeded = gas.handle({ action: 'state', slug: 'warm' });
   mockDelay = 800;
   const domWarm = await makePage('/warm?api=' + API_URL, (win) =>
     win.localStorage.setItem('tauction-state:warm', JSON.stringify(seeded)));
@@ -2186,10 +2186,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      Expectata: a loud, honest banner naming the state-shape problem —
      the fix is deploying @17, never softening the assert. */
   stripTini = true;
-  gas.handle({ action: 'add', aname: 'skew',
-    uname: 'old', pid: 'pid-skew-old' });
-  gas.handle({ action: 'bid', aname: 'skew',
-    uname: 'old', pid: 'pid-skew-old', bid: 'relic' });
+  gas.handle({ action: 'add', slug: 'skew',
+    uname: 'old', userid: 'userid-skew-old' });
+  gas.handle({ action: 'bid', slug: 'skew',
+    uname: 'old', userid: 'userid-skew-old', bid: 'relic' });
   const domSkew = await makePage('/skew?api=' + API_URL);
   ok(!domSkew.window.document.getElementById('banner').hidden
      && domSkew.window.document.getElementById('banner').textContent
@@ -2208,10 +2208,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      stamp is full-ISO or the ingest refuses loudly. */
   const COERCED = String(new Date('2026-07-18T01:23:45.678Z'));
   stampSwap = COERCED;
-  gas.handle({ action: 'add', aname: 'coerced',
-    uname: 'old', pid: 'pid-coerced-old' });
-  gas.handle({ action: 'bid', aname: 'coerced',
-    uname: 'old', pid: 'pid-coerced-old', bid: 'x' });
+  gas.handle({ action: 'add', slug: 'coerced',
+    uname: 'old', userid: 'userid-coerced-old' });
+  gas.handle({ action: 'bid', slug: 'coerced',
+    uname: 'old', userid: 'userid-coerced-old', bid: 'x' });
   const domCo = await makePage('/coerced?api=' + API_URL);
   ok(!domCo.window.document.getElementById('banner').hidden
      && domCo.window.document.getElementById('banner').textContent
@@ -2224,15 +2224,15 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && domNan.window.document.getElementById('banner').textContent
           .includes('bad state shape'),
      'a blank stamp (the old "NaNd ago" tooltip) refuses loudly too');
-  gas.handle({ action: 'add', aname: 'coercedtfin',
-    uname: 'a1', pid: 'pid-coercedtfin-a1' });
-  gas.handle({ action: 'add', aname: 'coercedtfin',
-    uname: 'b2', pid: 'pid-coercedtfin-b2' });
-  gas.handle({ action: 'bid', aname: 'coercedtfin',
-    uname: 'a1', pid: 'pid-coercedtfin-a1', bid: 'x' });
-  gas.handle({ action: 'bid', aname: 'coercedtfin',
-    uname: 'b2', pid: 'pid-coercedtfin-b2', bid: 'y' });
-  gas.handle({ action: 'reveal', aname: 'coercedtfin' });
+  gas.handle({ action: 'add', slug: 'coercedtfin',
+    uname: 'a1', userid: 'userid-coercedtfin-a1' });
+  gas.handle({ action: 'add', slug: 'coercedtfin',
+    uname: 'b2', userid: 'userid-coercedtfin-b2' });
+  gas.handle({ action: 'bid', slug: 'coercedtfin',
+    uname: 'a1', userid: 'userid-coercedtfin-a1', bid: 'x' });
+  gas.handle({ action: 'bid', slug: 'coercedtfin',
+    uname: 'b2', userid: 'userid-coercedtfin-b2', bid: 'y' });
+  gas.handle({ action: 'reveal', slug: 'coercedtfin' });
   stampSwap = COERCED;
   const domCt = await makePage('/coercedtfin?api=' + API_URL);
   ok(!domCt.window.document.getElementById('banner').hidden
@@ -2264,8 +2264,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      Resultata pre-fix: a sticky ERROR2152 banner over a bright,
      normal-looking ledger — claiming catastrophe while looking fine,
      the exact inverse of the truth. */
-  gas.handle({ action: 'add', aname: 'wifi',
-    uname: 'ann', pid: 'pid-wifi-ann' });
+  gas.handle({ action: 'add', slug: 'wifi',
+    uname: 'ann', userid: 'userid-wifi-ann' });
   const dWifi = await makePage('/wifi?api=' + API_URL);
   const wifiDoc = dWifi.window.document;
   await until(() => row(wifiDoc, 'ann')
@@ -2311,8 +2311,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      truth; refusals log ✗ with the server's words. One differ at the
      one adoption seam — an unchanged snapshot logs NOTHING, so the
      5s poll stays silent. Resultata pre-fix: a silent console. */
-  gas.handle({ action: 'add', aname: 'diary',
-    uname: 'ann', pid: 'pid-diary-ann' });
+  gas.handle({ action: 'add', slug: 'diary',
+    uname: 'ann', userid: 'userid-diary-ann' });
   const dDiary = await makePage('/diary?api=' + API_URL);
   const diaryDoc = dDiary.window.document;
   const logs = dDiary.window.__logs;
@@ -2338,10 +2338,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(has('+ @me'),
      '...and narrates like any other change when its settle becomes'
      + ' table truth');
-  gas.handle({ action: 'add', aname: 'diary',
-    uname: 'bob', pid: 'pid-diary-bob' });
-  gas.handle({ action: 'add', aname: 'diary',
-    uname: 'tmp', pid: 'pid-diary-tmp' });
+  gas.handle({ action: 'add', slug: 'diary',
+    uname: 'bob', userid: 'userid-diary-bob' });
+  gas.handle({ action: 'add', slug: 'diary',
+    uname: 'tmp', userid: 'userid-diary-tmp' });
   await jog();
   ok(has('+ @bob') && has('+ @tmp'),
      'remote joins narrate on the poll that shows them');
@@ -2357,7 +2357,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'a rename narrates as old → new');
   const warned = (s) => dDiary.window.__warns.some((w) => w.includes(s));
   const renPosts = () => apiCalls.filter((c) => c.action === 'rename'
-    && c.aname === 'diary').length;
+    && c.slug === 'diary').length;
   const renBefore = renPosts();
   renameTo(dDiary, 'rob', 'ann');  // ann is live: the LOCAL guard
   await sleep(30);
@@ -2365,8 +2365,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'even a client-side refusal warns ✗ — every bannered error, from'
      + ' ANY path, reaches the chronicle (structurally: banner()'
      + ' itself warns, so no site can forget)');
-  gas.handle({ action: 'bid', aname: 'diary',
-    uname: 'ann', pid: 'pid-diary-ann', bid: 'aa' });
+  gas.handle({ action: 'bid', slug: 'diary',
+    uname: 'ann', userid: 'userid-diary-ann', bid: 'aa' });
   await jog();
   ok(has('@ann: bid #1'), "a bid narrates by owner and ordinal —"
      + ' never its sealed text');
@@ -2378,21 +2378,21 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(has('★ @me'),
      "the bid's registered claim narrates too (★ = taken, as on the"
      + ' ledger)');
-  gas.handle({ action: 'bid', aname: 'diary',
-    uname: 'ann', pid: 'pid-diary-ann', bid: 'aaa' });
+  gas.handle({ action: 'bid', slug: 'diary',
+    uname: 'ann', userid: 'userid-diary-ann', bid: 'aaa' });
   await jog();
   ok(has('@ann: bid #2'), 're-bids narrate by their bumped ordinal');
-  gas.handle({ action: 'add', aname: 'diary',
-    uname: 'zed', pid: 'pid-diary-zed-remote' });
+  gas.handle({ action: 'add', slug: 'diary',
+    uname: 'zed', userid: 'userid-diary-zed-remote' });
   addName(dDiary, 'zed');  // the 2d2 race: this page loses, quietly
   await until(() => row(diaryDoc, 'zed')
-    && row(diaryDoc, 'zed').dataset.pid === 'pid-diary-zed-remote'
+    && row(diaryDoc, 'zed').dataset.userid === 'userid-diary-zed-remote'
     && drained(dDiary));
   ok(diaryDoc.getElementById('banner').hidden && has('+ @zed'),
      'a lost add race converges quietly: one + entry, no error — the'
      + ' loser is an ordinary latecomer (dreev 2026-07-21)');
-  gas.handle({ action: 'add', aname: 'diary',
-    uname: 'kim', pid: 'pid-diary-kim' });
+  gas.handle({ action: 'add', slug: 'diary',
+    uname: 'kim', userid: 'userid-diary-kim' });
   renameTo(dDiary, 'rob', 'kim');  // stale roster: the local guard is
                                    // blind, the server refuses
   await until(() => !diaryDoc.getElementById('banner').hidden);
@@ -2406,19 +2406,19 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(logs.length === quiet,
      'an unchanged snapshot narrates NOTHING: the 5s poll is silent'
      + ' by construction');
-  const base = gas.handle({ action: 'state', aname: 'diary' });
-  gas.handle({ action: 'describe', aname: 'diary',
-    blurb: 'de rebus emptis', base: base.blurbver });
+  const base = gas.handle({ action: 'state', slug: 'diary' });
+  gas.handle({ action: 'describe', slug: 'diary',
+    blurb: 'de rebus emptis', base: base.bver });
   await jog();
   ok(has('✎ description (15 chars)'),
      'a description edit narrates its new length, not its text');
-  gas.handle({ action: 'bid', aname: 'diary',
-    uname: 'rob', pid: 'pid-diary-bob', bid: 'rr' });
-  gas.handle({ action: 'bid', aname: 'diary',
-    uname: 'zed', pid: 'pid-diary-zed-remote', bid: 'zz' });
-  gas.handle({ action: 'bid', aname: 'diary',
-    uname: 'kim', pid: 'pid-diary-kim', bid: 'kk' });
-  gas.handle({ action: 'reveal', aname: 'diary' });
+  gas.handle({ action: 'bid', slug: 'diary',
+    uname: 'rob', userid: 'userid-diary-bob', bid: 'rr' });
+  gas.handle({ action: 'bid', slug: 'diary',
+    uname: 'zed', userid: 'userid-diary-zed-remote', bid: 'zz' });
+  gas.handle({ action: 'bid', slug: 'diary',
+    uname: 'kim', userid: 'userid-diary-kim', bid: 'kk' });
+  gas.handle({ action: 'reveal', slug: 'diary' });
   await jog();
   ok(has('@rob: bid #1') && has('@zed: bid #1') && has('🎉 revealed'),
      'the finale narrates: the last bids in, then the latch');
@@ -2437,23 +2437,23 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const dTabName = await makePage('/?api=' + API_URL);
   const tabDoc = dTabName.window.document;
   const tabProbes = () => apiCalls.filter((c) => c.action === 'state'
-    && c.aname === 'tabflow2').length;
-  type(dTabName, 'aname', 'tabflow2');
-  const tabUneaten = tabDoc.getElementById('aname').dispatchEvent(
+    && c.slug === 'tabflow2').length;
+  type(dTabName, 'slug', 'tabflow2');
+  const tabUneaten = tabDoc.getElementById('slug').dispatchEvent(
     new dTabName.window.KeyboardEvent('keydown',
       { key: 'Tab', bubbles: true, cancelable: true }));
   await sleep(80);
   ok(tabUneaten
      && dTabName.window.location.pathname === '/'
-     && !tabDoc.getElementById('aname').disabled
-     && tabDoc.getElementById('aname').value === 'tabflow2'
+     && !tabDoc.getElementById('slug').disabled
+     && tabDoc.getElementById('slug').value === 'tabflow2'
      && tabProbes() === 0,
      'tab in the auction name commits NOTHING, uneaten — it moves'
      + ' focus like Tab should; the typed name just waits');
   commitName(dTabName);  // Enter is the one gesture
   await until(() => dTabName.window.location.pathname === '/tabflow2');
   await sleep(20);
-  ok(tabDoc.getElementById('aname').disabled
+  ok(tabDoc.getElementById('slug').disabled
      && !tabDoc.getElementById('descedit').disabled,
      'Enter commits and stones the name field, leaving the'
      + ' description as the first enabled field — native Tab now'
@@ -2474,28 +2474,28 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // other pages keep polling their own auctions; only probes for the
   // names typed HERE would betray a timer
   const pizProbes = () => apiCalls.filter((c) => c.action === 'state'
-    && (c.aname === 'piz' || c.aname === 'pizzanight')).length;
-  type(dPause, 'aname', 'piz');
+    && (c.slug === 'piz' || c.slug === 'pizzanight')).length;
+  type(dPause, 'slug', 'piz');
   await sleep(900);  // the fatal thinking pause, well past 500ms
   ok(dPause.window.location.pathname === '/'
-     && !pauseDoc.getElementById('aname').disabled
+     && !pauseDoc.getElementById('slug').disabled
      && pizProbes() === 0,
      'a mid-name pause commits nothing, freezes nothing, and sends'
      + ' NOTHING: no timer, not even a speculative probe');
-  type(dPause, 'aname', 'pizzanight');  // the thought completes
-  pauseDoc.getElementById('aname').dispatchEvent(
+  type(dPause, 'slug', 'pizzanight');  // the thought completes
+  pauseDoc.getElementById('slug').dispatchEvent(
     new dPause.window.Event('blur'));
   await sleep(100);
   ok(dPause.window.location.pathname === '/'
-     && !pauseDoc.getElementById('aname').disabled
-     && pauseDoc.getElementById('aname').value === 'pizzanight'
+     && !pauseDoc.getElementById('slug').disabled
+     && pauseDoc.getElementById('slug').value === 'pizzanight'
      && pizProbes() === 0,
      'BLUR commits nothing here either (since 2026-07-27, nowhere):'
      + ' wandering off must not irreversibly name the auction');
   commitName(dPause);
   await until(() => dPause.window.location.pathname === '/pizzanight');
-  ok(pauseDoc.getElementById('aname').disabled
-     && pauseDoc.querySelector('label[for="aname"]')
+  ok(pauseDoc.getElementById('slug').disabled
+     && pauseDoc.querySelector('label[for="slug"]')
           .getAttribute('data-tip') === STR.nameStoneTip,
      'Enter commits deliberately: the name takes, the field freezes,'
      + ' the label tip flips');
@@ -2512,14 +2512,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const dBareTitle = await makePage('/?api=' + API_URL);
   ok(dBareTitle.window.document.title === 'tauction',
      "the unnamed page keeps the HTML's static title");
-  gas.handle({ action: 'add', aname: 'titular',
-    uname: 'ann', pid: 'pid-titular-ann' });
-  gas.handle({ action: 'add', aname: 'titular',
-    uname: 'bo', pid: 'pid-titular-bo' });
-  gas.handle({ action: 'bid', aname: 'titular',
-    uname: 'ann', pid: 'pid-titular-ann', bid: 'a' });
-  gas.handle({ action: 'bid', aname: 'titular',
-    uname: 'bo', pid: 'pid-titular-bo', bid: 'b' });
+  gas.handle({ action: 'add', slug: 'titular',
+    uname: 'ann', userid: 'userid-titular-ann' });
+  gas.handle({ action: 'add', slug: 'titular',
+    uname: 'bo', userid: 'userid-titular-bo' });
+  gas.handle({ action: 'bid', slug: 'titular',
+    uname: 'ann', userid: 'userid-titular-ann', bid: 'a' });
+  gas.handle({ action: 'bid', slug: 'titular',
+    uname: 'bo', userid: 'userid-titular-bo', bid: 'b' });
   const dTitle = await makePage('/titular?api=' + API_URL);
   const titleDoc = dTitle.window.document;
   await until(() => !titleDoc.getElementById('status')
@@ -2528,7 +2528,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'all bids in, unrevealed: the tab offers the press (ready is the'
      + ' state that calls SOMEONE back), got '
      + JSON.stringify(titleDoc.title));
-  gas.handle({ action: 'reveal', aname: 'titular' });  // from elsewhere
+  gas.handle({ action: 'reveal', slug: 'titular' });  // from elsewhere
   await until(() => titleDoc.getElementById('status')
     .classList.contains('revealed'));
   ok(titleDoc.title === STR.tabTitle(STR.revealedGlyph, 'titular'),
@@ -2536,7 +2536,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' the tab bar');
   // the cached instant paint titles the tab too, before the live
   // fetch lands (the same never-flash-blank promise as the roster)
-  const seededTitle = gas.handle({ action: 'state', aname: 'titular' });
+  const seededTitle = gas.handle({ action: 'state', slug: 'titular' });
   mockDelay = 400;
   const dWarmTitle = await makePage('/titular?api=' + API_URL, (win) =>
     win.localStorage.setItem('tauction-state:titular',
@@ -2548,7 +2548,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   mockDelay = 0;
   // the typed-name road runs through switchAuction, not init
   const dTypedTitle = await makePage('/?api=' + API_URL);
-  type(dTypedTitle, 'aname', 'titulus');
+  type(dTypedTitle, 'slug', 'titulus');
   commitName(dTypedTitle);
   await until(() =>
     dTypedTitle.window.location.pathname === '/titulus');
@@ -2574,8 +2574,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      holds: returning to the tab refreshes at once and the party fires
      THEN, seen. Resultata pre-fix: hidden tabs were fully silent and
      a returning glance waited out the poll interval. */
-  gas.handle({ action: 'add', aname: 'peekaboo',
-    uname: 'ann', pid: 'pid-peekaboo-ann' });
+  gas.handle({ action: 'add', slug: 'peekaboo',
+    uname: 'ann', userid: 'userid-peekaboo-ann' });
   const dPeek = await makePage('/peekaboo?api=' + API_URL);
   const peekDoc = dPeek.window.document;
   ok(peekDoc.title === STR.tabTitle(STR.waitingGlyph, 'peekaboo'),
@@ -2587,10 +2587,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'the hidden peek is registered at its explicit minute cadence'
      + ' (never outsourced to browser throttling heuristics)');
   const peekCalls = () => apiCalls.filter((c) => c.action === 'state'
-    && c.aname === 'peekaboo').length;
+    && c.slug === 'peekaboo').length;
   setVisibility(dPeek, 'hidden');
-  gas.handle({ action: 'bid', aname: 'peekaboo',
-    uname: 'ann', pid: 'pid-peekaboo-ann', bid: 'a' });
+  gas.handle({ action: 'bid', slug: 'peekaboo',
+    uname: 'ann', userid: 'userid-peekaboo-ann', bid: 'a' });
   peek.fn();
   await sleep(150);
   ok(peekDoc.title === STR.tabTitle(STR.yourMoveGlyph, 'peekaboo'),
@@ -2601,15 +2601,15 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && !peekDoc.getElementById('status').classList.contains('stale'),
      "the peek is title-ONLY: ann's bid is NOT ingested and the box"
      + ' is untouched — never-clobber sleeps until the tab is looked at');
-  const mePid = pidOf(gas.handle({ action: 'state', aname: 'peekaboo' }),
+  const mePid = pidOf(gas.handle({ action: 'state', slug: 'peekaboo' }),
                       'me');
-  gas.handle({ action: 'bid', aname: 'peekaboo',
-    uname: 'me', pid: mePid, bid: 'b' });  // you, from your phone
+  gas.handle({ action: 'bid', slug: 'peekaboo',
+    uname: 'me', userid: mePid, bid: 'b' });  // you, from your phone
   peek.fn();
   await sleep(150);
   ok(peekDoc.title === STR.tabTitle(STR.readyGlyph, 'peekaboo'),
      'all in: the hidden tab offers the press');
-  gas.handle({ action: 'reveal', aname: 'peekaboo' });
+  gas.handle({ action: 'reveal', slug: 'peekaboo' });
   peek.fn();
   await sleep(150);
   ok(peekDoc.title === STR.tabTitle(STR.revealedGlyph, 'peekaboo'),
@@ -2644,7 +2644,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      no poll tick can confound the counts. */
   const dRet = await makePage('/retvisit?api=' + API_URL);
   const retCalls = () => apiCalls.filter((c) => c.action === 'state'
-    && c.aname === 'retvisit').length;
+    && c.slug === 'retvisit').length;
   const retBoot = retCalls();
   ok(retBoot === 1, 'one boot fetch, no poll tick yet: the dead zone'
      + ' holds (got ' + retBoot + ')');
@@ -2661,8 +2661,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   /* --- 2. alice sets up /tau and bids in place; her bid stays visible --- */
   dom = await makePage('/tau?api=' + API_URL);
   doc = dom.window.document;
-  ok(doc.getElementById('aname').disabled
-     && doc.querySelector('label[for="aname"]').getAttribute('data-tip')
+  ok(doc.getElementById('slug').disabled
+     && doc.querySelector('label[for="slug"]').getAttribute('data-tip')
           === STR.nameStoneTip,
      'arriving by URL: the name is set in stone here too, the label'
      + ' tip flipped to match');
@@ -2709,12 +2709,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        === STR.waitingTip('alice' + STR.youTag + ' and bob'),
      'padlock tip NAMES the stragglers, tagging you as you');
   addName(dom, 'carol');
-  await until(() => names(gas.handle({ action: 'state', aname: 'tau' })) === 'alice,bob,carol');
+  await until(() => names(gas.handle({ action: 'state', slug: 'tau' })) === 'alice,bob,carol');
   ok(doc.getElementById('reveal').getAttribute('data-tip')
        === STR.waitingTip('alice' + STR.youTag + ', bob, and carol'),
      'three stragglers: Oxford comma and all');
   row(doc, 'carol').querySelector('.x').click();
-  await until(() => names(gas.handle({ action: 'state', aname: 'tau' })) === 'alice,bob');
+  await until(() => names(gas.handle({ action: 'state', slug: 'tau' })) === 'alice,bob');
   ok(doc.getElementById('share') && doc.getElementById('help'),
      'share and help buttons present');
   ok(doc.getElementById('share-dlg') && doc.getElementById('help-dlg'),
@@ -2796,7 +2796,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'green rows carry no animation delay (shimmer unaffected)');
   ok(Object.values(JSON.parse(
        dom.window.localStorage.getItem('tauction-mybids:tau')))
-       .includes('three tacos'), 'own bid persisted (pid-keyed)');
+       .includes('three tacos'), 'own bid persisted (userid-keyed)');
   ok(doc.getElementById('banner').hidden,
      'no banner for a placed bid: the green card already says it');
   ok(!doc.querySelector('#tiles .check'),
@@ -2902,11 +2902,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   addName(domQ, 'quicktwo');   // enqueued while op 1 is in flight
   addName(domQ, 'quickthree');
   await until(() =>  // three serialized ops drain (~2.1s at 700ms each)
-    names(gas.handle({ action: 'state', aname: 'coalesce' }))
+    names(gas.handle({ action: 'state', slug: 'coalesce' }))
     === 'quickone,quicktwo,quickthree');
   mockDelay = 0;
   ok(!opsOverlapped, 'write ops serialize: never two in flight');
-  ok(names(gas.handle({ action: 'state', aname: 'coalesce' }))
+  ok(names(gas.handle({ action: 'state', slug: 'coalesce' }))
      === 'quickone,quicktwo,quickthree', 'every added name arrives');
   ok(!domQ.window.document.getElementById('status').classList.contains('stale'),
      'box settles unstale after the queued ops');
@@ -2914,7 +2914,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   /* --- 2d2. a stale duplicate add converges QUIETLY --------------------
      Replicata: a page loads an empty ledger; another browser seats
      alice; before the stale page polls, it submits alice under its
-     own fresh pid. Expectata (dreev 2026-07-21, reversing the 07-20
+     own fresh userid. Expectata (dreev 2026-07-21, reversing the 07-20
      loud refusal — "the error seems wrong": alice IS added, exactly
      as requested): the goal state already holds, so the server
      answers idempotent success — the losing row is discarded, the
@@ -2924,21 +2924,21 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      name is taken" glared over a ledger showing alice, freshly
      added. */
   const dAddRace = await makePage('/addrace?api=' + API_URL);
-  const remoteAddPid = 'pid-addrace-remote-alice';
-  gas.handle({ action: 'add', aname: 'addrace', uname: 'alice',
-    pid: remoteAddPid });
+  const remoteAddPid = 'userid-addrace-remote-alice';
+  gas.handle({ action: 'add', slug: 'addrace', uname: 'alice',
+    userid: remoteAddPid });
   addName(dAddRace, 'alice');
   const addRaceDoc = dAddRace.window.document;
   await until(() => {
     const r = row(addRaceDoc, 'alice');
-    return r && r.dataset.pid === remoteAddPid
+    return r && r.dataset.userid === remoteAddPid
       && !addRaceDoc.getElementById('status').classList.contains('stale');
   });
-  const addRaceState = gas.handle({ action: 'state', aname: 'addrace' });
+  const addRaceState = gas.handle({ action: 'state', slug: 'addrace' });
   ok(addRaceDoc.getElementById('banner').hidden
      && !row(addRaceDoc, 'alice').classList.contains('mine')
      && addRaceState.seats.length === 1
-     && addRaceState.seats[0].pid === remoteAddPid,
+     && addRaceState.seats[0].userid === remoteAddPid,
      'the stale duplicate converges quietly onto the winning row');
 
   /* --- 2e. a name you typed must never vanish ----------------------------
@@ -2960,7 +2960,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(row(domV.window.document, 'dos'),
      'a freshly added name survives a stale poll landing');
   await sleep(6000);           // pushes and a fresh poll settle
-  ok(names(gas.handle({ action: 'state', aname: 'keepname' }))
+  ok(names(gas.handle({ action: 'state', slug: 'keepname' }))
      === 'uno,dos', 'both names reach the server');
 
   /* --- 2e2. the wall clock is not a logic input ------------------------
@@ -2974,15 +2974,15 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      here, so no poll can sneak past inside this qual). Expectata:
      adoption is gated on SEQUENCE, not clocks; the next poll
      adopts. */
-  gas.handle({ action: 'add', aname: 'clockstep',
-    uname: 'ann', pid: 'pid-clockstep-ann' });
+  gas.handle({ action: 'add', slug: 'clockstep',
+    uname: 'ann', userid: 'userid-clockstep-ann' });
   const dClock = await makePage('/clockstep?api=' + API_URL);
   addName(dClock, 'bee');       // a write, so a settle gets recorded
   await settled(dClock);
   const realNow = dClock.window.Date.now;
   dClock.window.Date.now = () => realNow() - 600000;  // NTP steps back
-  gas.handle({ action: 'add', aname: 'clockstep',
-    uname: 'cee', pid: 'pid-clockstep-cee' });  // the remote edit
+  gas.handle({ action: 'add', slug: 'clockstep',
+    uname: 'cee', userid: 'userid-clockstep-cee' });  // the remote edit
   await until(() => row(dClock.window.document, 'cee') !== null);
   ok(row(dClock.window.document, 'cee') !== null,
      'a backwards clock step cannot freeze snapshot adoption: the'
@@ -3007,8 +3007,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'retyping your own cold-pending name clears quietly: no dead key,'
      + ' no objection');
   mockDelay = 0;
-  await until(() => names(gas.handle({ action: 'state', aname: 'coldadd' })) === 'ann');
-  ok(names(gas.handle({ action: 'state', aname: 'coldadd' }))
+  await until(() => names(gas.handle({ action: 'state', slug: 'coldadd' })) === 'ann');
+  ok(names(gas.handle({ action: 'state', slug: 'coldadd' }))
        === 'ann'
      && dCold2.window.localStorage.getItem('tauction-uname') === 'ann',
      'one seat, once, when the dust settles — and it is yours');
@@ -3019,10 +3019,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      its claim, and any bid re-key together; a rename made on another
      machine follows your device id home: you stay latched, your bid
      memory migrates. */
-  gas.handle({ action: 'add', aname: 'typo',
-    uname: 'alicw', pid: 'pid-typo-alicw' });
-  gas.handle({ action: 'add', aname: 'typo',
-    uname: 'bob', pid: 'pid-typo-bob' });
+  gas.handle({ action: 'add', slug: 'typo',
+    uname: 'alicw', userid: 'userid-typo-alicw' });
+  gas.handle({ action: 'add', slug: 'typo',
+    uname: 'bob', userid: 'userid-typo-bob' });
   const domT2 = await makePage('/typo?api=' + API_URL);
   const docT2 = domT2.window.document;
   ok([...tiles(docT2)].every((t) => t.querySelector('.rename input')
@@ -3050,17 +3050,17 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && nameInp.defaultValue === 'wronger',
      'clicking away COMMITS the rename: cheap label edits are'
      + ' frictionless again');
-  await until(() => names(gas.handle({ action: 'state', aname: 'typo' }))
+  await until(() => names(gas.handle({ action: 'state', slug: 'typo' }))
     === 'wronger,bob');
   renameTo(domT2, 'wronger', 'alicw');  // back, for the legs below
-  await until(() => names(gas.handle({ action: 'state', aname: 'typo' }))
+  await until(() => names(gas.handle({ action: 'state', slug: 'typo' }))
     === 'alicw,bob');
   renameTo(domT2, 'alicw', 'alice');
   ok(row(docT2, 'alice') && !row(docT2, 'alicw')
      && tiles(docT2)[0].dataset.uname === 'alice',
      'the typo is fixed in place immediately, order kept');
-  await until(() => names(gas.handle({ action: 'state', aname: 'typo' })) === 'alice,bob');
-  ok(names(gas.handle({ action: 'state', aname: 'typo' }))
+  await until(() => names(gas.handle({ action: 'state', slug: 'typo' })) === 'alice,bob');
+  ok(names(gas.handle({ action: 'state', slug: 'typo' }))
      === 'alice,bob', 'the rename reached the server');
   renameTo(domT2, 'alice', 'bob');
   ok(row(docT2, 'alice') && docT2.getElementById('banner').textContent
@@ -3077,14 +3077,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(row(docT2, 'alicia').classList.contains('mine')
      && myEditor(docT2).value === 'first dibs',
      'renaming yourself keeps you latched, bid and editor intact'
-     + ' (nothing to migrate: the pid never moved)');
+     + ' (nothing to migrate: the userid never moved)');
 
   // cross-device: machine 2 fixes machine 1's typo; machine 1's identity
   // follows its device id home on the next poll
-  gas.handle({ action: 'add', aname: 'xdev',
-    uname: 'carow', pid: 'pid-xdev-carow' });
-  gas.handle({ action: 'add', aname: 'xdev',
-    uname: 'dan', pid: 'pid-xdev-dan' });
+  gas.handle({ action: 'add', slug: 'xdev',
+    uname: 'carow', userid: 'userid-xdev-carow' });
+  gas.handle({ action: 'add', slug: 'xdev',
+    uname: 'dan', userid: 'userid-xdev-dan' });
   const mA = await makePage('/xdev?api=' + API_URL);
   claimRow(mA, 'carow');
   typeBid(mA, 'a carrot');
@@ -3097,23 +3097,23 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(row(mA.window.document, 'carol').classList.contains('mine')
      && myEditor(mA.window.document).value === 'a carrot',
      "a rename from another machine changes machine 1's LABEL only:"
-     + ' the pid held firm, so identity and bid rode along untouched');
+     + ' the userid held firm, so identity and bid rode along untouched');
 
   /* --- 2i. arriving claimed and bidless: the caret waits in your editor
      (Replicata of dreev's pulse bug: load — don't click — a page where
      you're claimed with no bid. Expectata: your editor is a normal
      field with the caret in it, and only not-you rows ever pulse.
      Resultata pre-fix: the editor sat unfocused, pulsing.) ----------- */
-  gas.handle({ action: 'add', aname: 'caret',
-    uname: 'ann', pid: 'pid-caret-ann' });
-  gas.handle({ action: 'add', aname: 'caret',
-    uname: 'bee', pid: 'pid-caret-bee' });
-  gas.handle({ action: 'claim', aname: 'caret',
-    uname: 'ann', pid: 'pid-caret-ann',
-               deviceID: 'dev-caret' });
+  gas.handle({ action: 'add', slug: 'caret',
+    uname: 'ann', userid: 'userid-caret-ann' });
+  gas.handle({ action: 'add', slug: 'caret',
+    uname: 'bee', userid: 'userid-caret-bee' });
+  gas.handle({ action: 'claim', slug: 'caret',
+    uname: 'ann', userid: 'userid-caret-ann',
+               devid: 'dev-caret' });
   const seedK = (w) => {
     w.localStorage.setItem('tauction-device', 'dev-caret');
-    w.localStorage.setItem('tauction-pids', '{"caret":"pid-caret-ann"}');
+    w.localStorage.setItem('tauction-pids', '{"caret":"userid-caret-ann"}');
   };
   const domK = await makePage('/caret?api=' + API_URL, seedK);
   const docK = domK.window.document;
@@ -3123,7 +3123,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // flight, the caret lands from the cached snapshot (pinned before
   // folding the arrival latches into the one adopted-edge)
   const caretSnap = JSON.stringify(
-    gas.handle({ action: 'state', aname: 'caret' }));
+    gas.handle({ action: 'state', slug: 'caret' }));
   mockDelay = 800;
   const domKc = await makePage('/caret?api=' + API_URL, (w) => {
     seedK(w);
@@ -3137,9 +3137,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await settled(domKc);
   myEditor(docK).blur();
   const pollsK = apiCalls.filter((c) => c.action === 'state'
-    && c.aname === 'caret').length;
+    && c.slug === 'caret').length;
   await until(() => apiCalls.filter((c) => c.action === 'state'
-    && c.aname === 'caret').length > pollsK);
+    && c.slug === 'caret').length > pollsK);
   await sleep(100);  // the poll's response lands and renders
   ok(docK.activeElement !== myEditor(docK),
      'focus placement is one-shot: a poll never steals the caret back');
@@ -3172,8 +3172,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(!row(domJ2.window.document, 'pal').classList.contains('mine')
      && row(domJ2.window.document, 'dree').classList.contains('mine'),
      'later adds are other people: the star stays on your row');
-  await until(() => names(gas.handle({ action: 'state', aname: 'mefirst' })) === 'dree,pal');
-  ok(Object.keys(gas.handle({ action: 'state', aname: 'mefirst' })
+  await until(() => names(gas.handle({ action: 'state', slug: 'mefirst' })) === 'dree,pal');
+  ok(Object.keys(gas.handle({ action: 'state', slug: 'mefirst' })
        .claims).length === 0,
      'the self-add registers no server claim: a real dree on another'
      + ' device can still claim the seat out from under it');
@@ -3181,8 +3181,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   /* --- 2p. the auction description: markdown, a corner toggle, and
      compare-and-swap against clobbers (the compact eat-the-richtext:
      one field, source and rendered modes) ------------------------------ */
-  gas.handle({ action: 'add', aname: 'descy',
-    uname: 'ann', pid: 'pid-descy-ann' });
+  gas.handle({ action: 'add', slug: 'descy',
+    uname: 'ann', userid: 'userid-descy-ann' });
   const domDs = await makePage('/descy?api=' + API_URL);
   const dsDoc = domDs.window.document;
   ok(dsDoc.getElementById('desc').classList.contains('viewing')
@@ -3197,12 +3197,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(dsDoc.getElementById('desctoggle').getAttribute('data-tip')
        === STR.descVerTip(0),
      "the pencil's tooltip is the blurb's version counter [dreev's"
-     + ' 2026-07-30 blurbver spec, superseding the 07-17 no-tip'
+     + ' 2026-07-30 bver spec, superseding the 07-17 no-tip'
      + ' ruling]');
   // SAVE = commit + flip to rendered (dreev revived the button
   // 2026-07-27; clicking away commits nothing, anywhere)
   dsDoc.getElementById('descgo').click();
-  await until(() => gas.handle({ action: 'state', aname: 'descy' })
+  await until(() => gas.handle({ action: 'state', slug: 'descy' })
     .blurb === '# Brunch\n\n**bring** cash');
   await until(() => !!dsDoc.querySelector('#descview h1'));
   ok(dsDoc.getElementById('desc').classList.contains('viewing')
@@ -3256,10 +3256,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      italics inside the code span. Expectata: what's in backticks
      comes out verbatim — while code can still LABEL a link, and
      emphasis outside code still works. */
-  gas.handle({ action: 'describe', aname: 'codespan', base: 0,
+  gas.handle({ action: 'describe', slug: 'codespan', base: 0,
     blurb: 'ecce `a*b*c` et `**x**` et [`y`](https://e.com) et *z*' });
-  gas.handle({ action: 'add', aname: 'codespan',
-    uname: 'c', pid: 'pid-codespan-c' });
+  gas.handle({ action: 'add', slug: 'codespan',
+    uname: 'c', userid: 'userid-codespan-c' });
   const domCs = await makePage('/codespan?api=' + API_URL);
   const csDoc = domCs.window.document;
   const codeEls = [...csDoc.querySelectorAll('#descview code')];
@@ -3278,11 +3278,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'emphasis outside the backticks still works');
 
   // hostile markdown renders inert (escape-first, whitelisted links)
-  gas.handle({ action: 'describe', aname: 'evil', base: 0,
+  gas.handle({ action: 'describe', slug: 'evil', base: 0,
     blurb: '<script>window.pwned=1</script>\n\n'
       + '[x](javascript:alert(1)) <img src=x onerror=alert(1)>' });
-  gas.handle({ action: 'add', aname: 'evil',
-    uname: 'e', pid: 'pid-evil-e' });
+  gas.handle({ action: 'add', slug: 'evil',
+    uname: 'e', userid: 'userid-evil-e' });
   const domEv = await makePage('/evil?api=' + API_URL);
   const evDoc = domEv.window.document;
   ok(evDoc.getElementById('desc').classList.contains('viewing'),
@@ -3433,7 +3433,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   dA.window.document.getElementById('descedit').dispatchEvent(
     new dA.window.Event('input', { bubbles: true }));
   dA.window.document.getElementById('descgo').click();  // SAVE
-  await until(() => gas.handle({ action: 'state', aname: 'descy' })
+  await until(() => gas.handle({ action: 'state', slug: 'descy' })
     .blurb === 'A version');
   dB.window.document.getElementById('desctoggle').click();  // stale base
   dB.window.document.getElementById('descedit').value = 'B version';
@@ -3470,7 +3470,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     // so reclassifying a refusal means moving it between tables, on
     // purpose. Every entry must also RENDER from a stub error: a
     // copy fn that crashes or returns nothing is a dead banner.
-    const stub = { pid: 'p-0', action: 'x', blurb: '', uname: 'u' };
+    const stub = { userid: 'p-0', action: 'x', blurb: '', uname: 'u' };
     const numbered = (t) => Object.keys(t).filter((c) =>
       /^ERROR\d{4}: /.test(t[c](stub)));
     ok(Object.values(STR.refusalCopy).every((f) =>
@@ -3495,8 +3495,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   {
     // mint the auctions row first: a VIRGIN auction takes no
     // presence, by design (an editor-open is not a commitment)
-    gas.handle({ action: 'add', aname: 'quill', uname: 'quincy',
-                 pid: 'pid-quill-quincy' });
+    gas.handle({ action: 'add', slug: 'quill', uname: 'quincy',
+                 userid: 'userid-quill-quincy' });
     const dEd = await makePage('/quill?api=' + API_URL, (w) => {
       w.localStorage.setItem('tauction-device', 'rig-ed');
     });
@@ -3539,11 +3539,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        'DISCARD stops the presence: the pencil rests, the tip back'
        + ' to the bare version');
     // a SEATED editor is named by uname (rename-proof seat lookup)
-    gas.handle({ action: 'add', aname: 'quill', uname: 'quilla',
-                 pid: 'pid-quill-quilla' });
-    gas.handle({ action: 'editing', aname: 'quill',
-                 pid: 'pid-quill-quilla', deviceID: 'rig-x',
-                 deviceBlurb: 'x rig' });
+    gas.handle({ action: 'add', slug: 'quill', uname: 'quilla',
+                 userid: 'userid-quill-quilla' });
+    gas.handle({ action: 'editing', slug: 'quill',
+                 userid: 'userid-quill-quilla', devid: 'rig-x',
+                 rig: 'x rig' });
     dVw.window.__intervals.find((i) => i.ms === 5000).fn();
     await until(() => vwDoc.getElementById('desc').classList
       .contains('scribbling'));
@@ -3551,16 +3551,16 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
          === STR.descVerTip(0) + ' ' + STR.editingBy('quilla'),
        'a seated editor is named by their uname');
     // ...a rename-proof name: the tip reads the seat, not a snapshot
-    gas.handle({ action: 'rename', aname: 'quill',
-                 pid: 'pid-quill-quilla', to: 'quillb' });
+    gas.handle({ action: 'rename', slug: 'quill',
+                 userid: 'userid-quill-quilla', to: 'quillb' });
     dVw.window.__intervals.find((i) => i.ms === 5000).fn();
     await until(() => vwDoc.getElementById('desctoggle').dataset.tip
       === STR.descVerTip(0) + ' ' + STR.editingBy('quillb'));
     ok(true, "renaming the editor retitles the pencil's tip live");
     // TWO at the desk: per-device presence makes the crowd visible,
     // in the plural copy (Latin TODO until dreev words it)
-    gas.handle({ action: 'editing', aname: 'quill',
-                 deviceID: 'rig-y', deviceBlurb: 'y rig' });
+    gas.handle({ action: 'editing', slug: 'quill',
+                 devid: 'rig-y', rig: 'y rig' });
     dVw.window.__intervals.find((i) => i.ms === 5000).fn();
     await until(() => vwDoc.getElementById('desctoggle').dataset.tip
       === STR.descVerTip(0) + ' '
@@ -3568,9 +3568,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     ok(vwDoc.getElementById('desc').classList.contains('scribbling'),
        'a second editor pluralizes the tip, everyone named, pencil'
        + ' still scribbling');
-    gas.handle({ action: 'editing', aname: 'quill', deviceID: 'rig-y',
+    gas.handle({ action: 'editing', slug: 'quill', devid: 'rig-y',
                  stop: true });
-    gas.handle({ action: 'editing', aname: 'quill', deviceID: 'rig-x',
+    gas.handle({ action: 'editing', slug: 'quill', devid: 'rig-x',
                  stop: true });  // scene hygiene
     // SAVE sends the stop too (and the save itself rides first)
     edDoc.getElementById('desctoggle').click();
@@ -3586,7 +3586,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     await until(() => apiCalls.filter((c) =>
       c.action === 'editing' && c.stop).length === stopsBefore + 1
       && drained());
-    ok(gas.handle({ action: 'state', aname: 'quill' }).blurb
+    ok(gas.handle({ action: 'state', slug: 'quill' }).blurb
          === 'quill words',
        'SAVE lands the words and stops the presence in one gesture');
     // THE WAR-REOPEN FENCE: a CAS bounce reopens the editor, and the
@@ -3602,8 +3602,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     // the rival save lands SUB-POLL (server-side only, and no await
     // before the SAVE click, so no poll can deliver it first): the
     // page's stale base rides into the server CAS and bounces
-    gas.handle({ action: 'describe', aname: 'quill',
-      base: gas.handle({ action: 'state', aname: 'quill' }).blurbver,
+    gas.handle({ action: 'describe', slug: 'quill',
+      base: gas.handle({ action: 'state', slug: 'quill' }).bver,
       blurb: 'rival words' });
     const beatsAtSave = apiCalls.filter((c) =>
       c.action === 'editing' && !c.stop).length;
@@ -3624,7 +3624,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      the anti-magic audit): gray via the house disabled pattern —
      not pointer-events, which left a keyboard path into an editor
      for an auction that doesn't exist. Unrepresentable now; the
-     beat machinery needs no aname gate. */
+     beat machinery needs no slug gate. */
   {
     const dUn = await makePage('/?api=' + API_URL);
     const unDoc = dUn.window.document;
@@ -3634,11 +3634,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     await sleep(120);
     ok(unDoc.getElementById('desc').classList.contains('viewing')
        && !apiCalls.some((c) => c.action === 'editing'
-                              && !c.aname),
+                              && !c.slug),
        'no gesture opens the unnamed editor; no beat ever pings an'
        + ' auction with no name');
     // ...and the name-commit wake enables it (the second owner site)
-    type(dUn, 'aname', 'pencilwake');
+    type(dUn, 'slug', 'pencilwake');
     commitName(dUn);
     await until(() => !unDoc.body.classList.contains('unnamed'));
     ok(!unDoc.getElementById('desctoggle').disabled,
@@ -3662,8 +3662,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   cwEd.value = 'per cletus';
   cwEd.dispatchEvent(new cw.window.Event('input', { bubbles: true }));
   // winifred's save lands from her own machine...
-  gas.handle({ action: 'describe', aname: 'clob', blurb: 'per winifred',
-    base: gas.handle({ action: 'state', aname: 'clob' }).blurbver });
+  gas.handle({ action: 'describe', slug: 'clob', blurb: 'per winifred',
+    base: gas.handle({ action: 'state', slug: 'clob' }).bver });
   // ...and the next poll says NOTHING to cletus (dreev 2026-07-28,
   // the mid-air-collision convention: conflicts surface at SAVE,
   // never mid-composition) — wait for her words to be ingested (the
@@ -3681,7 +3681,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await sleep(150);  // an outbound write would be in apiCalls by now
   ok(cwWrites() === cwBefore,
      'the blur writes NOTHING: blur is not a gesture');
-  ok(gas.handle({ action: 'state', aname: 'clob' }).blurb
+  ok(gas.handle({ action: 'state', slug: 'clob' }).blurb
        === 'per winifred',
      "winifred's words stand on the sheet");
   ok(cwEd.value === 'per cletus',
@@ -3709,7 +3709,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        === STR.warTitle(1)
      && cwEd.value === 'per cletus'
      && cwEd.classList.contains('error')
-     && gas.handle({ action: 'state', aname: 'clob' }).blurb
+     && gas.handle({ action: 'state', slug: 'clob' }).blurb
           === 'per winifred',
      'his save bounces off the compare-and-swap into the war popup:'
      + ' draft red for copying, her words standing');
@@ -3747,9 +3747,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      "the bid's commit button wears dreev's copy: SUBMIT");
   nb.window.document.querySelector('#tiles .rebid').dispatchEvent(
     new nb.window.Event('submit', { bubbles: true, cancelable: true }));
-  await until(() => gas.handle({ action: 'state', aname: 'noblur' })
+  await until(() => gas.handle({ action: 'state', slug: 'noblur' })
     .bidders.length === 1);
-  ok(gas.handle({ action: 'state', aname: 'noblur' })
+  ok(gas.handle({ action: 'state', slug: 'noblur' })
        .bidders.length === 1, 'SUBMIT (or Enter) still commits');
   await until(() => !nb.window.document
     .querySelector('#tiles .rebid').classList.contains('hot'));
@@ -3775,9 +3775,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(!nbRow.querySelector('.rename .go'),
      'no SAVE stands on a blur-committing field: the button retired'
      + ' with the friction');
-  await until(() => gas.handle({ action: 'state', aname: 'noblur' })
+  await until(() => gas.handle({ action: 'state', slug: 'noblur' })
     .seats.some((s) => s.uname === 'beatrix'));
-  ok(gas.handle({ action: 'state', aname: 'noblur' })
+  ok(gas.handle({ action: 'state', slug: 'noblur' })
        .seats.some((s) => s.uname === 'beatrix'),
      'Enter/SAVE still renames');
 
@@ -3816,11 +3816,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   nbEd.focus();
   nbEd.value = '43';
   nbEd.dispatchEvent(new nb.window.Event('input', { bubbles: true }));
-  gas.handle({ action: 'add', aname: 'noblur', uname: 'zed',
-    pid: 'pid-nb-zed' });
-  gas.handle({ action: 'bid', aname: 'noblur', pid: 'pid-nb-zed',
+  gas.handle({ action: 'add', slug: 'noblur', uname: 'zed',
+    userid: 'userid-nb-zed' });
+  gas.handle({ action: 'bid', slug: 'noblur', userid: 'userid-nb-zed',
     bid: '7', uname: 'zed' });
-  gas.handle({ action: 'reveal', aname: 'noblur' });
+  gas.handle({ action: 'reveal', slug: 'noblur' });
   await until(() =>
     nb.window.document.body.classList.contains('revealed'));
   ok(nb.window.document.body.classList.contains('revealed'),
@@ -3832,22 +3832,22 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(nbGo.disabled
        && nbGo.getAttribute('data-tip') === STR.tooLateGoTip,
      'its SUBMIT grays with the editor and its tip says why');
-  const nbFinal = gas.handle({ action: 'state', aname: 'noblur' });
+  const nbFinal = gas.handle({ action: 'state', slug: 'noblur' });
   const nbBeaPid =
-    nbFinal.seats.find((s) => s.uname === 'beatrix').pid;
-  ok(nbFinal.bids.some((b) => b.pid === nbBeaPid && b.bid === '42'),
+    nbFinal.seats.find((s) => s.uname === 'beatrix').userid;
+  ok(nbFinal.bids.some((b) => b.userid === nbBeaPid && b.bid === '42'),
      "the sheet keeps the pre-gavel bid — the dead draft never went");
-  ok(nbFinal.bids.some((b) => b.pid === 'pid-nb-zed'),
+  ok(nbFinal.bids.some((b) => b.userid === 'userid-nb-zed'),
      'sanity: the reveal actually landed');
 
   /* --- 2q2. drafts survive the tab (dreev 2026-07-27) -----------------
      Replicata: start typing a bid, close the tab, come back to the
      auction's URL. Expectata: the draft is right there — hot, its
      button standing — because every uncommitted field lives in
-     tauction-drafts:<aname> (this browser only, like tauction-mybids)
+     tauction-drafts:<slug> (this browser only, like tauction-mybids)
      until committed or Escaped. */
-  gas.handle({ action: 'add', aname: 'draftkeep', uname: 'lou',
-    pid: 'pid-dk-lou' });
+  gas.handle({ action: 'add', slug: 'draftkeep', uname: 'lou',
+    userid: 'userid-dk-lou' });
   const dk1 = await makePage('/draftkeep?api=' + API_URL);
   addName(dk1, 'kim');  // self-claims (2j)
   await settled(dk1);
@@ -3864,7 +3864,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     dk1.window.localStorage.getItem('tauction-drafts:draftkeep'));
   ok(dk1drafts.bid === 'half a tho'
      && !('blurb' in dk1drafts)
-     && !('rename:pid-dk-lou' in dk1drafts)
+     && !('rename:userid-dk-lou' in dk1drafts)
      && dk1drafts.addrow === 'mel',
      'every keystroke of a surviving draft is already in'
      + ' tauction-drafts, keyed by slot — and neither the shared'
@@ -3910,7 +3910,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     { key: 'Escape', bubbles: true, cancelable: true }));
   ok(dk2lou.value === 'lou'
      && JSON.parse(dk2.window.localStorage
-          .getItem('tauction-drafts:draftkeep'))['rename:pid-dk-lou']
+          .getItem('tauction-drafts:draftkeep'))['rename:userid-dk-lou']
         === undefined,
      'Escape is still never-mind: the draft dies in storage too');
 
@@ -3922,22 +3922,22 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const LONGA = 'a'.repeat(21);
   const dLim = await makePage('/?api=' + API_URL);
   const limDoc = dLim.window.document;
-  type(dLim, 'aname', LONGA);
-  ok(limDoc.getElementById('aname').value === LONGA
-     && limDoc.getElementById('aname').classList.contains('error'),
+  type(dLim, 'slug', LONGA);
+  ok(limDoc.getElementById('slug').value === LONGA
+     && limDoc.getElementById('slug').classList.contains('error'),
      'all 21 characters of an overlong auction name land, ringed red');
   const limProbes = () => apiCalls.filter((c) =>
-    c.aname === LONGA).length;
+    c.slug === LONGA).length;
   commitName(dLim);
   await sleep(80);
   ok(dLim.window.location.pathname === '/'
      && !limDoc.getElementById('banner').hidden
      && limDoc.getElementById('banner').textContent
-          .includes(STR.anameTooLongBanner)
+          .includes(STR.slugTooLongBanner)
      && limProbes() === 0,
      "enter on it is refused before the wire, in the server's words");
-  type(dLim, 'aname', 'a'.repeat(20));
-  ok(!limDoc.getElementById('aname').classList.contains('error'),
+  type(dLim, 'slug', 'a'.repeat(20));
+  ok(!limDoc.getElementById('slug').classList.contains('error'),
      'trimmed to 20, the objection withdraws live');
   commitName(dLim);
   await until(() => dLim.window.location.pathname !== '/');
@@ -3953,7 +3953,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
           .contains('error'),
      'an overlong participant name lands whole, ringed red live');
   const limAdds = () => apiCalls.filter((c) => c.action === 'add'
-    && c.aname === 'limits').length;
+    && c.slug === 'limits').length;
   const limAdds0 = limAdds();
   submitName(dLim2);
   await sleep(80);
@@ -4024,9 +4024,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   lim2Doc.getElementById('descedit').dispatchEvent(
     new dLim2.window.KeyboardEvent('keydown',
       { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }));
-  await until(() => gas.handle({ action: 'state', aname: 'limits' })
+  await until(() => gas.handle({ action: 'state', slug: 'limits' })
     .blurb === 'shipshape');
-  ok(gas.handle({ action: 'state', aname: 'limits' })
+  ok(gas.handle({ action: 'state', slug: 'limits' })
        .blurb === 'shipshape'
      && lim2Doc.getElementById('desc').classList.contains('viewing'),
      'Cmd/Ctrl+Enter commits the blurb from the keyboard');
@@ -4036,7 +4036,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      commit, not hide it behind an invisible Enter) ----------------- */
   const dCrea = await makePage('/?api=' + API_URL);
   const creaDoc = dCrea.window.document;
-  ok(creaDoc.activeElement === creaDoc.getElementById('aname')
+  ok(creaDoc.activeElement === creaDoc.getElementById('slug')
      && creaDoc.getElementById('namego').disabled
      && creaDoc.getElementById('namego').textContent === STR.startCopy(''),
      'the landing page parks the caret in the name field (the'
@@ -4045,7 +4045,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(creaDoc.getElementById('share').disabled
      && !creaDoc.getElementById('help').disabled,
      'unnamed: share is a link to nowhere, disabled; help stays live');
-  type(dCrea, 'aname', 'poker');
+  type(dCrea, 'slug', 'poker');
   ok(!creaDoc.getElementById('namego').disabled
      && creaDoc.querySelector('.field').classList.contains('hot')
      && creaDoc.getElementById('namego').textContent
@@ -4066,10 +4066,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      pre-fix: armed throughout — a double-click double-probed. */
   const dBusyGo = await makePage('/?api=' + API_URL);
   const busyDoc = dBusyGo.window.document;
-  type(dBusyGo, 'aname', 'busygo');
+  type(dBusyGo, 'slug', 'busygo');
   mockDelay = 300;
   const busyProbes = () => apiCalls.filter((c) => c.action === 'state'
-    && c.aname === 'busygo').length;
+    && c.slug === 'busygo').length;
   busyDoc.getElementById('namego').click();
   busyDoc.getElementById('namego').click();  // the double-click
   ok(busyDoc.getElementById('namego').disabled,
@@ -4081,10 +4081,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   /* ...and the KEYBOARD path honors the same guard (Sol's audit #8:
      Enter bypassed the disabled button and double-probed) */
   const dEnterGo = await makePage('/?api=' + API_URL);
-  type(dEnterGo, 'aname', 'entergo');
+  type(dEnterGo, 'slug', 'entergo');
   mockDelay = 300;
   const enterProbes = () => apiCalls.filter((c) => c.action === 'state'
-    && c.aname === 'entergo').length;
+    && c.slug === 'entergo').length;
   commitName(dEnterGo);
   commitName(dEnterGo);  // the double-Enter
   await until(() => dEnterGo.window.location.pathname === '/entergo');
@@ -4095,7 +4095,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   /* ...and the SAME convention's fences on the optimistic buttons,
      where instant retirement plays the disable's role: a double
      press sends ONE write. */
-  gas.handle({ action: 'describe', aname: 'dblsave', base: 0,
+  gas.handle({ action: 'describe', slug: 'dblsave', base: 0,
     blurb: '' });
   const dDbl = await makePage('/dblsave?api=' + API_URL);
   const dblDoc = dDbl.window.document;
@@ -4104,15 +4104,15 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     new dDbl.window.Event('input', { bubbles: true }));
   dblDoc.getElementById('descgo').click();
   dblDoc.getElementById('descgo').click();  // the double-click
-  await until(() => gas.handle({ action: 'state', aname: 'dblsave' })
+  await until(() => gas.handle({ action: 'state', slug: 'dblsave' })
     .blurb === 'once');
   ok(apiCalls.filter((c) => c.action === 'describe'
-       && c.aname === 'dblsave').length === 1,
+       && c.slug === 'dblsave').length === 1,
      'a double-pressed blurb SAVE sends one write: the field went'
      + ' clean at the first press and a clean commit is a no-op');
 
   ok(dCrea.window.location.pathname === '/poker'
-     && creaDoc.getElementById('aname').disabled
+     && creaDoc.getElementById('slug').disabled
      && !creaDoc.getElementById('share').disabled
      && !creaDoc.querySelector('.field').classList.contains('hot'),
      'pressing it commits exactly like Enter: the auction exists,'
@@ -4124,14 +4124,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      can't know, the server refuses. Expectata: the banner plus the
      name field itself turning red (cleared on input), same recipe as
      every other field objection. --------------------------------- */
-  gas.handle({ action: 'add', aname: 'renrace',
-    uname: 'alice', pid: 'pid-renrace-alice' });
-  gas.handle({ action: 'add', aname: 'renrace',
-    uname: 'bob', pid: 'pid-renrace-bob' });
+  gas.handle({ action: 'add', slug: 'renrace',
+    uname: 'alice', userid: 'userid-renrace-alice' });
+  gas.handle({ action: 'add', slug: 'renrace',
+    uname: 'bob', userid: 'userid-renrace-bob' });
   const dR = await makePage('/renrace?api=' + API_URL);
   await sleep(20);
-  gas.handle({ action: 'add', aname: 'renrace',
-    uname: 'zed', pid: 'pid-renrace-zed' });
+  gas.handle({ action: 'add', slug: 'renrace',
+    uname: 'zed', userid: 'userid-renrace-zed' });
   const bobName = dR.window.document
     .querySelector('.tile[data-uname="bob"] .rename input');
   bobName.value = 'zed';
@@ -4155,21 +4155,21 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      Replicata: this browser is alice; before its next poll, someone
      adds zed and alice renames herself to zed. Expectata: the stale
      collision refuses loudly; identity and bid memory are untouched
-     BY CONSTRUCTION (they key on the pid, which no rename request
+     BY CONSTRUCTION (they key on the userid, which no rename request
      ever changes) — the field reddens with the text kept, and zed's
      row is never claimed. */
-  gas.handle({ action: 'add', aname: 'selfrenrace',
-    uname: 'alice', pid: 'pid-selfrenrace-alice' });
-  gas.handle({ action: 'add', aname: 'selfrenrace',
-    uname: 'bob', pid: 'pid-selfrenrace-bob' });
-  const selfBids = '{"pid-selfrenrace-alice":"alice draft"}';
+  gas.handle({ action: 'add', slug: 'selfrenrace',
+    uname: 'alice', userid: 'userid-selfrenrace-alice' });
+  gas.handle({ action: 'add', slug: 'selfrenrace',
+    uname: 'bob', userid: 'userid-selfrenrace-bob' });
+  const selfBids = '{"userid-selfrenrace-alice":"alice draft"}';
   const dSelfRen = await makePage('/selfrenrace?api=' + API_URL, (w) => {
     w.localStorage.setItem('tauction-pids',
-      '{"selfrenrace":"pid-selfrenrace-alice"}');
+      '{"selfrenrace":"userid-selfrenrace-alice"}');
     w.localStorage.setItem('tauction-mybids:selfrenrace', selfBids);
   });
-  gas.handle({ action: 'add', aname: 'selfrenrace',
-    uname: 'zed', pid: 'pid-selfrenrace-zed' });
+  gas.handle({ action: 'add', slug: 'selfrenrace',
+    uname: 'zed', userid: 'userid-selfrenrace-zed' });
   renameTo(dSelfRen, 'alice', 'zed');
   await until(() => !dSelfRen.window.document
     .getElementById('banner').hidden);
@@ -4178,7 +4178,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const restoredAlice = row(dSelfRen.window.document, 'alice')
     .querySelector('.rename input');
   ok(dSelfRen.window.localStorage.getItem('tauction-pids')
-       === '{"selfrenrace":"pid-selfrenrace-alice"}'
+       === '{"selfrenrace":"userid-selfrenrace-alice"}'
      && dSelfRen.window.localStorage.getItem(
        'tauction-mybids:selfrenrace') === selfBids
      && restoredAlice.classList.contains('error')
@@ -4187,7 +4187,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'the refused self-rename leaves identity and bid memory untouched'
      + ' by construction; the field objects, zed is never claimed');
   ok(dB.window.document.getElementById('descedit').value === 'B version'
-     && gas.handle({ action: 'state', aname: 'descy' }).blurb
+     && gas.handle({ action: 'state', slug: 'descy' }).blurb
           === 'A version',
      "B's words survive in B's editor; A's words survive on the server");
   await until(() =>  // the bounce boots B straight back into the editor
@@ -4223,7 +4223,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     dB.window.document.getElementById('war-dlg').open);
   ok(dB.window.document.getElementById('war-title').textContent
        === STR.warTitle(2)
-     && gas.handle({ action: 'state', aname: 'descy' }).blurb
+     && gas.handle({ action: 'state', slug: 'descy' }).blurb
           === 'A version',
      'insisting bounces again as TAKE 2, in the escalated title:'
      + " repeat SAVEs never clobber A's win");
@@ -4241,20 +4241,20 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      takes it back). Resultata pre-flip: first come, first served,
      which locked faire out of her own seat when Safari re-minted her
      device id. */
-  gas.handle({ action: 'add', aname: 'race2',
-    uname: 'alice', pid: 'pid-race2-alice' });
-  gas.handle({ action: 'add', aname: 'race2',
-    uname: 'bea', pid: 'pid-race2-bea' });
+  gas.handle({ action: 'add', slug: 'race2',
+    uname: 'alice', userid: 'userid-race2-alice' });
+  gas.handle({ action: 'add', slug: 'race2',
+    uname: 'bea', userid: 'userid-race2-bea' });
   const r1 = await makePage('/race2?api=' + API_URL);
   const r2 = await makePage('/race2?api=' + API_URL);
   claimRow(r1, 'alice');
-  await until(() => gas.handle({ action: 'state', aname: 'race2' })
-    .claims['pid-race2-alice'] !== undefined);
+  await until(() => gas.handle({ action: 'state', slug: 'race2' })
+    .claims['userid-race2-alice'] !== undefined);
   ok(!row(r2.window.document, 'alice').querySelector('.tu').disabled,
      "machine 2 hasn't polled yet: its stale screen still offers alice");
   claimRow(r2, 'alice');  // the race click: the takeover
-  await until(() => gas.handle({ action: 'state', aname: 'race2' })
-    .claims['pid-race2-alice']
+  await until(() => gas.handle({ action: 'state', slug: 'race2' })
+    .claims['userid-race2-alice']
       === r2.window.localStorage.getItem('tauction-device'));
   ok(row(r2.window.document, 'alice').classList.contains('mine')
      && r2.window.document.getElementById('banner').hidden,
@@ -4268,16 +4268,16 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' LIVE — one more tap would take the seat right back');
   // machine 1's consolation: bea is open, and life goes on
   claimRow(r1, 'bea');
-  await until(() => gas.handle({ action: 'state', aname: 'race2' })
-    .claims['pid-race2-bea'] !== undefined);
+  await until(() => gas.handle({ action: 'state', slug: 'race2' })
+    .claims['userid-race2-bea'] !== undefined);
   ok(row(r1.window.document, 'bea').classList.contains('mine'),
      'machine 1 claims the open seat instead and lives happily');
 
   /* --- 2k2. seat-race stress battery (dreev: "stress-qual it") ----------
      Every way two machines can want the same seat in a NEW auction. */
   // (i) truly simultaneous clicks: both ops in flight at once
-  gas.handle({ action: 'add', aname: 'race4',
-    uname: 'alice', pid: 'pid-race4-alice' });
+  gas.handle({ action: 'add', slug: 'race4',
+    uname: 'alice', userid: 'userid-race4-alice' });
   const s1 = await makePage('/race4?api=' + API_URL);
   const s2 = await makePage('/race4?api=' + API_URL);
   mockDelay = 250;  // both claims fly together
@@ -4288,8 +4288,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'both machines are optimistic while their claims fly');
   await sleep(900);
   mockDelay = 0;
-  const claim4 = gas.handle({ action: 'state', aname: 'race4' })
-    .claims['pid-race4-alice'];
+  const claim4 = gas.handle({ action: 'state', slug: 'race4' })
+    .claims['userid-race4-alice'];
   const dev1 = s1.window.localStorage.getItem('tauction-device');
   const dev2 = s2.window.localStorage.getItem('tauction-device');
   ok(claim4 === dev1 || claim4 === dev2,
@@ -4306,8 +4306,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // (ii) tapping the taken star TAKES the seat back (faire's one-tap
   // recovery: a new browser identity reclaims her own seat)
   claimRow(loser, 'alice');
-  await until(() => gas.handle({ action: 'state', aname: 'race4' })
-    .claims['pid-race4-alice']
+  await until(() => gas.handle({ action: 'state', slug: 'race4' })
+    .claims['userid-race4-alice']
       === loser.window.localStorage.getItem('tauction-device'));
   await until(() => row(winner.window.document, 'alice')
     .querySelector('.tu').classList.contains('taken'));
@@ -4319,8 +4319,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // (iii) the new holder releases; the seat reopens and the unseated
   // machine re-latches by its remembered hint — no click, no noise
   claimRow(loser, 'alice');  // own lit star: release
-  await until(() => gas.handle({ action: 'state', aname: 'race4' })
-    .claims['pid-race4-alice'] === undefined);
+  await until(() => gas.handle({ action: 'state', slug: 'race4' })
+    .claims['userid-race4-alice'] === undefined);
   await until(() =>
     row(winner.window.document, 'alice').classList.contains('mine'));
   ok(!row(winner.window.document, 'alice').querySelector('.tu').classList
@@ -4340,22 +4340,22 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      the new truth. (A bare bid carrying a RIVAL device on a held
      seat still refuses server-side, pinned in gas-quals; the UI
      always claims first, so its chain arrives in order.) */
-  gas.handle({ action: 'add', aname: 'race3',
-    uname: 'alice', pid: 'pid-race3-alice' });
+  gas.handle({ action: 'add', slug: 'race3',
+    uname: 'alice', userid: 'userid-race3-alice' });
   const r3 = await makePage('/race3?api=' + API_URL);
   const r4 = await makePage('/race3?api=' + API_URL);
   claimRow(r3, 'alice');
-  await until(() => gas.handle({ action: 'state', aname: 'race3' })
-    .claims['pid-race3-alice'] !== undefined);
+  await until(() => gas.handle({ action: 'state', slug: 'race3' })
+    .claims['userid-race3-alice'] !== undefined);
   mockDelay = 300;        // r4's ops fly slowly: the window for typing
   claimRow(r4, 'alice');  // stale screen, optimistic editor appears
   typeBid(r4, 'takeover bid');
   submitBid(r4);
   await sleep(900);       // claim + bid land, in chain order
   mockDelay = 0;
-  const race3st = gas.handle({ action: 'state', aname: 'race3' });
+  const race3st = gas.handle({ action: 'state', slug: 'race3' });
   ok(bidderNamed(race3st, 'alice') !== undefined
-     && race3st.claims['pid-race3-alice']
+     && race3st.claims['userid-race3-alice']
           === r4.window.localStorage.getItem('tauction-device'),
      'the takeover claim and its bid both land: machine 2 is alice,'
      + ' bid in');
@@ -4374,14 +4374,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      Resultata pre-fix: the switch went through — the bid landed under
      alice while you faced bob's blank editor. Expectata: the stars
      lock the instant you commit. */
-  gas.handle({ action: 'add', aname: 'flightlock',
-    uname: 'alice', pid: 'pid-flightlock-alice' });
-  gas.handle({ action: 'add', aname: 'flightlock',
-    uname: 'bob', pid: 'pid-flightlock-bob' });
+  gas.handle({ action: 'add', slug: 'flightlock',
+    uname: 'alice', userid: 'userid-flightlock-alice' });
+  gas.handle({ action: 'add', slug: 'flightlock',
+    uname: 'bob', userid: 'userid-flightlock-bob' });
   const domFL = await makePage('/flightlock?api=' + API_URL);
   claimRow(domFL, 'alice');
-  await until(() => gas.handle({ action: 'state', aname: 'flightlock' })
-    .claims['pid-flightlock-alice'] !== undefined);
+  await until(() => gas.handle({ action: 'state', slug: 'flightlock' })
+    .claims['userid-flightlock-alice'] !== undefined);
   mockDelay = 400;
   typeBid(domFL, 'my treasure');
   submitBid(domFL);
@@ -4421,7 +4421,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await until(() => {
     if (!['aa', 'bb', 'cc', 'dd', 'ee'].every((u) =>
           row(domB2.window.document, u))) vanished = true;
-    return names(gas.handle({ action: 'state', aname: 'burst' }))
+    return names(gas.handle({ action: 'state', slug: 'burst' }))
       === 'aa,bb,cc,dd,ee';
   }, 15000);
   mockDelay = 0;
@@ -4429,7 +4429,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        row(domB2.window.document, u)),
      'every rapidly-typed name stayed on the ledger throughout'
      + ' (no flash-vanish)');
-  ok(names(gas.handle({ action: 'state', aname: 'burst' }))
+  ok(names(gas.handle({ action: 'state', slug: 'burst' }))
      === 'aa,bb,cc,dd,ee', 'and they all reached the server');
 
   /* --- 2f. two machines both wanting alice: dibs, not locks --------------
@@ -4470,7 +4470,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
           .getAttribute('data-tip')
           === STR.claimedByTip(STR.mysteryDevice + ' '
             + m1.window.navigator.language + ' in Portland, OR'),
-     "the taken star FILLS in, and its tip blurbs the claimant's rig,"
+     "the taken star FILLS in, and its tip rigs the claimant's rig,"
      + " language, and rough geography (jsdom's UA parses to dreev's"
      + ' mystery-device fallback; the geo comes from the fixture)');
 
@@ -4499,8 +4499,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(geoHits === geoBefore + 1,
      'a fresh cache means NO lookup: reload-heavy dev must not burn'
      + ' the rate limit');
-  ok(gas.handle({ action: 'state', aname: 'geocache2' })
-       .blurbs[pidOf(gas.handle({ action: 'state', aname: 'geocache2' }), 'gina')]
+  ok(gas.handle({ action: 'state', slug: 'geocache2' })
+       .rigs[pidOf(gas.handle({ action: 'state', slug: 'geocache2' }), 'gina')]
        === STR.mysteryDevice + ' ' + g2.window.navigator.language
          + ' in Rainbow City, AL',
      "...and the cached geography actually decorates the blurb (the"
@@ -4553,9 +4553,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   /* --- 2r2. accented geography must never cost a bid -------------------
      Replicata: the IP lookup names a city with non-ASCII characters
      (São Paulo, Zürich, Montréal); claim a seat or place a bid.
-     Resultata pre-fix: DEVBLURB carried the accents into the request
-     and Code.gs's printable-ASCII deviceBlurb contract refused the
-     WHOLE thing — 'bad deviceBlurb', a bid lost to decoration.
+     Resultata pre-fix: RIG carried the accents into the request
+     and Code.gs's printable-ASCII rig contract refused the
+     WHOLE thing — 'bad rig', a bid lost to decoration.
      Expectata: the client ASCII-fies its own decoration (São -> Sao)
      and clamps it to the contract's 64 chars; the bid always lands. */
   geoFixture = { city: 'São Paulo', region_code: 'SP' };
@@ -4566,15 +4566,15 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   submitBid(gSp);
   await settled(gSp);
   ok(gSp.window.document.getElementById('banner').hidden
-     && gas.handle({ action: 'state', aname: 'geosp' }).bidders
+     && gas.handle({ action: 'state', slug: 'geosp' }).bidders
           .length === 1,
      'a São Paulo bidder bids fine: decoration never blocks the act');
-  ok((gas.handle({ action: 'state', aname: 'geosp' })
-       .blurbs[pidOf(gas.handle({ action: 'state', aname: 'geosp' }), 'ze')] || '')
+  ok((gas.handle({ action: 'state', slug: 'geosp' })
+       .rigs[pidOf(gas.handle({ action: 'state', slug: 'geosp' }), 'ze')] || '')
        .endsWith(' in Sao Paulo, SP'),
      'the blurb arrives ASCII-fied (São -> Sao), got '
-       + gas.handle({ action: 'state', aname: 'geosp' })
-       .blurbs[pidOf(gas.handle({ action: 'state', aname: 'geosp' }), 'ze')]);
+       + gas.handle({ action: 'state', slug: 'geosp' })
+       .rigs[pidOf(gas.handle({ action: 'state', slug: 'geosp' }), 'ze')]);
   geoFixture = { city: 'Portland', region_code: 'OR' };
   // a city cached by PRE-FIX code sanitizes at use, not just at
   // store: the day-long TTL must not keep the bug alive for a day
@@ -4586,12 +4586,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   typeBid(gZu, 'zehn franken');
   submitBid(gZu);
   await settled(gZu);
-  ok((gas.handle({ action: 'state', aname: 'geozu' })
-       .blurbs[pidOf(gas.handle({ action: 'state', aname: 'geozu' }), 'ueli')] || '')
+  ok((gas.handle({ action: 'state', slug: 'geozu' })
+       .rigs[pidOf(gas.handle({ action: 'state', slug: 'geozu' }), 'ueli')] || '')
        .endsWith(' in Zurich, ZH'),
      'a cached pre-fix city sanitizes on use (Zürich -> Zurich), got '
-       + gas.handle({ action: 'state', aname: 'geozu' })
-       .blurbs[pidOf(gas.handle({ action: 'state', aname: 'geozu' }), 'ueli')]);
+       + gas.handle({ action: 'state', slug: 'geozu' })
+       .rigs[pidOf(gas.handle({ action: 'state', slug: 'geozu' }), 'ueli')]);
   // the length half of the contract: a Welsh-length city clamps to 64
   const gLl = await makePage('/geoll?api=' + API_URL, (win) => {
     win.localStorage.setItem('tauction-geo',
@@ -4602,14 +4602,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   typeBid(gLl, 'a leek');
   submitBid(gLl);
   await settled(gLl);
-  ok(gas.handle({ action: 'state', aname: 'geoll' }).bidders.length === 1
-     && (gas.handle({ action: 'state', aname: 'geoll' })
-       .blurbs[pidOf(gas.handle({ action: 'state', aname: 'geoll' }), 'wyn')] || '')
+  ok(gas.handle({ action: 'state', slug: 'geoll' }).bidders.length === 1
+     && (gas.handle({ action: 'state', slug: 'geoll' })
+       .rigs[pidOf(gas.handle({ action: 'state', slug: 'geoll' }), 'wyn')] || '')
           .length <= 64,
      "a Welsh-length blurb clamps to the contract's 64 chars and the"
      + ' bid still lands, got '
-       + gas.handle({ action: 'state', aname: 'geoll' })
-       .blurbs[pidOf(gas.handle({ action: 'state', aname: 'geoll' }), 'wyn')]);
+       + gas.handle({ action: 'state', slug: 'geoll' })
+       .rigs[pidOf(gas.handle({ action: 'state', slug: 'geoll' }), 'wyn')]);
 
   /* --- 2s. flipping to view paints INSTANTLY --------------------------
      Replicata (dreev): type markdown, click the toggle, and the box
@@ -4633,10 +4633,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && instaView.querySelector('strong').textContent === 'bold',
      'the rendered markdown appears the instant SAVE is pressed,'
      + ' not when the database answers');
-  await until(() => gas.handle({ action: 'state', aname: 'instadesc' })
+  await until(() => gas.handle({ action: 'state', slug: 'instadesc' })
     .blurb === '# Big News\n\nmuch **bold**');
   mockDelay = 0;
-  ok(gas.handle({ action: 'state', aname: 'instadesc' }).blurb
+  ok(gas.handle({ action: 'state', slug: 'instadesc' }).blurb
        === '# Big News\n\nmuch **bold**'
      && instaView.querySelector('h1') !== null,
      '...and the background write lands the same text; the settle'
@@ -4662,12 +4662,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' no keyboard dead ends');
   ok(dTab.window.document.getElementById('descedit').tabIndex === 0
      && dTab.window.document.getElementById('roster-input').tabIndex === 0
-     && dTab.window.document.getElementById('aname').tabIndex === 0,
+     && dTab.window.document.getElementById('slug').tabIndex === 0,
      '...and the editable fields remain tab stops themselves');
   ok(dTab.window.document.querySelector(
        '.tile[data-uname="tia"] .rebid textarea').tabIndex === 0,
      'your own bid editor included');
-  ok(dTab.window.document.querySelector('label[for="aname"]')
+  ok(dTab.window.document.querySelector('label[for="slug"]')
        .tabIndex === -1,
      'the auction label alone stays out of the ring: tap-focusable'
      + ' for its tip, but not a control');
@@ -4694,10 +4694,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      URL, and the sign must not vanish while you read it) --------- */
   const dPwa = await makePage('/?api=' + API_URL);
   await sleep(20);
-  gas.handle({ action: 'add', aname: 'occupied',
-    uname: 'zoe', pid: 'pid-occupied-zoe' });
-  dPwa.window.document.getElementById('aname').focus();
-  type(dPwa, 'aname', 'occupied');
+  gas.handle({ action: 'add', slug: 'occupied',
+    uname: 'zoe', userid: 'userid-occupied-zoe' });
+  dPwa.window.document.getElementById('slug').focus();
+  type(dPwa, 'slug', 'occupied');
   commitName(dPwa);
   await until(() => !dPwa.window.document.getElementById('banner').hidden);
   const gateLink = dPwa.window.document.querySelector('#banner a');
@@ -4712,13 +4712,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(!dPwa.window.document.getElementById('banner').hidden,
      'and the dead-end sign does NOT dismiss itself (dreev: you are'
      + ' stuck until you act on it)');
-  type(dPwa, 'aname', 'gate3');
+  type(dPwa, 'slug', 'gate3');
   commitName(dPwa);
   await until(() =>
     dPwa.window.location.pathname === '/gate3');
   ok(dPwa.window.document.getElementById('banner').hidden,
      'landing somewhere real finally clears it');
-  ok(dPwa.window.document.getElementById('aname').disabled,
+  ok(dPwa.window.document.getElementById('slug').disabled,
      "...and the chosen name freezes: creating is the field's one"
      + ' job, done');
 
@@ -4729,13 +4729,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      switch used to be impossible (the debounce fired regardless). */
   const dEsc0 = await makePage('/?api=' + API_URL);
   await sleep(20);
-  dEsc0.window.document.getElementById('aname').focus();
-  type(dEsc0, 'aname', 'somewhereelse');
-  dEsc0.window.document.getElementById('aname').dispatchEvent(
+  dEsc0.window.document.getElementById('slug').focus();
+  type(dEsc0, 'slug', 'somewhereelse');
+  dEsc0.window.document.getElementById('slug').dispatchEvent(
     new dEsc0.window.KeyboardEvent('keydown',
       { key: 'Escape', bubbles: true }));
   await sleep(700);  // outlive the create debounce
-  ok(dEsc0.window.document.getElementById('aname').value === ''
+  ok(dEsc0.window.document.getElementById('slug').value === ''
      && dEsc0.window.location.pathname === '/',
      'Escape in the auction field abandons the half-typed CREATE:'
      + ' field cleared, nobody navigates');
@@ -4762,7 +4762,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     const held = [];
     w.FloatingUIDOM.computePosition = (host) =>
       new w.Promise((res) => held.push([host, res]));
-    w.document.querySelector('label[for="aname"]').focus();  // summons 1
+    w.document.querySelector('label[for="slug"]').focus();  // summons 1
     // summons 2: the resting REVEAL button is DISABLED, which jsdom
     // won't focus() — the focusin dispatch is the summons the app
     // actually listens for (3095's pattern)
@@ -4779,10 +4779,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        'a stale async position never lands on a newer tip: the newest'
        + ' summons owns it');
   }
-  gas.handle({ action: 'add', aname: 'tipflow',
-    uname: 'ann', pid: 'pid-tipflow-ann' });
-  gas.handle({ action: 'add', aname: 'tipflow',
-    uname: 'bo', pid: 'pid-tipflow-bo' });
+  gas.handle({ action: 'add', slug: 'tipflow',
+    uname: 'ann', userid: 'userid-tipflow-ann' });
+  gas.handle({ action: 'add', slug: 'tipflow',
+    uname: 'bo', userid: 'userid-tipflow-bo' });
   const dTip2 = await makePage('/tipflow?api=' + API_URL,
     (w) => w.localStorage.setItem('tauction-uname', 'bo'));
   await sleep(20);  // arriving as bo: further adds are facilitator-
@@ -4798,9 +4798,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'a focused star summons its tip (the tap-tip path)');
   // a rival claims ann elsewhere; OUR next render must retitle the
   // OPEN tip without the pointer moving (the live-refresh)
-  gas.handle({ action: 'claim', aname: 'tipflow',
-    uname: 'ann', pid: 'pid-tipflow-ann',
-               deviceID: 'd-rival', deviceBlurb: 'rival rig' });
+  gas.handle({ action: 'claim', slug: 'tipflow',
+    uname: 'ann', userid: 'userid-tipflow-ann',
+               devid: 'd-rival', rig: 'rival rig' });
   // (no focus moves: focusing elsewhere would rightly drop the
   // parked tip — the pin is about the RENDER retitling it)
   type(dTip2, 'roster-input', 'zed');
@@ -4812,7 +4812,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      "the render retitles the open tip in place: it follows the truth"
      + ' without waiting for the pointer');
   // ann's row vanishes entirely; the tip must not haunt a dead host
-  gas.handle({ action: 'remove', aname: 'tipflow', pid: 'pid-tipflow-ann' });
+  gas.handle({ action: 'remove', slug: 'tipflow', userid: 'userid-tipflow-ann' });
   annStar.dispatchEvent(new dTip2.window.FocusEvent('focusin',
     { bubbles: true }));
   type(dTip2, 'roster-input', 'yaz');
@@ -4827,12 +4827,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // from elsewhere and the button arms. Resultata pre-fix: the tip
   // stayed up as an EMPTY bubble until the pointer moved. Expectata:
   // it vanishes — REVEAL! speaks for itself.
-  gas.handle({ action: 'add', aname: 'tipgone',
-    uname: 'ann', pid: 'pid-tipgone-ann' });
-  gas.handle({ action: 'add', aname: 'tipgone',
-    uname: 'bo', pid: 'pid-tipgone-bo' });
-  gas.handle({ action: 'bid', aname: 'tipgone',
-    uname: 'ann', pid: 'pid-tipgone-ann', bid: 'a' });
+  gas.handle({ action: 'add', slug: 'tipgone',
+    uname: 'ann', userid: 'userid-tipgone-ann' });
+  gas.handle({ action: 'add', slug: 'tipgone',
+    uname: 'bo', userid: 'userid-tipgone-bo' });
+  gas.handle({ action: 'bid', slug: 'tipgone',
+    uname: 'ann', userid: 'userid-tipgone-ann', bid: 'a' });
   const dTip3 = await makePage('/tipgone?api=' + API_URL);
   await sleep(20);
   const sealT = dTip3.window.document.getElementById('reveal');
@@ -4845,8 +4845,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
           === STR.waitingTip('bo'),
      'parked on the waiting REVEAL button: its tip is up, naming'
      + ' the straggler');
-  gas.handle({ action: 'bid', aname: 'tipgone',  // the last bid
-    uname: 'bo', pid: 'pid-tipgone-bo', bid: 'b' });  // from elsewhere
+  gas.handle({ action: 'bid', slug: 'tipgone',  // the last bid
+    uname: 'bo', userid: 'userid-tipgone-bo', bid: 'b' });  // from elsewhere
   dTip3.window.__intervals.find((i) => i.ms === 5000).fn();
   await until(() => !sealT.disabled);
   await sleep(10);
@@ -4905,7 +4905,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await settled(dRn);
   ok(dRn.window.document.getElementById('banner').hidden
      && row(dRn.window.document, 'bob123') !== null
-     && names(gas.handle({ action: 'state', aname: 'freshren' })).includes('bob123'),
+     && names(gas.handle({ action: 'state', slug: 'freshren' })).includes('bob123'),
      'enter-then-blur renames ONCE: no false "taken" (structural now —'
      + ' a blur commits nothing, so a trailing one cannot re-fire)');
 
@@ -4914,16 +4914,16 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      bidder simply cannot be removed, so the crossed-out-row state no
      longer exists to defend.] Every bid-bearing row's × is gray from
      the moment the bid lands; the gavel grays the rest. */
-  gas.handle({ action: 'add', aname: 'frozencut',
-    uname: 'pam', pid: 'pid-frozencut-pam' });
-  gas.handle({ action: 'add', aname: 'frozencut',
-    uname: 'quinn', pid: 'pid-frozencut-quinn' });
-  gas.handle({ action: 'add', aname: 'frozencut',
-    uname: 'rex', pid: 'pid-frozencut-rex' });
-  gas.handle({ action: 'bid', aname: 'frozencut',
-    uname: 'pam', pid: 'pid-frozencut-pam', bid: 'p' });
-  gas.handle({ action: 'bid', aname: 'frozencut',
-    uname: 'quinn', pid: 'pid-frozencut-quinn', bid: 'q' });
+  gas.handle({ action: 'add', slug: 'frozencut',
+    uname: 'pam', userid: 'userid-frozencut-pam' });
+  gas.handle({ action: 'add', slug: 'frozencut',
+    uname: 'quinn', userid: 'userid-frozencut-quinn' });
+  gas.handle({ action: 'add', slug: 'frozencut',
+    uname: 'rex', userid: 'userid-frozencut-rex' });
+  gas.handle({ action: 'bid', slug: 'frozencut',
+    uname: 'pam', userid: 'userid-frozencut-pam', bid: 'p' });
+  gas.handle({ action: 'bid', slug: 'frozencut',
+    uname: 'quinn', userid: 'userid-frozencut-quinn', bid: 'q' });
   const dFz = await makePage('/frozencut?api=' + API_URL);
   await sleep(20);
   ok(row(dFz.window.document, 'pam').querySelector('.x').disabled
@@ -4933,16 +4933,16 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' straggler stays removable (the end-early flow)');
   // the raced removal the UI can't produce: the server refuses it,
   // atomically, in the Latin
-  const rmRes = gas.handle({ action: 'remove', aname: 'frozencut',
-    pid: 'pid-frozencut-pam' });
+  const rmRes = gas.handle({ action: 'remove', slug: 'frozencut',
+    userid: 'userid-frozencut-pam' });
   ok(rmRes.error && rmRes.error.code === 'removeBidder'
-     && names(gas.handle({ action: 'state', aname: 'frozencut' }))
+     && names(gas.handle({ action: 'state', slug: 'frozencut' }))
           === 'pam,quinn,rex',
      'a raced remove of a bidder bounces off the server: nothing'
      + ' changes');
-  gas.handle({ action: 'remove', aname: 'frozencut',
-    pid: 'pid-frozencut-rex' });
-  gas.handle({ action: 'reveal', aname: 'frozencut' });
+  gas.handle({ action: 'remove', slug: 'frozencut',
+    userid: 'userid-frozencut-rex' });
+  gas.handle({ action: 'reveal', slug: 'frozencut' });
   await until(() => dFz.window.document.getElementById('status')
     .classList.contains('revealed'));
   ok([...dFz.window.document.querySelectorAll('#tiles .x')]
@@ -4956,8 +4956,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      work"; (b) types "bee" into the + row — "maybe i type in the
      name i want to make a bid for?". Both intents are OBVIOUS, so
      both now work: they claim bee's seat and ready the editor. --- */
-  gas.handle({ action: 'add', aname: 'hallway',
-    uname: 'bee', pid: 'pid-hallway-bee' });
+  gas.handle({ action: 'add', slug: 'hallway',
+    uname: 'bee', userid: 'userid-hallway-bee' });
   const dHall = await makePage('/hallway?api=' + API_URL);
   await sleep(20);
   row(dHall.window.document, 'bee').querySelector('.tile-bid').click();
@@ -4968,8 +4968,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      "tapping a takeable row's empty bid box claims it and puts the"
      + ' caret in the editor: the intent was never ambiguous');
   claimRow(dHall, 'bee');  // release again (radio) for scene (b)
-  await until(() => gas.handle({ action: 'state', aname: 'hallway' })
-    .claims['pid-hallway-bee'] === undefined);
+  await until(() => gas.handle({ action: 'state', slug: 'hallway' })
+    .claims['userid-hallway-bee'] === undefined);
   const dHall2 = await makePage('/hallway?api=' + API_URL);
   await sleep(20);
   dHall2.window.document.getElementById('roster-input').focus();
@@ -4988,7 +4988,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   submitBid(dHall2);
   await settled(dHall2);
   ok(bidderNamed(gas.handle(
-       { action: 'state', aname: 'hallway' }), 'bee') !== undefined,
+       { action: 'state', slug: 'hallway' }), 'bee') !== undefined,
      '...and the bid lands: the whole hallway flow, frictionless');
   const dHall3 = await makePage('/hallway?api=' + API_URL);
   await sleep(20);
@@ -5094,7 +5094,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   myEditor(dBlur.window.document).blur();
   await sleep(80);
   ok(bidderNamed(gas.handle(
-       { action: 'state', aname: 'blursave' }), 'bea') === undefined
+       { action: 'state', slug: 'blursave' }), 'bea') === undefined
      && myEditor(dBlur.window.document).value === 'saved by press'
      && myEditor(dBlur.window.document).closest('.rebid')
           .classList.contains('hot'),
@@ -5104,7 +5104,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     .querySelector('.go').click();
   submitBid(dBlur);  // (jsdom fires no implicit submit off the click)
   await until(() => (bidderNamed(gas.handle(
-    { action: 'state', aname: 'blursave' }), 'bea') || {}).bcount === 1);
+    { action: 'state', slug: 'blursave' }), 'bea') || {}).bcount === 1);
   ok(true, 'pressing SUBMIT places the bid: no enter required');
   await settled(dBlur);
   typeBid(dBlur, 'enter then blur');
@@ -5113,7 +5113,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     new dBlur.window.Event('blur'));  // the keyboard closes
   await settled(dBlur);
   ok(bidderNamed(gas.handle(
-       { action: 'state', aname: 'blursave' }), 'bea').bcount === 2,
+       { action: 'state', slug: 'blursave' }), 'bea').bcount === 2,
      'enter then blur is ONE submission, not two (structural now: the'
      + ' closing mobile keyboard can no longer fire anything)');
   ok(myEditor(dBlur.window.document).value === 'enter then blur'
@@ -5126,7 +5126,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await settled(dBlur);
   ok(myEditor(dBlur.window.document).value === 'enter then blur'
      && bidderNamed(gas.handle(
-          { action: 'state', aname: 'blursave' }), 'bea').bcount === 2,
+          { action: 'state', slug: 'blursave' }), 'bea').bcount === 2,
      'Escape abandons a bid edit (the only way out now that clicking'
      + ' away saves): reverted, nothing submitted');
 
@@ -5141,7 +5141,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   addName(dDupe, 'dot');
   await settled(dDupe);
   const dupePosts = () => apiCalls.filter((c) =>
-    c.action === 'bid' && c.aname === 'dupebid').length;
+    c.action === 'bid' && c.slug === 'dupebid').length;
 
   // Two immediate identical sends: the second gesture lands while the
   // first request is aloft, before defaultValue can become the baseline.
@@ -5151,7 +5151,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   submitBid(dDupe);
   await settled(dDupe);
   mockDelay = 0;
-  let dupeState = gas.handle({ action: 'state', aname: 'dupebid' });
+  let dupeState = gas.handle({ action: 'state', slug: 'dupebid' });
   ok(dupePosts() === 1
      && bidderNamed(dupeState, 'dot').bcount === 1,
      'rapid same→same sends one POST and leaves one bid-log row');
@@ -5170,7 +5170,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && !myEditor(dDupe.window.document).classList.contains('committed'),
      'settled same→same is inert immediately: no busy sign or pulse');
   await sleep(30);
-  dupeState = gas.handle({ action: 'state', aname: 'dupebid' });
+  dupeState = gas.handle({ action: 'state', slug: 'dupebid' });
   ok(dupePosts() === settledPosts
      && bidderNamed(dupeState, 'dot').bcount === 1
      && myEditor(dDupe.window.document).style.boxShadow === settledShadow,
@@ -5221,7 +5221,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   submitBid(dDupe);
   await settled(dDupe);
   mockDelay = 0;
-  dupeState = gas.handle({ action: 'state', aname: 'dupebid' });
+  dupeState = gas.handle({ action: 'state', slug: 'dupebid' });
   ok(dupePosts() === 3
      && bidderNamed(dupeState, 'dot').bcount === 3,
      'same→different→same keeps all three submissions: only adjacent'
@@ -5247,7 +5247,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     .classList.contains('busy'));
   submitBid(dDupe);
   await settled(dDupe);
-  dupeState = gas.handle({ action: 'state', aname: 'dupebid' });
+  dupeState = gas.handle({ action: 'state', slug: 'dupebid' });
   ok(dupePosts() === 4
      && bidderNamed(dupeState, 'dot').bcount === 4,
      'a failed bid may be retried unchanged: one successful POST and row');
@@ -5283,7 +5283,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(!seal2.hasAttribute('data-tip') && !seal2.hasAttribute('aria-label'),
      'everyone in: the armed button needs no tip — REVEAL! is its'
      + ' own offer and its own accessible name');
-  const preRevealTau = gas.handle({ action: 'state', aname: 'tau' });
+  const preRevealTau = gas.handle({ action: 'state', slug: 'tau' });
   mockDelay = 150;
   seal2.click();
   ok(doc2.getElementById('status').classList.contains('stale'),
@@ -5360,13 +5360,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      Replicata: submit a revision while the last straggler's bid — and
      the reveal — land first. Expectata: the revision bounces with the
      gavel-fell error; the sheet keeps the pre-reveal bid. */
-  gas.handle({ action: 'add', aname: 'wire',
-    uname: 'ann', pid: 'pid-wire-ann' });
-  gas.handle({ action: 'add', aname: 'wire',
-    uname: 'zed', pid: 'pid-wire-zed' });
-  gas.handle({ action: 'bid', aname: 'wire',
-    uname: 'zed', pid: 'pid-wire-zed', bid: 'safe',
-               deviceID: 'dz' });
+  gas.handle({ action: 'add', slug: 'wire',
+    uname: 'ann', userid: 'userid-wire-ann' });
+  gas.handle({ action: 'add', slug: 'wire',
+    uname: 'zed', userid: 'userid-wire-zed' });
+  gas.handle({ action: 'bid', slug: 'wire',
+    uname: 'zed', userid: 'userid-wire-zed', bid: 'safe',
+               devid: 'dz' });
   const domWire = await makePage('/wire?api=' + API_URL);
   claimRow(domWire, 'ann');
   typeBid(domWire, 'first thoughts');
@@ -5375,7 +5375,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   mockDelay = 300;
   typeBid(domWire, 'second thoughts');
   submitBid(domWire);         // the revision takes flight...
-  gas.handle({ action: 'reveal', aname: 'wire' });  // ...the gavel falls
+  gas.handle({ action: 'reveal', slug: 'wire' });  // ...the gavel falls
   await settled(domWire);
   mockDelay = 0;
   ok(!domWire.window.document.getElementById('banner').hidden
@@ -5383,7 +5383,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
           .includes(STR.refusalCopy.gavelFell({})),
      'losing the under-the-wire race is announced explicitly, in'
      + " dreev's words");
-  ok(bidNamed(gas.handle({ action: 'state', aname: 'wire' }), 'ann').bid === 'first thoughts',
+  ok(bidNamed(gas.handle({ action: 'state', slug: 'wire' }), 'ann').bid === 'first thoughts',
      'the sheet keeps the bid that beat the gavel');
 
   /* --- the under-the-wire race you can't lose AGAINST YOURSELF ----------
@@ -5395,13 +5395,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      Expectata: writes land in the order you made them — the reveal
      rides the same chain as every other write, so the revision
      stands. */
-  gas.handle({ action: 'add', aname: 'selfwire',
-    uname: 'ann', pid: 'pid-selfwire-ann' });
-  gas.handle({ action: 'add', aname: 'selfwire',
-    uname: 'zed', pid: 'pid-selfwire-zed' });
-  gas.handle({ action: 'bid', aname: 'selfwire',
-    uname: 'zed', pid: 'pid-selfwire-zed', bid: 'z',
-               deviceID: 'dz' });
+  gas.handle({ action: 'add', slug: 'selfwire',
+    uname: 'ann', userid: 'userid-selfwire-ann' });
+  gas.handle({ action: 'add', slug: 'selfwire',
+    uname: 'zed', userid: 'userid-selfwire-zed' });
+  gas.handle({ action: 'bid', slug: 'selfwire',
+    uname: 'zed', userid: 'userid-selfwire-zed', bid: 'z',
+               devid: 'dz' });
   const domSW = await makePage('/selfwire?api=' + API_URL);
   claimRow(domSW, 'ann');
   typeBid(domSW, 'first thoughts');
@@ -5417,12 +5417,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   mockDelay = 0;               // ...and the reveal press is instant
   domSW.window.document.getElementById('reveal').click();
   await settled(domSW);
-  await until(() => gas.handle({ action: 'state', aname: 'selfwire' })
+  await until(() => gas.handle({ action: 'state', slug: 'selfwire' })
     .revealed);
   ok(domSW.window.document.getElementById('banner').hidden,
      'no Womp Womp by your own hand: your reveal press never overtakes'
      + ' your still-flying revision');
-  ok(bidNamed(gas.handle({ action: 'state', aname: 'selfwire' }), 'ann').bid === 'final answer',
+  ok(bidNamed(gas.handle({ action: 'state', slug: 'selfwire' }), 'ann').bid === 'final answer',
      'the revision beat the gavel: writes land in click order');
   ok(myEditor(domSW.window.document).value === 'final answer'
      && myEditor(domSW.window.document).disabled,
@@ -5499,13 +5499,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      Schelling point is a focal point, made literal. The aim is
      pixel-true (aspect-ratio corrected), pinned here by recomputing
      every cannon's bearing from its own recorded burst. */
-  gas.handle({ action: 'add', aname: 'jackpot',
-    uname: 'ann', pid: 'pid-jackpot-ann' });
-  gas.handle({ action: 'add', aname: 'jackpot',
-    uname: 'bo', pid: 'pid-jackpot-bo' });
-  gas.handle({ action: 'bid', aname: 'jackpot',
-    uname: 'bo', pid: 'pid-jackpot-bo',
-               bid: 'york', deviceID: 'db' });
+  gas.handle({ action: 'add', slug: 'jackpot',
+    uname: 'ann', userid: 'userid-jackpot-ann' });
+  gas.handle({ action: 'add', slug: 'jackpot',
+    uname: 'bo', userid: 'userid-jackpot-bo' });
+  gas.handle({ action: 'bid', slug: 'jackpot',
+    uname: 'bo', userid: 'userid-jackpot-bo',
+               bid: 'york', devid: 'db' });
   const domJk = await makePage('/jackpot?api=' + API_URL);
   claimRow(domJk, 'ann');
   typeBid(domJk, 'york');   // the minds meet
@@ -5544,10 +5544,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' CONVERGES on the focal point');
 
   /* --- 3b. shimmer + stacks: re-bids glow anew in every window ---------- */
-  gas.handle({ action: 'add', aname: 'wobble',
-    uname: 'ann', pid: 'pid-wobble-ann' });
-  gas.handle({ action: 'add', aname: 'wobble',
-    uname: 'zed', pid: 'pid-wobble-zed' });
+  gas.handle({ action: 'add', slug: 'wobble',
+    uname: 'ann', userid: 'userid-wobble-ann' });
+  gas.handle({ action: 'add', slug: 'wobble',
+    uname: 'zed', userid: 'userid-wobble-zed' });
   const domA = await makePage('/wobble?api=' + API_URL);
   claimRow(domA, 'ann');
   typeBid(domA, 'first');
@@ -5613,12 +5613,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      star locks, yours included (trying this per dreev; the old
      switch-after-bidding flow, with its multi-identity bid memory,
      died here with his blessing). */
-  gas.handle({ action: 'add', aname: 'switcheroo',
-    uname: 'alice', pid: 'pid-switcheroo-alice' });
-  gas.handle({ action: 'add', aname: 'switcheroo',
-    uname: 'bob', pid: 'pid-switcheroo-bob' });
-  gas.handle({ action: 'add', aname: 'switcheroo',
-    uname: 'cam', pid: 'pid-switcheroo-cam' });
+  gas.handle({ action: 'add', slug: 'switcheroo',
+    uname: 'alice', userid: 'userid-switcheroo-alice' });
+  gas.handle({ action: 'add', slug: 'switcheroo',
+    uname: 'bob', userid: 'userid-switcheroo-bob' });
+  gas.handle({ action: 'add', slug: 'switcheroo',
+    uname: 'cam', userid: 'userid-switcheroo-cam' });
   const domS = await makePage('/switcheroo?api=' + API_URL);
   const docS = domS.window.document;
   claimRow(domS, 'alice');
@@ -5665,7 +5665,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // [REWRITTEN 2026-07-18, names-are-chosen-once: the old hazard —
   // switching auctions while the bid flew — is unrepresentable now,
   // and the pin is that it IS]
-  ok(domR.window.document.getElementById('aname').disabled,
+  ok(domR.window.document.getElementById('slug').disabled,
      'no auction-hopping mid-bid or ever: the name field is stone');
   await until(() => domR.window.localStorage
     .getItem('tauction-mybids:race') !== null);
@@ -5673,7 +5673,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(Object.values(JSON.parse(
        domR.window.localStorage.getItem('tauction-mybids:race') || '{}'))
        .includes('zoom zoom'),
-     'bid remembered under the auction it was placed on (pid-keyed)');
+     'bid remembered under the auction it was placed on (userid-keyed)');
 
   /* --- 3g. submitting shows progress; the editor stays HOT --------------
      (dreev: down to the wire you might change your mind while your
@@ -5698,9 +5698,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(domP.window.document.querySelector('#tiles .rebid').classList
        .contains('busy'),
      'the resubmission rides along (still busy)');
-  await until(() => gas.handle({ action: 'state', aname: 'progress' })
+  await until(() => gas.handle({ action: 'state', slug: 'progress' })
     .bidders.length === 1 && gas.handle({ action: 'state',
-    aname: 'progress' }).bidders[0].bcount === 2);
+    slug: 'progress' }).bidders[0].bcount === 2);
   await settled(domP);
   mockDelay = 0;
   ok(!domP.window.document.querySelector('#tiles .rebid').classList
@@ -5730,9 +5730,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // one, making "survives the poll" pass vacuously), then let its
   // response land and render
   const polls0 = apiCalls.filter((c) => c.action === 'state'
-    && c.aname === 'draft').length;
+    && c.slug === 'draft').length;
   await until(() => apiCalls.filter((c) => c.action === 'state'
-    && c.aname === 'draft').length > polls0);
+    && c.slug === 'draft').length > polls0);
   await sleep(100);
   ok(myEditor(domD.window.document).value === 'half a tho',
      'draft bid survives the poll rebuild');
@@ -5754,11 +5754,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
       { key: 'Enter', bubbles: true, cancelable: true }));
   await settled(domW);
   ok(swallowed
-     && gas.handle({ action: 'state', aname: 'wrap' }).bidders.length === 1,
+     && gas.handle({ action: 'state', slug: 'wrap' }).bidders.length === 1,
      "Enter commits the bid via the editor's own keydown — and eats"
      + ' the keystroke (it must never become a newline)');
   const wrapBids = () => apiCalls.filter((c) => c.action === 'bid'
-    && c.aname === 'wrap').length;
+    && c.slug === 'wrap').length;
   const wrapBids0 = wrapBids();
   const passedThrough = myEditor(domW.window.document).dispatchEvent(
     new domW.window.KeyboardEvent('keydown',
@@ -5830,7 +5830,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   row(docY, 'harold').querySelector('.x').click();
   ok(noSigns(), 'a remove in flight: nothing');
   await until(() => names(gas.handle(
-    { action: 'state', aname: 'descbusy' })) === 'gia');
+    { action: 'state', slug: 'descbusy' })) === 'gia');
   row(docY, 'gia').querySelector('.tu').click();  // release the seat
   ok(noSigns(), 'a release in flight: nothing');
   await until(() => drained(domY));
@@ -5853,14 +5853,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   /* --- 3i. keyed node reuse: rows keep their DOM nodes across CHANGE-ful
      renders too, so a mid-gesture click or focused editor can never be
      destroyed by someone else's update arriving. */
-  gas.handle({ action: 'add', aname: 'reuse',
-    uname: 'ann', pid: 'pid-reuse-ann' });
-  gas.handle({ action: 'add', aname: 'reuse',
-    uname: 'zed', pid: 'pid-reuse-zed' });
+  gas.handle({ action: 'add', slug: 'reuse',
+    uname: 'ann', userid: 'userid-reuse-ann' });
+  gas.handle({ action: 'add', slug: 'reuse',
+    uname: 'zed', userid: 'userid-reuse-zed' });
   const domN = await makePage('/reuse?api=' + API_URL);
   const annBefore = row(domN.window.document, 'ann');
-  gas.handle({ action: 'bid', aname: 'reuse',
-    uname: 'zed', pid: 'pid-reuse-zed', bid: 'zzz' });
+  gas.handle({ action: 'bid', slug: 'reuse',
+    uname: 'zed', userid: 'userid-reuse-zed', bid: 'zzz' });
   await until(() =>  // a poll brings a genuinely CHANGED state
     row(domN.window.document, 'zed').classList.contains('has-bid'));
   ok(row(domN.window.document, 'zed').classList.contains('has-bid'),
@@ -5872,10 +5872,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // must render identical to a fresh page's row at A (modulo the
   // wall-clock breathe phase)
   const strip = (h) => h.replace(/animation-delay:[^;"]*;?/g, '');
-  gas.handle({ action: 'add', aname: 'idem',
-    uname: 'pip', pid: 'pid-idem-pip' });
-  gas.handle({ action: 'add', aname: 'idem',
-    uname: 'quo', pid: 'pid-idem-quo' });
+  gas.handle({ action: 'add', slug: 'idem',
+    uname: 'pip', userid: 'userid-idem-pip' });
+  gas.handle({ action: 'add', slug: 'idem',
+    uname: 'quo', userid: 'userid-idem-quo' });
   const domI = await makePage('/idem?api=' + API_URL);
   claimRow(domI, 'pip');   // A -> B: pip becomes mine (editor appears)
   claimRow(domI, 'pip');   // B -> A: released again
@@ -5889,11 +5889,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   /* --- 3f. a hand-written log row (sheet surgery) still counts ----------
      [reworked for the 2026-07-17 append-only log: the old fixture
      seeded a blank-bcount legacy row; bcount is derived now, so a
-     bare (aname, uname, bid, tbid) row IS the whole story] ------- */
-  gas.__ss.sheets['users'].appendRow(['legacy', 'pid-legacy-oldtimer',
+     bare (slug, uname, bid, tbid) row IS the whole story] ------- */
+  gas.__ss.sheets['seats'].appendRow(['legacy', 'userid-legacy-oldtimer',
     'oldtimer', '', '', '2026-01-01T00:00:00.000Z',
     '2026-01-01T00:00:00.000Z', '']);
-  gas.__ss.sheets['bids'].appendRow(['legacy', 'pid-legacy-oldtimer',
+  gas.__ss.sheets['bids'].appendRow(['legacy', 'userid-legacy-oldtimer',
     'ancient bid', '2026-01-01T00:00:00.000Z']);
   const domL = await makePage('/legacy?api=' + API_URL);
   const rowL = tiles(domL.window.document, '.has-bid')[0];
@@ -5912,10 +5912,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const dLongSlug = await makePage('/' + 'x'.repeat(21) + '?api='
     + API_URL);
   await sleep(80);
-  ok(!dLongSlug.window.document.getElementById('aname').disabled
-     && dLongSlug.window.document.getElementById('aname').value === ''
+  ok(!dLongSlug.window.document.getElementById('slug').disabled
+     && dLongSlug.window.document.getElementById('slug').value === ''
      && dLongSlug.window.document.body.classList.contains('unnamed')
-     && apiCalls.every((c) => c.aname !== 'x'.repeat(21)),
+     && apiCalls.every((c) => c.slug !== 'x'.repeat(21)),
      'an overlong slug is no name at all: the page lands unnamed,'
      + ' ready to start fresh, and nothing unaskable goes to the'
      + ' wire');
@@ -5927,8 +5927,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const dom4 = await makePage('/?api=' + API_URL);
   const doc4 = dom4.window.document;
   mockDelay = 150;
-  type(dom4, 'aname', 'Pie-Split');
-  ok(doc4.getElementById('aname').value === 'piesplit', 'slug sanitized');
+  type(dom4, 'slug', 'Pie-Split');
+  ok(doc4.getElementById('slug').value === 'piesplit', 'slug sanitized');
   commitName(dom4);  // the deliberate gesture; the probe is in flight
   ok(!doc4.getElementById('status').hidden
      && doc4.getElementById('status').classList.contains('stale'),
@@ -5967,14 +5967,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      rule.] A concurrent remove that races a bid bounces off the
      server; the other order self-heals because a bid rebuilds its
      seat. Either way every rendered row is a full member. */
-  gas.handle({ action: 'add', aname: 'cutcheck',
-    uname: 'pat', pid: 'pid-cutcheck-pat' });
-  gas.handle({ action: 'add', aname: 'cutcheck',
-    uname: 'quinn', pid: 'pid-cutcheck-quinn' });
-  gas.handle({ action: 'bid', aname: 'cutcheck',
-    uname: 'pat', pid: 'pid-cutcheck-pat', bid: 'stays' });
-  const cutRefusal = gas.handle({ action: 'remove', aname: 'cutcheck',
-    pid: 'pid-cutcheck-pat' });  // the raced removal, refused
+  gas.handle({ action: 'add', slug: 'cutcheck',
+    uname: 'pat', userid: 'userid-cutcheck-pat' });
+  gas.handle({ action: 'add', slug: 'cutcheck',
+    uname: 'quinn', userid: 'userid-cutcheck-quinn' });
+  gas.handle({ action: 'bid', slug: 'cutcheck',
+    uname: 'pat', userid: 'userid-cutcheck-pat', bid: 'stays' });
+  const cutRefusal = gas.handle({ action: 'remove', slug: 'cutcheck',
+    userid: 'userid-cutcheck-pat' });  // the raced removal, refused
   const domC = await makePage('/cutcheck?api=' + API_URL);
   const patRow = row(domC.window.document, 'pat');
   ok(cutRefusal.error && cutRefusal.error.code === 'removeBidder'
@@ -5986,11 +5986,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'a raced remove of a bidder is refused: the row stands, whole,'
      + " its × gray with dreev's too-late tip");
   // the other race order: quinn's seat is removed while her first
-  // bid flies; the bid rebuilds the seat — same pid, self-healed
-  gas.handle({ action: 'remove', aname: 'cutcheck',
-    pid: 'pid-cutcheck-quinn' });
-  gas.handle({ action: 'bid', aname: 'cutcheck',
-    uname: 'quinn', pid: 'pid-cutcheck-quinn', bid: 'back in' });
+  // bid flies; the bid rebuilds the seat — same userid, self-healed
+  gas.handle({ action: 'remove', slug: 'cutcheck',
+    userid: 'userid-cutcheck-quinn' });
+  gas.handle({ action: 'bid', slug: 'cutcheck',
+    uname: 'quinn', userid: 'userid-cutcheck-quinn', bid: 'back in' });
   const domC2 = await makePage('/cutcheck?api=' + API_URL);
   ok(row(domC2.window.document, 'quinn') !== null
      && row(domC2.window.document, 'quinn').classList.contains('has-bid'),
@@ -6003,14 +6003,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      is deleted as dead code. ------------------------------------- */
 
   /* --- 5. XSS: a bid with markup renders inert; walk-ons show cut ------- */
-  gas.handle({ action: 'bid', aname: 'piesplit',
-    uname: 'rando', pid: 'pid-piesplit-rando', bid: 'me too!' });
-  const gasRes = gas.handle({ action: 'bid', aname: 'piesplit',
+  gas.handle({ action: 'bid', slug: 'piesplit',
+    uname: 'rando', userid: 'userid-piesplit-rando', bid: 'me too!' });
+  const gasRes = gas.handle({ action: 'bid', slug: 'piesplit',
     uname: 'evy',
-    pid: pidOf(gas.handle({ action: 'state', aname: 'piesplit' }), 'evy'),
+    userid: pidOf(gas.handle({ action: 'state', slug: 'piesplit' }), 'evy'),
     bid: '<img src=x onerror=alert(1)>' });
   ok(gasRes.revealed === false, 'roster complete -> still sealed');
-  ok(gas.handle({ action: 'reveal', aname: 'piesplit' }).revealed,
+  ok(gas.handle({ action: 'reveal', slug: 'piesplit' }).revealed,
      'revealed by the button');
   await sleep(5100); // poll
   const html4 = doc4.getElementById('status').innerHTML;
@@ -6029,7 +6029,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(fs.readFileSync(path.join(REPO, '404.html'), 'utf8') === INDEX_HTML,
      '404.html is an exact copy of index.html (fix: npm run sync-404)');
   const domBack = await makePage('/tau?api=' + API_URL);
-  ok(domBack.window.document.getElementById('aname').value === 'tau',
+  ok(domBack.window.document.getElementById('slug').value === 'tau',
      'direct navigation lands on the auction');
   ok(domBack.window.document.getElementById('status').textContent.includes('three tacos'),
      'revealed bids visible on direct navigation');
@@ -6038,10 +6038,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      Typing a name that already has data refuses with a pointer to the
      URL, so nobody stumbles into a stranger's auction by picking
      "pizza". Following a link always joins. */
-  gas.handle({ action: 'add', aname: 'occupied',
-    uname: 'stranger', pid: 'pid-occupied-stranger' });
+  gas.handle({ action: 'add', slug: 'occupied',
+    uname: 'stranger', userid: 'userid-occupied-stranger' });
   const domG = await makePage('/?api=' + API_URL);
-  type(domG, 'aname', 'occupied');
+  type(domG, 'slug', 'occupied');
   commitName(domG);
   await until(() =>  // the refusal banner is the positive signal
     !domG.window.document.getElementById('banner').hidden);
@@ -6057,7 +6057,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // dreev saw (or thought he saw) a SILENT failure once: pin that a
   // repeat attempt after the banner is dismissed banners again
   domG.window.document.getElementById('banner').hidden = true;
-  type(domG, 'aname', 'occupied');
+  type(domG, 'slug', 'occupied');
   commitName(domG);
   await until(() =>
     !domG.window.document.getElementById('banner').hidden);
@@ -6072,7 +6072,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // a path that isn't a slug is nobody's auction: the unnamed idle
   // state, ready for the user to pick (no invented names)
   const domWeird = await makePage('/no/such/path?api=' + API_URL);
-  ok(domWeird.window.document.getElementById('aname').value === ''
+  ok(domWeird.window.document.getElementById('slug').value === ''
      && domWeird.window.document.getElementById('roster-input').disabled,
      'a non-slug path lands on the unnamed idle state, not an invented'
      + ' auction');
@@ -6088,22 +6088,22 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const dPulse = await makePage('/?api=' + API_URL);
   const pdoc = dPulse.window.document;
   // a refused name rode a real probe: its tint clears at the refusal
-  type(dPulse, 'aname', 'occupied');
+  type(dPulse, 'slug', 'occupied');
   commitName(dPulse);
   await until(() => !pdoc.getElementById('banner').hidden);
-  ok(!pdoc.getElementById('aname').classList.contains('committed'),
+  ok(!pdoc.getElementById('slug').classList.contains('committed'),
      "a refused name's tint clears with its probe: nothing left"
      + ' pending');
   // positive: a fresh name tints while its probe rides, then settles
   mockDelay = 200;
-  type(dPulse, 'aname', 'pulse');
+  type(dPulse, 'slug', 'pulse');
   commitName(dPulse);
-  ok(pdoc.getElementById('aname').classList.contains('committed'),
+  ok(pdoc.getElementById('slug').classList.contains('committed'),
      'a committed name tints while its create probe rides');
   await until(() => !pdoc.body.classList.contains('unnamed'));
   await sleep(50);
   mockDelay = 0;
-  ok(!pdoc.getElementById('aname').classList.contains('committed'),
+  ok(!pdoc.getElementById('slug').classList.contains('committed'),
      "the probe's settle clears the name's tint: the fade is the"
      + ' confirmation');
   // the + row: an add queues a write and tints; junk does not
@@ -6159,7 +6159,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      no timer may snatch it while you read. --------------------------- */
   const dStick = await makePage('/?api=' + API_URL);
   const sdoc = dStick.window.document;
-  type(dStick, 'aname', 'stick');
+  type(dStick, 'slug', 'stick');
   commitName(dStick);
   await until(() => dStick.window.location.pathname === '/stick');
   addName(dStick, 'sam');    // mine (the fresh-add latch)
@@ -6238,14 +6238,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      poll answer landing mid-flight must NOT cut the drumroll short —
      the fence that separates the pinned-gavel fix from a naive
      unpin-on-any-answer. */
-  gas.handle({ action: 'add', aname: 'drumroll', uname: 'ada',
-    pid: 'pid-drum-ada' });
-  gas.handle({ action: 'add', aname: 'drumroll', uname: 'ben',
-    pid: 'pid-drum-ben' });
-  gas.handle({ action: 'bid', aname: 'drumroll', uname: 'ada',
-    pid: 'pid-drum-ada', bid: 'a farthing' });
-  gas.handle({ action: 'bid', aname: 'drumroll', uname: 'ben',
-    pid: 'pid-drum-ben', bid: 'tuppence' });
+  gas.handle({ action: 'add', slug: 'drumroll', uname: 'ada',
+    userid: 'userid-drum-ada' });
+  gas.handle({ action: 'add', slug: 'drumroll', uname: 'ben',
+    userid: 'userid-drum-ben' });
+  gas.handle({ action: 'bid', slug: 'drumroll', uname: 'ada',
+    userid: 'userid-drum-ada', bid: 'a farthing' });
+  gas.handle({ action: 'bid', slug: 'drumroll', uname: 'ben',
+    userid: 'userid-drum-ben', bid: 'tuppence' });
   const domDrum = await makePage('/drumroll?api=' + API_URL);
   const ddoc = domDrum.window.document;
   await until(() => !ddoc.getElementById('reveal').disabled
@@ -6311,14 +6311,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        + ' on the + row from the start, dimmed with its section');
   }
   {
-    gas.handle({ action: 'add', aname: 'bigswitch', uname: 'ada',
-      pid: 'pid-big-ada' });
-    gas.handle({ action: 'add', aname: 'bigswitch', uname: 'ben',
-      pid: 'pid-big-ben' });
-    gas.handle({ action: 'bid', aname: 'bigswitch', uname: 'ada',
-      pid: 'pid-big-ada', bid: 'a farthing' });
-    gas.handle({ action: 'bid', aname: 'bigswitch', uname: 'ben',
-      pid: 'pid-big-ben', bid: 'tuppence' });
+    gas.handle({ action: 'add', slug: 'bigswitch', uname: 'ada',
+      userid: 'userid-big-ada' });
+    gas.handle({ action: 'add', slug: 'bigswitch', uname: 'ben',
+      userid: 'userid-big-ben' });
+    gas.handle({ action: 'bid', slug: 'bigswitch', uname: 'ada',
+      userid: 'userid-big-ada', bid: 'a farthing' });
+    gas.handle({ action: 'bid', slug: 'bigswitch', uname: 'ben',
+      userid: 'userid-big-ben', bid: 'tuppence' });
     const domBig = await makePage('/bigswitch?api=' + API_URL);
     const bdoc = domBig.window.document;
     await until(() => !bdoc.getElementById('reveal').disabled);
@@ -6357,8 +6357,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     ok(vdoc.getElementById('desctoggle').getAttribute('data-tip')
          === STR.descVerTip(1),
        'SAVE increments the pencil at the click');
-    await until(() => gas.handle({ action: 'state', aname: 'verstory' })
-      .blurbver === 1);
+    await until(() => gas.handle({ action: 'state', slug: 'verstory' })
+      .bver === 1);
     ok(true, '...and the server agrees at the settle');
     vdoc.getElementById('desctoggle').click();
     type(domVer, 'descedit', 'second words');
@@ -6371,16 +6371,16 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     vdoc.getElementById('descgo').click();
     ok(vdoc.getElementById('desctoggle').getAttribute('data-tip')
          === STR.descVerTip(2)
-       && gas.handle({ action: 'state', aname: 'verstory' })
-            .blurbver === 1,
+       && gas.handle({ action: 'state', slug: 'verstory' })
+            .bver === 1,
        'SAVE increments the pencil AT THE CLICK — the server still'
        + ' says 1: the version is optimistic like the words');
-    await until(() => gas.handle({ action: 'state', aname: 'verstory' })
-      .blurbver === 2);
+    await until(() => gas.handle({ action: 'state', slug: 'verstory' })
+      .bver === 2);
     mockDelay = 0;
     await until(() => vdoc.getElementById('desctoggle')
       .getAttribute('data-tip') === STR.descVerTip(2));
-    ok(gas.handle({ action: 'state', aname: 'verstory' }).blurbver === 2,
+    ok(gas.handle({ action: 'state', slug: 'verstory' }).bver === 2,
        'and the settle confirms what the click promised');
   }
 
@@ -6436,14 +6436,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      loading gavel. The server's CAS stays the backstop for sub-poll
      races. */
   {
-    gas.handle({ action: 'describe', aname: 'warlocal', base: 0,
+    gas.handle({ action: 'describe', slug: 'warlocal', base: 0,
       blurb: 'first truth' });
     const domWL = await makePage('/warlocal?api=' + API_URL);
     const wdoc = domWL.window.document;
     await until(() => wdoc.getElementById('descedit').dataset.base === '1');
     wdoc.getElementById('desctoggle').click();
     type(domWL, 'descedit', 'my rival words');
-    gas.handle({ action: 'describe', aname: 'warlocal', base: 1,
+    gas.handle({ action: 'describe', slug: 'warlocal', base: 1,
       blurb: 'their newer truth' });  // the foreign save...
     domWL.window.__intervals.find((i) => i.ms === 5000).fn();  // ...a
     await until(() =>  // poll delivers it (the dirty editor's base
@@ -6463,8 +6463,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     await until(() => !wdoc.getElementById('war-dlg').open);
     ok(wdoc.getElementById('descedit').value === 'their newer truth'
        && wdoc.getElementById('descedit').dataset.base === '2'
-       && gas.handle({ action: 'state', aname: 'warlocal' })
-            .blurbver === 2,
+       && gas.handle({ action: 'state', slug: 'warlocal' })
+            .bver === 2,
        'Keep theirs adopts the record, base and all — and the local'
        + ' verdict truly sent NOTHING: the server never moved');
   }

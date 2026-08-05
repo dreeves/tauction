@@ -2,7 +2,7 @@
 
 /* --------------------------------- config --------------------------------- */
 
-// "aname" = auction name, also its URL slug
+// "slug" = auction name, also its URL slug
 // "uname" = bidder's username, shown with an @ in the UI
 
 // Paste your Apps Script web-app URL here (Deploy -> Web app -> the /exec URL):
@@ -70,7 +70,7 @@ async function apiPost(body) {
   // the chronicle's outbound half: every write announces itself as
   // '(actor) → deed' the moment it flies (the settled truth narrates
   // at ingest; every error warns ✗ inside banner() itself)
-  const s = seats.find((z) => z.pid === mypid());
+  const s = seats.find((z) => z.userid === myUserid());
   console.log('(' + (s === undefined ? 'nobody' : '@' + s.uname)
     + ') → ' + body.action + (body.uname ? ' @' + body.uname : '')
     + (body.to ? ' → @' + body.to : ''));
@@ -139,13 +139,13 @@ function settleCommit(node) {
 
 /* ------------------------------- state -------------------------------- */
 
-let aname = '';
+let slug = '';
 let state = null;         // latest server snapshot of the current auction
 let seats = [];           // local working copy of the seats: one
-                          // {pid, uname} per person, insertion order
-                          // — the pid is the IDENTITY (dreev's
+                          // {userid, uname} per person, insertion order
+                          // — the userid is the IDENTITY (dreev's
                           // spec), the uname just its label
-let seen = umap();        // pid -> updated stamp at last render (shimmer)
+let seen = umap();        // userid -> updated stamp at last render (shimmer)
 let wasRevealed = false;  // reveal state at last render
 let adopted = false;      // THE ARRIVAL EDGE: has any snapshot —
                           // cached or live — been adopted for this
@@ -195,7 +195,7 @@ const DEVICE = localStorage.getItem('tauction-device');
 // language from the browser, geography appended asynchronously by
 // locate(). Decoration on the honor system, all of it. (The server
 // can't glean any of this: Apps Script never sees headers.)
-let DEVBLURB = (() => {
+let RIG = (() => {
   const ua = navigator.userAgent;
   const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad'
     : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac'
@@ -235,11 +235,11 @@ async function locate() {
       localStorage.setItem('tauction-geo', geo);
       localStorage.setItem('tauction-geo-at', new Date().toISOString());
     }
-    // The server's deviceBlurb contract is printable ASCII, max 64
+    // The server's rig contract is printable ASCII, max 64
     // chars: ASCII-fy the city (São Paulo -> Sao Paulo — NFD splits
     // off the combining marks, the filter drops them) and clamp, so
     // decoration can never cost anyone a claim or a bid
-    DEVBLURB = (DEVBLURB + ' in ' + geo).normalize('NFD')
+    RIG = (RIG + ' in ' + geo).normalize('NFD')
       .replace(/[^ -~]/g, '').slice(0, 64);
   } catch (e) { /* the blurb just goes without */ }
 }
@@ -308,26 +308,26 @@ const STAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 function assertState(res) {
   assert(res !== null && typeof res === 'object'
-    && typeof res.aname === 'string'
+    && typeof res.slug === 'string'
     && typeof res.exists === 'boolean'
     && Array.isArray(res.seats) && res.seats.every(
-      (s) => typeof s.pid === 'string' && typeof s.uname === 'string')
+      (s) => typeof s.userid === 'string' && typeof s.uname === 'string')
     && Array.isArray(res.bidders) && res.bidders.every(
-      (b) => typeof b.pid === 'string' && STAMP_RE.test(b.tini)
+      (b) => typeof b.userid === 'string' && STAMP_RE.test(b.tini)
           && STAMP_RE.test(b.tmod) && typeof b.bcount === 'number')
     && typeof res.revealed === 'boolean'
     && typeof res.tfin === 'string'
     && (res.tfin === '' || STAMP_RE.test(res.tfin))
     && typeof res.blurb === 'string'
-    && Number.isInteger(res.blurbver) && res.blurbver >= 0
+    && Number.isInteger(res.bver) && res.bver >= 0
     && res.claims !== null && typeof res.claims === 'object'
     && !Array.isArray(res.claims)
     && Object.values(res.claims).every((v) => typeof v === 'string')
-    && res.blurbs !== null && typeof res.blurbs === 'object'
-    && !Array.isArray(res.blurbs)
-    && Object.values(res.blurbs).every((v) => typeof v === 'string')
+    && res.rigs !== null && typeof res.rigs === 'object'
+    && !Array.isArray(res.rigs)
+    && Object.values(res.rigs).every((v) => typeof v === 'string')
     && (res.bids === null || (Array.isArray(res.bids)
-      && res.bids.every((b) => typeof b.pid === 'string'
+      && res.bids.every((b) => typeof b.userid === 'string'
         && typeof b.bid === 'string'))),
   'bad state shape — is the deployed Code.gs current?');
 }
@@ -345,43 +345,43 @@ function assertState(res) {
 // diagnostics, deliberately plain inline English, not stringles
 // copy: the end user never reads here.
 function narrate(prev, next) {
-  const label = umap();  // pid -> its CURRENT display name
-  next.seats.forEach((s) => { label[s.pid] = s.uname; });
+  const label = umap();  // userid -> its CURRENT display name
+  next.seats.forEach((s) => { label[s.userid] = s.uname; });
   if (prev === null) {
-    console.log('· /' + next.aname
+    console.log('· /' + next.slug
       + (next.revealed ? ' (revealed)' : ''));
     if (next.seats.length > 0) {
       console.table(next.seats.map((s) => {
-        const b = next.bidders.find((x) => x.pid === s.pid);
+        const b = next.bidders.find((x) => x.userid === s.userid);
         return { who: '@' + s.uname,
                  bids: b === undefined ? 0 : b.bcount,
-                 device: next.blurbs[s.pid] || '' };
+                 device: next.rigs[s.userid] || '' };
       }));
     }
     return;
   }
-  const was = umap();  // pid -> its name in the PREVIOUS snapshot
-  prev.seats.forEach((s) => { was[s.pid] = s.uname; });
+  const was = umap();  // userid -> its name in the PREVIOUS snapshot
+  prev.seats.forEach((s) => { was[s.userid] = s.uname; });
   next.seats.forEach((s) => {
-    if (was[s.pid] === undefined) console.log('+ @' + s.uname);
-    else if (was[s.pid] !== s.uname) {
-      console.log('@' + was[s.pid] + ' → @' + s.uname);
+    if (was[s.userid] === undefined) console.log('+ @' + s.uname);
+    else if (was[s.userid] !== s.uname) {
+      console.log('@' + was[s.userid] + ' → @' + s.uname);
     }
   });
   prev.seats.forEach((s) => {
-    if (label[s.pid] === undefined) console.log('− @' + s.uname);
+    if (label[s.userid] === undefined) console.log('− @' + s.uname);
   });
-  const had = umap();  // pid -> bcount in the previous snapshot
-  prev.bidders.forEach((b) => { had[b.pid] = b.bcount; });
+  const had = umap();  // userid -> bcount in the previous snapshot
+  prev.bidders.forEach((b) => { had[b.userid] = b.bcount; });
   next.bidders.forEach((b) => {
-    if (had[b.pid] !== b.bcount) {
-      console.log('@' + (label[b.pid] || b.pid) + ': bid #' + b.bcount);
+    if (had[b.userid] !== b.bcount) {
+      console.log('@' + (label[b.userid] || b.userid) + ': bid #' + b.bcount);
     }
   });
   Object.keys(next.claims).forEach((p) => {
     if (prev.claims[p] !== next.claims[p]) {
       console.log('★ @' + (label[p] || p)
-        + (next.blurbs[p] ? ' — ' + next.blurbs[p] : ''));
+        + (next.rigs[p] ? ' — ' + next.rigs[p] : ''));
     }
   });
   Object.keys(prev.claims).forEach((p) => {
@@ -395,7 +395,7 @@ function narrate(prev, next) {
   if (!prev.revealed && next.revealed) {
     console.log('🎉 revealed');
     console.table((next.bids || []).map((b) =>
-      ({ who: '@' + (label[b.pid] || b.pid), bid: b.bid })));
+      ({ who: '@' + (label[b.userid] || b.userid), bid: b.bid })));
   }
 }
 
@@ -404,30 +404,30 @@ function narrate(prev, next) {
 function ingest(res) {
   assertState(res);
   res.claims = umap(res.claims);
-  res.blurbs = umap(res.blurbs);
+  res.rigs = umap(res.rigs);
   // the chronicle's arrival edge is ADOPTED, not state-null: a page
   // born on the virgin seed still narrates its first real snapshot
   // as the arrival table
   narrate(adopted ? state : null, res);
   state = res;
   seenRevealed = seenRevealed || res.revealed;
-  localStorage.setItem('tauction-state:' + res.aname, JSON.stringify(res));
+  localStorage.setItem('tauction-state:' + res.slug, JSON.stringify(res));
   // Your device's registered claim is authoritative for who you are.
   // (In the uname era this dragged bid memory along to the new name;
   // pids never change, so following the claim home is the whole job.)
   const claimed = Object.keys(res.claims)
     .find((p) => res.claims[p] === DEVICE);
-  if (claimed !== undefined && claimed !== myPidStored()) {
+  if (claimed !== undefined && claimed !== myUseridStored()) {
     storeMyPid(claimed);
   }
 }
 
 async function refresh() {
-  // (the !aname leg: an unnamed page has nothing to fetch — the user
+  // (the !slug leg: an unnamed page has nothing to fetch — the user
   // has not picked an auction yet)
-  if (!configured || refreshing || !aname) return;
+  if (!configured || refreshing || !slug) return;
   refreshing = true;
-  const a = aname;  // the auction this request is for
+  const a = slug;  // the auction this request is for
   const seqAtRequest = settleSeq;
   // Only the network call sits in its own try (placeBid's precedent):
   // transport death is WEATHER, not news (dreev's ruling) — no
@@ -440,7 +440,7 @@ async function refresh() {
   // never drift.
   let res = null;
   try {
-    res = await apiGet({ action: 'state', aname: a });
+    res = await apiGet({ action: 'state', slug: a });
   } catch (e) {
     console.warn(e2152(e.message));
     $('status').classList.add('stale');
@@ -455,7 +455,7 @@ async function refresh() {
       // this snapshot was in flight — anything less and it can lack a
       // name you just added or a bid you just placed (the server
       // commits a write somewhere between our send and its response)
-      else if (res.aname === aname && writesPending === 0
+      else if (res.slug === slug && writesPending === 0
                && settleSeq === seqAtRequest) { ingest(res); render(); }
       // The server ANSWERED for this page but adoption must wait out
       // an in-flight or just-settled write (the snapshot can lack
@@ -469,7 +469,7 @@ async function refresh() {
       // (2026-07-30, two browsers adding simultaneously). Disclosed
       // exception: the reveal's drumroll belongs to the verdict and
       // only its settle may lift it.
-      else if (res.aname === aname && !revealInFlight) {
+      else if (res.slug === slug && !revealInFlight) {
         $('status').classList.remove('stale');
       }
     }
@@ -494,15 +494,15 @@ async function refresh() {
 // the adopted pipeline (its snapshot may predate the return-
 // refresh's).
 async function peekTitle() {
-  if (!configured || !aname || seenRevealed) return;
+  if (!configured || !slug || seenRevealed) return;
   try {
-    const res = await apiGet({ action: 'state', aname: aname });
+    const res = await apiGet({ action: 'state', slug: slug });
     assertState(res);  // an {error} payload fails this shape check
     seenRevealed = seenRevealed || res.revealed;
     if (document.visibilityState !== 'hidden') return;
     document.title = tabTitle(
       titleGlyph(res.seats, res.bidders, res.revealed,
-                 pidAmong(res.seats, umap(res.claims))), aname);
+                 useridAmong(res.seats, umap(res.claims))), slug);
   } catch (e) { console.warn(e2152(e.message)); }
 }
 
@@ -513,7 +513,7 @@ function render() {
   // adopt the server's seats: every adopted snapshot is gated on being
   // newer than this client's newest write, so it contains every local
   // edit — no shielding needed (cloned: local edits mutate labels)
-  seats = state.seats.map((s) => ({ pid: s.pid, uname: s.uname }));
+  seats = state.seats.map((s) => ({ userid: s.userid, uname: s.uname }));
   renderStatus();
   renderDesc();
   if (!adopted) restoreDrafts();  // the tab's drafts come home, once
@@ -560,7 +560,7 @@ function syncHot(f) {
 }
 
 // Drafts survive the tab (dreev's ruling): a dirty field's words
-// are already in tauction-drafts:<aname>, keyed by slot, and the
+// are already in tauction-drafts:<slug>, keyed by slot, and the
 // arrival edge hands them back. Committing or Escaping deletes the
 // slot. The store rides the same chokepoint as hotness (syncHot), so
 // there is no second bookkeeping to drift. Per-auction keys linger
@@ -580,15 +580,15 @@ function draftSlot(f) {
   // the ONE bid slot per auction (dreev's ruling): the unsent bid
   // is the BROWSER's, not the seat's — it follows you when you
   // claim another participant instead of parking invisibly under
-  // the pid you left. One browser holds one seat, so one slot.
+  // the userid you left. One browser holds one seat, so one slot.
   // (Slot shapes this code no longer mints sit inert in old
   // stores.)
   if (f.closest('.rebid')) return 'bid';
-  return null;  // #aname (chosen once) and anything else: no drafts
+  return null;  // #slug (chosen once) and anything else: no drafts
 }
 
 function saveDraft(f, dirty) {
-  if (aname === '') return;
+  if (slug === '') return;
   // A clean field only PRUNES its slot once the arrival edge has
   // passed: the pre-adoption renders sweep every (still-empty) field
   // clean, and pruning there would empty the store before
@@ -596,7 +596,7 @@ function saveDraft(f, dirty) {
   if (!dirty && !adopted) return;
   const slot = draftSlot(f);
   if (slot === null) return;
-  const key = 'tauction-drafts:' + aname;
+  const key = 'tauction-drafts:' + slug;
   const all = JSON.parse(localStorage.getItem(key) || '{}');
   const want = dirty ? f.value : undefined;
   if (all[slot] === want) return;  // nothing new to record
@@ -613,7 +613,7 @@ function saveDraft(f, dirty) {
 // field no longer exists (a removed row) stays in storage, inert.
 function restoreDrafts() {
   const all = JSON.parse(
-    localStorage.getItem('tauction-drafts:' + aname) || '{}');
+    localStorage.getItem('tauction-drafts:' + slug) || '{}');
   // only the + row restores HERE: the bid draft comes home via
   // updateRow's clean-sync (at every editor birth, arrival included),
   // and every other slot shape is legacy and inert
@@ -630,7 +630,7 @@ function restoreDrafts() {
 function sweepHot() {
   document.querySelectorAll(
     '.rebid textarea, .rename input, .at-wrap input, .descedit,'
-    + ' #aname')
+    + ' #slug')
     .forEach(syncHot);
 }
 
@@ -657,13 +657,13 @@ function renderDesc() {
   // CAS token even while the editor is focused.
   if (edit.value === state.blurb) {
     edit.defaultValue = state.blurb;
-    setBlurbBase(state.blurbver);
+    setBlurbBase(state.bver);
     edit.classList.remove('error');
   } else if (edit !== document.activeElement
              && edit.value === edit.defaultValue) {
     edit.value = state.blurb;
     edit.defaultValue = state.blurb;
-    setBlurbBase(state.blurbver);
+    setBlurbBase(state.bver);
   }
   paintWar();  // the war popup, while open, mirrors state too: the
                // diff freshens itself as snapshots land
@@ -686,7 +686,7 @@ function setBlurbBase(v) {
 // named by their seat's uname — a rename-proof lookup — or
 // someone-(rig) for a walk-in), and toggles the scribbling class
 // (accent ink + write-wiggle). Own presence — this device, or this
-// pid heartbeating from another rig — never scribbles at itself.
+// userid heartbeating from another rig — never scribbles at itself.
 // (state.editors is absent only across the deploy gap to an older
 // server; treated as an empty desk.)
 function syncPencil() {
@@ -694,12 +694,12 @@ function syncPencil() {
   const eds = state === null || state.editors === undefined
     ? [] : state.editors;
   const rivals = eds.filter((e) =>
-    !((e.pid !== '' && e.pid === mypid()) || e.device === DEVICE));
+    !((e.userid !== '' && e.userid === myUserid()) || e.devid === DEVICE));
   $('desc').classList.toggle('scribbling', rivals.length > 0);
   const names = rivals.map((e) => {
-    const seat = seats.find((s) => s.pid === e.pid);
+    const seat = seats.find((s) => s.userid === e.userid);
     return seat !== undefined ? seat.uname
-      : someoneOn(e.blurb || mysteryDevice);
+      : someoneOn(e.rig || mysteryDevice);
   });
   setTip($('desctoggle'), descVerTip(v)
     + (names.length === 0 ? ''
@@ -709,7 +709,7 @@ function syncPencil() {
 
 /* The editing-presence heartbeat (dreev 2026-07-31): while THIS
    page's blurb editor is open it pings the server every EDIT_BEAT_MS
-   naming itself (pid when seated, rig blurb regardless), so everyone
+   naming itself (userid when seated, rig blurb regardless), so everyone
    else's pencil can scribble. SAVE and DISCARD send the explicit
    stop; a closed tab simply ages out server-side (the TTL); hidden
    tabs skip beats, so a backgrounded draft's presence expires until
@@ -718,8 +718,8 @@ const EDIT_BEAT_MS = 10000;
 let editBeatTimer = null;
 
 function sendEditBeat(stop) {
-  const body = { action: 'editing', aname: aname, pid: mypid(),
-                 deviceID: DEVICE, deviceBlurb: DEVBLURB };
+  const body = { action: 'editing', slug: slug, userid: myUserid(),
+                 devid: DEVICE, rig: RIG };
   if (stop) body.stop = true;
   apiPost(body).then((res) => {
     if (res.error) banner(refusalText(res.error));
@@ -761,7 +761,7 @@ function editDesc() {
 }
 
 // The war diff's engine: longest-common-subsequence over LINES
-// (blurbs cap at 2000 chars, so the quadratic table is trivially
+// (rigs cap at 2000 chars, so the quadratic table is trivially
 // small), yielding rows of [op, text] with op same | del | ins —
 // theirs is the original, mine the proposal, VS Code's orientation.
 function lineDiff(theirs, mine) {
@@ -876,7 +876,7 @@ function paintWar() {
   if (!$('war-dlg').open) return;
   const edit = $('descedit');
   const slot = $('war-diff');
-  if (String(state.blurbver) === edit.dataset.base) {
+  if (String(state.bver) === edit.dataset.base) {
     if ($('status').classList.contains('stale')) {
       slot.textContent = warWords;
     } else if (!slot.querySelector('.gavel')) {
@@ -884,7 +884,7 @@ function paintWar() {
     }
     return;
   }
-  const key = state.blurbver + '\u0000' + edit.value;
+  const key = state.bver + '\u0000' + edit.value;
   if (slot.dataset.key === key) return;
   slot.dataset.key = key;
   slot.replaceChildren(diffEl(state.blurb, edit.value));
@@ -909,7 +909,7 @@ function discardDesc() {
   const rec = state;
   edit.value = rec.blurb;
   edit.defaultValue = rec.blurb;
-  setBlurbBase(rec.blurbver);
+  setBlurbBase(rec.bver);
   edit.classList.remove('error');
   $('desc').classList.add('viewing');
   const view = $('descview');
@@ -943,13 +943,13 @@ function commitDesc() {
     // gavel. The server's CAS stays the backstop for sub-poll
     // races. Disclosed if; strictly-greater, because during our own
     // flight the optimistic base runs AHEAD of state.
-    if (state.blurbver > Number(edit.dataset.base)) {
+    if (state.bver > Number(edit.dataset.base)) {
       edit.classList.add('error');
       openWar(simulEditsBanner);
       return;
     }
     const sentBase = Number(edit.dataset.base);
-    queueLazyOp(() => ({ action: 'describe', aname: aname, blurb: draft,
+    queueLazyOp(() => ({ action: 'describe', slug: slug, blurb: draft,
                          base: sentBase }), (ref) => {
       settleCommit($('desc'));  // the words' ride is over, either way
       // the failed write's version claim is VOID no matter who owns
@@ -983,7 +983,7 @@ function commitDesc() {
       // left); transport death shows only the weather banner (16)
       if (ref) openWar(refusalText(ref.error));
     }, () => settleCommit($('desc')));
-    // (a SUCCESS settle leaves the base alone: res.blurbver is
+    // (a SUCCESS settle leaves the base alone: res.bver is
     // exactly the claim the click already staked, and restating it
     // could stomp a newer save's standing claim)
     edit.defaultValue = draft;  // ours is the working base now —
@@ -1007,44 +1007,44 @@ function commitDesc() {
   syncEditBeats();
 }
 
-// This browser's identity ledger: aname -> pid (which seat is YOU,
-// per auction). The pid never changes, so nothing downstream — bid
+// This browser's identity ledger: slug -> userid (which seat is YOU,
+// per auction). The userid never changes, so nothing downstream — bid
 // memory, claims, row keys — ever needs re-keying. tauction-uname
 // lives on only as a display-name HINT for the add-yourself flow.
-function myPidStored() {
-  return jmap('tauction-pids')[aname] || '';
+function myUseridStored() {
+  return jmap('tauction-pids')[slug] || '';
 }
 function storeMyPid(p) {
   const m = jmap('tauction-pids');
-  m[aname] = p;  // '' = nobody (myPidStored's || '' reads both the
+  m[slug] = p;  // '' = nobody (myUseridStored's || '' reads both the
                  // absent and the empty entry the same way)
   localStorage.setItem('tauction-pids', JSON.stringify(m));
 }
 
-// You are whoever this browser holds the pid of — but only while that
-// pid has a rendered seat here AND the server's claim for it (if any)
+// You are whoever this browser holds the userid of — but only while that
+// userid has a rendered seat here AND the server's claim for it (if any)
 // is this device's. Unclaimed-on-the-server plus remembered locally
 // counts as yours (the optimistic moment before your claim lands); a
 // rival device's registered claim unseats you.
-// The rule itself lives in pidAmong, over ANY (seats, claims) pair:
-// mypid answers for the adopted state; the hidden title peek asks
+// The rule itself lives in useridAmong, over ANY (seats, claims) pair:
+// myUserid answers for the adopted state; the hidden title peek asks
 // the same question of a raw snapshot it never adopts.
-function pidAmong(ss, claims) {
-  const p = myPidStored();
-  if (!p || !ss.some((s) => s.pid === p)) return '';
+function useridAmong(ss, claims) {
+  const p = myUseridStored();
+  if (!p || !ss.some((s) => s.userid === p)) return '';
   const holder = claims[p];
   return holder === undefined || holder === DEVICE ? p : '';
 }
-function mypid() {
+function myUserid() {
   // no snapshot yet = no claims are known: optimistically yours (the
   // same optimistic moment as an unclaimed-on-the-server seat)
-  return pidAmong(seats, state === null ? umap() : state.claims);
+  return useridAmong(seats, state === null ? umap() : state.claims);
 }
 
-// Every bid this browser has placed on this auction, keyed by pid —
+// Every bid this browser has placed on this auction, keyed by userid —
 // pids never change, so this memory never needs migrating
 function myBids() {
-  return jmap('tauction-mybids:' + aname);
+  return jmap('tauction-mybids:' + slug);
 }
 
 // Bids whose text this client knows: the ones it placed, plus everyone's
@@ -1052,7 +1052,7 @@ function myBids() {
 // same rule makes your bids visible to you and sealed for everyone else.
 function knownBids() {
   const known = myBids();
-  (state.bids || []).forEach((b) => { known[b.pid] = b.bid; });
+  (state.bids || []).forEach((b) => { known[b.userid] = b.bid; });
   return known;
 }
 
@@ -1073,18 +1073,18 @@ function knownBids() {
 function titleGlyph(ss, bidders, revealed, mine) {
   if (revealed) return revealedGlyph;
   const missing = ss.filter(
-    (s) => !bidders.some((b) => b.pid === s.pid));
+    (s) => !bidders.some((b) => b.userid === s.userid));
   if (ss.length >= 2 && missing.length === 0) return readyGlyph;
   if (ss.length >= 2 && missing.length === 1
-      && missing[0].pid === mine) {
+      && missing[0].userid === mine) {
     return yourMoveGlyph;
   }
   return waitingGlyph;
 }
 
 let lastPrint = '';  // fingerprint of the last-rendered rows
-let rowNodes = umap();   // pid -> its living row node (keyed reuse;
-                         // the pid never changes, so a rename never
+let rowNodes = umap();   // userid -> its living row node (keyed reuse;
+                         // the userid never changes, so a rename never
                          // re-keys a living node)
 
 function renderStatus() {
@@ -1093,9 +1093,9 @@ function renderStatus() {
   // that changes nothing can silently eat a click. wasRevealed and seen
   // are in the fingerprint because the render right after a reveal or a
   // shimmer must still run: it retires those one-shot effects.
-  const print = JSON.stringify([aname, wasRevealed, seen, seats,
+  const print = JSON.stringify([slug, wasRevealed, seen, seats,
     bidView(), state.seats, state.revealed, state.tfin,
-    state.claims, state.blurbs, mypid(), knownBids()]);
+    state.claims, state.rigs, myUserid(), knownBids()]);
   if (print === lastPrint) return;
   lastPrint = print;
 
@@ -1111,7 +1111,7 @@ function renderStatus() {
   if (justNow) celebrate();
   wasRevealed = state.revealed;
 
-  const mine = mypid();
+  const mine = myUserid();
 
   // The padlock is the reveal button: pressable (and pulsing) only
   // once everyone on the roster — at least two people — has bid.
@@ -1120,9 +1120,9 @@ function renderStatus() {
   // below two is a separate, dominating blocker (no amount of bidding
   // unlocks a solo auction), so the tip names THAT then instead.
   const missing = seats.filter(
-    (s) => !bidView().some((b) => b.pid === s.pid));
+    (s) => !bidView().some((b) => b.userid === s.userid));
   const roll = missing.map((s) =>
-    s.uname + (s.pid === mine ? youTag : ''));
+    s.uname + (s.userid === mine ? youTag : ''));
   const listed = roll.length <= 2 ? roll.join(' and ')
     : roll.slice(0, -1).join(', ') + ', and ' + roll[roll.length - 1];
   const ready = !state.revealed && seats.length >= 2
@@ -1153,7 +1153,7 @@ function renderStatus() {
   // ruled glyph quadruple), so a row of tauction tabs is legible —
   // and calls you back — without clicking through
   document.title = tabTitle(
-    titleGlyph(seats, bidView(), state.revealed, mine), aname);
+    titleGlyph(seats, bidView(), state.revealed, mine), slug);
 
   // no row is you yet: the you-star perches on the + row instead, so
   // the legend's ★ always has a referent
@@ -1166,14 +1166,14 @@ function renderStatus() {
     ? closedLine(closedStamp(state.tfin)) : '';
   const known = knownBids();
   const byPid = umap();
-  bidView().forEach((b) => { byPid[b.pid] = b; });
+  bidView().forEach((b) => { byPid[b.userid] = b; });
   // Placing a bid locks the who-you-are radio: no switching rows, no
   // releasing — permanently, since your bid never unlists (trying
   // this per dreev)
   const locked = mine !== '' && byPid[mine] !== undefined;
   const nextSeen = umap();
 
-  // Keyed reconcile: every pid keeps its living row node for its whole
+  // Keyed reconcile: every userid keeps its living row node for its whole
   // life, so a mid-gesture click (mousedown and mouseup need the same
   // node) or a focused editor can never be destroyed by a render. New
   // rows are built once (structure + listeners), then idempotently
@@ -1183,20 +1183,20 @@ function renderStatus() {
   const keep = umap();
   let cursor = null;  // the previous row in the desired order
   seats.forEach((seat) => {
-    const b = byPid[seat.pid];
-    let t = rowNodes[seat.pid] || buildRow(seat.pid);
-    keep[seat.pid] = t;
+    const b = byPid[seat.userid];
+    let t = rowNodes[seat.userid] || buildRow(seat.userid);
+    keep[seat.userid] = t;
     updateRow(t, seat, b, mine, known, locked);
     if (t.parentElement !== tiles || t.previousElementSibling !== cursor) {
       tiles.insertBefore(t, cursor ? cursor.nextElementSibling
                                    : tiles.firstElementChild);
     }
     cursor = t;
-    nextSeen[seat.pid] = b === undefined ? undefined : b.tmod;
+    nextSeen[seat.userid] = b === undefined ? undefined : b.tmod;
   });
   // sweep strays: vanished rows, other auctions' rows
   [...tiles.children].forEach((c) => {
-    if (keep[c.dataset.pid] !== c) c.remove();
+    if (keep[c.dataset.userid] !== c) c.remove();
   });
   rowNodes = keep;
   seen = nextSeen;
@@ -1320,16 +1320,16 @@ function celebrate() {
 // never changes for a living node — not even across renames — so
 // these closures stay valid for the node's whole life. Everything
 // mutable (the label included) is synced in updateRow.
-function buildRow(pid) {
+function buildRow(userid) {
   const t = el('div', 'tile');
-  t.dataset.pid = pid;
+  t.dataset.userid = userid;
   // one solid glyph for every star: CSS draws it hollow (outline)
   // until .selected fills it gold — a real radio button, and a tab
   // stop like every control (keyboard users must be able to claim)
   const star = el('button', 'tu', '★');
   star.type = 'button';
-  star.addEventListener('click', () => toggleTu(pid));
-  const nameEl = buildNameField(pid);  // form.rename: the bordered
+  star.addEventListener('click', () => toggleTu(userid));
+  const nameEl = buildNameField(userid);  // form.rename: the bordered
                                        // cell + its .gorow below
   const bidEl = el('div', 'tile-bid');
   // The empty bid box of a takeable row is where dreev's hallway
@@ -1342,10 +1342,10 @@ function buildRow(pid) {
   // tap — the .taken check keeps the cell's pre-takeover reach),
   // only while bidless (a slot, not a card).
   bidEl.addEventListener('click', () => {
-    if (mypid() === '' && !t.querySelector('.tu').disabled
+    if (myUserid() === '' && !t.querySelector('.tu').disabled
         && !t.querySelector('.tu').classList.contains('taken')
         && !t.classList.contains('has-bid')) {
-      toggleTu(pid);
+      toggleTu(userid);
     }
   });
   // the tip is computed on entry, not at render: its "3m ago" ages must
@@ -1354,7 +1354,7 @@ function buildRow(pid) {
   // mouseover that shows the singleton tip (target phase precedes the
   // bubble), so the tip always reads a fresh attribute
   bidEl.addEventListener('mouseover', () => {
-    bidEl.setAttribute('data-tip', bidTip(pid));
+    bidEl.setAttribute('data-tip', bidTip(userid));
   });
   // × removes the whole row from the roster — grayed out once a bid is
   // in, because a sealed bid is never deletable (its tip is bid-state-
@@ -1365,8 +1365,8 @@ function buildRow(pid) {
     // the × only lives on bidless rows (a bid protects its seat, and
     // the server refuses removing a bidder outright), so removal is
     // a plain optimistic delete
-    seats = seats.filter((z) => z.pid !== pid);
-    queueOp({ action: 'remove', aname: aname, pid: pid });
+    seats = seats.filter((z) => z.userid !== userid);
+    queueOp({ action: 'remove', slug: slug, userid: userid });
   });
   t.append(star, nameEl, bidEl, x);
   return t;
@@ -1374,7 +1374,7 @@ function buildRow(pid) {
 
 // The bid cell's content comes in three kinds; swapped wholesale when
 // the kind changes, synced in place otherwise
-function buildBidContent(kind, pid) {
+function buildBidContent(kind, userid) {
   if (kind === 'editor') {
     const form = el('form', 'rebid');
     // A TEXTAREA, not an input, so a long bid can WRAP and its box
@@ -1420,7 +1420,7 @@ function buildBidContent(kind, pid) {
     form.append(row);
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      placeBid(pid, form);
+      placeBid(userid, form);
     });
     return form;
   }
@@ -1438,7 +1438,7 @@ function buildBidContent(kind, pid) {
 // same DOM out, whatever the node rendered before (a property qual
 // holds this to a fresh build, byte for byte).
 function updateRow(t, seat, b, mine, known, locked) {
-  const pid = seat.pid;
+  const userid = seat.userid;
   const stamp = b === undefined ? undefined : b.tmod;
   const bcount = b === undefined ? 0 : b.bcount;
   // the label is data, not a key: it syncs like any other mutable
@@ -1452,13 +1452,13 @@ function updateRow(t, seat, b, mine, known, locked) {
   // auth: a tap on a taken star TAKES the seat, last write wins,
   // honor system. Clicking your own lit star releases you to nobody.
   // Once YOUR bid is in, the whole radio locks.
-  const holder = state.claims[pid];
+  const holder = state.claims[userid];
   const star = t.querySelector('.tu');
   // revealed: identity is part of the frozen record, like the names
   star.disabled = locked || state.revealed;
   star.setAttribute('aria-label', '@' + seat.uname);
-  star.setAttribute('aria-pressed', String(pid === mine));
-  star.classList.toggle('selected', pid === mine);
+  star.setAttribute('aria-pressed', String(userid === mine));
+  star.classList.toggle('selected', userid === mine);
   // a rival's REGISTERED claim fills the star in (hollow = open,
   // filled = claimed by someone else, gold = you)...
   const rival = holder !== undefined && holder !== DEVICE;
@@ -1467,14 +1467,14 @@ function updateRow(t, seat, b, mine, known, locked) {
   // (dreev's ask — the one cause-flavored branch in the tip logic);
   // everything else stays a pure function of (pressable, whose)
   star.setAttribute('data-tip',
-    pid === mine
+    userid === mine
       ? (star.disabled ? lockedTip : disclaimTip)
-      : rival && state.blurbs[pid]
-      ? claimedByTip(state.blurbs[pid])
+      : rival && state.rigs[userid]
+      ? claimedByTip(state.rigs[userid])
       : (star.disabled ? tooLateTip : claimTip));
 
   t.classList.toggle('has-bid', stamp !== undefined);
-  t.classList.toggle('mine', pid === mine);
+  t.classList.toggle('mine', userid === mine);
   // names freeze at the gavel, like bids (dreev: a post-close rename
   // could swap around who bid what) — grayed, never suppressed
   const nameInput = t.querySelector('.rename input');
@@ -1494,7 +1494,7 @@ function updateRow(t, seat, b, mine, known, locked) {
   }
   // one-shot shimmer; a reused node needs the remove-reflow-add dance
   // so back-to-back re-bids restart the animation
-  const shimmer = seen[pid] !== undefined && seen[pid] !== stamp;
+  const shimmer = seen[userid] !== undefined && seen[userid] !== stamp;
   if (shimmer && t.classList.contains('updated')) {
     t.classList.remove('updated');
     void t.offsetWidth;
@@ -1509,11 +1509,11 @@ function updateRow(t, seat, b, mine, known, locked) {
   }
 
   const bidEl = t.querySelector('.tile-bid');
-  const kind = pid === mine ? 'editor'
+  const kind = userid === mine ? 'editor'
     : stamp !== undefined ? 'card' : 'slot';
   let content = bidEl.firstElementChild;  // null on a fresh row
   if (!content || content.dataset.kind !== kind) {
-    const fresh = buildBidContent(kind, pid);
+    const fresh = buildBidContent(kind, userid);
     fresh.dataset.kind = kind;
     if (content) content.replaceWith(fresh);
     else bidEl.prepend(fresh);
@@ -1550,14 +1550,14 @@ function updateRow(t, seat, b, mine, known, locked) {
     // editor alone (a draft = live value differs from defaultValue)
     if (editor !== document.activeElement
         && editor.value === editor.defaultValue) {
-      const baseline = known[pid] === undefined ? '' : known[pid];
+      const baseline = known[userid] === undefined ? '' : known[userid];
       editor.value = baseline;
       editor.defaultValue = baseline;
       // ...and a stored draft comes home at any CLEAN sync — the
       // editor's birth included, whenever that is: arrival, a
       // claim, a re-claim after release. A committed or Escaped
       // draft was pruned from the store, so nothing stale returns.
-      const draft = jmap('tauction-drafts:' + aname)['bid'];
+      const draft = jmap('tauction-drafts:' + slug)['bid'];
       if (draft !== undefined && draft !== baseline) {
         editor.value = draft;
       }
@@ -1566,12 +1566,12 @@ function updateRow(t, seat, b, mine, known, locked) {
   } else if (kind === 'card') {
     // a received bid is a card; each re-submission stacks a sheet
     // behind it (visual depth caps at 3; the counter stays exact)
-    const sealed = known[pid] === undefined;
+    const sealed = known[userid] === undefined;
     content.className = 'bid-card';
     content.style.boxShadow = stackShadow;
     const text = content.firstElementChild;
     text.className = sealed ? 'bid-text masked' : 'bid-text';
-    text.textContent = sealed ? MASK : known[pid];
+    text.textContent = sealed ? MASK : known[userid];
   }
   // a bid protects its seat: the × grays the moment a bid is in
   // (and the server refuses the removal outright if a race slips
@@ -1685,11 +1685,11 @@ function ago(iso) {
 // The bid cell's tooltip: whether a bid is in, and when. Three cases:
 // no bid yet; submitted once ("your" on your own row); resubmitted
 // (first vs latest submission times, same wording for every row).
-function bidTip(pid) {
-  const b = bidView().find((x) => x.pid === pid);
+function bidTip(userid) {
+  const b = bidView().find((x) => x.userid === userid);
   if (b === undefined) return awaitingTip;
   if (b.bcount === 1) {
-    return submittedTip(pid === mypid() ? yourBidWord : bidWord,
+    return submittedTip(userid === myUserid() ? yourBidWord : bidWord,
                         ago(b.tini));
   }
   return resubmittedTip(ago(b.tini), ago(b.tmod));
@@ -1697,9 +1697,9 @@ function bidTip(pid) {
 
 // The name is a live text field, like the + row's: click in and type.
 // Enter or SAVE commits the rename; Escape restores it. The
-// pid is the row's key, so a rename never re-keys a living node —
+// userid is the row's key, so a rename never re-keys a living node —
 // updateRow syncs the label under never-clobber like any field.
-function buildNameField(pid) {
+function buildNameField(userid) {
   const form = el('form', 'rename');
   // the bordered person cell is the form's FIRST LINE; the .gorow
   // hangs below the box (dreev: a SAVE inside the field's own
@@ -1720,7 +1720,7 @@ function buildNameField(pid) {
   });
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    commitRename(pid, input.value, input);
+    commitRename(userid, input.value, input);
   });
   box.append(input);
   form.append(box);
@@ -1733,19 +1733,19 @@ function buildNameField(pid) {
   // the blur, which then finds a clean field and commits nothing —
   // no exemption needed.
   input.addEventListener('blur', () => {
-    commitRename(pid, input.value, input);
+    commitRename(userid, input.value, input);
   });
   return form;
 }
 
 // Fix a typo'd name — anyone may, honor system, like all roster
-// edits. A rename is a LABEL EDIT on a fixed identity (the pid), so
+// edits. A rename is a LABEL EDIT on a fixed identity (the userid), so
 // it is just an optimistic op like any other: no transactions, no
 // rollback snapshots, no re-keying of bids or memory (the server is
 // asked about pids, so it can never be asked to rename a name it
 // never granted). Renaming onto a live
 // label is refused, locally and server-side, in the same words.
-function commitRename(pid, raw, field) {
+function commitRename(userid, raw, field) {
   if (field.disabled) return;
   const to = sanUname(raw);
   // the length objection: refused before the wire, in the server's
@@ -1755,7 +1755,7 @@ function commitRename(pid, raw, field) {
     field.classList.add('error');
     return;
   }
-  const seat = seats.find((s) => s.pid === pid);
+  const seat = seats.find((s) => s.userid === userid);
   // nothing usable, or nothing changed: the field reconciles to the
   // newest accepted label (which may have moved under a focused field)
   if (seat === undefined || !to
@@ -1767,7 +1767,7 @@ function commitRename(pid, raw, field) {
     syncHot(field);
     return;
   }
-  if (seats.some((s) => s.uname === to && s.pid !== pid)) {
+  if (seats.some((s) => s.uname === to && s.userid !== userid)) {
     banner(nameTakenBanner);
     field.classList.add('error');  // the problem is THIS field
     return;
@@ -1785,9 +1785,9 @@ function commitRename(pid, raw, field) {
   // see): the draft comes back DIRTY — your text, red, the committed
   // label as baseline, SAVE standing — while the recovery snapshot
   // restores the row's label itself (the blurb bounce's recipe)
-  queueOp({ action: 'rename', aname: aname, pid: pid, to: to },
+  queueOp({ action: 'rename', slug: slug, userid: userid, to: to },
           () => {
-            const node = rowNodes[pid];
+            const node = rowNodes[userid];
             if (node) {
               const f = node.querySelector('.rename input');
               settleCommit(f);  // the ride is over, either way
@@ -1802,26 +1802,26 @@ function commitRename(pid, raw, field) {
             }
           },
           () => {
-            const node = rowNodes[pid];
+            const node = rowNodes[userid];
             if (node) settleCommit(node.querySelector('.rename input'));
           });
 }
 
 // Claim a row as yourself, or release it if it's already yours
-function toggleTu(pid) {
-  if (mypid() === pid) {
+function toggleTu(userid) {
+  if (myUserid() === userid) {
     storeMyPid('');
-    queueOp({ action: 'release', aname: aname, pid: pid,
-              deviceID: DEVICE }); // only the holder can vacate the seat
+    queueOp({ action: 'release', slug: slug, userid: userid,
+              devid: DEVICE }); // only the holder can vacate the seat
   } else {
-    storeMyPid(pid);
-    const seat = seats.find((s) => s.pid === pid);
+    storeMyPid(userid);
+    const seat = seats.find((s) => s.userid === userid);
     if (seat !== undefined) {  // remember the label as the name HINT
       localStorage.setItem('tauction-uname', seat.uname);
     }
-    queueOp({ action: 'claim', aname: aname, pid: pid,
-              deviceID: DEVICE,     // stake it: rival pages show dibs
-              deviceBlurb: DEVBLURB }); // ...and who by, humanely
+    queueOp({ action: 'claim', slug: slug, userid: userid,
+              devid: DEVICE,     // stake it: rival pages show dibs
+              rig: RIG }); // ...and who by, humanely
   }
   const editor = $('tiles').querySelector('.rebid textarea');
   if (editor) editor.focus();
@@ -1848,23 +1848,23 @@ let aloft = null;
 // the ledger's view of the bidders: server truth plus the flying bid
 function bidView() {
   if (aloft === null) return state.bidders;
-  return state.bidders.filter((b) => b.pid !== aloft.pid)
+  return state.bidders.filter((b) => b.userid !== aloft.userid)
     .concat([aloft]);
 }
 
-async function placeBid(pid, form) {
-  const a = aname;  // pin the auction this bid belongs to; the user might
+async function placeBid(userid, form) {
+  const a = slug;  // pin the auction this bid belongs to; the user might
                     // switch auctions while the POST is in flight
   const editor = form.querySelector('textarea');
   const bid = editor.value.trim();
-  assert(pid, 'placeBid without an identity');
-  // your editor only exists while mypid() === pid, and mypid() can
+  assert(userid, 'placeBid without an identity');
+  // your editor only exists while myUserid() === userid, and myUserid() can
   // only ever echo localStorage — so this holds or the model is broken
-  assert(myPidStored() === pid,
+  assert(myUseridStored() === userid,
     'editor identity out of sync with localStorage');
   // the seat's label rides along so a walk-on bid (re-bid after a
   // purge, mostly) can rebuild its seat server-side
-  const seat = seats.find((s) => s.pid === pid);
+  const seat = seats.find((s) => s.userid === userid);
   assert(seat !== undefined, 'placeBid without a seat');
   // a local slip gets a local objection: the field itself reddens
   // (cleared on the next keystroke); banners are for the server's news
@@ -1899,8 +1899,8 @@ async function placeBid(pid, form) {
   // the flying bid joins the ledger's view (see aloft above);
   // tini/bcount build on the record — or on the volley's own earlier
   // legs, so rapid resubmits stack honestly
-  const base = aloft || state.bidders.find((b) => b.pid === pid);
-  aloft = { pid: pid,
+  const base = aloft || state.bidders.find((b) => b.userid === userid);
+  aloft = { userid: userid,
             tini: base ? base.tini : new Date().toISOString(),
             tmod: new Date().toISOString(),
             bcount: (base ? base.bcount : 0) + 1 };
@@ -1920,16 +1920,16 @@ async function placeBid(pid, form) {
     // assert caught exactly that)
     let res = null;
     try {
-      res = await apiPost({ action: 'bid', aname: a, pid: pid,
+      res = await apiPost({ action: 'bid', slug: a, userid: userid,
                             uname: seat.uname, bid: bid,
-                            deviceID: DEVICE,
-                            deviceBlurb: DEVBLURB });
+                            devid: DEVICE,
+                            rig: RIG });
     } catch (e) {
       banner(e2153(e.message));
     }
     if (res && !res.error) {
       const mine = jmap('tauction-mybids:' + a);
-      mine[pid] = bid;
+      mine[userid] = bid;
       localStorage.setItem('tauction-mybids:' + a, JSON.stringify(mine));
       editor.defaultValue = bid;  // the submitted text is the new
                                   // baseline, not a draft to shield
@@ -1959,8 +1959,8 @@ async function placeBid(pid, form) {
 
 /* ------------------------------- share -------------------------------- */
 
-// The canonical URL of this auction: origin + aname, sans any ?api= override
-function shareUrl() { return location.origin + '/' + aname; }
+// The canonical URL of this auction: origin + slug, sans any ?api= override
+function shareUrl() { return location.origin + '/' + slug; }
 
 // QR straight onto a canvas, with the 4-module quiet zone scanners need
 // (the library's own renderer omits it, which breaks scanning)
@@ -2075,7 +2075,7 @@ function startWrite() {
 // Every write response funnels here. Only the LAST write standing gets
 // to paint — earlier responses can lack later local edits — and it
 // paints directly only when it's also the newest write; otherwise (out-
-// of-order settles, failures, stale aname) fetch a snapshot that's
+// of-order settles, failures, stale slug) fetch a snapshot that's
 // guaranteed to postdate everything.
 // onRefusal (optional): the op's own recovery beyond the banner —
 // e.g. a bounced describe turns its field red and reopens the editor
@@ -2107,9 +2107,9 @@ function settleWrite(res, at, onRefusal) {
   // draws theirs from it with no recovery fetch. The error key is
   // shed first — onRefusal above already consumed it, and a stored
   // snapshot must never replay bad news.
-  const snap = res || (refusal && refusal.aname ? refusal : null);
+  const snap = res || (refusal && refusal.slug ? refusal : null);
   if (snap) delete snap.error;
-  if (snap && snap.aname === aname && at === writeSeq) {
+  if (snap && snap.slug === slug && at === writeSeq) {
     ingest(snap);
     render();
   } else {
@@ -2138,7 +2138,7 @@ function pressReveal() {
   opChain = opChain.then(async () => {
     let res = null;
     try {
-      res = await apiPost({ action: 'reveal', aname: aname });
+      res = await apiPost({ action: 'reveal', slug: slug });
     } catch (e) {
       banner(e2155(e.message));
     }
@@ -2148,7 +2148,7 @@ function pressReveal() {
 }
 
 
-function addName() {  // returns the added seat's pid ('' if refused)
+function addName() {  // returns the added seat's userid ('' if refused)
   const uname = sanUname($('roster-input').value);
   if (!uname) {
     $('roster-input').classList.add('error');
@@ -2169,8 +2169,8 @@ function addName() {  // returns the added seat's pid ('' if refused)
     // Already you = nothing to do, quietly. A held/dibsed/locked
     // seat objects: red ring, text kept for fixing — never silently
     // swallowing what you typed.
-    const trow = rowNodes[live.pid];
-    if (live.pid === mypid()) {
+    const trow = rowNodes[live.userid];
+    if (live.userid === myUserid()) {
       $('roster-input').value = '';
       return '';
     }
@@ -2179,36 +2179,36 @@ function addName() {  // returns the added seat's pid ('' if refused)
     if (trow && !trow.querySelector('.tu').disabled
         && !trow.querySelector('.tu').classList.contains('taken')) {
       $('roster-input').value = '';
-      toggleTu(live.pid);  // claims the seat and focuses the editor
-      return live.pid;
+      toggleTu(live.userid);  // claims the seat and focuses the editor
+      return live.userid;
     }
     $('roster-input').classList.add('error');
     return '';
   }
   $('roster-input').value = '';
   delete $('roster-input').dataset.retryName;
-  const pid = crypto.randomUUID();
-  seats.push({ pid: pid, uname: uname });
+  const userid = crypto.randomUUID();
+  seats.push({ userid: userid, uname: uname });
   // Disclosed if: a FRESH add is yours when you are nobody here yet
   // and either this browser has no name hint at all (dreev's
   // expectata: "load a new auction, add a name = i've added myself")
   // or the typed name IS your remembered name (alice, nobody yet on
   // a fresh ledger, puts her own name down — that's her; dee and evy
-  // are guests). This is the pid spec's option (b): auto-claim only
+  // are guests). This is the userid spec's option (b): auto-claim only
   // rows you just added yourself — a matching LABEL on a row someone
   // else created proves nothing and claims nothing. Locally only: no
   // server claim is registered, so a real person claiming this seat
   // from their own device unseats the assumption cleanly; your first
   // bid stakes it for real.
   const hint = localStorage.getItem('tauction-uname');
-  // mypid(), not the raw ledger: a pid whose seat you ×ed away means
+  // myUserid(), not the raw ledger: a userid whose seat you ×ed away means
   // you are nobody here again, and re-adding your name re-latches
-  if (mypid() === '' && (hint === null || hint === uname)) {
+  if (myUserid() === '' && (hint === null || hint === uname)) {
     if (hint === null) localStorage.setItem('tauction-uname', uname);
-    storeMyPid(pid);
+    storeMyPid(userid);
   }
   flashCommit($('roster-input'));  // yours is away
-  queueOp({ action: 'add', aname: aname, uname: uname, pid: pid },
+  queueOp({ action: 'add', slug: slug, uname: uname, userid: userid },
           () => {
             settleCommit($('roster-input'));
             // the add didn't land: the typed name returns to the
@@ -2221,14 +2221,14 @@ function addName() {  // returns the added seat's pid ('' if refused)
             }
           },
           () => settleCommit($('roster-input')));
-  return pid;
+  return userid;
 }
 
 // Instant paint from the last-known state of this auction, grayed until
 // the live fetch confirms — a page must never flash what looks like a
 // confirmed-empty roster while loading
 function paintCached() {
-  const key = 'tauction-state:' + aname;
+  const key = 'tauction-state:' + slug;
   try {
     const cached = JSON.parse(localStorage.getItem(key) || 'null');
     if (cached) { ingest(cached); render(); }
@@ -2241,19 +2241,19 @@ function paintCached() {
   // Script). Seeded, not ingested: no narration, no cache write,
   // and the arrival edge (adopted) stays unconsumed for the first
   // real snapshot.
-  if (state === null) state = virginState(aname);
+  if (state === null) state = virginState(slug);
   $('status').classList.add('stale');
 }
 
 // A brand-new auction's truth, known without asking: the exact
-// payload the server answers for a never-touched aname (claims and
-// blurbs already in their post-ingest umap shape). If the server's
+// payload the server answers for a never-touched slug (claims and
+// rigs already in their post-ingest umap shape). If the server's
 // virgin ever grows a field, the eager-typist quals against fake-gas
 // (which runs the real Code.gs) are the fence.
 function virginState(a) {
-  return { aname: a, exists: false, seats: [], bidders: [],
-           revealed: false, tfin: '', blurb: '', blurbver: 0,
-           claims: umap(), blurbs: umap(), bids: null };
+  return { slug: a, exists: false, seats: [], bidders: [],
+           revealed: false, tfin: '', blurb: '', bver: 0,
+           claims: umap(), rigs: umap(), bids: null };
 }
 
 // Typed names CREATE auctions; joining an existing one is by URL or
@@ -2261,34 +2261,34 @@ function virginState(a) {
 // through init). So a typed name that already has data is refused,
 // and nobody stumbles into a stranger's auction by picking "pizza".
 async function switchAuction(a) {
-  if (!a || a === aname) return;
-  flashCommit($('aname'));  // yours is away: the tint rides the
+  if (!a || a === slug) return;
+  flashCommit($('slug'));  // yours is away: the tint rides the
                             // create probe, cleared in the finally
   $('status').classList.add('stale');  // busy while we look the name up
   $('namego').disabled = true;  // processing: the standard double-
                                 // submit guard —
                                 // the probe is a real round-trip
   try {
-    const res = await apiGet({ action: 'state', aname: a });
+    const res = await apiGet({ action: 'state', slug: a });
     // the user kept typing: a newer probe owns the field now
-    if (a !== sanAname($('aname').value)) return;
+    if (a !== sanAname($('slug').value)) return;
     if (res.error) { banner(refusalText(res.error)); return; }
     assertState(res);
     if (res.exists) {
       linkBanner(auctionExistsBanner('/' + a));
       return;
     }
-    aname = a;
-    setPath(aname);
-    $('aname').defaultValue = a;  // the committed baseline...
-    $('aname').disabled = true;   // ...and NAMES ARE CHOSEN ONCE
+    slug = a;
+    setPath(slug);
+    $('slug').defaultValue = a;  // the committed baseline...
+    $('slug').disabled = true;   // ...and NAMES ARE CHOSEN ONCE
                                   // (dreev): the field's one job is
                                   // done; the URL is the navigation
     // the dead field explains itself (dreev's glitch report: mid-
     // blurb he clicked the name and nothing happened) — the CSS
     // sheds its box and the LABEL's tip flips to the committed-name
     // copy (no new tooltip: dreev's anti-clutter call)
-    document.querySelector('label[for="aname"]')
+    document.querySelector('label[for="slug"]')
       .setAttribute('data-tip', nameStoneTip);
     $('share').disabled = false;  // the page is somewhere now
     $('desctoggle').disabled = false;  // the pencil wakes with it
@@ -2305,11 +2305,11 @@ async function switchAuction(a) {
   } catch (e) {
     banner(e2157(e.message));
   } finally {
-    settleCommit($('aname'));  // the probe's ride is over, either way
+    settleCommit($('slug'));  // the probe's ride is over, either way
     // on any non-commit path the old (or unnamed) page is back in
     // charge and isn't busy; after a commit render() already unstaled
     $('status').classList.remove('stale');
-    syncHot($('aname'));  // the button re-derives from field truth:
+    syncHot($('slug'));  // the button re-derives from field truth:
                           // a refusal leaves a dirty field (re-armed
                           // for fixing), a commit a disabled one
   }
@@ -2413,14 +2413,14 @@ function wireUp() {
   $('war-mine').textContent = overwriteCopy;
   $('war-mine').addEventListener('click', () => {
     $('war-dlg').close();
-    setBlurbBase(state.blurbver);  // informed now: the version the
+    setBlurbBase(state.bver);  // informed now: the version the
                                    // war's own fetch brought home
     commitDesc();
   });
   $('roster-go').textContent = addCopy;
   $('reveal').textContent = revealCopy;
   // The blurb's compare-and-swap base is BORN 0 (pencil tip
-  // included), matching the server's blurbver for a never-described
+  // included), matching the server's bver for a never-described
   // auction: a page that has adopted no snapshot and a blurb nobody
   // ever described are the same virgin state, and the two spellings
   // must agree — a foreign-looking base would cry simultaneous-edits
@@ -2484,12 +2484,12 @@ function wireUp() {
       if (e.target === d) d.close();
     }));
 
-  $('aname').addEventListener('input', () => {
-    const v = sanAname($('aname').value);
-    if (v !== $('aname').value) $('aname').value = v;
+  $('slug').addEventListener('input', () => {
+    const v = sanAname($('slug').value);
+    if (v !== $('slug').value) $('slug').value = v;
     $('namego').textContent = startCopy(v);  // the deed, narrated live
     // the live length objection, the bid editor's exact pattern
-    $('aname').classList.toggle('error', overlongName(v));
+    $('slug').classList.toggle('error', overlongName(v));
   });
   // NAMES COMMIT ON ENTER OR THEIR BUTTON — nothing else. Never a
   // timer (dreev's mid-typing lockout report: a 500ms debounce
@@ -2508,28 +2508,28 @@ function wireUp() {
     // disabled button — blank name, or a probe already in flight —
     // swallows the gesture natively, keyboard and pointer alike, so
     // no guards here, just the assert that the invariant held
-    assert($('aname').value !== '', 'commitAname on a blank name');
-    const want = sanAname($('aname').value);
+    assert($('slug').value !== '', 'commitAname on a blank name');
+    const want = sanAname($('slug').value);
     // refused before the wire, in the server's words, text kept
     if (overlongName(want)) {
-      banner(anameTooLongBanner);
-      $('aname').classList.add('error');
+      banner(slugTooLongBanner);
+      $('slug').classList.add('error');
       return;
     }
     await switchAuction(want);
   };
-  $('namego').textContent = startCopy(sanAname($('aname').value));
+  $('namego').textContent = startCopy(sanAname($('slug').value));
   $('namego').addEventListener('click', commitAname);
   // the touched-validation mark (research convention: a field may
   // only object AFTER the user has been and gone — never on arrival;
   // and :user-invalid won't do, it needs an actual edit, missing the
   // visited-blank case dreev named): one class, stamped at the first
   // leave, drives the pure-CSS blank-name objection
-  $('aname').addEventListener('focusout', () => {
-    $('aname').classList.add('visited');
-    $('namego').textContent = startCopy(sanAname($('aname').value));
+  $('slug').addEventListener('focusout', () => {
+    $('slug').classList.add('visited');
+    $('namego').textContent = startCopy(sanAname($('slug').value));
   });
-  $('aname').addEventListener('keydown', (e) => {
+  $('slug').addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
     $('namego').click();  // ONE gesture funnel: the button is the
@@ -2586,18 +2586,18 @@ async function init() {
   // footer version) — question zero of any console session
   console.log('tauction ' + document.querySelector('.version').textContent);
 
-  // 1,20: the server's own aname limit — a longer slug would adopt
+  // 1,20: the server's own slug limit — a longer slug would adopt
   // a name every server call refuses (a dead page)
   const m = location.pathname.match(/^\/([a-zA-Z0-9]{1,20})\/?$/);
-  if (m) aname = m[1].toLowerCase();
-  $('aname').value = aname;
-  $('aname').defaultValue = aname;  // the baseline Escape reverts to
+  if (m) slug = m[1].toLowerCase();
+  $('slug').value = slug;
+  $('slug').defaultValue = slug;  // the baseline Escape reverts to
   // the one-action-page state, explicit (its CSS gray rides this).
   // The pencil is DISABLED outright with it (the house gray pattern,
   // like the stars and ×s): an editor for an auction that doesn't
   // exist must be unrepresentable, keyboard included
-  document.body.classList.toggle('unnamed', aname === '');
-  $('desctoggle').disabled = aname === '';
+  document.body.classList.toggle('unnamed', slug === '');
+  $('desctoggle').disabled = slug === '';
 
   if (!configured) {
     banner(e2156);
@@ -2610,17 +2610,17 @@ async function init() {
   // everything when the user picks. NOT marked stale: stale means
   // busy (the gavel hammers), and an unnamed page is idle, not busy.
   // geography first (fire-and-forget): the earlier it resolves, the
-  // more claims and bids carry it in their deviceBlurb
+  // more claims and bids carry it in their rig
   locate();
-  if (!aname) {
+  if (!slug) {
     $('roster-input').disabled = true;
     $('descedit').disabled = true;  // nothing to describe yet
     $('share').disabled = true;  // a link to nowhere until named
-    $('aname').focus();
+    $('slug').focus();
   } else {
-    setPath(aname);
-    $('aname').disabled = true;  // arrived named: the name is stone
-    document.querySelector('label[for="aname"]')  // ...and the label's
+    setPath(slug);
+    $('slug').disabled = true;  // arrived named: the name is stone
+    document.querySelector('label[for="slug"]')  // ...and the label's
       .setAttribute('data-tip', nameStoneTip);    // tip says so
     paintCached();
     await refresh();

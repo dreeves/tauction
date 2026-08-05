@@ -133,7 +133,7 @@ input:focus, .rebid textarea:focus, .descedit:focus {
    -webkit-text-fill-color plus opacity (fill beats color — dreev's
    grayed final bid), so all three axes get pinned. The grayed-🎉
    class of bug: when text looks washed, check every ink channel. */
-.rebid textarea:disabled, .rename input:disabled, #aname:disabled {
+.rebid textarea:disabled, .rename input:disabled, #slug:disabled {
   color: var(--fg);
   -webkit-text-fill-color: var(--fg);
   opacity: 1;
@@ -143,7 +143,7 @@ input:focus, .rebid textarea:focus, .descedit:focus {
    reads as the page's title, not a glitching field (dreev clicked it
    mid-blurb and "nothing happened"). Same geometry — only the border
    goes; no cursor games (dreev vetoed the question mark). */
-#aname:disabled { border-color: transparent; }
+#slug:disabled { border-color: transparent; }
 
 input::placeholder { color: var(--muted); opacity: 0.8; }
 
@@ -458,7 +458,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    VISIBLE while the field is live — grayed until there is something
    to commit — because the landing page's one primary action must be
    discoverable, not hidden behind the first keystroke. */
-#aname.visited:placeholder-shown:not(:focus) {
+#slug.visited:placeholder-shown:not(:focus) {
   outline: 2px solid var(--err-fg);
   outline-offset: -1px;
   filter: drop-shadow(0 0 0.25rem
@@ -496,7 +496,7 @@ body.unnamed .field .gorow { display: flex; }
    Help stays live: reading is always allowed. Share disables in
    init: a link to an unnamed page is a link to nowhere.
    body.unnamed is an EXPLICIT class (init and the christening write
-   it beside share.disabled): this hung off body:has(#aname:enabled)
+   it beside share.disabled): this hung off body:has(#slug:enabled)
    until Chrome failed to re-evaluate the long-distance :has() on the
    click-path disable and the page stayed gray after naming. */
 body.unnamed #desc,
@@ -1303,7 +1303,7 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
    convention: a soft danger halo around the hard line). drop-shadow,
    not box-shadow: the bid editor's box-shadow slot belongs to the
    re-submission stack sheets. */
-.rebid textarea.error, #aname.error {
+.rebid textarea.error, #slug.error {
   outline: 2px solid var(--err-fg);
   outline-offset: -1px;
   filter: drop-shadow(0 0 0.25rem

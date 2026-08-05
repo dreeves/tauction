@@ -160,8 +160,8 @@ async function bid(page, bidText) {
     await alice.goto(BASE + '/', { waitUntil: 'networkidle0' });
     await alice.waitForSelector('#tiles');
     ok(await alice.evaluate(() => location.pathname === '/'
-       && document.getElementById('aname').value === ''
-       && document.activeElement === document.getElementById('aname')),
+       && document.getElementById('slug').value === ''
+       && document.activeElement === document.getElementById('slug')),
        'a bare visit invents nothing: the empty auction field holds'
        + ' the caret');
     ok(await alice.evaluate(() =>
@@ -173,7 +173,7 @@ async function bid(page, bidText) {
       getComputedStyle(document.querySelector('#status .addrow')).opacity
         === '0.4'),
        'the disabled + row dims its marker and field together');
-    await alice.type('#aname', 'brunch');
+    await alice.type('#slug', 'brunch');
     await alice.keyboard.press('Enter');  // names commit on deliberate
                                           // gestures only, never a timer
     await alice.waitForFunction(() => location.pathname === '/brunch');
@@ -183,7 +183,7 @@ async function bid(page, bidText) {
        'no roster yet: the ledger is just the + row');
     // the description block: RESTS RENDERED with its pencil (README
     // blurb spec item 1, 2026-07-29 — reversing the edit-at-rest
-    // arrival for blank blurbs); the pencil opens the editing mode
+    // arrival for blank rigs); the pencil opens the editing mode
     // with textarea, live preview, and its SAVE/DISCARD row
     ok(await alice.evaluate(() => {
       const t = document.getElementById('descedit');
@@ -243,7 +243,7 @@ async function bid(page, bidText) {
     }), 'phone editing mode stacks: source above, rendered preview'
        + ' below, flush left (spec item 4)');
     await shoot(alice, 'story1-blurb-editing-phone');
-    await alice.click('#aname');  // clicking away...
+    await alice.click('#slug');  // clicking away...
     await new Promise((r) => setTimeout(r, 150));
     ok(await alice.evaluate(() =>
       document.getElementById('descedit').value
@@ -778,22 +778,22 @@ async function bid(page, bidText) {
     // ...and when the hover leaves, a focus-PARKED tip resumes (the
     // old CSS behaved this way; the singleton must too)
     await alice.evaluate(() =>
-      document.querySelector('label[for="aname"]').focus());
+      document.querySelector('label[for="slug"]').focus());
     await alice.hover('.tile:not(.mine) .tu');  // hover wins...
     await alice.waitForFunction(() =>
       !document.getElementById('tip').hidden
       && document.getElementById('tip').textContent
-         !== document.querySelector('label[for="aname"]')
+         !== document.querySelector('label[for="slug"]')
               .getAttribute('data-tip'));
     await alice.mouse.move(5, 700);  // ...and leaves
     await alice.waitForFunction(() =>
       !document.getElementById('tip').hidden
       && document.getElementById('tip').textContent
-         === document.querySelector('label[for="aname"]')
+         === document.querySelector('label[for="slug"]')
               .getAttribute('data-tip'));
     ok(true, 'hover gone: the focus-parked tip takes the stage back');
     await alice.evaluate(() =>
-      document.querySelector('label[for="aname"]').blur());
+      document.querySelector('label[for="slug"]').blur());
     await alice.mouse.move(5, 400);  // park the pointer away from any tip
     await alice.keyboard.press('Tab');  // blur the last tooltip
     const overflow = await alice.evaluate(() =>
@@ -873,7 +873,7 @@ async function bid(page, bidText) {
     await alice.waitForFunction(() => innerWidth === 390);
     await alice.mouse.move(5, 400);
     // the earlier Tab parked focus on the pencil, whose version tip
-    // (dreev's blurbver spec) legitimately stays while focused —
+    // (dreev's bver spec) legitimately stays while focused —
     // drop the focus so no summons stands, then the tip must hide
     await alice.evaluate(() => document.activeElement.blur());
     await alice.waitForFunction(() =>
@@ -1219,7 +1219,7 @@ async function bid(page, bidText) {
        field. She's nobody there until she adds her own name — which
        re-latches her automatically. Bob (as dee) bids. Evy never shows,
        so alice ×es her off the ledger, force-revealing. */
-    await alice.evaluate(() => { document.getElementById('aname').value = ''; });
+    await alice.evaluate(() => { document.getElementById('slug').value = ''; });
     // [names-are-chosen-once 2026-07-18: alice travels by URL now]
     await alice.goto(BASE + '/chores', { waitUntil: 'networkidle0' });
     ok(true, 'the URL is the navigation: /chores');
@@ -1278,8 +1278,8 @@ async function bid(page, bidText) {
     // a bid protects its seat — removal of a bidder no longer exists,
     // dreev 2026-07-19); then alice ends early: × the bidless
     // straggler right off the ledger.
-    gas.handle({ action: 'bid', aname: 'chores',
-      uname: 'zed', pid: 'pid-chores-zed',
+    gas.handle({ action: 'bid', slug: 'chores',
+      uname: 'zed', userid: 'userid-chores-zed',
                  bid: 'zed was here' });
     await alice.waitForFunction(() =>
       document.querySelector('.tile[data-uname="zed"]'));
@@ -1554,11 +1554,11 @@ async function bid(page, bidText) {
        while the fine-pointer layout stays exactly as it was, and the
        320px phone still doesn't scroll sideways. Resultata pre-fix:
        13.6px fields, 24x32px stars. */
-    gas.handle({ action: 'add', aname: 'fatfinger',
-      uname: 'alice', pid: 'pid-fat-alice' });
-    gas.handle({ action: 'add', aname: 'fatfinger',
-      uname: 'bob', pid: 'pid-fat-bob' });
-    gas.handle({ action: 'describe', aname: 'fatfinger', base: 0,
+    gas.handle({ action: 'add', slug: 'fatfinger',
+      uname: 'alice', userid: 'userid-fat-alice' });
+    gas.handle({ action: 'add', slug: 'fatfinger',
+      uname: 'bob', userid: 'userid-fat-bob' });
+    gas.handle({ action: 'describe', slug: 'fatfinger', base: 0,
       blurb: 'A blurb, so the pencil shows.' });
     const fat = await makePage(browser, mobileViewport);
     await fat.goto(BASE + '/fatfinger', { waitUntil: 'networkidle0' });
@@ -1858,7 +1858,7 @@ async function bid(page, bidText) {
     // the landing affordances (dreev 2026-07-28): no red on arrival
     // (touched validation), the one action visible but grayed
     ok(await fresh.evaluate(() => {
-      const a = document.getElementById('aname');
+      const a = document.getElementById('slug');
       const go = document.getElementById('namego');
       return !a.classList.contains('visited')
         && getComputedStyle(a).filter === 'none'
@@ -1880,13 +1880,13 @@ async function bid(page, bidText) {
        + ' stays live');
     await fresh.keyboard.press('Tab');  // wander off, name still blank
     ok(await fresh.evaluate(() => {
-      const cs = getComputedStyle(document.getElementById('aname'));
+      const cs = getComputedStyle(document.getElementById('slug'));
       return cs.filter.includes('drop-shadow')
         && cs.outlineStyle === 'solid';
     }), 'a blank name left behind GLOWS the objection (red only'
        + ' after you have been and gone — the touched convention)');
-    await fresh.click('#aname');
-    await fresh.type('#aname', 'gorows');
+    await fresh.click('#slug');
+    await fresh.type('#slug', 'gorows');
     ok(await fresh.evaluate(() =>
          document.getElementById('namego').textContent
            === startCopy('gorows')),
@@ -1898,12 +1898,12 @@ async function bid(page, bidText) {
       return !go.disabled && cs.color === 'rgb(255, 255, 255)'
         && go.getBoundingClientRect().height > 28
         && Math.abs(go.getBoundingClientRect().left
-             - document.getElementById('aname')
+             - document.getElementById('slug')
                  .getBoundingClientRect().left) < 2;
     }), 'armed, the start button is the page hero: big, filled,'
        + " left-justified under its field");
     ok((await fresh.evaluate(() =>
-         window.__below('#aname', '#namego')))[1],
+         window.__below('#slug', '#namego')))[1],
        "the auction name's commit button sits below its field too");
     await auditLayout(fresh, 'landing, name typed');
     // ...and the glow rides every field objection (dreev 2026-07-28:
@@ -1919,13 +1919,13 @@ async function bid(page, bidText) {
        'naming wakes the whole page: cards at full ink, share live');
     /* Replicata (dreev 2026-07-28: "you forgot to ungray when the
        auction name is chosen"): naming via the START BUTTON left the
-       page gray — the body-level :has(#aname:enabled) never
+       page gray — the body-level :has(#slug:enabled) never
        re-evaluated on the click path's disable, while the Enter path
        (the only one a qual walked) happened to recalc. Expectata:
        BOTH commit gestures wake the page. */
     const clicker = await makePage(browser, DESKTOP);
     await clicker.goto(BASE + '/', { waitUntil: 'networkidle0' });
-    await clicker.type('#aname', 'clickstart');
+    await clicker.type('#slug', 'clickstart');
     await clicker.click('#namego');
     await clicker.waitForFunction(() =>
       location.pathname === '/clickstart');
@@ -1955,10 +1955,10 @@ async function bid(page, bidText) {
        QUIETLY to the filled-but-live star (its tooltip naming the
        rig that took it), takes bea instead, and the game plays out
        normally — one holder per seat throughout, honor system. */
-    gas.handle({ action: 'add', aname: 'squabble',
-      uname: 'alice', pid: 'pid-squabble-alice' });
-    gas.handle({ action: 'add', aname: 'squabble',
-      uname: 'bea', pid: 'pid-squabble-bea' });
+    gas.handle({ action: 'add', slug: 'squabble',
+      uname: 'alice', userid: 'userid-squabble-alice' });
+    gas.handle({ action: 'add', slug: 'squabble',
+      uname: 'bea', userid: 'userid-squabble-bea' });
     const p1 = await makePage(browser, mobileViewport);
     const p2 = await makePage(browser, mobileViewport);
     await p1.goto(BASE + '/squabble', { waitUntil: 'networkidle0' });
@@ -2037,12 +2037,12 @@ async function bid(page, bidText) {
        SUBMIT wearing the too-late tip — and no banner, because no
        write was ever made or lost. */
     const wire = await makePage(browser, DESKTOP);
-    gas.handle({ action: 'add', aname: 'wirestory',
-      uname: 'ann', pid: 'pid-wirestory-ann' });
-    gas.handle({ action: 'add', aname: 'wirestory',
-      uname: 'bee', pid: 'pid-wirestory-bee' });
-    gas.handle({ action: 'bid', aname: 'wirestory',
-      uname: 'bee', pid: 'pid-wirestory-bee',
+    gas.handle({ action: 'add', slug: 'wirestory',
+      uname: 'ann', userid: 'userid-wirestory-ann' });
+    gas.handle({ action: 'add', slug: 'wirestory',
+      uname: 'bee', userid: 'userid-wirestory-bee' });
+    gas.handle({ action: 'bid', slug: 'wirestory',
+      uname: 'bee', userid: 'userid-wirestory-bee',
                  bid: 'bee bid' });
     await wire.goto(BASE + '/wirestory', { waitUntil: 'networkidle0' });
     await claimRow(wire, 'ann');
@@ -2052,7 +2052,7 @@ async function bid(page, bidText) {
     await wire.click('.tile.mine .rebid textarea');
     await wire.keyboard.press('End');  // caret to the end, not the click point
     await wire.keyboard.type('!!!');  // a dirty, focused revision
-    gas.handle({ action: 'reveal', aname: 'wirestory' });
+    gas.handle({ action: 'reveal', slug: 'wirestory' });
     await wire.waitForFunction(() =>
       document.querySelector('.tile.mine .rebid textarea').disabled);
     await new Promise((r) => setTimeout(r, 300));  // an auto-submit
@@ -2067,8 +2067,8 @@ async function bid(page, bidText) {
         && document.getElementById('banner').hidden;
     }), 'the dying draft just stays: visible, unsent, its grayed'
        + ' SUBMIT saying why — and no banner, since nothing was lost');
-    ok(gas.handle({ action: 'state', aname: 'wirestory' }).bids
-         .find((b) => b.pid === 'pid-wirestory-ann').bid === 'first word',
+    ok(gas.handle({ action: 'state', slug: 'wirestory' }).bids
+         .find((b) => b.userid === 'userid-wirestory-ann').bid === 'first word',
        'the sheet keeps the pre-gavel bid');
     await auditLayout(wire, 'revealed page, dead draft standing');
     await auditNames(wire, 'revealed page, dead draft standing');
@@ -2113,14 +2113,14 @@ async function bid(page, bidText) {
     // arrives at the ARRIVAL ANSWER, mid-adds. So wait on the real
     // condition — the server holding both seats — not on the gavel
     // (which was only ever a proxy for the settle).
-    for (let i = 0; gas.handle({ action: 'state', aname: 'eagertype' })
+    for (let i = 0; gas.handle({ action: 'state', slug: 'eagertype' })
            .seats.length < 2; i++) {
       if (i >= 200) throw new Error('eagertype adds never landed');
       await new Promise((r) => setTimeout(r, 50));
     }
     await eag.waitForFunction(() =>
       !document.getElementById('status').classList.contains('stale'));
-    ok(gas.handle({ action: 'state', aname: 'eagertype' })
+    ok(gas.handle({ action: 'state', slug: 'eagertype' })
          .seats.length === 2
        && await eag.evaluate(() =>
             document.querySelectorAll('#tiles .tile').length === 2),
@@ -2159,7 +2159,7 @@ async function bid(page, bidText) {
        HIS save, refused in the server's words; and a fresh load
        always shows the database's blurb — his unsaved words die with
        the tab, exactly what the refusal banner told him to expect. */
-    gas.handle({ action: 'describe', aname: 'clobstory',
+    gas.handle({ action: 'describe', slug: 'clobstory',
       blurb: 'original', base: 0 });
     const cle = await makePage(browser, DESKTOP);
     await cle.goto(BASE + '/clobstory', { waitUntil: 'networkidle0' });
@@ -2167,9 +2167,9 @@ async function bid(page, bidText) {
     await cle.keyboard.press('End');  // caret to the line's end
     await cle.keyboard.type(' plus cletus');
     // winifred lands from her own machine mid-draft...
-    gas.handle({ action: 'describe', aname: 'clobstory',
+    gas.handle({ action: 'describe', slug: 'clobstory',
       blurb: 'per winifred',
-      base: gas.handle({ action: 'state', aname: 'clobstory' }).blurbver });
+      base: gas.handle({ action: 'state', slug: 'clobstory' }).bver });
     // ...and the next polls say NOTHING to cletus: his words, his
     // caret, no banner — conflicts are save-time business
     await new Promise((r) => setTimeout(r, 6000));  // a full poll
@@ -2205,7 +2205,7 @@ async function bid(page, bidText) {
         && document.getElementById('descedit').classList
              .contains('error');
     }, 1)
-       && gas.handle({ action: 'state', aname: 'clobstory' }).blurb
+       && gas.handle({ action: 'state', slug: 'clobstory' }).blurb
             === 'per winifred',
        'the collision surfaces at HIS save as the war popup: her'
        + ' words red-deleted, his green-inserted in VS Code inks,'
@@ -2246,9 +2246,9 @@ async function bid(page, bidText) {
     await cle.click('#desctoggle');
     await cle.keyboard.press('End');
     await cle.keyboard.type(' — cletus insists');
-    gas.handle({ action: 'describe', aname: 'clobstory',
+    gas.handle({ action: 'describe', slug: 'clobstory',
       blurb: 'winifred again',
-      base: gas.handle({ action: 'state', aname: 'clobstory' }).blurbver });
+      base: gas.handle({ action: 'state', slug: 'clobstory' }).bver });
     await cle.click('#descgo');
     await cle.waitForFunction(() =>
       document.getElementById('war-dlg').open);
@@ -2261,7 +2261,7 @@ async function bid(page, bidText) {
     await cle.waitForFunction(() =>
       document.getElementById('descview').textContent
         .includes('cletus insists'));
-    ok(gas.handle({ action: 'state', aname: 'clobstory' }).blurb
+    ok(gas.handle({ action: 'state', slug: 'clobstory' }).blurb
          === 'per winifred — cletus insists',
        'Overwrite with mine: the informed win lands — appended to'
        + " HER words, because Keep theirs adopted the record into"
@@ -2287,9 +2287,9 @@ async function bid(page, bidText) {
     await phw.goto(BASE + '/clobstory', { waitUntil: 'networkidle0' });
     await phw.click('#desctoggle');
     await phw.keyboard.type('phone draft ');
-    gas.handle({ action: 'describe', aname: 'clobstory',
+    gas.handle({ action: 'describe', slug: 'clobstory',
       blurb: 'rival for the phone',
-      base: gas.handle({ action: 'state', aname: 'clobstory' }).blurbver });
+      base: gas.handle({ action: 'state', slug: 'clobstory' }).bver });
     await phw.click('#descgo');
     await phw.waitForFunction(() =>
       document.getElementById('war-dlg').open);
@@ -2318,7 +2318,7 @@ async function bid(page, bidText) {
        Enter presses it. */
     const crea = await makePage(browser, DESKTOP);
     await crea.goto(BASE + '/', { waitUntil: 'networkidle0' });
-    await crea.type('#aname', 'tabname');
+    await crea.type('#slug', 'tabname');
     await crea.keyboard.press('Tab');
     ok(await crea.evaluate(() =>
       document.activeElement === document.getElementById('namego')
@@ -2329,7 +2329,7 @@ async function bid(page, bidText) {
     await crea.keyboard.press('Enter');
     await crea.waitForFunction(() => location.pathname === '/tabname');
     ok(await crea.evaluate(() =>
-      document.getElementById('aname').disabled),
+      document.getElementById('slug').disabled),
        'enter presses it: name, tab, enter — commit by convention,'
        + ' no hidden gesture');
     // the empty description TEACHES (designer loop round 1,
@@ -2357,7 +2357,7 @@ async function bid(page, bidText) {
     // (from a BARE page: typing names is the create flow now)
     const zpage = await makePage(browser, DESKTOP);
     await zpage.goto(BASE + '/', { waitUntil: 'networkidle0' });
-    await zpage.type('#aname', 'chores');  // occupied: sticky banner
+    await zpage.type('#slug', 'chores');  // occupied: sticky banner
     await zpage.keyboard.press('Enter');   // (commit is a gesture now)
     await zpage.waitForFunction(() =>
       !document.getElementById('banner').hidden
@@ -2559,10 +2559,10 @@ async function bid(page, bidText) {
        + ' growing to show both');
     await poet.keyboard.press('Enter');  // Enter still means SEND
     await poet.waitForSelector('.tile.mine.has-bid');
-    gas.handle({ action: 'add', aname: 'poembid', uname: 'zed',
-      pid: 'pid-poem-zed' });
-    gas.handle({ action: 'bid', aname: 'poembid', uname: 'zed',
-      pid: 'pid-poem-zed', bid: 'a limerick' });
+    gas.handle({ action: 'add', slug: 'poembid', uname: 'zed',
+      userid: 'userid-poem-zed' });
+    gas.handle({ action: 'bid', slug: 'poembid', uname: 'zed',
+      userid: 'userid-poem-zed', bid: 'a limerick' });
     const reader = await makePage(browser, DESKTOP);
     await reader.goto(BASE + '/poembid', { waitUntil: 'networkidle0' });
     await reader.waitForFunction(() =>
