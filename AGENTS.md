@@ -210,7 +210,10 @@ positional reads tolerate.
   renders to.
 - Editing presence (dreev 2026-07-31; per-device rows 08-02): an
   open blurb editor heartbeats (the `editing` action) every 10s —
-  skipping beats while its tab is hidden — into its own devices row,
+  hidden tabs included (2026-08-04, deleting the hidden-skip: it
+  starved tblug the moment anyone alt-tabbed away, and a hidden
+  dirty draft is exactly the rival to warn about) — into its own
+  devices row,
   fresh for 25s (server clock both ends). Every state carries
   `editors`, the whole desk crowd, and other pages' pencil
   (discourse.org's, vendored FA6 SVG) scribbles: accent ink,

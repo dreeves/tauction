@@ -711,9 +711,11 @@ function syncPencil() {
    page's blurb editor is open it pings the server every EDIT_BEAT_MS
    naming itself (userid when seated, rig blurb regardless), so everyone
    else's pencil can scribble. SAVE and DISCARD send the explicit
-   stop; a closed tab simply ages out server-side (the TTL); hidden
-   tabs skip beats, so a backgrounded draft's presence expires until
-   its tab returns. */
+   stop; a closed tab simply ages out server-side (the TTL). Hidden
+   tabs beat too (dreev's dev replicata, 2026-08-04: alt-tabbing to
+   watch the sheet starved the beat and presence aged out under
+   observation — and a hidden dirty draft is exactly the rival the
+   pencil must warn about). */
 const EDIT_BEAT_MS = 10000;
 let editBeatTimer = null;
 
@@ -736,9 +738,8 @@ function syncEditBeats() {
   const editing = !$('desc').classList.contains('viewing');
   if (editing && editBeatTimer === null) {
     sendEditBeat(false);
-    editBeatTimer = setInterval(() => {
-      if (!document.hidden) sendEditBeat(false);
-    }, EDIT_BEAT_MS);
+    editBeatTimer = setInterval(() => sendEditBeat(false),
+                                EDIT_BEAT_MS);
   }
   if (!editing && editBeatTimer !== null) {
     clearInterval(editBeatTimer);

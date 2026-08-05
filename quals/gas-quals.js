@@ -1192,6 +1192,44 @@ ok(!st.error && st.editors.length === 1 && st.exists === false
    + ' the slot lives on the device');
 call({ action: 'editing', slug: 'virginib', devid: 'dev-nib-w',
        stop: true });
+// dreev's dev sequence, cell-for-cell (2026-08-04 replicata "tblug
+// stayed empty": every server path proved green live, so the suite
+// pins the exact journey — a device row born via CLAIM, then the
+// editor opens, and the SHEET CELLS themselves move, not just the
+// payload): tblug/blug stamp on the same row (no doppelganger row),
+// a re-beat moves tblug FORWARD, and the stop zeroes the cell.
+call({ action: 'add', slug: 'devseq', uname: 'dev', userid: 'userid-devseq-dev' });
+call({ action: 'claim', slug: 'devseq', userid: 'userid-devseq-dev',
+       devid: 'dev-seq-1', rig: 'seq rig' });
+st = call({ action: 'editing', slug: 'devseq',
+            userid: 'userid-devseq-dev', devid: 'dev-seq-1',
+            rig: 'seq rig' });
+const seqRows = ss.sheets['devices'].data.filter(
+  (r) => r[0] === 'dev-seq-1');
+ok(st.editors.length === 1 && seqRows.length === 1
+   && seqRows[0][4] === 'devseq' && seqRows[0][5] === 'userid-devseq-dev'
+   && seqRows[0][6] !== '',
+   'a beat after a CLAIM patches the claim-born row in place: blug,'
+   + ' bluid, tblug stamped in the cells, one row only');
+const tblugWas = seqRows[0][6];
+require('vm').runInContext(
+  'var NDseq = Date;'
+  + ' Date = class extends NDseq {'
+  + ' constructor() { super(NDseq.now() + 5000); }'
+  + ' static now() { return NDseq.now() + 5000; } };', ctx);
+call({ action: 'editing', slug: 'devseq',
+       userid: 'userid-devseq-dev', devid: 'dev-seq-1', rig: 'seq rig' });
+require('vm').runInContext('Date = NDseq;', ctx);
+ok(ss.sheets['devices'].data.find((r) => r[0] === 'dev-seq-1')[6]
+     > tblugWas,
+   'a re-beat moves tblug FORWARD in the cell: the heartbeat is'
+   + ' visibly alive from the sheet');
+call({ action: 'editing', slug: 'devseq', devid: 'dev-seq-1',
+       stop: true });
+ok(ss.sheets['devices'].data.find((r) => r[0] === 'dev-seq-1')[6]
+     === '',
+   "the stop zeroes the tblug cell (an empty tblug means the editor"
+   + ' CLOSED, working as ruled)');
 st = call({ action: 'editing', slug: 'tau', devid: 'd-z',
             rig: 'late rig' });
 ok(!st.error && st.editors.length === 1 && st.editors[0].userid === '',

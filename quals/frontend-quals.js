@@ -3520,13 +3520,31 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     await sleep(150);
     ok(!edDoc.getElementById('desc').classList.contains('scribbling'),
        'own presence never scribbles at itself');
-    // the open editor drums: its registered beat re-pings on demand
-    const beatsBefore = apiCalls.filter((c) =>
-      c.action === 'editing' && !c.stop).length;
+    // the open editor drums: its registered beat re-pings on demand.
+    // (Beats are counted per-DEVICE: zombie pages from earlier quals
+    // keep their own editors beating forever, so a bare count is
+    // nondeterministic — it burned two vacuous versions of these
+    // quals before the devid filter.)
+    const edBeats = () => apiCalls.filter((c) =>
+      c.action === 'editing' && !c.stop && c.devid === 'rig-ed').length;
+    const beatsBefore = edBeats();
     dEd.window.__intervals.find((i) => i.ms === 10000).fn();
-    await until(() => apiCalls.filter((c) =>
-      c.action === 'editing' && !c.stop).length === beatsBefore + 1);
+    await until(() => edBeats() === beatsBefore + 1);
     ok(true, 'the open editor heartbeats on its registered cadence');
+    // ...and a HIDDEN tab drums too (dreev's dev replicata: alt-tab
+    // to the sheet to watch tblug -> beats stopped -> presence aged
+    // out under observation. A hidden dirty draft is exactly the
+    // rival the pencil must warn about, so hiding must not starve
+    // the beat.)
+    Object.defineProperty(dEd.window.document, 'hidden',
+      { value: true, configurable: true });
+    const beatsHid = edBeats();
+    dEd.window.__intervals.find((i) => i.ms === 10000).fn();
+    await until(() => edBeats() === beatsHid + 1);
+    ok(true, 'a hidden tab with an open editor keeps beating:'
+       + ' presence never lies about a live draft');
+    Object.defineProperty(dEd.window.document, 'hidden',
+      { value: false, configurable: true });
     // DISCARD sends the stop; the viewer's next poll rests the pencil
     edDoc.getElementById('descdiscard').click();
     await until(() => apiCalls.some((c) => c.action === 'editing'
@@ -4137,7 +4155,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   bobName.value = 'zed';
   bobName.form.dispatchEvent(
     new dR.window.Event('submit', { bubbles: true, cancelable: true }));
-  await until(() => !dR.window.document.getElementById('banner').hidden);
+  // the banner lands with the refusal but the optimistic 'zed' label
+  // is only walked back by the RECOVERY snapshot a beat later — wait
+  // for both truths (this raced: a null tile crashed the suite once)
+  await until(() => !dR.window.document.getElementById('banner').hidden
+    && dR.window.document
+         .querySelector('.tile[data-uname="bob"] .rename input') !== null);
   const recoveredBobName = dR.window.document
     .querySelector('.tile[data-uname="bob"] .rename input');
   ok(dR.window.document.getElementById('banner').textContent

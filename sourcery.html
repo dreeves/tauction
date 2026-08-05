@@ -6934,13 +6934,17 @@ BIDS      slug, userid, bid, tbid, devid</code></pre>
 <div class="diffstat">+32 −17 <span class="blocks" aria-hidden="true"><span class="add"></span><span class="add"></span><span class="add"></span><span class="del"></span><span class="nil"></span></span></div>
 <pre class="prompt">go</pre>
 <details>
-<summary><a class="anchor" href="#p457"><time datetime="2026-08-05T03:45:16.556000+00:00">20:45</time></a> <span class="chip"></span> <span class="agent">Claude Code</span> <span class="model">claude-fable-5</span> <span class="effort">(xhigh)</span> <span class="elapsed">thought for 10m30s · 20m19s wall-clock time</span></summary>
+<summary><a class="anchor" href="#p457"><time datetime="2026-08-05T03:45:16.556000+00:00">20:45</time></a> <span class="chip"></span> <span class="agent">Claude Code</span> <span class="model">claude-fable-5</span> <span class="effort">(xhigh)</span> <span class="elapsed">thought for 11m12s · 39m6s wall-clock time</span></summary>
 <div class="reply machine"><p>Executing. Phase 1: the mechanical rename pass (ordered, word-boundary sed across server, client, stringles, quals — localStorage keys deliberately untouched):</p>
 <p>Phase A — schema behavior changes in Code.gs:</p>
 <p>The <code>e\.blurb</code> pattern matched inside <code>state.blurb</code> — reverting those:</p>
 <p>Frontend 605 green. Story and serve:</p>
 <p>Memory while it runs:</p>
-<p>Suite finishing in the background; on green the deploy runs and the tab-dance walkthrough follows.</p></div>
+<p>Suite finishing in the background; on green the deploy runs and the tab-dance walkthrough follows.</p>
+<p>Done, end to end — and the migration turned out to need <strong>zero</strong> clicks: the live tabs were already cleared from the earlier passes, so the deploy (@110) rebuilt everything in the final schema and the live smoke ran 7/7 green on the first try.</p>
+<p>Shipped, twice-green offline (1068 = 225+605+9+229):</p>
+<ul><li><strong>Schema</strong>: <code>auctions[slug,tini,tfin,blurb,bver,tbed]</code>, <code>seats[slug,userid,uname,devid,tini,tmod]</code>, <code>devices[devid,rig,tini,tmod,blug,bluid,tblug]</code>, <code>bids[slug,userid,bid,tbid,devid]</code>.</li><li><strong>Renames all the way through</strong> — schema, request/payload keys, refusal codes, client, DOM id, quals. localStorage keys deliberately untouched, so live identities survive.</li><li><strong>Behavior</strong>: auctions.tmod gone (one write saved per action), tbed rides the save patch, bids carry the forensic devid, tbid minted <code>max(now, prev+1ms)</code> with a read-side duplicate-equals-forgery assert.</li><li><strong>One real bug found by the covenant qual mid-build</strong>: a future-minted tbid could outrun <code>tfin = now</code> and get dropped at the <code>≤</code> cutoff — the gavel now mints <code>tfin ≥ last tbid</code>.</li></ul>
+<p><strong>The one urgent step is yours: git push the frontend.</strong> The published client still speaks the old keys, so every call it makes now refuses as badSlug until the push lands on Pages (plus its ~10-minute cache).</p></div>
 </details>
 </article>
 </main>
