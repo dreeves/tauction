@@ -349,7 +349,8 @@ function assertState(res) {
     && (res.bids === null || (Array.isArray(res.bids)
       && res.bids.every((b) => typeof b.usid === 'string'
         && typeof b.xbid === 'string'))),
-  'bad state shape — is the deployed Code.gs current?');
+  'bad state shape — is this page stale (hard-reload; is main'
+  + ' pushed?) or the deployed Code.gs (npm run deploy)?');
 }
 
 // THE CHRONICLE (dreev's spec): every adopted snapshot

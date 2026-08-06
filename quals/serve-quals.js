@@ -29,6 +29,37 @@ function ok(cond, label) {
      'the qual command audits index/404 parity without rewriting the'
      + ' artifact it is meant to inspect');
 
+  /* THE ERA GUARD (dreev-ratified 2026-08-06). Replicata: npm run
+     deploy with the schema refactor committed but never pushed —
+     clasp shipped the new Code.gs while Pages kept serving the old
+     page, and every visitor ate ERROR2157 until the push, hint
+     pointing backwards. Expectata: the deploy refuses up front
+     unless the tree it ships is the era the site serves — no dirty
+     tracked files, nothing untracked under apps-script/ (clasp
+     would ship bytes no commit pins), HEAD contained in
+     origin/main. Push-then-deploy is the enforced order; the
+     transient window that leaves is the one the ERROR2157 hint
+     names. eraGuard is the pure verdict over git's own facts
+     (porcelain text + ancestry bit), so these scenes need no repo. */
+  const { eraGuard } = require(path.join(REPO, 'deploy.js'));
+  ok(eraGuard('', true) === null,
+     'a clean, pushed tree deploys: the guard stands aside');
+  ok(typeof eraGuard(' M app.js\n', true) === 'string'
+     && eraGuard(' M app.js\n', true).includes('app.js'),
+     'a dirty tracked file refuses the deploy, naming the file');
+  ok(typeof eraGuard('?? apps-script/scratch.js\n', true) === 'string'
+     && eraGuard('?? apps-script/scratch.js\n', true)
+          .includes('apps-script/scratch.js'),
+     'an untracked file under apps-script/ refuses: clasp would ship'
+     + ' bytes no commit pins');
+  ok(eraGuard('?? notes.txt\n', true) === null,
+     'an untracked file elsewhere ships nowhere: no refusal');
+  ok(typeof eraGuard('', false) === 'string'
+     && eraGuard('', false).includes('ush'),
+     'a clean tree ahead of origin/main refuses: push, THEN deploy');
+  ok(typeof eraGuard(' M app.js\n', false) === 'string',
+     'dirty and unpushed refuses too');
+
   // fail LOUD if a stale server squats the port: the spawn below
   // would die silently on EADDRINUSE and we'd interrogate a zombie
   // (it happened: a crashed run's leftover served pre-fix bytes)

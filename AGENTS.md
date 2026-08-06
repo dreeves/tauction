@@ -107,8 +107,15 @@ directly: 404 status, but never a 404 page.
 ## Deploying Code.gs
 
 ```sh
-npm run deploy   # sync-404 + quals, then clasp push + redeploy same URL + live smoke
+npm run deploy   # era guard, sync-404 + quals, then clasp push + redeploy same URL + live smoke
 ```
+
+The era guard (2026-08-06): clasp ships the working tree while Pages
+serves origin/main, so the deploy refuses unless the tree IS the era
+the site serves — no dirty tracked files, nothing untracked under
+apps-script/, HEAD contained in origin/main. Push, then deploy; the
+transient skew that order leaves is the one ERROR2157's two-suspect
+hint names.
 
 One-time setup: toggle on the [Apps Script API](https://script.google.com/home/usersettings),
 run `npx clasp login`, and put the script ID (Apps Script editor → Project

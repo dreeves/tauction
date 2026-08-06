@@ -2260,6 +2260,15 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && domSkew.window.document.getElementById('banner').textContent
           .includes('bad state shape'),
      'an old-server payload banners loudly, naming the skew');
+  // ...and the hint suspects BOTH eras (2026-08-05: production ran a
+  // freshly deployed Code.gs against a stale unpushed page for a
+  // day, and the old is-the-deployed-Code.gs-current hint pointed
+  // exactly backwards)
+  const skewHint = domSkew.window.document.getElementById('banner')
+    .textContent;
+  ok(/page/.test(skewHint) && /Code\.gs/.test(skewHint),
+     "the shape hint suspects both eras — the page's and the"
+     + ' deploy\'s — instead of assuming the direction of the skew');
   stripTini = false;
 
   /* --- 1c2. the WHOLE stamp shape is the contract, not "has a T" --------
