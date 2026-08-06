@@ -449,15 +449,19 @@ const cssBattles = [];
 }
 
 // THE PALETTE FENCE (dreev 2026-07-30: make the visuals "the opposite
-// of ai-generated-looking"). The 2026 design literature's loudest AI
-// tell is interface chrome in the Tailwind-indigo band — the
-// statistical center of "nice modern web UI" — over cool blue-gray
-// neutrals. This app's identity props are all WARM (cream ledger
-// paper, wood gavel, gold star, money green, stamp red), so the laws
-// are structural, enumerated over every color token in BOTH :root
-// blocks rather than spot-checked. Scope: the token blocks only —
-// one-off literals elsewhere (the QR quiet zone's #fff, VS Code's
-// lifted diff palette) answer to their own comments.
+// of ai-generated-looking"; re-derived 2026-08-06 for the ARCADE
+// retheme, dreev-ratified from the candidate screenshots). The 2026
+// design literature's loudest AI tell is interface chrome in the
+// Tailwind-indigo band — the statistical center of "nice modern web
+// UI" — and that ban stands unchanged. What flipped is the neutral
+// law: the ledger's warm cream-and-espresso identity retired, and
+// arcade's identity props are game-cabinet NAVY ink and paper (hue
+// ~210-221, deliberately short of the 225 indigo line) with candy
+// accents. The laws stay structural, enumerated over every color
+// token in BOTH :root blocks rather than spot-checked. Scope: the
+// token blocks only — one-off literals elsewhere (the QR quiet
+// zone's #fff, VS Code's lifted diff palette) answer to their own
+// comments.
 const cssTokens = (fromIdx) => {
   const open = STYLE_CSS.indexOf('{', STYLE_CSS.indexOf(':root', fromIdx));
   const body = STYLE_CSS.slice(open + 1, STYLE_CSS.indexOf('}', open))
@@ -537,17 +541,18 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     ok(offenders.length === 0,
        'no palette token sits in the AI-indigo band (hue 225-300 at'
        + ' sat > 0.2), the Tailwind-default tell: ' + offenders.join(', '));
-    const cold = [];
+    const offNavy = [];
     for (const [theme, toks] of Object.entries(PALETTE)) {
       for (const name of NEUTRAL_TOKENS) {
         for (const c of tokenColors(toks[name])) {
-          if (c[0] < c[2]) cold.push(theme + ' --' + name);
+          if (c[2] < c[0]) offNavy.push(theme + ' --' + name);
         }
       }
     }
-    ok(cold.length === 0,
-       'neutral chrome is warm: every neutral token keeps red >= blue'
-       + ' (paper and ink, not the default blue-gray): ' + cold.join(', '));
+    ok(offNavy.length === 0,
+       'neutral chrome is navy: every neutral token keeps blue >= red'
+       + ' (the arcade cabinet, not warm gray — and the indigo ban'
+       + ' above keeps navy from sliding violet): ' + offNavy.join(', '));
     // ink stays legible on both papers in both themes: body ink at
     // AAA 7:1, muted (it labels at small-bold sizes) at AA 4.5:1
     const dim = [];

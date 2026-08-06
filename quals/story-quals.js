@@ -505,7 +505,7 @@ async function bid(page, bidText) {
       const bid = getComputedStyle(t.querySelector('.tile-bid'));
       return getComputedStyle(t).borderBottomWidth === '0px'
         && getComputedStyle(t).alignItems === 'flex-start'
-        && name.borderTopWidth === '1px' && bid.borderTopWidth === '0px';
+        && name.borderTopWidth === '2px' && bid.borderTopWidth === '0px';
     }), 'a field for the person, a card for the bid, and a tall bid'
        + ' cannot inflate its neighbor');
 
@@ -676,17 +676,21 @@ async function bid(page, bidText) {
       probe.style.color = 'var(--star)';
       document.body.append(probe);
       const gold = getComputedStyle(probe).color;
+      probe.style.color = 'var(--star-rim)';
+      const rim = getComputedStyle(probe).color;
       probe.remove();
       const star = document.querySelector('.tile.mine .tu');
       const other = document.querySelector('.tile:not(.mine) .tu');
       return star.classList.contains('selected')
         && getComputedStyle(star).color === gold
-        && getComputedStyle(star).webkitTextStrokeColor === gold
+        // the rim is its own gold (arcade 2026-08-06: fill-gold
+        // stroke vanished into white cards), same silhouette width
+        && getComputedStyle(star).webkitTextStrokeColor === rim
         && getComputedStyle(star).webkitTextStrokeWidth
            === getComputedStyle(other).webkitTextStrokeWidth
         && getComputedStyle(star).textShadow !== 'none';
     }), 'her star glows gold — the exact hollow shape, filled: same'
-       + ' stroke width, gold stroke plus gold fill');
+       + ' stroke width, rim-gold stroke plus gold fill');
     await alice.hover('.tile.mine .tu');
     await alice.waitForFunction(() =>
       !document.getElementById('tip').hidden);
@@ -752,8 +756,12 @@ async function bid(page, bidText) {
         const host = document.querySelectorAll('[data-tip]')[idx];
         host.scrollIntoView({ block: 'center' });
         const r0 = host.getBoundingClientRect();
+        // aim at the CENTER: a corner probe misses hosts with big
+        // border radii (the arcade pill's +3,+3 point is outside
+        // the shape, so elementFromPoint saw the card behind)
         document.dispatchEvent(new MouseEvent('mousemove',
-          { clientX: r0.left + 3, clientY: r0.top + 3 }));
+          { clientX: r0.left + r0.width / 2,
+            clientY: r0.top + r0.height / 2 }));
         await new Promise((r) => setTimeout(r, 80));  // async positioning
         const t = document.getElementById('tip').getBoundingClientRect();
         return { host: host.className || host.tagName, top: t.top,
@@ -1597,6 +1605,15 @@ async function bid(page, bidText) {
     ok(await fat.evaluate(() =>
          document.scrollingElement.scrollWidth <= innerWidth),
        'the grown touch targets still fit a 320px phone sideways');
+    ok(await fat.evaluate(() =>
+      [...document.querySelectorAll('#tiles .rename')].every((f) => {
+        const cell = f.querySelector('.tile-name').getBoundingClientRect();
+        const col = f.getBoundingClientRect();
+        return cell.right <= col.right + 1;
+      })),
+       'squeezed columns CONTAIN their cells: no name field paints'
+       + " across the bid column (the input's intrinsic ~200px used"
+       + ' to drive the flex line wider than the shrunken column)');
     await shoot(fat, 'story5b-fatfinger-narrow');
     /* Replicata (dreev 2026-07-29): "Can you give the help popup a
        LaTeX style but still super mobile-friendly?" Expectata, at
@@ -1640,7 +1657,9 @@ async function bid(page, bidText) {
       const go = getComputedStyle(
         document.getElementById('descgo'));
       return Math.round(star.width) === 24
-        && Math.round(star.height) === 36  // flush with the 1rem cells
+        && Math.round(star.height) === 38  // flush with the 1rem cells
+                                           // (24px line + 0.6rem pad
+                                           // + 2x2px arcade border)
         && parseFloat(bid.fontSize) >= 16
         && parseFloat(name.fontSize) >= 16
         && parseFloat(view.fontSize) >= 16
@@ -2406,7 +2425,10 @@ async function bid(page, bidText) {
     await leo.click(ED);
     await leo.type(ED, LONGBID);
     ok(await leo.$eval(ED, (e, h) =>
-         e.getBoundingClientRect().height > h * 1.8
+         // > 1.4x: at least one full extra line (the old 1.8 was
+         // mono-calibrated — Nunito wraps this fixture to two lines,
+         // not three; the second conjunct is the actual law)
+         e.getBoundingClientRect().height > h * 1.4
          && e.scrollHeight <= e.clientHeight + 1, h0),
        'the box grows under her fingers: every word of the long bid'
        + ' stays in sight while she types');
@@ -2426,7 +2448,8 @@ async function bid(page, bidText) {
     await leo.keyboard.press('Enter');
     await leo.waitForSelector('.tile.mine.has-bid');
     ok(await leo.$eval(ED, (e, h) =>
-         e.getBoundingClientRect().height > h * 1.8
+         // the same 1.4x growth proxy as the typing check above
+         e.getBoundingClientRect().height > h * 1.4
          && e.scrollHeight <= e.clientHeight + 1, h0),
        'and the standing bid keeps its tall box after submitting');
     await shoot(leo, 'story7-long-bid-typing');
@@ -2521,8 +2544,10 @@ async function bid(page, bidText) {
         '.tile[data-snym="leo"] .bid-card');
       const short = document.querySelector(
         '.tile.mine .rebid').firstElementChild;
+      // 1.4x = at least one extra line (mono-era 1.8 assumed a
+      // three-line wrap; see the growth checks above)
       return long.getBoundingClientRect().height
-             > short.getBoundingClientRect().height * 1.8
+             > short.getBoundingClientRect().height * 1.4
         && document.documentElement.scrollWidth <= window.innerWidth;
     }), "revealed, leo's card grows to fit all 78 characters —"
        + ' downward, never sideways off the page');

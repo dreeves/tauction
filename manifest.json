@@ -4,8 +4,8 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#f7f2e6",
-  "theme_color": "#f7f2e6",
+  "background_color": "#eaf4ff",
+  "theme_color": "#eaf4ff",
   "icons": [
     { "src": "/icons/gavelcoins.png", "sizes": "512x512", "type": "image/png" }
   ]

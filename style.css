@@ -1,57 +1,74 @@
-/* The auctioneer's ledger palette (2026-07-30, replacing the stock
-   Tailwind-indigo-on-blue-gray chrome — the statistical-center "AI
-   look"): every color derives from a prop the app already owns.
-   Neutrals are paper and ink — cream stock, espresso ink, warm sand
-   rules — never blue-gray; the accent is petrol teal, the classic
-   ledger-ruling ink, dark enough to carry --accent-ink text at AA.
-   The frontend suite's palette fence enforces all of this
-   structurally (no indigo band, warm neutrals, AA on-accent) over
-   every token in both themes. */
+/* THE ARCADE PALETTE (2026-08-06, dreev-ratified from the candidate
+   screenshots, retiring the 07-30 auctioneer's-ledger cream): candy
+   colors on game-cabinet navy. Neutrals are NAVY-family ink and ice
+   paper — hues pinned to ~210-221, deliberately short of the 225
+   indigo line, so the anti-AI-look ban survives the cool turn — the
+   accent is an arcade emerald (dreev 2026-08-06: the first-cut
+   raspberry sat too close to the error red; green also unifies with
+   the shimmer and the ok family, GO semantics, with solid-vs-dashed
+   still carrying bid-in vs awaiting) dark enough to carry
+   --accent-ink at AA, the star is coin gold, and shadows are hard
+   offsets (the button-press look), never soft blurs. The frontend suite's palette
+   fence enforces all of this structurally (no indigo band, navy
+   neutrals, AA on-accent) over every token in both themes. */
 :root {
-  --bg: #f7f2e6;
-  --card: #fffdf7;
-  --fg: #2f2a21;
-  --muted: #766c5d;
-  --border: #d8cdb8;
-  --accent: #135f6e;
-  --accent-soft: #e0eeec;
+  --bg: #eaf4ff;
+  --card: #ffffff;
+  --fg: #1a2e53;
+  --muted: #4a6289;
+  --border: #b9c9e6;
+  --accent: #0c8443;
+  --accent-soft: #dcf5e6;
   --accent-ink: #ffffff;
-  --ok-fg: #1d6b43;
-  --ok-bg: #e6f4ec;
+  --ok-fg: #0b7a3e;
+  --ok-bg: #d8f8e5;
   /* error pair copied from GitHub Primer's shipped tokens (dreev:
      "research best practices and copy them"): fgColor-danger +
      bgColor-danger-muted, light and dark themes verbatim */
   --err-fg: #d1242f;
   --err-bg: #ffebe9;
-  --glow: rgba(29, 107, 67, 0.28);
-  --shimmer: rgba(29, 107, 67, 0.22);
-  --grid: rgba(47, 42, 33, 0.07);
-  --star: #d4a017;
-  --pop: 0 1px 3px rgba(47, 42, 33, 0.18), 0 1px 2px rgba(47, 42, 33, 0.1);
-  --wood: #8a5a2b;
+  --glow: rgba(12, 132, 67, 0.35);
+  --shimmer: rgba(11, 122, 62, 0.22);
+  --grid: rgba(41, 173, 255, 0.16);
+  --star: #ffb703;
+  --star-rim: #c98a00;  /* the lit star's outline: gold dark enough
+                           to hold the silhouette on white cards */
+  --pop: 0 4px 0 rgba(26, 46, 83, 0.85);
+  --wood: #ab5236;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #181410;
-    --card: #221d16;
-    --fg: #ece3d3;
-    --muted: #a2947e;
-    --border: #3b3327;
-    --accent: #58b7bf;
-    --accent-soft: #1f3436;
-    --accent-ink: #181410;
-    --ok-fg: #7fd6a4;
-    --ok-bg: #17301f;
+    --bg: #0e1a2e;
+    --card: #16233c;
+    --fg: #e6eeff;
+    --muted: #8fa5d0;
+    --border: #35476b;
+    --accent: #45d17c;
+    --accent-soft: #17402a;
+    --accent-ink: #0e1a2e;
+    --ok-fg: #6fe3a1;
+    --ok-bg: #123524;
     --err-fg: #f85149;
     --err-bg: #f851491a;
-    --glow: rgba(127, 214, 164, 0.28);
-    --shimmer: rgba(127, 214, 164, 0.25);
-    --grid: rgba(236, 227, 211, 0.05);
-    --star: #f2c744;
-    --pop: 0 1px 3px rgba(0, 0, 0, 0.6), 0 1px 2px rgba(0, 0, 0, 0.4);
-    --wood: #b98a5a;
+    --glow: rgba(69, 209, 124, 0.30);
+    --shimmer: rgba(111, 227, 161, 0.22);
+    --grid: rgba(120, 170, 255, 0.07);
+    --star: #ffc233;
+    --star-rim: #ffd76e;  /* rim flips lighter than fill: dark ground */
+    --pop: 0 4px 0 rgba(0, 0, 0, 0.55);
+    --wood: #c97b54;
   }
+}
+
+/* Nunito, vendored (vendor/nunito-OFL.txt): a variable font, so one
+   file carries every weight the chrome uses (600 body, 700 cells,
+   900 labels) */
+@font-face {
+  font-family: 'Nunito';
+  src: url('vendor/nunito-latin-var.woff2') format('woff2');
+  font-weight: 200 1000;
+  font-display: swap;
 }
 
 * { box-sizing: border-box; }
@@ -59,12 +76,11 @@
 body {
   margin: 0;
   background-color: var(--bg);
-  /* graph-paper dot grid */
-  background-image: radial-gradient(var(--grid) 1px, transparent 1px);
-  background-size: 22px 22px;
+  /* the arcade's dot grid: chunkier dots, wider rhythm */
+  background-image: radial-gradient(var(--grid) 1.6px, transparent 1.6px);
+  background-size: 26px 26px;
   color: var(--fg);
-  font: 16px/1.5 ui-monospace, "SF Mono", Menlo, "Cascadia Code", Consolas,
-        monospace;
+  font: 600 16px/1.5 'Nunito', ui-rounded, system-ui, sans-serif;
   display: flex;
   justify-content: center;
   min-height: 100vh;
@@ -92,20 +108,23 @@ main {
 
 .card {
   background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 3px;
+  /* arcade chrome: thick ink outline, big radius, hard drop — the
+     whole cabinet vocabulary in one recipe */
+  border: 3px solid var(--fg);
+  border-radius: 16px;
+  box-shadow: var(--pop);
   padding: 1rem;
-  margin-bottom: 0.9rem;
+  margin-bottom: 1.1rem;  /* the hard shadow eats 4px of the gutter */
 }
 
 
 .field label {
   display: block;
   font-size: 0.75rem;
-  font-weight: 700;
+  font-weight: 900;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
+  letter-spacing: 0.12em;
+  color: var(--fg);
   margin-bottom: 0.25rem;
 }
 
@@ -116,8 +135,8 @@ input:not([type]),  /* every input in the app is typeless */
   font: inherit;
   color: inherit;
   background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 3px;
+  border: 2px solid var(--fg);  /* ink outlines: the arcade cell */
+  border-radius: 10px;
   padding: 0.5rem 0.6rem;
   width: 100%;
 }
@@ -150,8 +169,8 @@ input::placeholder { color: var(--muted); opacity: 0.8; }
 .at-wrap {
   display: flex;
   align-items: center;
-  border: 1px solid var(--border);
-  border-radius: 3px;
+  border: 2px solid var(--fg);
+  border-radius: 10px;
   padding-left: 0.6rem;
   position: relative;  /* anchors the + row's SAVE */
 }
@@ -197,7 +216,7 @@ button { font: inherit; cursor: pointer; }
   background: var(--fg);
   color: var(--bg);
   padding: 0.4rem 0.6rem;
-  border-radius: 3px;
+  border-radius: 8px;
   font-size: 0.78rem;
   font-weight: 400;
   line-height: 1.4;
@@ -223,8 +242,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    here" box lives on the source field itself (dreev), so
    the card never wears one — editing shows field and buttons above
    plain prose. Colors go transparent rather than the border going
-   away so nothing shifts by its 1px. */
-.desc { background: transparent; border-color: transparent; }
+   away so nothing shifts by its width; the hard arcade shadow goes
+   with them (a shadow under an invisible card read as a stray
+   line). */
+.desc { background: transparent; border-color: transparent; box-shadow: none; }
 
 /* the field objection recipe, same as the bid editor's (glow and all) */
 .descedit.error {
@@ -289,9 +310,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .descview code {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: 6px;
   padding: 0 0.25rem;
   font-size: 0.8rem;
+  /* code stays code: the one place the ledger's mono face remains */
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
 .descview a { color: var(--accent); }
@@ -312,7 +335,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
      discourse-style SVG pencil (dreev: bigger and clearer) took
      over from the ✎ font glyph */
   font-size: 1.3rem;
-  color: var(--muted);
+  color: var(--fg);  /* arcade: the pencil is chrome, chrome is ink */
 }
 
 /* the vendored pencil rides the font size (the empty-state rule
@@ -417,12 +440,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   font: inherit;
   font-size: 0.75rem;  /* 12px: labels, not body — but never the old
                           9.6px microtype (dreev) */
-  font-weight: 700;
+  font-weight: 900;
   letter-spacing: 0.05em;
   line-height: 1;
-  padding: 0.3rem 0.5rem;
-  border: 1px solid var(--accent);
-  border-radius: 3px;
+  padding: 0.3rem 0.7rem;  /* a pill needs side room */
+  border: 2px solid var(--accent);
+  border-radius: 999px;
   color: var(--accent);
   background: var(--card);
 }
@@ -517,7 +540,7 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
   left: 0.9rem;
   right: 0.9rem;
   z-index: 4;
-  border-radius: 3px;
+  border-radius: 10px;
   padding: 0.55rem 0.8rem;
   font-size: 0.9rem;
   box-shadow: var(--pop);
@@ -603,17 +626,20 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
   font: inherit;
   font-size: 1.05rem;
   font-weight: 900;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.18em;
   color: var(--muted);
   background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 3px;
+  /* waiting = a dashed outline pill (the slot the button will
+     become); armed = the filled candy pill below */
+  border: 3px dashed var(--border);
+  border-radius: 999px;
   cursor: default;
 }
 
 .reveal:not(:disabled) {
   color: var(--accent-ink);
   background: var(--accent);
+  border-style: solid;
   border-color: var(--accent);
   cursor: pointer;
   animation: armglow 1.6s ease-in-out infinite;
@@ -655,15 +681,15 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
 
 /* Column headings over the two pieces. Same font-size as .tile-name so
    the ch-based min-width resolves to the identical column width. */
-/* the account book's head rule: a double line under the column
-   headings, the classic ledger convention (part of the 2026-07-30
-   de-AI retheme — a typographic signature no template ships) */
+/* the scoreboard's head rule: one chunky ink line under the column
+   headings (the ledger's double rule retired with the cream,
+   2026-08-06 — arcade's signature is weight, not filigree) */
 .thead {
   display: flex;
   gap: 0.4rem;
   margin-bottom: 0.4rem;
   padding-bottom: 0.35rem;
-  border-bottom: 3px double var(--border);
+  border-bottom: 3px solid var(--fg);
 }
 
 .thead::before {
@@ -676,11 +702,11 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0 calc(0.65rem + 1px);  /* the cells' padding + border */
+  padding: 0 calc(0.65rem + 2px);  /* the cells' padding + border */
   font-size: 0.85rem;
-  font-weight: 700;
+  font-weight: 900;
   letter-spacing: 0.08em;
-  color: var(--muted);
+  color: var(--fg);
 }
 
 .th-person { flex: none; min-width: calc(15ch + 1.1rem); }  /* = .tile-name */
@@ -970,7 +996,7 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
    rhyme; its old dashed border retired with the twin-boxes look
    (dashed now means exactly one thing: a card awaiting its bid) */
 .addrow .at-wrap {
-  border-radius: 3px;
+  border-radius: 10px;
   padding: 0.3rem 0.65rem;
   width: calc(15ch + 1.1rem);  /* = .tile-name: twin edges, one column */
 }
@@ -984,7 +1010,7 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
   /* a full breath above it (dreev: it sat squished against the
      ledger's last row) */
   margin-top: 1.1rem;
-  padding-left: calc(2.55rem + 1px);
+  padding-left: calc(2.55rem + 2px);
   font-size: 0.8rem;
   color: var(--muted);
 }
@@ -995,8 +1021,9 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
    its ★ wears the same gold as a lit one */
 .legend {
   margin-top: 0.9rem;
-  padding-left: 0.55rem;  /* re-centers the bigger star glyph on
-                             the identity-control axis */
+  padding-left: 0.34rem;  /* re-centers the star glyph on the
+                             identity-control axis (re-measured for
+                             the 1.3rem arcade stars + Nunito) */
   font-size: 0.8rem;  /* whisper by SIZE at full muted ink:
                          alpha-dimmed muted fails contrast */
   color: var(--muted);
@@ -1018,7 +1045,7 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
   display: grid;
   place-items: center;
   width: 1.5rem;
-  height: 2.25rem;  /* the star's height: one gutter rhythm */
+  height: 2.35rem;  /* the star's height: one gutter rhythm */
   font-size: 0.85rem;
   user-select: none;
 }
@@ -1050,13 +1077,19 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
 .tile-name {
   display: flex;
   align-items: center;
-  border: 1px solid var(--border);
-  border-radius: 3px;
+  /* the cell IS its column: without this, the inner input's
+     intrinsic ~200px (its size-attribute default) grows the flex
+     LINE past a squeezed .rename and the cell paints across the bid
+     column (latent since the ledger's coarse layout; surfaced by
+     Nunito's metrics, pinned by the fatfinger 320 qual) */
+  width: 100%;
+  border: 2px solid var(--fg);
+  border-radius: 10px;
   padding: 0.3rem 0.65rem;
   font-weight: 700;
   font-size: 1rem;  /* the reading floor; the COLUMN's width keeps
                        its ch basis on .rename, pinned at 0.85rem */
-  color: var(--muted);
+  color: var(--fg);
 }
 
 /* the bid rides unboxed: its card (or your input) is box enough.
@@ -1112,8 +1145,8 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
   flex: 1;
   min-width: 0;
   padding: 0.3rem 0.65rem;
-  border: 1px solid var(--ok-fg);
-  border-radius: 3px;
+  border: 2px solid var(--ok-fg);
+  border-radius: 10px;
   background-color: var(--ok-bg);
   box-shadow: var(--lift);
 }
@@ -1159,16 +1192,17 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
   display: grid;
   place-items: center;
   width: 1.5rem;
-  height: 2.25rem;  /* the 1rem cells' height (24px line + padding
-                       + border), so star and field stay flush */
+  height: 2.35rem;  /* the 1rem cells' height (24px line + padding
+                       + 2x2px arcade border), so star and field
+                       stay flush */
   border: none;
   background: none;
   padding: 0;
   font: inherit;
-  font-size: 1.15rem;
+  font-size: 1.3rem;
   line-height: 1;
   color: transparent;
-  -webkit-text-stroke: 1.3px color-mix(in srgb, var(--muted) 85%, transparent);
+  -webkit-text-stroke: 1.6px color-mix(in srgb, var(--fg) 85%, transparent);
 }
 
 .tu:hover:not(:disabled) { -webkit-text-stroke-color: var(--accent); }
@@ -1179,8 +1213,11 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
    stroke stays, in gold, so the silhouette is identical */
 .tu.selected, .tu.selected:hover, .tu.selected:disabled {
   color: var(--star);
-  -webkit-text-stroke: 1.3px var(--star);
-  text-shadow: 0 0 3px var(--star), 0 0 9px var(--star);
+  /* the rim is its own token: fill-gold stroke vanished into white
+     cards, so the silhouette gets a darker (dark theme: lighter)
+     gold of its own */
+  -webkit-text-stroke: 1.6px var(--star-rim);
+  text-shadow: 0 0 6px var(--star), 0 0 14px var(--star);
 }
 
 .tu:disabled {
@@ -1204,13 +1241,17 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
   flex-direction: column;
   flex: none;
   font-size: 0.85rem;  /* the cell's size, HERE: the ch-based
-                          min-width must resolve against it */
-  min-width: calc(15ch + 1.1rem);
+                          width must resolve against it */
+  /* width, not min-width: the column is EXACTLY the + row's calc, so
+     the twin-edges law holds under any font's metrics (Nunito's wide
+     @ broke the old min-width version: the cell's intrinsic width
+     beat the min and outgrew its twin) */
+  width: calc(15ch + 1.1rem);
 }
 
 .rename input {
-  width: 11ch;  /* one ch fewer: 16px glyphs in the 0.85-based
-                   column (long names scroll within) */
+  flex: 1;      /* the input takes what the fixed cell leaves (long
+                   names scroll within) — never the other way round */
   min-width: 0;
   padding: 0;
   border: none;
@@ -1283,16 +1324,16 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
    whole "type your bid here" signal. It never pulses — pulsing means
    "waiting on THEM", and the auction waits on you via the caret. */
 .rebid textarea.bid-slot {
-  border: 1px solid var(--border);
-  border-radius: 3px;
+  border: 2px solid var(--border);
+  border-radius: 10px;
   background-color: var(--bg);
   box-shadow: var(--lift);
 }
 
 .rebid textarea.bid-card {
-  border: 1px solid var(--ok-fg);
+  border: 2px solid var(--ok-fg);
   background-color: var(--ok-bg);
-  border-radius: 3px;
+  border-radius: 10px;
 }
 
 
@@ -1466,10 +1507,11 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
   padding: 0;
   font-size: 0.85rem;
   line-height: 1;
-  color: var(--muted);
+  color: var(--fg);
   background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 3px;
+  border: 2px solid var(--fg);
+  border-radius: 10px;
+  box-shadow: var(--pop);
   transition: color 0.2s, border-color 0.2s;
 }
 
@@ -1492,8 +1534,8 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
   padding: 1.5rem;
   color: var(--fg);
   background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 3px;
+  border: 3px solid var(--fg);
+  border-radius: 16px;
   overflow: auto;
 }
 
@@ -1541,11 +1583,11 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
   display: inline-grid;      /* both labels share one cell, so the */
   justify-items: center;     /* button always fits the longer one   */
   padding: 0.5rem 1.1rem;
-  font-weight: 700;
+  font-weight: 900;
   color: var(--accent-ink);
   background: var(--accent);
   border: none;
-  border-radius: 3px;
+  border-radius: 999px;
   transition: background 0.6s;  /* the fade back from Copied green */
 }
 
@@ -1598,7 +1640,7 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
   max-height: 55vh;
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: 8px;
   font-size: 0.85rem;
   line-height: 1.5;
 }
@@ -1665,10 +1707,10 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
 .warbtn {
   font: inherit;
   font-size: 0.8rem;
-  font-weight: 700;
+  font-weight: 900;
   padding: 0.5rem 0.9rem;
-  border-radius: 3px;
-  border: 1px solid var(--border);
+  border-radius: 999px;
+  border: 2px solid var(--border);
   color: var(--muted);
   background: var(--card);
 }
