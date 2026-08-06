@@ -19,7 +19,7 @@ Recap: Anti-sycophancy, anti-personality, anti-info-dumping, QDD, prose persnick
 
 ## Cutting Room Floor
 
-I'm tentatively retiring the following rules that seem unncessary for Fable and Sol. But they're still correct:
+I'm tentatively retiring the following rules that seem unnecessary for Fable and Sol. But they're still correct:
 
 1. Epistemic humility. Before finalizing your response, ask yourself if it's impeccably, exquisitely, technically correct and true.
 1. Empiricism. Never claim a bug is fixed or that the code exhibits some behavior without trying it.
@@ -103,6 +103,33 @@ it before its qual gate — deploying is a build — but the qual command
 itself never runs sync-404: an auditor doesn't rewrite what it
 inspects (serve-quals pins that). So every `/slug` serves the app
 directly: 404 status, but never a 404 page.
+
+## The workflow (which changes need which ship step)
+
+Two independent ship lanes, one per runtime. Green quals
+(`npm run quals`) are assumed before either.
+
+1. **Frontend-only change** (index.html, app.js, style.css,
+   stringles.js, vendor/, manifest.json, 404.html): after editing
+   index.html run `npm run sync-404`. Commit + push to main. Done —
+   Pages publishes in about a minute (browsers may hold cached
+   app.js up to its 10-minute max-age; hard-reload inside that
+   window). An accidental `npm run deploy` here is harmless: the
+   deploy stamp short-circuits it in about a second.
+2. **Server change** (anything in apps-script/): commit + push
+   FIRST — the era guard refuses a deploy from a tree git hasn't
+   blessed — then `npm run deploy`. That one command re-derives
+   404.html, re-runs all quals, clasp-pushes, redeploys the same
+   /exec URL, and live-smokes it.
+3. **Schema change** (a `*_HEAD` constant, mirrored in README's
+   schema section): lane 2, plus — if an EXISTING tab's header
+   changed — the live smoke refuses with delete-these-tabs marching
+   orders; delete the named tabs in the sheet (the script rebuilds
+   them empty) and rerun `node quals/live-quals.js`. Brand-new tabs
+   are free: born on first touch, no ceremony.
+4. **Both sides changed**: push, then deploy. The transient
+   new-page/old-server window between those is the direction
+   ERROR2157's hint names, and it heals when the deploy lands.
 
 ## Deploying Code.gs
 

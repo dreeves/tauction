@@ -41,7 +41,34 @@ function ok(cond, label) {
      transient window that leaves is the one the ERROR2157 hint
      names. eraGuard is the pure verdict over git's own facts
      (porcelain text + ancestry bit), so these scenes need no repo. */
-  const { eraGuard } = require(path.join(REPO, 'deploy.js'));
+  const { eraGuard, serverHash, alreadyShipped } =
+    require(path.join(REPO, 'deploy.js'));
+
+  /* THE DEPLOY STAMP (dreev-ratified 2026-08-06): npm run deploy
+     short-circuits when apps-script/ is byte-identical to the last
+     successfully smoked deploy — the habit-deploy after a
+     frontend-only change was spending the whole quals+clasp+smoke
+     cycle re-shipping unchanged server bytes. A missing or
+     mismatched stamp always deploys (the safe direction): the stamp
+     can only suppress re-shipping bytes it just shipped, never a
+     real change. */
+  const mapA = { 'Code.gs': 'alpha', 'appsscript.json': '{}' };
+  ok(serverHash(mapA)
+       === serverHash({ 'appsscript.json': '{}', 'Code.gs': 'alpha' }),
+     'the server hash is content-addressed: file order cannot move'
+     + ' it');
+  ok(serverHash(mapA)
+       !== serverHash({ 'Code.gs': 'alpha!', 'appsscript.json': '{}' })
+     && serverHash(mapA) !== serverHash({ 'Code.gs': 'alpha' }),
+     'any changed byte — or a whole missing file — moves the hash');
+  ok(alreadyShipped(serverHash(mapA),
+       serverHash(mapA) + '\n2026-08-06T00:00:00.000Z\n'),
+     'a matching stamp short-circuits: those exact bytes are already'
+     + ' live');
+  ok(!alreadyShipped(serverHash(mapA), 'deadbeef\nwhenever\n')
+     && !alreadyShipped(serverHash(mapA), null),
+     'a mismatched or missing stamp deploys — skipping only ever'
+     + ' suppresses a re-ship, never a change');
   ok(eraGuard('', true) === null,
      'a clean, pushed tree deploys: the guard stands aside');
   ok(typeof eraGuard(' M app.js\n', true) === 'string'
