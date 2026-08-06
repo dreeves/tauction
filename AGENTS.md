@@ -178,7 +178,15 @@ forged log), `tbed` = the blurb's last-edit stamp (rides the save's
 patch slab free), `bver` = the blurb's plain-counter version (0 =
 virgin, +1 per committed save; the compare-and-swap token),
 `bids.devid` = the submitting browser (cheating forensics), `rig` =
-a device's self-description ("Mac Chrome en-US in Portland, OR"),
+a device's self-description ("Mac Chrome en-US in Portland, OR or,
+by timezone, Los Angeles"; per molecall, 2026-08-05, the location
+tail is born as the raw IANA timezone, and locate()'s IP lookup
+crams its city in alongside the timezone's — stringles'
+orByTimezone connector — because off wifi the IP city is the
+carrier gateway's, not yours; RIG always rebuilds from RIGBASE
+through clamprig, so the tail replaces, never stacks; the rig
+contract widened 64 -> 160, matching the bid limit, so the crammed
+tail never chops),
 the ONE home every claimed-by tooltip and refusal joins from
 (devices rows are written FIRST, so a devid reference can never
 dangle), and `blug`/`bluid`/`tblug` = the device's editing-presence

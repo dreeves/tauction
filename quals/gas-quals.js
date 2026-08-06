@@ -586,20 +586,22 @@ ok(call({ action: 'claim', slug: 'higgs', userid: 'userid-higgs-nobody',
           devid: 'dev-8' }).error,
    'claiming a seat that does not exist is refused (the client only'
    + ' ever claims rows it can see; ops serialize behind the add)');
-// the rig contract the client must meet: printable ASCII,
-// max 64 chars — the frontend ASCII-fies and clamps its decoration
-// to fit (a São Paulo bidder must never lose a bid to an accent)
+// the rig contract the client must meet: printable ASCII, max 160
+// chars (widened from 64, 2026-08-05, for the crammed
+// city-or-by-timezone tail; 160 matches the bid limit) — the
+// frontend ASCII-fies and clamps its decoration to fit (a São Paulo
+// bidder must never lose a bid to an accent)
 st = call({ action: 'claim', slug: 'higgs', userid: annP,
             devid: 'dev-1', rig: 'Mac in São Paulo' });
 ok(code(st) === 'badRig',
    'a non-ASCII rig is refused: the contract is printable'
    + ' ASCII, and the server never silently fixes inputs');
 ok(call({ action: 'claim', slug: 'higgs', userid: annP,
-          devid: 'dev-1', rig: 'y'.repeat(65) }).error,
-   'a 65-char rig is refused');
+          devid: 'dev-1', rig: 'y'.repeat(161) }).error,
+   'a 161-char rig is refused');
 ok(!call({ action: 'claim', slug: 'higgs', userid: annP,
-           devid: 'dev-1', rig: 'y'.repeat(64) }).error,
-   'a 64-char rig is accepted: the fence sits at exactly 64');
+           devid: 'dev-1', rig: 'y'.repeat(160) }).error,
+   'a 160-char rig is accepted: the fence sits at exactly 160');
 
 // 8c. renames are LABEL EDITS (the userid era's whole point): one cell
 //     changes; bids, claims, stamps, and counts don't even notice

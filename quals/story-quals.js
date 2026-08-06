@@ -1032,7 +1032,9 @@ async function bid(page, bidText) {
         && alpha(getComputedStyle(plain).color) === 0
         && taken.getAttribute('data-tip')
              === claimedByTip('Mac Chrome ' + navigator.language
-                              + ' in Portland, OR');
+                              + ' in Portland, OR' + orByTimezone
+                              + tzcity(Intl.DateTimeFormat()
+                                  .resolvedOptions().timeZone));
     }), "alice's star fills in on bob's screen — claimed by someone"
        + ' else, says the tip, naming the rig — while open seats stay'
        + ' hollow');

@@ -82,12 +82,12 @@ Previously:
 
 3. Remove all the path dependence / historical documenation from the code comments. If a bug or whatever is fixed, we don't need the history.
 
+4. I think github.com/dreeves/molecall is doing something smarter for device blurbs. Let's copy that here.
+
+5. When not on wifi it seems everyone's phone claims to be in San Jose or Sacramento or Seattle (in reality we were all in Portland). Why is that and is there anything in the device data that can tell us not to trust the location?
+
 Next:
 
-1. Database migration
-
-1. When not on wifi it seems everyone's phone claims to be in San Jose or Sacramento or Seattle (in reality we were all in Portland). Why is that and is there anything in the device data that can tell us not to trust the location?
+1. Database columns slightly out of order
 
 1. Can we make this... brighter, cleaner, more video-game-ish? Or what about a 1980s Apple II aesthetic? Can you go down some rabbit holes and come up with something sock-off-knocking?
-
-1. github.com/dreeves/molecall i think is doing something smarter for device blurbs. let's copy that here.

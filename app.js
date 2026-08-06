@@ -191,11 +191,19 @@ const DEVICE = localStorage.getItem('tauction-device');
 
 // This browser's self-description, sent with claims and bids and
 // shown in the who-claimed-this tooltip: "Mac Chrome en-US in
-// Portland, OR". OS and browser from a user-agent lookup table,
-// language from the browser, geography appended asynchronously by
-// locate(). Decoration on the honor system, all of it. (The server
-// can't glean any of this: Apps Script never sees headers.)
-let RIG = (() => {
+// Portland, OR or, by timezone, Los Angeles". OS and browser from a
+// user-agent lookup table, language from the browser. The location
+// tail starts as the raw IANA timezone ("America/Chicago") — free,
+// permissionless, and often city-named — and when the IP lookup
+// lands, locate() crams its city in ALONGSIDE the timezone's
+// (dreev's copy, 2026-08-05): the IP side is precise but off wifi
+// names the carrier's gateway town (everyone "in San Jose"), the
+// timezone side is coarse but truthful, and which to trim is a
+// later call. RIG always rebuilds from this base, so the upgrade
+// replaces the tail, never stacks it. Decoration on the honor
+// system, all of it. (The server can't glean any of this: Apps
+// Script never sees headers.)
+const RIGBASE = (() => {
   const ua = navigator.userAgent;
   const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad'
     : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac'
@@ -206,6 +214,22 @@ let RIG = (() => {
     : /Safari\//.test(ua) ? 'Safari' : '';
   return [os, br, navigator.language].filter(Boolean).join(' ');
 })();
+
+// The server's rig contract is printable ASCII, max 160 chars
+// (matching the bid limit; widened from 64 for the crammed tail):
+// ASCII-fy (São Paulo -> Sao Paulo — NFD splits off the combining
+// marks, the filter drops them) and clamp, so decoration can never
+// cost anyone a claim or a bid
+const clamprig = (s) =>
+  s.normalize('NFD').replace(/[^ -~]/g, '').slice(0, 160);
+
+// The IANA timezone's city half ("America/Los_Angeles" -> "Los
+// Angeles"; zones without a slash, like "UTC", pass through whole)
+const tzcity = (tz) => tz.slice(tz.lastIndexOf('/') + 1)
+  .replace(/_/g, ' ');
+
+let RIG = clamprig(
+  RIGBASE + ' in ' + Intl.DateTimeFormat().resolvedOptions().timeZone);
 
 // Rough geography for the blurb, from a free IP lookup (ipwho.is:
 // real CORS headers even on failures, unlike ipapi.co, whose
@@ -235,12 +259,8 @@ async function locate() {
       localStorage.setItem('tauction-geo', geo);
       localStorage.setItem('tauction-geo-at', new Date().toISOString());
     }
-    // The server's rig contract is printable ASCII, max 64
-    // chars: ASCII-fy the city (São Paulo -> Sao Paulo — NFD splits
-    // off the combining marks, the filter drops them) and clamp, so
-    // decoration can never cost anyone a claim or a bid
-    RIG = (RIG + ' in ' + geo).normalize('NFD')
-      .replace(/[^ -~]/g, '').slice(0, 64);
+    RIG = clamprig(RIGBASE + ' in ' + geo + orByTimezone
+      + tzcity(Intl.DateTimeFormat().resolvedOptions().timeZone));
   } catch (e) { /* the blurb just goes without */ }
 }
 

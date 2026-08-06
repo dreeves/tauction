@@ -122,6 +122,13 @@ const tooLateGoTip = 'Auction closed — too late to submit a revised bid';
 // The blurb's unknown-device fallback (when user-agent comes up empty)
 const mysteryDevice = 'mystery device';
 
+// The rig's crammed location tail (dreev's copy, 2026-08-05):
+// "Portland, OR or, by timezone, Los Angeles" — IP-lookup city on the
+// left (precise, but off wifi it names the carrier's gateway town),
+// timezone city on the right (coarse but truthful). Both crammed in;
+// trimming is a later call.
+const orByTimezone = ' or, by timezone, ';
+
 // The typed-name gate: names you type CREATE auctions; occupied ones
 // point you at the URL — which is a real link, because an installed
 // PWA has no URL bar to fall back on (dreev). Renders via innerHTML:

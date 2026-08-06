@@ -181,12 +181,14 @@ function cleanUserid(s) {
 }
 
 // The claimant's self-reported rig ("a Mac (Chrome)") — decoration for
-// the who-claimed-this tooltip, printable ASCII only. (Apps Script web
-// apps can't read request headers, so the client must tell us; honor
-// system, like everything.)
+// the who-claimed-this tooltip, printable ASCII only, max 160 chars
+// (matching the bid limit; widened from 64 on 2026-08-05 for the
+// crammed city-or-by-timezone tail). (Apps Script web apps can't read
+// request headers, so the client must tell us; honor system, like
+// everything.)
 function cleanRig(s) {
   s = String(s == null ? '' : s);
-  if (!/^[ -~]{0,64}$/.test(s)) throw { code: 'badRig' };
+  if (!/^[ -~]{0,160}$/.test(s)) throw { code: 'badRig' };
   return s;
 }
 

@@ -131,8 +131,17 @@ const STR = new Function(STRINGLES
   + ' slugTooLongBanner, unameTooLongBanner, blurbTooLongBanner,'
   + ' revealCopy, descVerTip, editingBy, editingByMany, someoneOn,'
   + ' simulEditsBanner, refusalCopy,'
-  + ' gameRefusals, plumbingRefusals };')();
+  + ' gameRefusals, plumbingRefusals, orByTimezone };')();
 const STAMP = STR.stampCopy;
+
+// The rig tail's timezone half, derived the same way app.js's tzcity
+// does it — independently, so a regression in the transform can't
+// hide by infecting both sides. jsdom shares the process's Intl, so
+// this is every window's timezone too.
+const TZCITY = (() => {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return tz.slice(tz.lastIndexOf('/') + 1).replace(/_/g, ' ');
+})();
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -4492,9 +4501,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && row(m2.window.document, 'alice').querySelector('.tu')
           .getAttribute('data-tip')
           === STR.claimedByTip(STR.mysteryDevice + ' '
-            + m1.window.navigator.language + ' in Portland, OR'),
+            + m1.window.navigator.language + ' in Portland, OR'
+            + STR.orByTimezone + TZCITY),
      "the taken star FILLS in, and its tip rigs the claimant's rig,"
-     + " language, and rough geography (jsdom's UA parses to dreev's"
+     + " language, and rough geography — IP city crammed alongside"
+     + " the timezone city (jsdom's UA parses to dreev's"
      + ' mystery-device fallback; the geo comes from the fixture)');
 
   /* --- 2r. geography is looked up ONCE A WEEK, not once a load ----------
@@ -4525,7 +4536,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(gas.handle({ action: 'state', slug: 'geocache2' })
        .rigs[pidOf(gas.handle({ action: 'state', slug: 'geocache2' }), 'gina')]
        === STR.mysteryDevice + ' ' + g2.window.navigator.language
-         + ' in Rainbow City, AL',
+         + ' in Rainbow City, AL' + STR.orByTimezone + TZCITY,
      "...and the cached geography actually decorates the blurb (the"
      + ' seeded city shows, proving no silent refetch either)');
   const g3 = await makePage('/geocache3?api=' + API_URL, (win) => {
@@ -4573,6 +4584,35 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'a lapsed backoff probes again on the next load and primes the'
      + ' cache');
 
+  /* --- 2r4. no geography yet? the timezone stands in -------------------
+     Replicata (dreev 2026-08-05, copying molecall's smarter device
+     blurb): the geo service is down (or hasn't answered yet); claim
+     a seat and bid.
+     Expectata: the rig still ends in a location — the IANA timezone
+     ("... in America/Chicago"), free and permissionless and often
+     city-named, which locate() upgrades to city precision when the
+     IP lookup lands.
+     Resultata pre-fix: the rig stopped at the language ("mystery
+     device en-US"), no location at all — and off wifi the IP lookup
+     names the carrier's city anyway (everyone "in San Jose"), so
+     the truthful timezone is the better opening bid. */
+  geoFixture = { success: false };  // the service is down
+  const gTz = await makePage('/geotz?api=' + API_URL);
+  addName(gTz, 'tia');
+  typeBid(gTz, 'a sundial');
+  submitBid(gTz);
+  await settled(gTz);
+  const tzOfPage =
+    gTz.window.Intl.DateTimeFormat().resolvedOptions().timeZone;
+  ok((gas.handle({ action: 'state', slug: 'geotz' })
+       .rigs[pidOf(gas.handle({ action: 'state', slug: 'geotz' }), 'tia')]
+       || '').endsWith(' in ' + tzOfPage),
+     'with no geography to be had, the rig ends in the IANA timezone'
+     + ' — a location tail from birth, no lookup required, got '
+       + gas.handle({ action: 'state', slug: 'geotz' })
+         .rigs[pidOf(gas.handle({ action: 'state', slug: 'geotz' }), 'tia')]);
+  geoFixture = { city: 'Portland', region_code: 'OR' };
+
   /* --- 2r2. accented geography must never cost a bid -------------------
      Replicata: the IP lookup names a city with non-ASCII characters
      (São Paulo, Zürich, Montréal); claim a seat or place a bid.
@@ -4594,7 +4634,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'a São Paulo bidder bids fine: decoration never blocks the act');
   ok((gas.handle({ action: 'state', slug: 'geosp' })
        .rigs[pidOf(gas.handle({ action: 'state', slug: 'geosp' }), 'ze')] || '')
-       .endsWith(' in Sao Paulo, SP'),
+       .endsWith(' in Sao Paulo, SP' + STR.orByTimezone + TZCITY),
      'the blurb arrives ASCII-fied (São -> Sao), got '
        + gas.handle({ action: 'state', slug: 'geosp' })
        .rigs[pidOf(gas.handle({ action: 'state', slug: 'geosp' }), 'ze')]);
@@ -4611,14 +4651,17 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await settled(gZu);
   ok((gas.handle({ action: 'state', slug: 'geozu' })
        .rigs[pidOf(gas.handle({ action: 'state', slug: 'geozu' }), 'ueli')] || '')
-       .endsWith(' in Zurich, ZH'),
+       .endsWith(' in Zurich, ZH' + STR.orByTimezone + TZCITY),
      'a cached pre-fix city sanitizes on use (Zürich -> Zurich), got '
        + gas.handle({ action: 'state', slug: 'geozu' })
        .rigs[pidOf(gas.handle({ action: 'state', slug: 'geozu' }), 'ueli')]);
-  // the length half of the contract: a Welsh-length city clamps to 64
+  // the length half of the contract: a thrice-Welsh-length city
+  // clamps to 160 (the single Welsh wonder fits since the 2026-08-05
+  // widening for the crammed timezone tail)
   const gLl = await makePage('/geoll?api=' + API_URL, (win) => {
     win.localStorage.setItem('tauction-geo',
-      'Llanfairpwllgwyngyllgogerychwyrndrobwllllantysiliogogogoch, GW');
+      'Llanfairpwllgwyngyllgogerychwyrndrobwllllantysiliogogogoch'
+        .repeat(3) + ', GW');
     win.localStorage.setItem('tauction-geo-at', new Date().toISOString());
   });
   addName(gLl, 'wyn');
@@ -4628,8 +4671,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(gas.handle({ action: 'state', slug: 'geoll' }).bidders.length === 1
      && (gas.handle({ action: 'state', slug: 'geoll' })
        .rigs[pidOf(gas.handle({ action: 'state', slug: 'geoll' }), 'wyn')] || '')
-          .length <= 64,
-     "a Welsh-length blurb clamps to the contract's 64 chars and the"
+          .length === 160,
+     "a Welsh-cubed blurb clamps to the contract's 160 chars and the"
      + ' bid still lands, got '
        + gas.handle({ action: 'state', slug: 'geoll' })
        .rigs[pidOf(gas.handle({ action: 'state', slug: 'geoll' }), 'wyn')]);
