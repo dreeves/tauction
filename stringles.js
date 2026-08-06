@@ -14,16 +14,16 @@
 const nameStoneTip = 'Name of this auction; also its URL';
 
 // The star radio's tooltips: yours, locked yours, someone else's
-// (with their self-reported rig), too-late, and claimable
+// (with their self-reported anym), too-late, and claimable
 const disclaimTip = 'Disclaim as you';
 const lockedTip = 'Locked in as you';
 const tooLateTip = 'Too late to claim as you';
 const claimTip = 'Claim as you';
-const claimedByTip = (blurb) => 'Claimed by someone (' + blurb + ')';
+const claimedByTip = (blub) => 'Claimed by someone (' + blub + ')';
 
 // The ×'s tooltips: live and grayed
-const removeTip = (uname) => 'Remove @' + uname;
-const tooLateRemoveTip = (uname) => 'Too late to remove @' + uname;
+const removeTip = (snym) => 'Remove @' + snym;
+const tooLateRemoveTip = (snym) => 'Too late to remove @' + snym;
 
 // The REVEAL button's tooltips — they explain the GRAY, nothing
 // else (armed and revealed wear none — dreev: obvious is obvious);
@@ -76,20 +76,20 @@ const moneyGlyphs = ['¥', '🪙', '⚖️', '£', '€', '$'];
 const consensusStamp = 'JINX';
 
 // The commit buttons (dreev's copy; one constant per button, so a
-// rename of one can never leak onto another): SAVE rides the blurb,
+// rename of one can never leak onto another): SAVE rides the blub,
 // ADD PARTICIPANT rides the + row, SUBMIT rides the bid editor.
 // They appear only while a field is HOT (holding an uncommitted
-// draft). Renames have no button: unames commit on blur.
+// draft). Renames have no button: snyms commit on blur.
 const saveCopy = 'SAVE';
 const addCopy = 'ADD PARTICIPANT';
 const submitCopy = 'SUBMIT';
 
-// The blurb editor's never-mind button (dreev's copy, README blurb
-// spec item 6): the blurb is the one field with an editing MODE, and
+// The blub editor's never-mind button (dreev's copy, README blub
+// spec item 6): the blub is the one field with an editing MODE, and
 // DISCARD is its exit (Escape works too)
 const discardCopy = 'DISCARD';
 
-// The edit-war popup (dreev's copy, README blurb spec items 10-13):
+// The edit-war popup (dreev's copy, README blub spec items 10-13):
 // the title escalates with the take — the count of refusals since
 // this editing session opened
 const warTitle = (take) => take <= 1
@@ -101,15 +101,15 @@ const keepTheirsCopy = 'Keep theirs';
 const overwriteCopy = 'Overwrite with mine';
 
 // The ✎ pencil's tooltip (doubling as its accessible name): the
-// blurb's version counter — 0 = never described; every committed
+// blub's version counter — 0 = never described; every committed
 // SAVE or Overwrite increments it. Copy is dreev's.
 const descVerTip = (v) => 'Auction description (v' + v + ')';
 
 // ...and its editing-presence suffix (dreev's copy): appended while
-// someone ELSE's editor is open on this blurb — their uname if
-// seated, else someoneOn(their device blurb, mysteryDevice-backed)
+// someone ELSE's editor is open on this blub — their snym if
+// seated, else someoneOn(their device blub, mysteryDevice-backed)
 const editingBy = (who) => '— currently being edited by ' + who;
-const someoneOn = (blurb) => 'someone (' + blurb + ')';
+const someoneOn = (blub) => 'someone (' + blub + ')';
 // The following might be dumb if we don't have names for the people editing:
 const editingByMany = (whos) =>
   '— currently being edited by {' + whos.join(', ') + '}';
@@ -119,10 +119,10 @@ const startCopy = (slug) => slug === '' ? 'Create the auction'
 
 const tooLateGoTip = 'Auction closed — too late to submit a revised bid';
 
-// The blurb's unknown-device fallback (when user-agent comes up empty)
+// The blub's unknown-device fallback (when user-agent comes up empty)
 const mysteryDevice = 'mystery device';
 
-// The rig's crammed location tail (dreev's copy, 2026-08-05):
+// The anym's crammed location tail (dreev's copy, 2026-08-05):
 // "Portland, OR or, by timezone, Los Angeles" — IP-lookup city on the
 // left (precise, but off wifi it names the carrier's gateway town),
 // timezone city on the right (coarse but truthful). Both crammed in;
@@ -149,8 +149,8 @@ const nameTakenBanner = 'That name is taken';
 const bidTooLongBanner = 'bid too long (160 characters max)';
 
 const slugTooLongBanner = 'Auction name too long (max 20 characters)';
-const unameTooLongBanner = 'Name too long (max 20 characters)';
-const blurbTooLongBanner = 'Description too long (max 2000 characters)';
+const snymTooLongBanner = 'Name too long (max 20 characters)';
+const blubTooLongBanner = 'Description too long (max 2000 characters)';
 
 // Someone saved the description while you were editing yours (also
 // how the server's compare-and-swap refusal renders — the refusalCopy
@@ -183,53 +183,39 @@ const copyFailBanner = (msg) => 'Could not copy: ' + msg;
 // beating your revision), plus the length limits' server backstop.
 const gameRefusals = {
   slugTooLong: () => slugTooLongBanner,
-  unameTooLong: () => unameTooLongBanner,
-  blurbTooLong: () => blurbTooLongBanner,
+  snymTooLong: () => snymTooLongBanner,
+  blubTooLong: () => blubTooLongBanner,
   bidTooLong: () => bidTooLongBanner,
   nameTaken: () => nameTakenBanner,
   simulEdits: () => simulEditsBanner,
-  gavelFell: () =>
-    'Womp Womp! The auction closed before your bid got through',
-  // the bid-hijack refusal (dreev's copy): names the holder's rig
-  // and the seat's label. The mystery-device fallback is applied
-  // here, same as the claimed-by tooltip's (the server sends the
-  // holder's rig raw, '' included)
-  bidSeatHeld: (e) => 'Someone else (' + (e.rig || mysteryDevice)
-    + ') already placed a bid as ' + e.uname + '!',
+  gavelFell: () => 'Womp Womp! The auction closed before your bid got through',
+  bidSeatHeld: (e) => 'Someone else (' + (e.anym || mysteryDevice)
+    + ') already placed a bid as ' + e.snym + '!',
 };
 
 // These ERRORXXXX errors are things we don't expect an end user to ever be able
-// to see.
-// (Reaching one takes a hand-rolled request, a broken client, or a
-// version-skewed one — this family is kin to the client's own e215x
-// plumbing constants above.)
+// to see. But various race conditions could trigger them maybe. Or in theory
+// someone tampering with their client? Or bugs of our own, of course.
 const plumbingRefusals = {
-  // transport refusals: a malformed POST body, an action this server
-  // doesn't know (old server vs newer client)
   badJson: () => 'ERROR1509: request body not valid JSON',
   unknownAction: (e) => 'ERROR1510: unknown action: ' + e.action,
   badSlug: () => 'ERROR1511: auction name must be alphanumeric',
-  badUname: () =>
-    'ERROR1512: username must be alphanumeric and start with a letter',
-  badDevid: () => 'ERROR1513: bad devid',
-  badUserid: () => 'ERROR1514: bad userid',
-  badRig: () => 'ERROR1515: bad rig',
-  // the reveal button pressed before the roster is complete (the
-  // client grays it until ready)
+  badSnym: () =>
+            'ERROR1512: seat name must be alphanumeric and start with a letter',
+  badDvid: () => 'ERROR1513: bad devid',
+  badUsid: () => 'ERROR1514: bad userid',
+  badAnym: () => 'ERROR1515: bad signalment',
   notReady: () => 'ERROR1516: not ready to reveal: everyone on the roster'
     + ' (at least two people) must bid first',
   rosterClosed: () => 'ERROR1517: Auction complete — no new participants',
-  // the frozen-record refusal (dreev's copy): renames, claims, and
-  // releases all bounce off it once the auction closes
   auctionClosed: () => 'ERROR1518: Auction closed, no editing',
-  noSuchOne: (e) => 'ERROR1519: No such participant: ' + e.userid,
-  claimNeedsDevice: () => 'ERROR1520: claim requires a devid',
-  releaseNeedsDevice: () => 'ERROR1521: release requires a devid',
-  editingNeedsDevice: () => 'ERROR1525: editing requires a devid',
+  noSuchOne: (e) => 'ERROR1519: No such participant: ' + e.usid,
+  claimNeedsDevice: () => 'ERROR1520: claim requires a device ID',
+  releaseNeedsDevice: () => 'ERROR1521: release requires a device ID',
+  editingNeedsDevice: () => 'ERROR1525: editing requires a device ID',
   notYourSeat: () => 'ERROR1522: Disclaiming yourself as a participant failed',
   emptyBid: () => 'ERROR1523: Bid is empty',
-  // removing someone who has already bid is refused (reachable only
-  // by losing a race: the UI grays that × up front)
+  // UI prevents removing someone who already bid, but race conditions?
   removeBidder: () => 'ERROR1524: Too late to remove, bid sealed',
 };
 

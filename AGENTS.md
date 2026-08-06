@@ -145,21 +145,27 @@ Chrome installed) with layout assertions, dropping screenshots in
 
 ## Data model
 
-Vocabulary (renamed 2026-08-04 per dreev's schema rework — the pid
-spec below keeps its historical names): a **slug** is an auction's
-name (also its URL path; was aname); a **userid** (was pid) is a
-person id (client-minted uuid) — the identity that seats, bids, and
+Vocabulary (dreev's 4-letter schema, 2026-08-05, README = the spec;
+the historical specs below keep their era's names, and a
+frontend qual — the vocabulary purge — refuses any runtime source
+still speaking the old ones): a **slug** is an auction's name (also
+its URL path; was aname); a **usid** (was userid, was pid) is a
+seat id (client-minted uuid) — the identity that seats, bids, and
 claims key on, PER-AUCTION (dreev's ruling: renames don't span
-auctions, so there is no global users table); a **uname** is a
-display label hanging off a seat; a **devid** (was deviceID) is a
-browser's anonymous uuid; a **rig** is a device's self-description.
+auctions, so there is no global users table); a **snym** (was
+uname) is a display label hanging off a seat; a **dvid** (was
+devid, was deviceID) is a browser's anonymous uuid; an **anym**
+(was rig) is a device's anonymous signalment — its self-description,
+the descriptor that stands in where a name would go; **blub** (was
+blurb; non-rhotic) is the auction description; **xbid** is the
+exact string submitted as a bid.
 
 | tab | columns |
 |---|---|
-| `auctions` | slug, tini, tfin, blurb, bver, tbed |
-| `seats` | slug, userid, uname, devid, tini, tmod |
-| `bids` | slug, userid, bid, tbid, devid |
-| `devices` | devid, rig, tini, tmod, blug, bluid, tblug |
+| `auctions` | slug, tini, tfin, blub, bver, tbed |
+| `seats` | slug, usid, snym, dvid, tini, tmod |
+| `bids` | slug, usid, xbid, tbid, dvid |
+| `devices` | dvid, anym, tini, tmod, blug, blid, blip |
 
 The bids tab is an append-only LOG (2026-07-17): every submission is
 its own row, nothing is overwritten, and a person's standing bid is
@@ -174,24 +180,24 @@ reveal moment, ISO; minted >= the last tbid so the <= cutoff can't
 drop a bid), `tbid` = a bid submission's moment (minted strictly
 increasing per auction — max(now, prev+1ms) — so ties are unmintable,
 order is clock-recoverable, and a duplicate refuses at read as a
-forged log), `tbed` = the blurb's last-edit stamp (rides the save's
-patch slab free), `bver` = the blurb's plain-counter version (0 =
+forged log), `tbed` = the blub's last-edit stamp (rides the save's
+patch slab free), `bver` = the blub's plain-counter version (0 =
 virgin, +1 per committed save; the compare-and-swap token),
-`bids.devid` = the submitting browser (cheating forensics), `rig` =
-a device's self-description ("Mac Chrome en-US in Portland, OR or,
-by timezone, Los Angeles"; per molecall, 2026-08-05, the location
-tail is born as the raw IANA timezone, and locate()'s IP lookup
-crams its city in alongside the timezone's — stringles'
+`bids.dvid` = the submitting browser (cheating forensics), `anym` =
+a device's anonymous signalment ("Mac Chrome en-US in Portland, OR
+or, by timezone, Los Angeles"; per molecall, 2026-08-05, the
+location tail is born as the raw IANA timezone, and locate()'s IP
+lookup crams its city in alongside the timezone's — stringles'
 orByTimezone connector — because off wifi the IP city is the
-carrier gateway's, not yours; RIG always rebuilds from RIGBASE
-through clamprig, so the tail replaces, never stacks; the rig
+carrier gateway's, not yours; ANYM always rebuilds from ANYMBASE
+through clampanym, so the tail replaces, never stacks; the anym
 contract widened 64 -> 160, matching the bid limit, so the crammed
 tail never chops),
 the ONE home every claimed-by tooltip and refusal joins from
-(devices rows are written FIRST, so a devid reference can never
-dangle), and `blug`/`bluid`/`tblug` = the device's editing-presence
-slot: which auction's blurb it has open, as whom, latest heartbeat
-(see Behavior).
+(devices rows are written FIRST, so a dvid reference can never
+dangle), and `blug`/`blid`/`blip` = the device's editing-presence
+slot: which auction's blub it has open, as whom, latest heartbeat
+(blip: the monitor's beat — see Behavior).
 
 A seats row IS a roster seat (insertion order = display order). Roster
 edits are row-level `add`/`remove` actions — commutative, so concurrent
@@ -204,29 +210,29 @@ positional reads tolerate.
 - Commits follow the field-class taxonomy (dreev 2026-07-28,
   amending the 07-27 blur-commits-nothing law): (a) the auction name
   commits by its Start button or Enter — chosen once, irreversible;
-  (b) the blurb commits by SAVE or Cmd/Ctrl+Enter, with conflicts
+  (b) the blub commits by SAVE or Cmd/Ctrl+Enter, with conflicts
   refused at save time by the server's compare-and-swap (the wikis'
   mid-air-collision convention; no mid-composition warnings, no
-  cross-session blurb drafts); (c) unames commit ON BLUR — cheap
+  cross-session blub drafts); (c) snyms commit ON BLUR — cheap
   clobber-tolerant label edits, no SAVE button; the + row still
   commits explicitly (a stray blur must not mint a seat); (d) bids
   commit by SUBMIT or Enter only. Escape reverts and leaves,
   everywhere. Buttons appear while a field is hot (= dirty, 07-27
   later). Every limit OBJECTS, never chops: 20 chars for both name
-  kinds, 160 for bids, 2000 for the blurb — live red ring, local
+  kinds, 160 for bids, 2000 for the blub — live red ring, local
   refusal in the same stringles words the server's refusal code
   renders to.
 - Editing presence (dreev 2026-07-31; per-device rows 08-02): an
-  open blurb editor heartbeats (the `editing` action) every 10s —
+  open blub editor heartbeats (the `editing` action) every 10s —
   hidden tabs included (2026-08-04, deleting the hidden-skip: it
-  starved tblug the moment anyone alt-tabbed away, and a hidden
+  starved the blip the moment anyone alt-tabbed away, and a hidden
   dirty draft is exactly the rival to warn about) — into its own
   devices row,
   fresh for 25s (server clock both ends). Every state carries
   `editors`, the whole desk crowd, and other pages' pencil
   (discourse.org's, vendored FA6 SVG) scribbles: accent ink,
   write-wiggle, tooltip suffixed with dreev's
-  currently-being-edited-by copy (seat uname, else someone-(rig));
+  currently-being-edited-by copy (seat snym, else someone-(anym));
   two-plus editors use the plural copy (Latin TODO awaiting dreev's
   words). SAVE and DISCARD send the stop, which clears only the
   device's own slot (a foreign clear is structurally impossible);
@@ -247,7 +253,7 @@ positional reads tolerate.
   bid-bearing seat, a bid rebuilds its seat if a raced removal took
   it, so no row is ever crossed out; × is offered only on bidless rows.
 - Reveal is a one-way latch: nothing can ever reseal revealed bids.
-- The gavel freezes everything but the blurb (2026-07-16, reversing
+- The gavel freezes everything but the blub (2026-07-16, reversing
   everything-stays-editable): after reveal, bid/add/remove/rename/
   claim/release all refuse loudly, and bid log rows stamped after
   `tfin` don't count. Honor system throughout.

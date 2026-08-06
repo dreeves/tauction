@@ -19,16 +19,16 @@ const gas = require('./fake-gas')();
 /* ------------------------- the fetch bridge --------------------------- */
 
 const API_URL = 'https://script.example/exec';
-// userid-era payloads carry seats [{userid, uname}]; names() flattens the
+// usid-era payloads carry seats [{usid, snym}]; names() flattens the
 // labels for roster-shaped asserts (mirrors gas-quals)
-const names = (st) => st.seats.map((s) => s.uname).join(',');
-// a seat's userid, looked up by its label (UI-minted pids are random)
-const pidOf = (st, uname) =>
-  (st.seats.find((s) => s.uname === uname) || {}).userid;
-const bidderNamed = (st, uname) =>
-  st.bidders.find((b) => b.userid === pidOf(st, uname));
-const bidNamed = (st, uname) =>
-  (st.bids || []).find((b) => b.userid === pidOf(st, uname));
+const names = (st) => st.seats.map((s) => s.snym).join(',');
+// a seat's usid, looked up by its label (UI-minted pids are random)
+const usidOf = (st, snym) =>
+  (st.seats.find((s) => s.snym === snym) || {}).usid;
+const bidderNamed = (st, snym) =>
+  st.bidders.find((b) => b.usid === usidOf(st, snym));
+const bidNamed = (st, snym) =>
+  (st.bids || []).find((b) => b.usid === usidOf(st, snym));
 let apiCalls = [];
 let geoHits = 0;  // ipwho.is fixture servings (the cache quals count)
 let geoFixture = { city: 'Portland', region_code: 'OR' };  // what it serves
@@ -128,13 +128,13 @@ const STR = new Function(STRINGLES
   + ' waitingGlyph, yourMoveGlyph, readyGlyph, revealedGlyph,'
   + ' tabTitle, saveCopy, addCopy, submitCopy, tooLateGoTip, startCopy,'
   + ' discardCopy, warTitle, keepTheirsCopy, overwriteCopy,'
-  + ' slugTooLongBanner, unameTooLongBanner, blurbTooLongBanner,'
+  + ' slugTooLongBanner, snymTooLongBanner, blubTooLongBanner,'
   + ' revealCopy, descVerTip, editingBy, editingByMany, someoneOn,'
   + ' simulEditsBanner, refusalCopy,'
   + ' gameRefusals, plumbingRefusals, orByTimezone };')();
 const STAMP = STR.stampCopy;
 
-// The rig tail's timezone half, derived the same way app.js's tzcity
+// The anym tail's timezone half, derived the same way app.js's tzcity
 // does it — independently, so a regression in the transform can't
 // hide by infecting both sides. jsdom shares the process's Intl, so
 // this is every window's timezone too.
@@ -245,19 +245,19 @@ function submitName(dom) {
 }
 
 // Add a person via the ledger's + row
-function addName(dom, uname) {
-  type(dom, 'roster-input', uname);
+function addName(dom, snym) {
+  type(dom, 'roster-input', snym);
   dom.window.document.getElementById('roster-input').dispatchEvent(
     new dom.window.KeyboardEvent('keydown',
       { key: 'Enter', bubbles: true, cancelable: true }));
 }
 
-const row = (doc, uname) =>
-  doc.querySelector('#status .tile[data-uname="' + uname + '"]');
+const row = (doc, snym) =>
+  doc.querySelector('#status .tile[data-snym="' + snym + '"]');
 
 // Click a row's (tu?)/(tu) button: claim it as yourself, or release it
-function claimRow(dom, uname) {
-  row(dom.window.document, uname).querySelector('.tu').click();
+function claimRow(dom, snym) {
+  row(dom.window.document, snym).querySelector('.tu').click();
 }
 
 // Type into your row's in-place editor (jsdom does no implicit form
@@ -274,7 +274,7 @@ function submitBid(dom) {
 // A submitted bid has settled once the editor sheds its busy state
 // (set synchronously at submit, cleared after the response) AND the
 // box is no longer stale. The stale check matters when a claim op was
-// queued just before the bid: the bid's own settle skips painting
+// queued just before the xbid: the bid's own settle skips painting
 // (writes still pending) and the paint arrives via the recovery
 // refresh, after busy has already cleared.
 const settled = (dom) => until(() => {
@@ -295,8 +295,8 @@ const drained = () => writesInFlight === 0;
 const myEditor = (doc) => doc.querySelector('#tiles .tile.mine .rebid textarea');
 
 // Rename in place: every name IS a live text field; set it and submit
-function renameTo(dom, uname, to) {
-  const r = row(dom.window.document, uname);
+function renameTo(dom, snym, to) {
+  const r = row(dom.window.document, snym);
   r.querySelector('.rename input').value = to;
   r.querySelector('.rename').dispatchEvent(
     new dom.window.Event('submit', { bubbles: true, cancelable: true }));
@@ -304,8 +304,8 @@ function renameTo(dom, uname, to) {
 
 // Hover a row's bid cell and read the tooltip it computes on entry
 // (lazily, so the "3m ago" ages are hover-fresh, not render-time relics)
-function hoverBid(dom, uname) {
-  const cell = row(dom.window.document, uname).querySelector('.tile-bid');
+function hoverBid(dom, snym) {
+  const cell = row(dom.window.document, snym).querySelector('.tile-bid');
   // mouseover (matching the app's attr-refresh listener), non-bubbling:
   // the attribute is the assertable truth in jsdom
   cell.dispatchEvent(new dom.window.Event('mouseover'));
@@ -332,6 +332,32 @@ function ok(cond, label) {
   passed++;
 }
 
+// The 2026-08-05 vocabulary purge (dreev's 4-letter schema, README =
+// spec): the old names — userid/uname/devid/rig/blurb/bluid/tblug
+// and the elder pid — must not survive in any runtime source,
+// comments included. JS string literals are exempt (copy is dreev's
+// to reword on his own schedule; TODOs in stringles mark the
+// survivors), so .js/.gs sources are scanned with quotes stripped —
+// copy edits can never break the suite. index.html and style.css
+// scan raw: their quoted text is ids and classes, which ARE
+// vocabulary.
+const stripStrings = (src) => src
+  .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+  .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
+  .replace(/`(?:[^`\\]|\\.)*`/g, '``');
+const DEAD_VOCAB =
+  /\b(userid|uname|devid|rig|rigs|blurb|bluid|tblug|pid|pids)\b/gi;
+for (const [name, src] of [
+    ['app.js', stripStrings(APP_JS)],
+    ['stringles.js', stripStrings(STRINGLES)],
+    ['Code.gs', stripStrings(CODE_GS)],
+    ['index.html', INDEX_HTML],
+    ['style.css', STYLE_CSS]]) {
+  const ghosts = src.match(DEAD_VOCAB) || [];
+  ok(ghosts.length === 0, 'no pre-rename vocabulary haunts ' + name
+     + ' — found: ' + [...new Set(ghosts)].join(', '));
+}
+
 // The z-LADDER is a registry, not folklore (dreev: "still sounds
 // whack-a-moley" — the tips-behind-banner bug was a latent ordering
 // no one had declared). Every z-index in style.css must appear here,
@@ -355,7 +381,7 @@ for (const m of STYLE_CSS.matchAll(/z-index:\s*(\d+)/g)) {
   zFound[sel] = parseInt(m[1], 10);
 }
 
-// The 0.6-RELIC detector (dreev's grayed bid: a forgotten
+// The 0.6-RELIC detector (dreev's grayed xbid: a forgotten
 // `.rebid input:disabled { opacity: 0.6 }` later in the file
 // silently beat the intended rule). Its mechanical signature: the
 // same selector assigning the same property two different values.
@@ -555,7 +581,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(INDEX_HTML.includes('rel="manifest"'),
      'index.html links the manifest');
   /* --- link previews, the static tier (dreev chose (a): crawlers
-     don't run JS, so per-auction rigs/counts are unreachable from
+     don't run JS, so per-auction anyms/counts are unreachable from
      static Pages — same card for every link) --------------------- */
   const og = (p) => (INDEX_HTML.match(
     new RegExp('property="og:' + p + '" content="([^"]*)"')) || [])[1];
@@ -585,15 +611,15 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      blocks reveal and the tip names her. Resultata pre-fix: reveal
      stayed ready because its computation read the old server roster. */
   gas.handle({ action: 'add', slug: 'localready',
-    uname: 'ann', userid: 'userid-localready-ann' });
+    snym: 'ann', usid: 'usid-localready-ann' });
   gas.handle({ action: 'add', slug: 'localready',
-    uname: 'bob', userid: 'userid-localready-bob' });
+    snym: 'bob', usid: 'usid-localready-bob' });
   gas.handle({ action: 'bid', slug: 'localready',
-    uname: 'ann', userid: 'userid-localready-ann',
-    bid: 'ann bid', devid: 'ann-device', rig: 'Ann rig' });
+    snym: 'ann', usid: 'usid-localready-ann',
+    xbid: 'ann bid', dvid: 'ann-device', anym: 'Ann anym' });
   gas.handle({ action: 'bid', slug: 'localready',
-    uname: 'bob', userid: 'userid-localready-bob',
-    bid: 'bob bid', devid: 'bob-device', rig: 'Bob rig' });
+    snym: 'bob', usid: 'usid-localready-bob',
+    xbid: 'bob bid', dvid: 'bob-device', anym: 'Bob anym' });
   const dLocalReady = await makePage('/localready?api=' + API_URL);
   const localSeal = dLocalReady.window.document.getElementById('reveal');
   ok(!localSeal.disabled && localSeal.classList.contains('ready'),
@@ -615,9 +641,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      Resultata pre-fix: the padded value stayed visibly dirty
      forever. */
   gas.handle({ action: 'add', slug: 'padbid',
-    uname: 'ann', userid: 'userid-padbid-ann' });
+    snym: 'ann', usid: 'usid-padbid-ann' });
   const dPad = await makePage('/padbid?api=' + API_URL, (w) => {
-    w.localStorage.setItem('tauction-pids', '{"padbid":"userid-padbid-ann"}');
+    w.localStorage.setItem('tauction-usids', '{"padbid":"usid-padbid-ann"}');
   });
   typeBid(dPad, '  same bid  ');
   myEditor(dPad.window.document).dispatchEvent(
@@ -639,11 +665,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      FOLLOW YOU — the draft is the browser's, not the seat's — into
      bob's editor; Escape discards them there; and a SUBMIT carried
      this way commits as BOB. Resultata pre-fix: the draft sat parked
-     invisibly under alice's userid. */
+     invisibly under alice's usid. */
   gas.handle({ action: 'add', slug: 'follow',
-    uname: 'alice', userid: 'userid-follow-alice' });
+    snym: 'alice', usid: 'usid-follow-alice' });
   gas.handle({ action: 'add', slug: 'follow',
-    uname: 'bob', userid: 'userid-follow-bob' });
+    snym: 'bob', usid: 'usid-follow-bob' });
   const dFollow = await makePage('/follow?api=' + API_URL);
   claimRow(dFollow, 'alice');
   await until(() => myEditor(dFollow.window.document) !== null
@@ -676,25 +702,25 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   submitBid(dFollow);
   await settled(dFollow);
   ok(gas.handle({ action: 'state', slug: 'follow' }).bidders
-       .some((b) => b.userid === 'userid-follow-bob')
+       .some((b) => b.usid === 'usid-follow-bob')
      && !gas.handle({ action: 'state', slug: 'follow' }).bidders
-       .some((b) => b.userid === 'userid-follow-alice')
+       .some((b) => b.usid === 'usid-follow-alice')
      && !('bid' in JSON.parse(dFollow.window.localStorage
           .getItem('tauction-drafts:follow') || '{}')),
      'SUBMIT commits as BOB, alice untouched, the draft slot pruned');
 
   /* ...the carried draft can land on a seat that already HOLDS a
-     committed bid: it rides above the baseline as an ordinary dirty
+     committed xbid: it rides above the baseline as an ordinary dirty
      draft, and Escape reverts to that seat's own committed words */
   gas.handle({ action: 'add', slug: 'followbid',
-    uname: 'ann', userid: 'userid-followbid-ann' });
+    snym: 'ann', usid: 'usid-followbid-ann' });
   gas.handle({ action: 'add', slug: 'followbid',
-    uname: 'bea', userid: 'userid-followbid-bea' });
+    snym: 'bea', usid: 'usid-followbid-bea' });
   gas.handle({ action: 'bid', slug: 'followbid',
-    userid: 'userid-followbid-bea', uname: 'bea', bid: 'beas standing bid',
-    devid: 'bea-rig', rig: 'bea rig' });
+    usid: 'usid-followbid-bea', snym: 'bea', xbid: 'beas standing bid',
+    dvid: 'bea-anym', anym: 'bea anym' });
   gas.handle({ action: 'release', slug: 'followbid',
-    userid: 'userid-followbid-bea', devid: 'bea-rig' });  // seat open
+    usid: 'usid-followbid-bea', dvid: 'bea-anym' });  // seat open
   const dFB = await makePage('/followbid?api=' + API_URL);
   claimRow(dFB, 'ann');
   await until(() => myEditor(dFB.window.document) !== null && drained());
@@ -722,26 +748,26 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' baseline (no browser can unseal what it never knew) and'
      + ' prunes the slot');
 
-  /* ...a LEGACY per-userid slot (the pre-2026-07-28 shape) is inert:
+  /* ...a LEGACY per-usid slot (the pre-2026-07-28 shape) is inert:
      never restored, never crashing, per the retired-slot precedent */
   gas.handle({ action: 'add', slug: 'legacyslot',
-    uname: 'ann', userid: 'userid-legacyslot-ann' });
+    snym: 'ann', usid: 'usid-legacyslot-ann' });
   const dLeg = await makePage('/legacyslot?api=' + API_URL, (w) => {
-    w.localStorage.setItem('tauction-pids',
-      '{"legacyslot":"userid-legacyslot-ann"}');
+    w.localStorage.setItem('tauction-usids',
+      '{"legacyslot":"usid-legacyslot-ann"}');
     w.localStorage.setItem('tauction-drafts:legacyslot',
-      '{"bid:userid-legacyslot-ann":"ghost of the old shape"}');
+      '{"bid:usid-legacyslot-ann":"ghost of the old shape"}');
   });
   await sleep(80);
   ok(myEditor(dLeg.window.document).value === ''
      && !dLeg.window.document.getElementById('banner').textContent
           .includes('ghost'),
-     'a legacy per-userid slot stays inert: no restore, no crash');
+     'a legacy per-usid slot stays inert: no restore, no crash');
 
   /* ...and the draft survives ×ing your own row and re-adding
      yourself: gone with the editor, home at its rebirth */
   gas.handle({ action: 'add', slug: 'xdraft',
-    uname: 'ann', userid: 'userid-xdraft-ann' });
+    snym: 'ann', usid: 'usid-xdraft-ann' });
   const dX = await makePage('/xdraft?api=' + API_URL);
   addName(dX, 'me');  // self-claims (2j)
   await until(() => myEditor(dX.window.document) !== null && drained());
@@ -762,12 +788,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      ran only at the arrival edge, so the late-born editor came up
      empty — and the clean-sweep then DELETED the stored draft. */
   gas.handle({ action: 'add', slug: 'latedraft',
-    uname: 'ann', userid: 'userid-latedraft-ann' });
+    snym: 'ann', usid: 'usid-latedraft-ann' });
   gas.handle({ action: 'add', slug: 'latedraft',
-    uname: 'bo', userid: 'userid-latedraft-bo' });
+    snym: 'bo', usid: 'usid-latedraft-bo' });
   const dLate = await makePage('/latedraft?api=' + API_URL, (w) => {
-    w.localStorage.setItem('tauction-pids',
-      '{"latedraft":"userid-latedraft-ann"}');
+    w.localStorage.setItem('tauction-usids',
+      '{"latedraft":"usid-latedraft-ann"}');
   });
   const lateDoc = dLate.window.document;
   const lateEd = myEditor(lateDoc);
@@ -803,9 +829,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      eat typed work. Resultata pre-fix: the error survived, the
      words did not (the recovery only ran for server refusals). */
   gas.handle({ action: 'describe', slug: 'wifieat', base: 0,
-    blurb: 'the record' });
+    blub: 'the record' });
   gas.handle({ action: 'add', slug: 'wifieat',
-    uname: 'ann', userid: 'userid-wifieat-ann' });
+    snym: 'ann', usid: 'usid-wifieat-ann' });
   const dEat = await makePage('/wifieat?api=' + API_URL);
   const eatDoc = dEat.window.document;
   eatDoc.getElementById('desctoggle').click();
@@ -843,9 +869,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      must compare the next state with the submitted goal, settling it
      clean when it landed and keeping it dirty only when it did not. */
   gas.handle({ action: 'describe', slug: 'maybeate', base: 0,
-    blurb: 'the record' });
+    blub: 'the record' });
   gas.handle({ action: 'add', slug: 'maybeate',
-    uname: 'ann', userid: 'userid-maybeate-ann' });
+    snym: 'ann', usid: 'usid-maybeate-ann' });
   const dMaybe = await makePage('/maybeate?api=' + API_URL);
   const maybeDoc = dMaybe.window.document;
   maybeDoc.getElementById('desctoggle').click();
@@ -856,7 +882,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   dropWriteResponse = 'describe';
   maybeDoc.getElementById('descgo').click();
   await until(() => gas.handle({ action: 'state', slug: 'maybeate' })
-    .blurb === 'the committed amendment');
+    .blub === 'the committed amendment');
   await sleep(100);
   const maybeState = gas.handle({ action: 'state', slug: 'maybeate' });
   ok(maybeDesc.value === 'the committed amendment'
@@ -874,8 +900,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     { bubbles: true }));
   dropWriteResponse = 'rename';
   maybeName.form.requestSubmit();
-  await until(() => pidOf(gas.handle({ action: 'state',
-    slug: 'maybeate' }), 'annette') === 'userid-maybeate-ann');
+  await until(() => usidOf(gas.handle({ action: 'state',
+    slug: 'maybeate' }), 'annette') === 'usid-maybeate-ann');
   await sleep(100);
   ok(maybeName.value === 'annette'
      && maybeName.defaultValue === 'annette'
@@ -884,12 +910,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'a rename whose response alone was lost reconciles as committed');
 
   gas.handle({ action: 'add', slug: 'maybeate',
-    uname: 'bob', userid: 'userid-maybeate-bob-remote' });
+    snym: 'bob', usid: 'usid-maybeate-bob-remote' });
   type(dMaybe, 'roster-input', 'bob');
   dropWriteResponse = 'add';
   submitName(dMaybe);
-  await until(() => pidOf(gas.handle({ action: 'state',
-    slug: 'maybeate' }), 'bob') === 'userid-maybeate-bob-remote');
+  await until(() => usidOf(gas.handle({ action: 'state',
+    slug: 'maybeate' }), 'bob') === 'usid-maybeate-bob-remote');
   await sleep(100);
   const maybeAdd = maybeDoc.getElementById('roster-input');
   ok(maybeAdd.value === ''
@@ -907,17 +933,17 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      late refusal restored 'carl' over the committed 'gamma' — DOM
      said gamma, eyes saw carl. */
   gas.handle({ action: 'add', slug: 'staleref',
-    uname: 'ann', userid: 'userid-staleref-ann' });
+    snym: 'ann', usid: 'usid-staleref-ann' });
   gas.handle({ action: 'add', slug: 'staleref',
-    uname: 'bob', userid: 'userid-staleref-bob' });
+    snym: 'bob', usid: 'usid-staleref-bob' });
   const dRef = await makePage('/staleref?api=' + API_URL);
   gas.handle({ action: 'add', slug: 'staleref',
-    uname: 'carl', userid: 'userid-staleref-carl' });  // remote; no poll yet
+    snym: 'carl', usid: 'usid-staleref-carl' });  // remote; no poll yet
   mockDelay = 300;
   renameTo(dRef, 'bob', 'carl');   // local guard blind; server refuses
   renameTo(dRef, 'carl', 'gamma'); // the newer intent, queued behind
-  await until(() => pidOf(gas.handle({ action: 'state',
-    slug: 'staleref' }), 'gamma') === 'userid-staleref-bob');
+  await until(() => usidOf(gas.handle({ action: 'state',
+    slug: 'staleref' }), 'gamma') === 'usid-staleref-bob');
   mockDelay = 0;
   const refInp = row(dRef.window.document, 'gamma')
     && row(dRef.window.document, 'gamma').querySelector('.rename input');
@@ -927,12 +953,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' gamma, the server says gamma, nobody says carl');
 
   gas.handle({ action: 'add', slug: 'staletype',
-    uname: 'ann', userid: 'userid-staletype-ann' });
+    snym: 'ann', usid: 'usid-staletype-ann' });
   gas.handle({ action: 'add', slug: 'staletype',
-    uname: 'bob', userid: 'userid-staletype-bob' });
+    snym: 'bob', usid: 'usid-staletype-bob' });
   const dType = await makePage('/staletype?api=' + API_URL);
   gas.handle({ action: 'add', slug: 'staletype',
-    uname: 'carl', userid: 'userid-staletype-carl' });
+    snym: 'carl', usid: 'usid-staletype-carl' });
   const typeInp = row(dType.window.document, 'bob')
     .querySelector('.rename input');
   typeInp.focus();
@@ -952,8 +978,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && typeInp.defaultValue === 'bob'
      && typeInp.closest('.rename').classList.contains('hot')
      && !typeInp.classList.contains('error')
-     && pidOf(gas.handle({ action: 'state', slug: 'staletype' }), 'bob')
-          === 'userid-staletype-bob',
+     && usidOf(gas.handle({ action: 'state', slug: 'staletype' }), 'bob')
+          === 'usid-staletype-bob',
      'a refused rename preserves newer typing but rebases it on the'
      + ' accepted server name, so Escape still tells the truth');
 
@@ -963,15 +989,15 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      robert. Resultata pre-fix: the blur posted the STALE text and
      undid the remote rename. */
   gas.handle({ action: 'add', slug: 'stalefocus',
-    uname: 'ann', userid: 'userid-stalefocus-ann' });
+    snym: 'ann', usid: 'usid-stalefocus-ann' });
   gas.handle({ action: 'add', slug: 'stalefocus',
-    uname: 'bob', userid: 'userid-stalefocus-bob' });
+    snym: 'bob', usid: 'usid-stalefocus-bob' });
   const dStale = await makePage('/stalefocus?api=' + API_URL);
   const staleDoc = dStale.window.document;
   const staleInp = row(staleDoc, 'bob').querySelector('.rename input');
   staleInp.focus();  // parked caret, no edit
   gas.handle({ action: 'rename', slug: 'stalefocus',
-    userid: 'userid-stalefocus-bob', to: 'robert' });
+    usid: 'usid-stalefocus-bob', to: 'robert' });
   await until(() => row(staleDoc, 'robert') !== null);
   ok(staleInp.value === 'bob' && staleInp.defaultValue === 'bob',
      'the remote label is adopted while the focused field keeps its'
@@ -994,7 +1020,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     .querySelector('.rename input');
   staleEnter.focus();
   gas.handle({ action: 'rename', slug: 'stalefocus',
-    userid: 'userid-stalefocus-bob', to: 'roberta' });
+    usid: 'usid-stalefocus-bob', to: 'roberta' });
   await until(() => row(staleDoc, 'roberta') !== null);
   const staleRenamePosts = apiCalls.filter((c) => c.action === 'rename'
     && c.slug === 'stalefocus').length;
@@ -1028,13 +1054,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   staleAnn.disabled = false;  // (jsdom fixture cleanup)
 
   /* Replicata: erase a persisted participant name and leave its field.
-     Expectata (2026-07-28, save-on-blur unames): a name can't be
+     Expectata (2026-07-28, save-on-blur snyms): a name can't be
      nothing — the blur-commit's empty path snaps the committed name
      straight back, and nothing goes to the wire. */
   gas.handle({ action: 'add', slug: 'emptyrename',
-    uname: 'ann', userid: 'userid-emptyrename-ann' });
+    snym: 'ann', usid: 'usid-emptyrename-ann' });
   gas.handle({ action: 'add', slug: 'emptyrename',
-    uname: 'bob', userid: 'userid-emptyrename-bob' });
+    snym: 'bob', usid: 'usid-emptyrename-bob' });
   const dEmptyRename = await makePage('/emptyrename?api=' + API_URL);
   const emptyName = row(dEmptyRename.window.document, 'bob')
     .querySelector('.rename input');
@@ -1055,19 +1081,19 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      (2026-07-27): the empty draft stays, hot, and nothing is sent —
      no phantom withdrawal, bcount untouched; Escape restores. */
   gas.handle({ action: 'add', slug: 'emptybid',
-    uname: 'ann', userid: 'userid-emptybid-ann' });
+    snym: 'ann', usid: 'usid-emptybid-ann' });
   gas.handle({ action: 'add', slug: 'emptybid',
-    uname: 'bob', userid: 'userid-emptybid-bob' });
+    snym: 'bob', usid: 'usid-emptybid-bob' });
   gas.handle({ action: 'bid', slug: 'emptybid',
-    uname: 'ann', userid: 'userid-emptybid-ann',
-    bid: 'standing bid', devid: 'empty-device',
-    rig: 'Empty rig' });
+    snym: 'ann', usid: 'usid-emptybid-ann',
+    xbid: 'standing bid', dvid: 'empty-device',
+    anym: 'Empty anym' });
   const dEmptyBid = await makePage('/emptybid?api=' + API_URL, (w) => {
-    w.localStorage.setItem('tauction-device', 'empty-device');
-    w.localStorage.setItem('tauction-pids',
-      '{"emptybid":"userid-emptybid-ann"}');
+    w.localStorage.setItem('tauction-dvid', 'empty-device');
+    w.localStorage.setItem('tauction-usids',
+      '{"emptybid":"usid-emptybid-ann"}');
     w.localStorage.setItem('tauction-mybids:emptybid',
-      '{"userid-emptybid-ann":"standing bid"}');
+      '{"usid-emptybid-ann":"standing bid"}');
   });
   const standingBid = row(dEmptyBid.window.document, 'ann')
     .querySelector('.rebid textarea');
@@ -1081,7 +1107,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && standingBid.defaultValue === 'standing bid'
      && standingBid.closest('.rebid').classList.contains('hot')
      && gas.handle({ action: 'state', slug: 'emptybid' })
-          .bidders.find((b) => b.userid === 'userid-emptybid-ann').bcount === 1,
+          .bidders.find((b) => b.usid === 'usid-emptybid-ann').bcount === 1,
      'leaving an emptied standing bid sends no withdrawal: the empty'
      + ' draft waits, hot');
   standingBid.focus();
@@ -1091,12 +1117,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && !standingBid.closest('.rebid').classList.contains('hot'),
      'Escape restores the standing bid and the field cools');
   gas.handle({ action: 'add', slug: 'blankbid',
-    uname: 'ann', userid: 'userid-blankbid-ann' });
+    snym: 'ann', usid: 'usid-blankbid-ann' });
   gas.handle({ action: 'add', slug: 'blankbid',
-    uname: 'bob', userid: 'userid-blankbid-bob' });
+    snym: 'bob', usid: 'usid-blankbid-bob' });
   const dBlankBid = await makePage('/blankbid?api=' + API_URL, (w) => {
-    w.localStorage.setItem('tauction-pids',
-      '{"blankbid":"userid-blankbid-ann"}');
+    w.localStorage.setItem('tauction-usids',
+      '{"blankbid":"usid-blankbid-ann"}');
   });
   const blankBid = row(dBlankBid.window.document, 'ann')
     .querySelector('.rebid textarea');
@@ -1118,9 +1144,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      Resultata pre-fix: C carried A's compare-and-swap stamp and
      falsely collided with this same client's successful B. */
   gas.handle({ action: 'describe', slug: 'rapiddesc', base: 0,
-    blurb: 'A version' });
+    blub: 'A version' });
   gas.handle({ action: 'add', slug: 'rapiddesc',
-    uname: 'ann', userid: 'userid-rapiddesc-ann' });
+    snym: 'ann', usid: 'usid-rapiddesc-ann' });
   const dRapidDesc = await makePage('/rapiddesc?api=' + API_URL);
   const rapidDoc = dRapidDesc.window.document;
   mockDelay = 300;
@@ -1135,12 +1161,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     new dRapidDesc.window.Event('input', { bubbles: true }));
   rapidDoc.getElementById('descgo').click();
   await until(() => gas.handle({ action: 'state', slug: 'rapiddesc' })
-    .blurb === 'C version'
+    .blub === 'C version'
     || !rapidDoc.getElementById('banner').hidden);
   await until(() => !rapidDoc.getElementById('status').classList
     .contains('stale'));
   mockDelay = 0;
-  ok(gas.handle({ action: 'state', slug: 'rapiddesc' }).blurb
+  ok(gas.handle({ action: 'state', slug: 'rapiddesc' }).blub
        === 'C version'
      && rapidDoc.getElementById('descedit').value === 'C version'
      && !rapidDoc.getElementById('descedit').classList.contains('error')
@@ -1155,9 +1181,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      bounces too, in the server's words, rather than silently winning
      an edit war C's author never saw. */
   gas.handle({ action: 'describe', slug: 'newerdesc', base: 0,
-    blurb: 'A version' });
+    blub: 'A version' });
   gas.handle({ action: 'add', slug: 'newerdesc',
-    uname: 'ann', userid: 'userid-newerdesc-ann' });
+    snym: 'ann', usid: 'usid-newerdesc-ann' });
   const dNewerDesc = await makePage('/newerdesc?api=' + API_URL);
   const newerDoc = dNewerDesc.window.document;
   mockDelay = 400;
@@ -1174,11 +1200,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   newerDoc.getElementById('descedit').focus();
   const beforeA2 = gas.handle({ action: 'state', slug: 'newerdesc' });
   gas.handle({ action: 'describe', slug: 'newerdesc',
-    base: beforeA2.bver, blurb: 'A2 version' });
+    base: beforeA2.bver, blub: 'A2 version' });
   await until(() => !newerDoc.getElementById('banner').hidden);
   mockDelay = 0;
   ok(newerDoc.getElementById('descedit').value === 'C version'
-     && gas.handle({ action: 'state', slug: 'newerdesc' }).blurb
+     && gas.handle({ action: 'state', slug: 'newerdesc' }).blub
           === 'A2 version',
      'an older refused description never overwrites a newer local draft');
   newerDoc.getElementById('banner-x').click();
@@ -1187,7 +1213,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(newerDoc.getElementById('war-title').textContent
        === STR.warTitle(1)
      && newerDoc.getElementById('banner').hidden
-     && gas.handle({ action: 'state', slug: 'newerdesc' }).blurb
+     && gas.handle({ action: 'state', slug: 'newerdesc' }).blub
           === 'A2 version'
      && newerDoc.getElementById('descedit').value === 'C version',
      'saving C bounces too — into the war popup (the banner stands'
@@ -1196,21 +1222,21 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' staleness guard swallowed it before the war machinery');
   newerDoc.querySelector('#war-dlg .dlg-x').click();
 
-  /* THE BLURB SPEC, README items 1-7 (dreev 2026-07-29). Replicata:
-     arrive anywhere, any blurb, even an empty one. Expectata: the
+  /* THE BLUB SPEC, README items 1-7 (dreev 2026-07-29). Replicata:
+     arrive anywhere, any blub, even an empty one. Expectata: the
      card RESTS RENDERED — pencil live, textarea hidden — and editing
      is a mode you enter by pencil (which re-fetches without blocking
      and grays itself), with a live preview, and leave by SAVE,
      DISCARD, Escape, or a clean blur. Resultata pre-spec: an empty
-     blurb arrived in edit mode, no pencil, no DISCARD, no preview. */
-  gas.handle({ action: 'add', slug: 'blurbspec',
-    uname: 'ann', userid: 'userid-blurbspec-ann' });
-  const dBS = await makePage('/blurbspec?api=' + API_URL);
+     blub arrived in edit mode, no pencil, no DISCARD, no preview. */
+  gas.handle({ action: 'add', slug: 'blubspec',
+    snym: 'ann', usid: 'usid-blubspec-ann' });
+  const dBS = await makePage('/blubspec?api=' + API_URL);
   const bsDoc = dBS.window.document;
   ok(bsDoc.getElementById('desc').classList.contains('viewing'),
-     'item 1: the card rests RENDERED, empty blurb or not');
+     'item 1: the card rests RENDERED, empty blub or not');
   const bsPolls = () => apiCalls.filter((c) => c.action === 'state'
-    && c.slug === 'blurbspec').length;
+    && c.slug === 'blubspec').length;
   const bsPolls0 = bsPolls();
   bsDoc.getElementById('desctoggle').click();
   ok(!bsDoc.getElementById('desc').classList.contains('viewing')
@@ -1218,7 +1244,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'item 3/4: the pencil opens the editor without blocking');
   await until(() => bsPolls() > bsPolls0);
   ok(bsPolls() > bsPolls0,
-     'item 3: the pencil click re-fetched the blurb (token freshened)');
+     'item 3: the pencil click re-fetched the blub (token freshened)');
   type(dBS, 'descedit', '# Rules\n\n**bold** move');
   ok(bsDoc.getElementById('descview').querySelector('h1')
      && bsDoc.getElementById('descview').querySelector('h1')
@@ -1236,7 +1262,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && bsDoc.getElementById('descedit').value === ''
      && bsDoc.getElementById('descview').textContent === ''
      && apiCalls.filter((c) => c.action === 'describe'
-          && c.slug === 'blurbspec').length === 0,
+          && c.slug === 'blubspec').length === 0,
      'item 7: DISCARD closes to rendered, drops the words, writes'
      + ' nothing — and the pane shows the record again');
   bsDoc.getElementById('desctoggle').click();
@@ -1263,8 +1289,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' commits nothing');
   type(dBS, 'descedit', 'saved words');
   bsDoc.getElementById('descgo').click();
-  await until(() => gas.handle({ action: 'state', slug: 'blurbspec' })
-    .blurb === 'saved words');
+  await until(() => gas.handle({ action: 'state', slug: 'blubspec' })
+    .blub === 'saved words');
   ok(bsDoc.getElementById('desc').classList.contains('viewing')
      && bsDoc.getElementById('descview').textContent
           .includes('saved words'),
@@ -1277,9 +1303,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      while the words stay red in the open editor. The banner stays
      hidden: the popup carries this news. */
   gas.handle({ action: 'describe', slug: 'warzone', base: 0,
-    blurb: 'line one\nline two\nline three' });
+    blub: 'line one\nline two\nline three' });
   gas.handle({ action: 'add', slug: 'warzone',
-    uname: 'ann', userid: 'userid-warzone-ann' });
+    snym: 'ann', usid: 'usid-warzone-ann' });
   const dWar = await makePage('/warzone?api=' + API_URL);
   const warDoc = dWar.window.document;
   warDoc.getElementById('desctoggle').click();
@@ -1290,7 +1316,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     new dWar.window.Event('input', { bubbles: true }));
   gas.handle({ action: 'describe', slug: 'warzone',
     base: gas.handle({ action: 'state', slug: 'warzone' }).bver,
-    blurb: 'line one\nline 2 theirs\nline three' });  // the rival
+    blub: 'line one\nline 2 theirs\nline three' });  // the rival
   const warCallsAtSave = apiCalls.length;
   warDoc.getElementById('descgo').click();
   await until(() => warDoc.getElementById('war-dlg').open);
@@ -1351,7 +1377,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && warDoc.getElementById('desc').classList.contains('viewing')
      && warDoc.getElementById('descview').textContent
           .includes('line 2 theirs')
-     && gas.handle({ action: 'state', slug: 'warzone' }).blurb
+     && gas.handle({ action: 'state', slug: 'warzone' }).blub
           === 'line one\nline 2 theirs\nline three',
      'Keep theirs: the editor closes, the pane shows the record,'
      + ' nothing was written');
@@ -1378,7 +1404,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     new dWar.window.Event('input', { bubbles: true }));
   gas.handle({ action: 'describe', slug: 'warzone',
     base: gas.handle({ action: 'state', slug: 'warzone' }).bver,
-    blurb: 'theirs again' });
+    blub: 'theirs again' });
   warDoc.getElementById('descgo').click();
   await until(() => warDoc.getElementById('war-dlg').open);
   ok(warDoc.getElementById('war-title').textContent
@@ -1387,7 +1413,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await until(() => warDoc.querySelector('#war-diff .diff-row'));
   warDoc.getElementById('war-mine').click();
   await until(() => gas.handle({ action: 'state', slug: 'warzone' })
-    .blurb === 'mine, informed');
+    .blub === 'mine, informed');
   ok(!warDoc.getElementById('war-dlg').open
      && warDoc.getElementById('desc').classList.contains('viewing')
      && !warDoc.getElementById('descedit').classList.contains('error'),
@@ -1404,7 +1430,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     new dWar.window.Event('input', { bubbles: true }));
   gas.handle({ action: 'describe', slug: 'warzone',
     base: gas.handle({ action: 'state', slug: 'warzone' }).bver,
-    blurb: 'third rival' });
+    blub: 'third rival' });
   warDoc.getElementById('descgo').click();
   await until(() => warDoc.getElementById('war-dlg').open);
   await until(() => warDoc.querySelector('#war-diff .diff-row'));
@@ -1416,17 +1442,17 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
           .includes('third rival')
      && warDoc.getElementById('descedit').value === 'third rival'
      && !warDoc.getElementById('descedit').classList.contains('error')
-     && gas.handle({ action: 'state', slug: 'warzone' }).blurb
+     && gas.handle({ action: 'state', slug: 'warzone' }).blub
           === 'third rival',
      'item 12: DISCARD after dismissal = Keep theirs — theirs'
      + ' adopted, editor closed, nothing written');
 
-  /* ...the diff never executes user text (anti-postel: the blurb is
+  /* ...the diff never executes user text (anti-postel: the blub is
      a shared field) */
   gas.handle({ action: 'describe', slug: 'xsswar', base: 0,
-    blurb: 'plain' });
+    blub: 'plain' });
   gas.handle({ action: 'add', slug: 'xsswar',
-    uname: 'ann', userid: 'userid-xsswar-ann' });
+    snym: 'ann', usid: 'usid-xsswar-ann' });
   const dXw = await makePage('/xsswar?api=' + API_URL);
   dXw.window.document.getElementById('desctoggle').click();
   await until(() => drained());
@@ -1436,7 +1462,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     new dXw.window.Event('input', { bubbles: true }));
   gas.handle({ action: 'describe', slug: 'xsswar',
     base: gas.handle({ action: 'state', slug: 'xsswar' }).bver,
-    blurb: '<script>alert(2)</script>' });
+    blub: '<script>alert(2)</script>' });
   dXw.window.document.getElementById('descgo').click();
   await until(() => dXw.window.document.getElementById('war-dlg').open);
   await until(() =>
@@ -1457,9 +1483,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      untrusted picture — then the diff when the trailing write
      settles. */
   gas.handle({ action: 'describe', slug: 'slotgav', base: 0,
-    blurb: 'alpha' });
+    blub: 'alpha' });
   gas.handle({ action: 'add', slug: 'slotgav',
-    uname: 'ann', userid: 'userid-slotgav-ann' });
+    snym: 'ann', usid: 'usid-slotgav-ann' });
   const dSlot = await makePage('/slotgav?api=' + API_URL);
   const slotDoc = dSlot.window.document;
   slotDoc.getElementById('desctoggle').click();
@@ -1469,7 +1495,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     new dSlot.window.Event('input', { bubbles: true }));
   gas.handle({ action: 'describe', slug: 'slotgav',
     base: gas.handle({ action: 'state', slug: 'slotgav' }).bver,
-    blurb: 'theirs' });
+    blub: 'theirs' });
   mockDelay = 150;  // every hop crawls
   slotDoc.getElementById('descgo').click();
   const slotName = row(slotDoc, 'ann').querySelector('.rename input');
@@ -1497,9 +1523,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      the real diff. Resultata pre-paintWar-in-refresh's-catch: the
      gavel hammered until the wire healed on its own. */
   gas.handle({ action: 'describe', slug: 'downwar', base: 0,
-    blurb: 'alpha' });
+    blub: 'alpha' });
   gas.handle({ action: 'add', slug: 'downwar',
-    uname: 'ann', userid: 'userid-downwar-ann' });
+    snym: 'ann', usid: 'usid-downwar-ann' });
   const dDown = await makePage('/downwar?api=' + API_URL);
   const downDoc = dDown.window.document;
   downDoc.getElementById('desctoggle').click();
@@ -1509,7 +1535,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     new dDown.window.Event('input', { bubbles: true }));
   gas.handle({ action: 'describe', slug: 'downwar',
     base: gas.handle({ action: 'state', slug: 'downwar' }).bver,
-    blurb: 'theirs' });
+    blub: 'theirs' });
   mockDelay = 100;  // let the POST leave before the wire dies
   downDoc.getElementById('descgo').click();
   const downName = row(downDoc, 'ann').querySelector('.rename input');
@@ -1541,12 +1567,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'the healed take 2 rebuilds the real diff over the words');
 
   /* Replicata: a fresh URL is opened and the visitor types in the
-     blurb box before the first snapshot lands (dreev, 2026-07-27, on
+     blub box before the first snapshot lands (dreev, 2026-07-27, on
      Chrome at a brand-new /test2103). Expectata: no one else exists,
      so no banner — the arrival slides under the draft silently.
      Resultata pre-fix: "Oops, someone else is making simultaneous
      edits to the description" — the virgin editor's missing base
-     stamp read as foreign against the never-described blurb's ''. */
+     stamp read as foreign against the never-described blub's ''. */
   mockDelay = 300;
   const dVirgin = await makePage('/virgindesc?api=' + API_URL);
   const virginDoc = dVirgin.window.document;
@@ -1563,13 +1589,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(virginDoc.getElementById('banner').hidden
      && virginEdit.value === 'my words'
      && !virginEdit.classList.contains('error'),
-     'typing in the blurb before the first snapshot is not a'
+     'typing in the blub before the first snapshot is not a'
      + ' simultaneous edit: no banner, the draft undisturbed');
   virginDoc.getElementById('descgo').click();
   await until(() => gas.handle({ action: 'state', slug: 'virgindesc' })
-    .blurb === 'my words');
+    .blub === 'my words');
   ok(gas.handle({ action: 'state', slug: 'virgindesc' })
-       .blurb === 'my words'
+       .blub === 'my words'
      && virginDoc.getElementById('banner').hidden,
      'and the pre-arrival draft saves cleanly');
 
@@ -1586,11 +1612,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   eagerDoc.getElementById('descgo').click();
   mockDelay = 0;
   await until(() => gas.handle({ action: 'state', slug: 'eagerdesc' })
-    .blurb === 'first words');
+    .blub === 'first words');
   await until(() => !eagerDoc.getElementById('status').classList
     .contains('stale'));
   ok(gas.handle({ action: 'state', slug: 'eagerdesc' })
-       .blurb === 'first words'
+       .blub === 'first words'
      && eagerDoc.getElementById('banner').hidden
      && !eagerDoc.getElementById('descedit').classList.contains('error'),
      'typing AND saving before the first snapshot lands cleanly');
@@ -1652,12 +1678,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      waiting on you. Expectata: the ledger counts the flying bid
      EVERYWHERE the moment SUBMIT fires — like a roster add — and
      the volley's away-tint is what says not-yet-confirmed. */
-  gas.handle({ action: 'add', slug: 'opti', uname: 'ann',
-    userid: 'userid-opti-ann' });
-  gas.handle({ action: 'add', slug: 'opti', uname: 'bob',
-    userid: 'userid-opti-bob' });
-  gas.handle({ action: 'bid', slug: 'opti', userid: 'userid-opti-bob',
-    uname: 'bob', bid: 'tacos', devid: 'dev-opti-bob' });
+  gas.handle({ action: 'add', slug: 'opti', snym: 'ann',
+    usid: 'usid-opti-ann' });
+  gas.handle({ action: 'add', slug: 'opti', snym: 'bob',
+    usid: 'usid-opti-bob' });
+  gas.handle({ action: 'bid', slug: 'opti', usid: 'usid-opti-bob',
+    snym: 'bob', xbid: 'tacos', dvid: 'dev-opti-bob' });
   const dOpti = await makePage('/opti?api=' + API_URL);
   const optiDoc = dOpti.window.document;
   claimRow(dOpti, 'ann');
@@ -1690,10 +1716,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
 
   /* ...and the truthful revert: the wire eats a FIRST bid, so the
      optimistic picture must walk back to awaiting, loudly. */
-  gas.handle({ action: 'add', slug: 'optidead', uname: 'ann',
-    userid: 'userid-optidead-ann' });
-  gas.handle({ action: 'add', slug: 'optidead', uname: 'bob',
-    userid: 'userid-optidead-bob' });
+  gas.handle({ action: 'add', slug: 'optidead', snym: 'ann',
+    usid: 'usid-optidead-ann' });
+  gas.handle({ action: 'add', slug: 'optidead', snym: 'bob',
+    usid: 'usid-optidead-bob' });
   const dDead = await makePage('/optidead?api=' + API_URL);
   const deadDoc = dDead.window.document;
   claimRow(dDead, 'ann');
@@ -1720,10 +1746,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
 
   /* THE COMMIT TINT, held to the settle: the tint appears at the
      commit gesture and its quiet fade IS the confirmation — per
-     field: blurb, rename, add, and the auction name (whose pending
+     field: blub, rename, add, and the auction name (whose pending
      window is its create probe). */
-  gas.handle({ action: 'add', slug: 'tint', uname: 'ann',
-    userid: 'userid-tint-ann' });
+  gas.handle({ action: 'add', slug: 'tint', snym: 'ann',
+    usid: 'usid-tint-ann' });
   const dTint = await makePage('/tint?api=' + API_URL);
   const tintDoc = dTint.window.document;
   mockDelay = 300;
@@ -1733,11 +1759,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     new dTint.window.Event('input', { bubbles: true }));
   tintDoc.getElementById('descgo').click();
   ok(tintDoc.getElementById('desc').classList.contains('committed'),
-     'SAVE tints the blurb card: yours is away');
+     'SAVE tints the blub card: yours is away');
   await until(() => drained());
   await sleep(50);
   ok(!tintDoc.getElementById('desc').classList.contains('committed'),
-     "the blurb's settle clears the tint: the fade is the"
+     "the blub's settle clears the tint: the fade is the"
      + ' confirmation');
   renameTo(dTint, 'ann', 'annette');
   ok(row(tintDoc, 'annette').querySelector('.rename input')
@@ -1775,7 +1801,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   /* Replicata: a virgin page (no snapshot yet), the pencil, then a
      clean click-away — nothing typed. Expectata: the mode closes,
      the pane painted with the virgin record ''. Resultata pre-fix:
-     discardDesc read state.blurb off the null state and died
+     discardDesc read state.blub off the null state and died
      mid-close (TypeError), leaving the pane unpainted. */
   mockDelay = 300;
   const dVBlur = await makePage('/virginblur?api=' + API_URL);
@@ -1800,7 +1826,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      stand — and HIS save is refused in the server's words, because
      his draft was based on nothing. */
   gas.handle({ action: 'describe', slug: 'preexdesc', base: 0,
-    blurb: 'House rules.' });
+    blub: 'House rules.' });
   mockDelay = 300;
   const dPreex = await makePage('/preexdesc?api=' + API_URL);
   const preexDoc = dPreex.window.document;
@@ -1821,7 +1847,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   preexDoc.getElementById('descgo').click();
   await until(() => preexDoc.getElementById('war-dlg').open);
   ok(gas.handle({ action: 'state', slug: 'preexdesc' })
-       .blurb === 'House rules.'
+       .blub === 'House rules.'
      && preexDoc.getElementById('war-title').textContent
           === STR.warTitle(1),
      'and his save bounces into the war popup: a draft based on'
@@ -1829,25 +1855,25 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   preexDoc.querySelector('#war-dlg .dlg-x').click();
 
   /* Replicata (dreev's Firefox haunting, 2026-07-28): weeks ago this
-     browser typed in the blurb and never saved; the blurb has since
+     browser typed in the blub and never saved; the blub has since
      moved; the browser also holds a stale cached snapshot. Fresh
-     load. Expectata: the database's blurb, rendered; no banner; the
+     load. Expectata: the database's blub, rendered; no banner; the
      dead draft stays dead. Resultata pre-fix: the ghost draft came
-     home, met the moved blurb, and cried edit-war on a fresh page —
+     home, met the moved blub, and cried edit-war on a fresh page —
      and again on every reload. */
   gas.handle({ action: 'add', slug: 'ghost',
-    uname: 'ann', userid: 'userid-ghost-ann' });
+    snym: 'ann', usid: 'usid-ghost-ann' });
   gas.handle({ action: 'describe', slug: 'ghost', base: 0,
-    blurb: 'first words' });
+    blub: 'first words' });
   const ghostCache = JSON.stringify(
     gas.handle({ action: 'state', slug: 'ghost' }));
   gas.handle({ action: 'describe', slug: 'ghost',
     base: gas.handle({ action: 'state', slug: 'ghost' }).bver,
-    blurb: 'moved on' });
+    blub: 'moved on' });
   const dGhost = await makePage('/ghost?api=' + API_URL, (w) => {
     w.localStorage.setItem('tauction-state:ghost', ghostCache);
     w.localStorage.setItem('tauction-drafts:ghost',
-      '{"blurb":"the ghost draft"}');
+      '{"blub":"the ghost draft"}');
   });
   const ghostDoc = dGhost.window.document;
   await until(() =>
@@ -1865,7 +1891,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      the occupied-name gate offers its URL. Resultata pre-fix: the gate
      inferred existence from roster/bids and entered the auction. */
   gas.handle({ action: 'describe', slug: 'desconly', base: 0,
-    blurb: '' });
+    blub: '' });
   const dDescOnly = await makePage('/?api=' + API_URL);
   type(dDescOnly, 'slug', 'desconly');
   commitName(dDescOnly);
@@ -1926,9 +1952,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      Resultata pre-fix: inherited Object members impersonated claim,
      bid, and row entries, and rendering crashed before building it. */
   gas.handle({ action: 'add', slug: 'constructormap',
-    uname: 'constructor', userid: 'constructor' });
+    snym: 'constructor', usid: 'constructor' });
   const dConstructor = await makePage('/constructormap?api=' + API_URL,
-    (w) => { w.localStorage.setItem('tauction-pids',
+    (w) => { w.localStorage.setItem('tauction-usids',
       '{"constructormap":"constructor"}'); });
   const constructorRow = row(dConstructor.window.document, 'constructor');
   ok(constructorRow && constructorRow.classList.contains('mine')
@@ -1942,54 +1968,54 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const constructorState = gas.handle(
     { action: 'state', slug: 'constructormap' });
   ok(myEditor(dConstructor.window.document).value === 'constructor bid'
-     && constructorState.bidders.find((b) => b.userid === 'constructor')
+     && constructorState.bidders.find((b) => b.usid === 'constructor')
           .bcount === 1,
      'constructor submits and remembers its bid through the same safe'
-     + ' userid maps');
+     + ' usid maps');
 
-  /* --- renames in the userid era: plain ops on a fixed identity -----------
+  /* --- renames in the usid era: plain ops on a fixed identity -----------
      (2026-07-19, the migration that DELETED the client's rename-
-     transaction machinery: a rename is a label edit keyed by userid, so
+     transaction machinery: a rename is a label edit keyed by usid, so
      the old stale-chain hazard — alice→beta→gamma grabbing someone
      else's remote beta — is unrepresentable: the wire never carries
      a from-name at all. These quals replace the four transaction-era
      pins whose machinery no longer exists.) */
   gas.handle({ action: 'add', slug: 'renops',
-    uname: 'alice', userid: 'userid-renops-alice' });
+    snym: 'alice', usid: 'usid-renops-alice' });
   gas.handle({ action: 'add', slug: 'renops',
-    uname: 'carol', userid: 'userid-renops-carol' });
+    snym: 'carol', usid: 'usid-renops-carol' });
   gas.handle({ action: 'bid', slug: 'renops',
-    uname: 'alice', userid: 'userid-renops-alice', bid: 'alice bid',
-    devid: 'ren-device', rig: 'Ren rig' });
+    snym: 'alice', usid: 'usid-renops-alice', xbid: 'alice bid',
+    dvid: 'ren-device', anym: 'Ren anym' });
   const dRen = await makePage('/renops?api=' + API_URL, (w) => {
-    w.localStorage.setItem('tauction-device', 'ren-device');
-    w.localStorage.setItem('tauction-pids',
-      '{"renops":"userid-renops-alice"}');
+    w.localStorage.setItem('tauction-dvid', 'ren-device');
+    w.localStorage.setItem('tauction-usids',
+      '{"renops":"usid-renops-alice"}');
     w.localStorage.setItem('tauction-mybids:renops',
-      '{"userid-renops-alice":"alice bid"}');
+      '{"usid-renops-alice":"alice bid"}');
   });
   // chained edits, mid-flight: two plain serialized ops, both keyed
-  // by the userid — no dependency, no transaction, nothing to roll back
+  // by the usid — no dependency, no transaction, nothing to roll back
   mockDelay = 300;
   renameTo(dRen, 'alice', 'beta');
   renameTo(dRen, 'beta', 'gamma');
   ok(row(dRen.window.document, 'gamma') !== null
      && row(dRen.window.document, 'gamma').classList.contains('mine')
      && dRen.window.localStorage.getItem('tauction-mybids:renops')
-          === '{"userid-renops-alice":"alice bid"}'
-     && dRen.window.localStorage.getItem('tauction-pids')
-          === '{"renops":"userid-renops-alice"}',
+          === '{"usid-renops-alice":"alice bid"}'
+     && dRen.window.localStorage.getItem('tauction-usids')
+          === '{"renops":"usid-renops-alice"}',
      'chained renames advance the label instantly; identity and bid'
-     + ' memory never move — the userid IS the identity');
+     + ' memory never move — the usid IS the identity');
   await until(() => gas.handle({ action: 'state', slug: 'renops' })
-    .seats.some((s) => s.uname === 'gamma'));
+    .seats.some((s) => s.snym === 'gamma'));
   mockDelay = 0;
   const renCalls = apiCalls.filter((c) => c.action === 'rename'
     && c.slug === 'renops');
   ok(renCalls.length === 2
-     && renCalls.every((c) => c.userid === 'userid-renops-alice')
+     && renCalls.every((c) => c.usid === 'usid-renops-alice')
      && renCalls[1].to === 'gamma',
-     'both legs went out as userid-keyed ops: no from-name exists to go'
+     'both legs went out as usid-keyed ops: no from-name exists to go'
      + ' stale');
   await settled(dRen);
   ok(row(dRen.window.document, 'gamma').classList.contains('mine')
@@ -2000,7 +2026,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // see): the refusal reddens the field, keeps the typed text for
   // fixing, and the recovery snapshot restores the committed label
   gas.handle({ action: 'add', slug: 'renops',
-    uname: 'zeta', userid: 'userid-renops-zeta' });  // unseen: no poll yet
+    snym: 'zeta', usid: 'usid-renops-zeta' });  // unseen: no poll yet
   renameTo(dRen, 'gamma', 'zeta');
   await until(() => !dRen.window.document
     .getElementById('banner').hidden);
@@ -2023,9 +2049,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      Escape is a no-op. Resultata pre-fix: defaultValue was still alice,
      so Escape submitted a second rename and reversed the first one. */
   gas.handle({ action: 'add', slug: 'renescape',
-    uname: 'alice', userid: 'userid-renescape-alice' });
+    snym: 'alice', usid: 'usid-renescape-alice' });
   gas.handle({ action: 'add', slug: 'renescape',
-    uname: 'bob', userid: 'userid-renescape-bob' });
+    snym: 'bob', usid: 'usid-renescape-bob' });
   const dRenEscape = await makePage('/renescape?api=' + API_URL);
   const renEscapeDoc = dRenEscape.window.document;
   const renEscapeInput = row(renEscapeDoc, 'alice')
@@ -2091,7 +2117,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' dual meaning): the field disables the moment the name'
      + ' commits — the URL is the navigation now');
   /* Replicata (dreev, 2026-07-18): name the auction, start on the
-     blurb, then click the name to edit it. Nothing happens — correct,
+     blub, then click the name to edit it. Nothing happens — correct,
      but it read as a GLITCH. Expectata: the dead field explains
      itself without cluttering the UI with a NEW tooltip (dreev's
      call, retiring the input's own alea-iacta-est tip): the field
@@ -2156,9 +2182,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      a first-time browser sees just the grayed box and the gavel (the
      old ⋯ pulse sat as a phantom blank line above the + row). */
   gas.handle({ action: 'add', slug: 'warm',
-    uname: 'ann', userid: 'userid-warm-ann' });
+    snym: 'ann', usid: 'usid-warm-ann' });
   gas.handle({ action: 'add', slug: 'warm',
-    uname: 'ben', userid: 'userid-warm-ben' });
+    snym: 'ben', usid: 'usid-warm-ben' });
   const seeded = gas.handle({ action: 'state', slug: 'warm' });
   mockDelay = 800;
   const domWarm = await makePage('/warm?api=' + API_URL, (win) =>
@@ -2196,9 +2222,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      the fix is deploying @17, never softening the assert. */
   stripTini = true;
   gas.handle({ action: 'add', slug: 'skew',
-    uname: 'old', userid: 'userid-skew-old' });
+    snym: 'old', usid: 'usid-skew-old' });
   gas.handle({ action: 'bid', slug: 'skew',
-    uname: 'old', userid: 'userid-skew-old', bid: 'relic' });
+    snym: 'old', usid: 'usid-skew-old', xbid: 'relic' });
   const domSkew = await makePage('/skew?api=' + API_URL);
   ok(!domSkew.window.document.getElementById('banner').hidden
      && domSkew.window.document.getElementById('banner').textContent
@@ -2218,9 +2244,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const COERCED = String(new Date('2026-07-18T01:23:45.678Z'));
   stampSwap = COERCED;
   gas.handle({ action: 'add', slug: 'coerced',
-    uname: 'old', userid: 'userid-coerced-old' });
+    snym: 'old', usid: 'usid-coerced-old' });
   gas.handle({ action: 'bid', slug: 'coerced',
-    uname: 'old', userid: 'userid-coerced-old', bid: 'x' });
+    snym: 'old', usid: 'usid-coerced-old', xbid: 'x' });
   const domCo = await makePage('/coerced?api=' + API_URL);
   ok(!domCo.window.document.getElementById('banner').hidden
      && domCo.window.document.getElementById('banner').textContent
@@ -2234,13 +2260,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
           .includes('bad state shape'),
      'a blank stamp (the old "NaNd ago" tooltip) refuses loudly too');
   gas.handle({ action: 'add', slug: 'coercedtfin',
-    uname: 'a1', userid: 'userid-coercedtfin-a1' });
+    snym: 'a1', usid: 'usid-coercedtfin-a1' });
   gas.handle({ action: 'add', slug: 'coercedtfin',
-    uname: 'b2', userid: 'userid-coercedtfin-b2' });
+    snym: 'b2', usid: 'usid-coercedtfin-b2' });
   gas.handle({ action: 'bid', slug: 'coercedtfin',
-    uname: 'a1', userid: 'userid-coercedtfin-a1', bid: 'x' });
+    snym: 'a1', usid: 'usid-coercedtfin-a1', xbid: 'x' });
   gas.handle({ action: 'bid', slug: 'coercedtfin',
-    uname: 'b2', userid: 'userid-coercedtfin-b2', bid: 'y' });
+    snym: 'b2', usid: 'usid-coercedtfin-b2', xbid: 'y' });
   gas.handle({ action: 'reveal', slug: 'coercedtfin' });
   stampSwap = COERCED;
   const domCt = await makePage('/coercedtfin?api=' + API_URL);
@@ -2274,7 +2300,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      normal-looking ledger — claiming catastrophe while looking fine,
      the exact inverse of the truth. */
   gas.handle({ action: 'add', slug: 'wifi',
-    uname: 'ann', userid: 'userid-wifi-ann' });
+    snym: 'ann', usid: 'usid-wifi-ann' });
   const dWifi = await makePage('/wifi?api=' + API_URL);
   const wifiDoc = dWifi.window.document;
   await until(() => row(wifiDoc, 'ann')
@@ -2321,7 +2347,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      one adoption seam — an unchanged snapshot logs NOTHING, so the
      5s poll stays silent. Resultata pre-fix: a silent console. */
   gas.handle({ action: 'add', slug: 'diary',
-    uname: 'ann', userid: 'userid-diary-ann' });
+    snym: 'ann', usid: 'usid-diary-ann' });
   const dDiary = await makePage('/diary?api=' + API_URL);
   const diaryDoc = dDiary.window.document;
   const logs = dDiary.window.__logs;
@@ -2348,9 +2374,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      '...and narrates like any other change when its settle becomes'
      + ' table truth');
   gas.handle({ action: 'add', slug: 'diary',
-    uname: 'bob', userid: 'userid-diary-bob' });
+    snym: 'bob', usid: 'usid-diary-bob' });
   gas.handle({ action: 'add', slug: 'diary',
-    uname: 'tmp', userid: 'userid-diary-tmp' });
+    snym: 'tmp', usid: 'usid-diary-tmp' });
   await jog();
   ok(has('+ @bob') && has('+ @tmp'),
      'remote joins narrate on the poll that shows them');
@@ -2375,7 +2401,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' ANY path, reaches the chronicle (structurally: banner()'
      + ' itself warns, so no site can forget)');
   gas.handle({ action: 'bid', slug: 'diary',
-    uname: 'ann', userid: 'userid-diary-ann', bid: 'aa' });
+    snym: 'ann', usid: 'usid-diary-ann', xbid: 'aa' });
   await jog();
   ok(has('@ann: bid #1'), "a bid narrates by owner and ordinal —"
      + ' never its sealed text');
@@ -2383,25 +2409,25 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   submitBid(dDiary);
   await settled(dDiary);
   ok(has('→ bid @me') && has('@me: bid #1'),
-     'your own bid: announced at the send, narrated at the settle');
+     'your own xbid: announced at the send, narrated at the settle');
   ok(has('★ @me'),
      "the bid's registered claim narrates too (★ = taken, as on the"
      + ' ledger)');
   gas.handle({ action: 'bid', slug: 'diary',
-    uname: 'ann', userid: 'userid-diary-ann', bid: 'aaa' });
+    snym: 'ann', usid: 'usid-diary-ann', xbid: 'aaa' });
   await jog();
   ok(has('@ann: bid #2'), 're-bids narrate by their bumped ordinal');
   gas.handle({ action: 'add', slug: 'diary',
-    uname: 'zed', userid: 'userid-diary-zed-remote' });
+    snym: 'zed', usid: 'usid-diary-zed-remote' });
   addName(dDiary, 'zed');  // the 2d2 race: this page loses, quietly
   await until(() => row(diaryDoc, 'zed')
-    && row(diaryDoc, 'zed').dataset.userid === 'userid-diary-zed-remote'
+    && row(diaryDoc, 'zed').dataset.usid === 'usid-diary-zed-remote'
     && drained(dDiary));
   ok(diaryDoc.getElementById('banner').hidden && has('+ @zed'),
      'a lost add race converges quietly: one + entry, no error — the'
      + ' loser is an ordinary latecomer (dreev 2026-07-21)');
   gas.handle({ action: 'add', slug: 'diary',
-    uname: 'kim', userid: 'userid-diary-kim' });
+    snym: 'kim', usid: 'usid-diary-kim' });
   renameTo(dDiary, 'rob', 'kim');  // stale roster: the local guard is
                                    // blind, the server refuses
   await until(() => !diaryDoc.getElementById('banner').hidden);
@@ -2417,16 +2443,16 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' by construction');
   const base = gas.handle({ action: 'state', slug: 'diary' });
   gas.handle({ action: 'describe', slug: 'diary',
-    blurb: 'de rebus emptis', base: base.bver });
+    blub: 'de rebus emptis', base: base.bver });
   await jog();
   ok(has('✎ description (15 chars)'),
      'a description edit narrates its new length, not its text');
   gas.handle({ action: 'bid', slug: 'diary',
-    uname: 'rob', userid: 'userid-diary-bob', bid: 'rr' });
+    snym: 'rob', usid: 'usid-diary-bob', xbid: 'rr' });
   gas.handle({ action: 'bid', slug: 'diary',
-    uname: 'zed', userid: 'userid-diary-zed-remote', bid: 'zz' });
+    snym: 'zed', usid: 'usid-diary-zed-remote', xbid: 'zz' });
   gas.handle({ action: 'bid', slug: 'diary',
-    uname: 'kim', userid: 'userid-diary-kim', bid: 'kk' });
+    snym: 'kim', usid: 'usid-diary-kim', xbid: 'kk' });
   gas.handle({ action: 'reveal', slug: 'diary' });
   await jog();
   ok(has('@rob: bid #1') && has('@zed: bid #1') && has('🎉 revealed'),
@@ -2522,13 +2548,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(dBareTitle.window.document.title === 'tauction',
      "the unnamed page keeps the HTML's static title");
   gas.handle({ action: 'add', slug: 'titular',
-    uname: 'ann', userid: 'userid-titular-ann' });
+    snym: 'ann', usid: 'usid-titular-ann' });
   gas.handle({ action: 'add', slug: 'titular',
-    uname: 'bo', userid: 'userid-titular-bo' });
+    snym: 'bo', usid: 'usid-titular-bo' });
   gas.handle({ action: 'bid', slug: 'titular',
-    uname: 'ann', userid: 'userid-titular-ann', bid: 'a' });
+    snym: 'ann', usid: 'usid-titular-ann', xbid: 'a' });
   gas.handle({ action: 'bid', slug: 'titular',
-    uname: 'bo', userid: 'userid-titular-bo', bid: 'b' });
+    snym: 'bo', usid: 'usid-titular-bo', xbid: 'b' });
   const dTitle = await makePage('/titular?api=' + API_URL);
   const titleDoc = dTitle.window.document;
   await until(() => !titleDoc.getElementById('status')
@@ -2584,7 +2610,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      THEN, seen. Resultata pre-fix: hidden tabs were fully silent and
      a returning glance waited out the poll interval. */
   gas.handle({ action: 'add', slug: 'peekaboo',
-    uname: 'ann', userid: 'userid-peekaboo-ann' });
+    snym: 'ann', usid: 'usid-peekaboo-ann' });
   const dPeek = await makePage('/peekaboo?api=' + API_URL);
   const peekDoc = dPeek.window.document;
   ok(peekDoc.title === STR.tabTitle(STR.waitingGlyph, 'peekaboo'),
@@ -2599,7 +2625,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     && c.slug === 'peekaboo').length;
   setVisibility(dPeek, 'hidden');
   gas.handle({ action: 'bid', slug: 'peekaboo',
-    uname: 'ann', userid: 'userid-peekaboo-ann', bid: 'a' });
+    snym: 'ann', usid: 'usid-peekaboo-ann', xbid: 'a' });
   peek.fn();
   await sleep(150);
   ok(peekDoc.title === STR.tabTitle(STR.yourMoveGlyph, 'peekaboo'),
@@ -2610,10 +2636,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && !peekDoc.getElementById('status').classList.contains('stale'),
      "the peek is title-ONLY: ann's bid is NOT ingested and the box"
      + ' is untouched — never-clobber sleeps until the tab is looked at');
-  const mePid = pidOf(gas.handle({ action: 'state', slug: 'peekaboo' }),
+  const mePid = usidOf(gas.handle({ action: 'state', slug: 'peekaboo' }),
                       'me');
   gas.handle({ action: 'bid', slug: 'peekaboo',
-    uname: 'me', userid: mePid, bid: 'b' });  // you, from your phone
+    snym: 'me', usid: mePid, xbid: 'b' });  // you, from your phone
   peek.fn();
   await sleep(150);
   ok(peekDoc.title === STR.tabTitle(STR.readyGlyph, 'peekaboo'),
@@ -2737,7 +2763,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
 
   // her first add made her you (2j): her row is the editable one,
   // bob's leads with a claimable hollow star
-  ok(dom.window.localStorage.getItem('tauction-uname') === 'alice',
+  ok(dom.window.localStorage.getItem('tauction-snym') === 'alice',
      'the first add latched her name');
   ok(row(doc, 'alice').classList.contains('mine')
      && myEditor(doc), 'her row is hers, with an in-place editor');
@@ -2793,7 +2819,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'roster member not crossed out');
   ok(myEditor(doc).className === 'bid-card'
      && myEditor(doc).style.boxShadow === 'var(--lift)',
-     'first bid: your editor becomes a single card, no sheets — just'
+     'first xbid: your editor becomes a single card, no sheets — just'
      + ' the composable lift');
   // (subs superscript shelved 2026-07-15)
   // ok(tiles(doc, '.has-bid')[0].querySelector('.tile-subs').textContent === '1',
@@ -2805,9 +2831,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'green rows carry no animation delay (shimmer unaffected)');
   ok(Object.values(JSON.parse(
        dom.window.localStorage.getItem('tauction-mybids:tau')))
-       .includes('three tacos'), 'own bid persisted (userid-keyed)');
+       .includes('three tacos'), 'own bid persisted (usid-keyed)');
   ok(doc.getElementById('banner').hidden,
-     'no banner for a placed bid: the green card already says it');
+     'no banner for a placed xbid: the green card already says it');
   ok(!doc.querySelector('#tiles .check'),
      'no checkmark either: the green card itself is the signal, and the'
      + ' ✅ sat confusingly next to the ×');
@@ -2923,7 +2949,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   /* --- 2d2. a stale duplicate add converges QUIETLY --------------------
      Replicata: a page loads an empty ledger; another browser seats
      alice; before the stale page polls, it submits alice under its
-     own fresh userid. Expectata (dreev 2026-07-21, reversing the 07-20
+     own fresh usid. Expectata (dreev 2026-07-21, reversing the 07-20
      loud refusal — "the error seems wrong": alice IS added, exactly
      as requested): the goal state already holds, so the server
      answers idempotent success — the losing row is discarded, the
@@ -2933,21 +2959,21 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      name is taken" glared over a ledger showing alice, freshly
      added. */
   const dAddRace = await makePage('/addrace?api=' + API_URL);
-  const remoteAddPid = 'userid-addrace-remote-alice';
-  gas.handle({ action: 'add', slug: 'addrace', uname: 'alice',
-    userid: remoteAddPid });
+  const remoteAddPid = 'usid-addrace-remote-alice';
+  gas.handle({ action: 'add', slug: 'addrace', snym: 'alice',
+    usid: remoteAddPid });
   addName(dAddRace, 'alice');
   const addRaceDoc = dAddRace.window.document;
   await until(() => {
     const r = row(addRaceDoc, 'alice');
-    return r && r.dataset.userid === remoteAddPid
+    return r && r.dataset.usid === remoteAddPid
       && !addRaceDoc.getElementById('status').classList.contains('stale');
   });
   const addRaceState = gas.handle({ action: 'state', slug: 'addrace' });
   ok(addRaceDoc.getElementById('banner').hidden
      && !row(addRaceDoc, 'alice').classList.contains('mine')
      && addRaceState.seats.length === 1
-     && addRaceState.seats[0].userid === remoteAddPid,
+     && addRaceState.seats[0].usid === remoteAddPid,
      'the stale duplicate converges quietly onto the winning row');
 
   /* --- 2e. a name you typed must never vanish ----------------------------
@@ -2984,14 +3010,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      adoption is gated on SEQUENCE, not clocks; the next poll
      adopts. */
   gas.handle({ action: 'add', slug: 'clockstep',
-    uname: 'ann', userid: 'userid-clockstep-ann' });
+    snym: 'ann', usid: 'usid-clockstep-ann' });
   const dClock = await makePage('/clockstep?api=' + API_URL);
   addName(dClock, 'bee');       // a write, so a settle gets recorded
   await settled(dClock);
   const realNow = dClock.window.Date.now;
   dClock.window.Date.now = () => realNow() - 600000;  // NTP steps back
   gas.handle({ action: 'add', slug: 'clockstep',
-    uname: 'cee', userid: 'userid-clockstep-cee' });  // the remote edit
+    snym: 'cee', usid: 'usid-clockstep-cee' });  // the remote edit
   await until(() => row(dClock.window.document, 'cee') !== null);
   ok(row(dClock.window.document, 'cee') !== null,
      'a backwards clock step cannot freeze snapshot adoption: the'
@@ -3019,7 +3045,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await until(() => names(gas.handle({ action: 'state', slug: 'coldadd' })) === 'ann');
   ok(names(gas.handle({ action: 'state', slug: 'coldadd' }))
        === 'ann'
-     && dCold2.window.localStorage.getItem('tauction-uname') === 'ann',
+     && dCold2.window.localStorage.getItem('tauction-snym') === 'ann',
      'one seat, once, when the dust settles — and it is yours');
 
   /* --- 2h. fix a typo: rename in place -----------------------------------
@@ -3029,9 +3055,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      machine follows your device id home: you stay latched, your bid
      memory migrates. */
   gas.handle({ action: 'add', slug: 'typo',
-    uname: 'alicw', userid: 'userid-typo-alicw' });
+    snym: 'alicw', usid: 'usid-typo-alicw' });
   gas.handle({ action: 'add', slug: 'typo',
-    uname: 'bob', userid: 'userid-typo-bob' });
+    snym: 'bob', usid: 'usid-typo-bob' });
   const domT2 = await makePage('/typo?api=' + API_URL);
   const docT2 = domT2.window.document;
   ok([...tiles(docT2)].every((t) => t.querySelector('.rename input')
@@ -3052,7 +3078,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     new domT2.window.Event('input', { bubbles: true }));
   nameInp.blur();
   // [dreev flipped this pin THRICE: 07-17 tap-away-saves, 07-27 blur
-  // commits nothing anywhere, 07-28 the commit taxonomy — a uname is
+  // commits nothing anywhere, 07-28 the commit taxonomy — a snym is
   // a cheap clobber-tolerant label, so blur commits IT alone]
   await sleep(80);
   ok(row(docT2, 'wronger') !== null && !row(docT2, 'alicw')
@@ -3066,7 +3092,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     === 'alicw,bob');
   renameTo(domT2, 'alicw', 'alice');
   ok(row(docT2, 'alice') && !row(docT2, 'alicw')
-     && tiles(docT2)[0].dataset.uname === 'alice',
+     && tiles(docT2)[0].dataset.snym === 'alice',
      'the typo is fixed in place immediately, order kept');
   await until(() => names(gas.handle({ action: 'state', slug: 'typo' })) === 'alice,bob');
   ok(names(gas.handle({ action: 'state', slug: 'typo' }))
@@ -3086,14 +3112,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(row(docT2, 'alicia').classList.contains('mine')
      && myEditor(docT2).value === 'first dibs',
      'renaming yourself keeps you latched, bid and editor intact'
-     + ' (nothing to migrate: the userid never moved)');
+     + ' (nothing to migrate: the usid never moved)');
 
   // cross-device: machine 2 fixes machine 1's typo; machine 1's identity
   // follows its device id home on the next poll
   gas.handle({ action: 'add', slug: 'xdev',
-    uname: 'carow', userid: 'userid-xdev-carow' });
+    snym: 'carow', usid: 'usid-xdev-carow' });
   gas.handle({ action: 'add', slug: 'xdev',
-    uname: 'dan', userid: 'userid-xdev-dan' });
+    snym: 'dan', usid: 'usid-xdev-dan' });
   const mA = await makePage('/xdev?api=' + API_URL);
   claimRow(mA, 'carow');
   typeBid(mA, 'a carrot');
@@ -3106,7 +3132,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(row(mA.window.document, 'carol').classList.contains('mine')
      && myEditor(mA.window.document).value === 'a carrot',
      "a rename from another machine changes machine 1's LABEL only:"
-     + ' the userid held firm, so identity and bid rode along untouched');
+     + ' the usid held firm, so identity and bid rode along untouched');
 
   /* --- 2i. arriving claimed and bidless: the caret waits in your editor
      (Replicata of dreev's pulse bug: load — don't click — a page where
@@ -3114,15 +3140,15 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      field with the caret in it, and only not-you rows ever pulse.
      Resultata pre-fix: the editor sat unfocused, pulsing.) ----------- */
   gas.handle({ action: 'add', slug: 'caret',
-    uname: 'ann', userid: 'userid-caret-ann' });
+    snym: 'ann', usid: 'usid-caret-ann' });
   gas.handle({ action: 'add', slug: 'caret',
-    uname: 'bee', userid: 'userid-caret-bee' });
+    snym: 'bee', usid: 'usid-caret-bee' });
   gas.handle({ action: 'claim', slug: 'caret',
-    uname: 'ann', userid: 'userid-caret-ann',
-               devid: 'dev-caret' });
+    snym: 'ann', usid: 'usid-caret-ann',
+               dvid: 'dev-caret' });
   const seedK = (w) => {
-    w.localStorage.setItem('tauction-device', 'dev-caret');
-    w.localStorage.setItem('tauction-pids', '{"caret":"userid-caret-ann"}');
+    w.localStorage.setItem('tauction-dvid', 'dev-caret');
+    w.localStorage.setItem('tauction-usids', '{"caret":"usid-caret-ann"}');
   };
   const domK = await makePage('/caret?api=' + API_URL, seedK);
   const docK = domK.window.document;
@@ -3191,13 +3217,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      compare-and-swap against clobbers (the compact eat-the-richtext:
      one field, source and rendered modes) ------------------------------ */
   gas.handle({ action: 'add', slug: 'descy',
-    uname: 'ann', userid: 'userid-descy-ann' });
+    snym: 'ann', usid: 'usid-descy-ann' });
   const domDs = await makePage('/descy?api=' + API_URL);
   const dsDoc = domDs.window.document;
   ok(dsDoc.getElementById('desc').classList.contains('viewing')
      && dsDoc.getElementById('descedit').placeholder.length > 0,
      'an undescribed auction rests RENDERED like every other (README'
-     + ' blurb spec item 1, 2026-07-29, reversing the edit-at-rest'
+     + ' blub spec item 1, 2026-07-29, reversing the edit-at-rest'
      + ' arrival): the pencil is the way in');
   dsDoc.getElementById('desctoggle').click();  // the way in
   dsDoc.getElementById('descedit').value = '# Brunch\n\n**bring** cash';
@@ -3205,14 +3231,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     new domDs.window.Event('input', { bubbles: true }));
   ok(dsDoc.getElementById('desctoggle').getAttribute('data-tip')
        === STR.descVerTip(0),
-     "the pencil's tooltip is the blurb's version counter [dreev's"
+     "the pencil's tooltip is the blub's version counter [dreev's"
      + ' 2026-07-30 bver spec, superseding the 07-17 no-tip'
      + ' ruling]');
   // SAVE = commit + flip to rendered (dreev revived the button
   // 2026-07-27; clicking away commits nothing, anywhere)
   dsDoc.getElementById('descgo').click();
   await until(() => gas.handle({ action: 'state', slug: 'descy' })
-    .blurb === '# Brunch\n\n**bring** cash');
+    .blub === '# Brunch\n\n**bring** cash');
   await until(() => !!dsDoc.querySelector('#descview h1'));
   ok(dsDoc.getElementById('desc').classList.contains('viewing')
      && dsDoc.querySelector('#descview h1').textContent === 'Brunch'
@@ -3254,8 +3280,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     new domBk.window.Event('blur'));
   ok(domBk.window.document.getElementById('desc').classList
        .contains('viewing'),
-     'a clean blur of a BLANK blurb closes to rendered like any'
-     + ' other (README blurb spec, 2026-07-29: rendered is THE rest'
+     'a clean blur of a BLANK blub closes to rendered like any'
+     + ' other (README blub spec, 2026-07-29: rendered is THE rest'
      + ' state, empty or not — the pencil is always the way back)');
 
   /* code spans are LITERAL. Replicata: describe an auction with
@@ -3266,9 +3292,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      comes out verbatim — while code can still LABEL a link, and
      emphasis outside code still works. */
   gas.handle({ action: 'describe', slug: 'codespan', base: 0,
-    blurb: 'ecce `a*b*c` et `**x**` et [`y`](https://e.com) et *z*' });
+    blub: 'ecce `a*b*c` et `**x**` et [`y`](https://e.com) et *z*' });
   gas.handle({ action: 'add', slug: 'codespan',
-    uname: 'c', userid: 'userid-codespan-c' });
+    snym: 'c', usid: 'usid-codespan-c' });
   const domCs = await makePage('/codespan?api=' + API_URL);
   const csDoc = domCs.window.document;
   const codeEls = [...csDoc.querySelectorAll('#descview code')];
@@ -3288,10 +3314,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
 
   // hostile markdown renders inert (escape-first, whitelisted links)
   gas.handle({ action: 'describe', slug: 'evil', base: 0,
-    blurb: '<script>window.pwned=1</script>\n\n'
+    blub: '<script>window.pwned=1</script>\n\n'
       + '[x](javascript:alert(1)) <img src=x onerror=alert(1)>' });
   gas.handle({ action: 'add', slug: 'evil',
-    uname: 'e', userid: 'userid-evil-e' });
+    snym: 'e', usid: 'usid-evil-e' });
   const domEv = await makePage('/evil?api=' + API_URL);
   const evDoc = domEv.window.document;
   ok(evDoc.getElementById('desc').classList.contains('viewing'),
@@ -3443,7 +3469,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     new dA.window.Event('input', { bubbles: true }));
   dA.window.document.getElementById('descgo').click();  // SAVE
   await until(() => gas.handle({ action: 'state', slug: 'descy' })
-    .blurb === 'A version');
+    .blub === 'A version');
   dB.window.document.getElementById('desctoggle').click();  // stale base
   dB.window.document.getElementById('descedit').value = 'B version';
   dB.window.document.getElementById('descedit').dispatchEvent(
@@ -3479,7 +3505,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     // so reclassifying a refusal means moving it between tables, on
     // purpose. Every entry must also RENDER from a stub error: a
     // copy fn that crashes or returns nothing is a dead banner.
-    const stub = { userid: 'p-0', action: 'x', blurb: '', uname: 'u' };
+    const stub = { usid: 'p-0', action: 'x', blub: '', snym: 'u' };
     const numbered = (t) => Object.keys(t).filter((c) =>
       /^ERROR\d{4}: /.test(t[c](stub)));
     ok(Object.values(STR.refusalCopy).every((f) =>
@@ -3496,25 +3522,25 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   }
 
   /* --- 2r. EDITING PRESENCE on the pencil (dreev 2026-07-31) ----------
-     While anyone's blurb editor is open, everyone ELSE's pencil
+     While anyone's blub editor is open, everyone ELSE's pencil
      scribbles (accent + write-wiggle class) and its tooltip names
-     them — the seat's uname if seated, someone-(rig) if not. Own
+     them — the seat's snym if seated, someone-(anym) if not. Own
      editing never scribbles at itself. The open editor heartbeats;
      SAVE and DISCARD both send the stop. */
   {
     // mint the auctions row first: a VIRGIN auction takes no
     // presence, by design (an editor-open is not a commitment)
-    gas.handle({ action: 'add', slug: 'quill', uname: 'quincy',
-                 userid: 'userid-quill-quincy' });
+    gas.handle({ action: 'add', slug: 'quill', snym: 'quincy',
+                 usid: 'usid-quill-quincy' });
     const dEd = await makePage('/quill?api=' + API_URL, (w) => {
-      w.localStorage.setItem('tauction-device', 'rig-ed');
+      w.localStorage.setItem('tauction-dvid', 'anym-ed');
     });
     const edDoc = dEd.window.document;
     edDoc.getElementById('desctoggle').click();  // the editor opens
     await until(() => apiCalls.some((c) => c.action === 'editing'
                                         && !c.stop) && drained());
     const dVw = await makePage('/quill?api=' + API_URL, (w) => {
-      w.localStorage.setItem('tauction-device', 'rig-vw');
+      w.localStorage.setItem('tauction-dvid', 'anym-vw');
     });
     const vwDoc = dVw.window.document;
     await until(() => vwDoc.getElementById('desc').classList
@@ -3523,25 +3549,25 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
          .startsWith(STR.descVerTip(0) + ' '
            + STR.editingBy(STR.someoneOn('').slice(0, -1))),
        "a rival's open editor scribbles the pencil, the tip naming"
-       + ' their walk-in rig (someone-(...))');
+       + ' their walk-in anym (someone-(...))');
     // the editor's own page never scribbles at itself (device leg)
     dEd.window.__intervals.find((i) => i.ms === 5000).fn();
     await sleep(150);
     ok(!edDoc.getElementById('desc').classList.contains('scribbling'),
        'own presence never scribbles at itself');
     // the open editor drums: its registered beat re-pings on demand.
-    // (Beats are counted per-DEVICE: zombie pages from earlier quals
+    // (Beats are counted per-DVID: zombie pages from earlier quals
     // keep their own editors beating forever, so a bare count is
     // nondeterministic — it burned two vacuous versions of these
-    // quals before the devid filter.)
+    // quals before the dvid filter.)
     const edBeats = () => apiCalls.filter((c) =>
-      c.action === 'editing' && !c.stop && c.devid === 'rig-ed').length;
+      c.action === 'editing' && !c.stop && c.dvid === 'anym-ed').length;
     const beatsBefore = edBeats();
     dEd.window.__intervals.find((i) => i.ms === 10000).fn();
     await until(() => edBeats() === beatsBefore + 1);
     ok(true, 'the open editor heartbeats on its registered cadence');
     // ...and a HIDDEN tab drums too (dreev's dev replicata: alt-tab
-    // to the sheet to watch tblug -> beats stopped -> presence aged
+    // to the sheet to watch blip -> beats stopped -> presence aged
     // out under observation. A hidden dirty draft is exactly the
     // rival the pencil must warn about, so hiding must not starve
     // the beat.)
@@ -3565,21 +3591,21 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
          === STR.descVerTip(0),
        'DISCARD stops the presence: the pencil rests, the tip back'
        + ' to the bare version');
-    // a SEATED editor is named by uname (rename-proof seat lookup)
-    gas.handle({ action: 'add', slug: 'quill', uname: 'quilla',
-                 userid: 'userid-quill-quilla' });
+    // a SEATED editor is named by snym (rename-proof seat lookup)
+    gas.handle({ action: 'add', slug: 'quill', snym: 'quilla',
+                 usid: 'usid-quill-quilla' });
     gas.handle({ action: 'editing', slug: 'quill',
-                 userid: 'userid-quill-quilla', devid: 'rig-x',
-                 rig: 'x rig' });
+                 usid: 'usid-quill-quilla', dvid: 'anym-x',
+                 anym: 'x anym' });
     dVw.window.__intervals.find((i) => i.ms === 5000).fn();
     await until(() => vwDoc.getElementById('desc').classList
       .contains('scribbling'));
     ok(vwDoc.getElementById('desctoggle').dataset.tip
          === STR.descVerTip(0) + ' ' + STR.editingBy('quilla'),
-       'a seated editor is named by their uname');
+       'a seated editor is named by their snym');
     // ...a rename-proof name: the tip reads the seat, not a snapshot
     gas.handle({ action: 'rename', slug: 'quill',
-                 userid: 'userid-quill-quilla', to: 'quillb' });
+                 usid: 'usid-quill-quilla', to: 'quillb' });
     dVw.window.__intervals.find((i) => i.ms === 5000).fn();
     await until(() => vwDoc.getElementById('desctoggle').dataset.tip
       === STR.descVerTip(0) + ' ' + STR.editingBy('quillb'));
@@ -3587,17 +3613,17 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     // TWO at the desk: per-device presence makes the crowd visible,
     // in the plural copy (Latin TODO until dreev words it)
     gas.handle({ action: 'editing', slug: 'quill',
-                 devid: 'rig-y', rig: 'y rig' });
+                 dvid: 'anym-y', anym: 'y anym' });
     dVw.window.__intervals.find((i) => i.ms === 5000).fn();
     await until(() => vwDoc.getElementById('desctoggle').dataset.tip
       === STR.descVerTip(0) + ' '
-        + STR.editingByMany(['quillb', STR.someoneOn('y rig')]));
+        + STR.editingByMany(['quillb', STR.someoneOn('y anym')]));
     ok(vwDoc.getElementById('desc').classList.contains('scribbling'),
        'a second editor pluralizes the tip, everyone named, pencil'
        + ' still scribbling');
-    gas.handle({ action: 'editing', slug: 'quill', devid: 'rig-y',
+    gas.handle({ action: 'editing', slug: 'quill', dvid: 'anym-y',
                  stop: true });
-    gas.handle({ action: 'editing', slug: 'quill', devid: 'rig-x',
+    gas.handle({ action: 'editing', slug: 'quill', dvid: 'anym-x',
                  stop: true });  // scene hygiene
     // SAVE sends the stop too (and the save itself rides first)
     edDoc.getElementById('desctoggle').click();
@@ -3613,7 +3639,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     await until(() => apiCalls.filter((c) =>
       c.action === 'editing' && c.stop).length === stopsBefore + 1
       && drained());
-    ok(gas.handle({ action: 'state', slug: 'quill' }).blurb
+    ok(gas.handle({ action: 'state', slug: 'quill' }).blub
          === 'quill words',
        'SAVE lands the words and stops the presence in one gesture');
     // THE WAR-REOPEN FENCE: a CAS bounce reopens the editor, and the
@@ -3631,7 +3657,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     // page's stale base rides into the server CAS and bounces
     gas.handle({ action: 'describe', slug: 'quill',
       base: gas.handle({ action: 'state', slug: 'quill' }).bver,
-      blurb: 'rival words' });
+      blub: 'rival words' });
     const beatsAtSave = apiCalls.filter((c) =>
       c.action === 'editing' && !c.stop).length;
     edDoc.getElementById('descgo').click();
@@ -3674,7 +3700,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
 
   /* --- 2q. BLUR COMMITS NOTHING, anywhere (dreev 2026-07-27) ----------
      Cletus's clobber, verbatim from the bug report: winifred and
-     cletus edit the blurb at once; winifred's save lands; cletus gets
+     cletus edit the blub at once; winifred's save lands; cletus gets
      the simultaneous-edits banner (so far so good), copies his draft
      somewhere safe, ×es the banner — a CLICK, which blurs his editor —
      and reloads to go read winifred's version. Expectata: blur is not
@@ -3689,7 +3715,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   cwEd.value = 'per cletus';
   cwEd.dispatchEvent(new cw.window.Event('input', { bubbles: true }));
   // winifred's save lands from her own machine...
-  gas.handle({ action: 'describe', slug: 'clob', blurb: 'per winifred',
+  gas.handle({ action: 'describe', slug: 'clob', blub: 'per winifred',
     base: gas.handle({ action: 'state', slug: 'clob' }).bver });
   // ...and the next poll says NOTHING to cletus (dreev 2026-07-28,
   // the mid-air-collision convention: conflicts surface at SAVE,
@@ -3708,7 +3734,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await sleep(150);  // an outbound write would be in apiCalls by now
   ok(cwWrites() === cwBefore,
      'the blur writes NOTHING: blur is not a gesture');
-  ok(gas.handle({ action: 'state', slug: 'clob' }).blurb
+  ok(gas.handle({ action: 'state', slug: 'clob' }).blub
        === 'per winifred',
      "winifred's words stand on the sheet");
   ok(cwEd.value === 'per cletus',
@@ -3717,7 +3743,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'the desc card is HOT (an uncommitted draft): its SAVE stands');
   ok(cw.window.document.querySelector('#desc .go').textContent
        === STR.saveCopy,
-     "the blurb's commit button wears dreev's copy: SAVE");
+     "the blub's commit button wears dreev's copy: SAVE");
   // the reload that used to arrive too late now just shows him
   // winifred's version (his draft died with the page, as drafts do)
   const cw2 = await makePage('/clob?api=' + API_URL);
@@ -3736,7 +3762,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        === STR.warTitle(1)
      && cwEd.value === 'per cletus'
      && cwEd.classList.contains('error')
-     && gas.handle({ action: 'state', slug: 'clob' }).blurb
+     && gas.handle({ action: 'state', slug: 'clob' }).blub
           === 'per winifred',
      'his save bounces off the compare-and-swap into the war popup:'
      + ' draft red for copying, her words standing');
@@ -3785,9 +3811,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'settled and left: the field cools and its button stands down');
 
   // ...but the RENAME field commits on blur (dreev 2026-07-28, the
-  // commit taxonomy: a uname is a cheap idempotent label edit —
+  // commit taxonomy: a snym is a cheap idempotent label edit —
   // clobber-tolerant, trivially redone — so it gets save-on-blur
-  // frictionlessness; bids, the blurb, and the auction name keep
+  // frictionlessness; bids, the blub, and the auction name keep
   // their deliberate gestures, and the + row keeps its explicit
   // commit because a stray blur must not MINT a seat)
   const nbRow = row(nb.window.document, 'bea');
@@ -3803,9 +3829,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'no SAVE stands on a blur-committing field: the button retired'
      + ' with the friction');
   await until(() => gas.handle({ action: 'state', slug: 'noblur' })
-    .seats.some((s) => s.uname === 'beatrix'));
+    .seats.some((s) => s.snym === 'beatrix'));
   ok(gas.handle({ action: 'state', slug: 'noblur' })
-       .seats.some((s) => s.uname === 'beatrix'),
+       .seats.some((s) => s.snym === 'beatrix'),
      'Enter/SAVE still renames');
 
   // ...and the + row: a tapped-away name is NOT added — it waits in
@@ -3843,10 +3869,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   nbEd.focus();
   nbEd.value = '43';
   nbEd.dispatchEvent(new nb.window.Event('input', { bubbles: true }));
-  gas.handle({ action: 'add', slug: 'noblur', uname: 'zed',
-    userid: 'userid-nb-zed' });
-  gas.handle({ action: 'bid', slug: 'noblur', userid: 'userid-nb-zed',
-    bid: '7', uname: 'zed' });
+  gas.handle({ action: 'add', slug: 'noblur', snym: 'zed',
+    usid: 'usid-nb-zed' });
+  gas.handle({ action: 'bid', slug: 'noblur', usid: 'usid-nb-zed',
+    xbid: '7', snym: 'zed' });
   gas.handle({ action: 'reveal', slug: 'noblur' });
   await until(() =>
     nb.window.document.body.classList.contains('revealed'));
@@ -3861,10 +3887,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'its SUBMIT grays with the editor and its tip says why');
   const nbFinal = gas.handle({ action: 'state', slug: 'noblur' });
   const nbBeaPid =
-    nbFinal.seats.find((s) => s.uname === 'beatrix').userid;
-  ok(nbFinal.bids.some((b) => b.userid === nbBeaPid && b.bid === '42'),
+    nbFinal.seats.find((s) => s.snym === 'beatrix').usid;
+  ok(nbFinal.bids.some((b) => b.usid === nbBeaPid && b.xbid === '42'),
      "the sheet keeps the pre-gavel bid — the dead draft never went");
-  ok(nbFinal.bids.some((b) => b.userid === 'userid-nb-zed'),
+  ok(nbFinal.bids.some((b) => b.usid === 'usid-nb-zed'),
      'sanity: the reveal actually landed');
 
   /* --- 2q2. drafts survive the tab (dreev 2026-07-27) -----------------
@@ -3873,13 +3899,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      button standing — because every uncommitted field lives in
      tauction-drafts:<slug> (this browser only, like tauction-mybids)
      until committed or Escaped. */
-  gas.handle({ action: 'add', slug: 'draftkeep', uname: 'lou',
-    userid: 'userid-dk-lou' });
+  gas.handle({ action: 'add', slug: 'draftkeep', snym: 'lou',
+    usid: 'usid-dk-lou' });
   const dk1 = await makePage('/draftkeep?api=' + API_URL);
   addName(dk1, 'kim');  // self-claims (2j)
   await settled(dk1);
   const kimPid = JSON.parse(
-    dk1.window.localStorage.getItem('tauction-pids')).draftkeep;
+    dk1.window.localStorage.getItem('tauction-usids')).draftkeep;
   const dk1ed = myEditor(dk1.window.document);
   dk1ed.value = 'half a tho';
   dk1ed.dispatchEvent(new dk1.window.Event('input', { bubbles: true }));
@@ -3890,12 +3916,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const dk1drafts = JSON.parse(
     dk1.window.localStorage.getItem('tauction-drafts:draftkeep'));
   ok(dk1drafts.bid === 'half a tho'
-     && !('blurb' in dk1drafts)
-     && !('rename:userid-dk-lou' in dk1drafts)
+     && !('blub' in dk1drafts)
+     && !('rename:usid-dk-lou' in dk1drafts)
      && dk1drafts.addrow === 'mel',
      'every keystroke of a surviving draft is already in'
      + ' tauction-drafts, keyed by slot — and neither the shared'
-     + ' blurb (its ghosts read as mid-air collisions) nor renames'
+     + ' blub (its ghosts read as mid-air collisions) nor renames'
      + ' (they blur-commit; nothing uncommitted outlives focus) are'
      + ' among them (2026-07-28)');
   // the tab closes; the same browser returns to the URL
@@ -3920,7 +3946,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
           .value === 'lou'
      && dk2.window.document.getElementById('banner').hidden,
      'the returning tab holds the surviving drafts — hot, buttons'
-     + ' standing — while the blurb editor and the names show the'
+     + ' standing — while the blub editor and the names show the'
      + ' database, no ghosts and no alarm');
   submitBid(dk2);
   await settled(dk2);
@@ -3937,7 +3963,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     { key: 'Escape', bubbles: true, cancelable: true }));
   ok(dk2lou.value === 'lou'
      && JSON.parse(dk2.window.localStorage
-          .getItem('tauction-drafts:draftkeep'))['rename:userid-dk-lou']
+          .getItem('tauction-drafts:draftkeep'))['rename:usid-dk-lou']
         === undefined,
      'Escape is still never-mind: the draft dies in storage too');
 
@@ -3987,7 +4013,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(limAdds() === limAdds0
      && lim2Doc.getElementById('roster-input').value === LONGA
      && lim2Doc.getElementById('banner').textContent
-          .includes(STR.unameTooLongBanner),
+          .includes(STR.snymTooLongBanner),
      "enter is refused before the wire, in the server's words, text"
      + ' kept for trimming');
   type(dLim2, 'roster-input', 'a'.repeat(20));
@@ -4014,20 +4040,20 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await sleep(80);
   ok(limRens() === limRens0 && limName.value === 'b'.repeat(21)
      && lim2Doc.getElementById('banner').textContent
-          .includes(STR.unameTooLongBanner),
+          .includes(STR.snymTooLongBanner),
      'the rename is refused before the wire, in the same words');
   limName.dispatchEvent(new dLim2.window.KeyboardEvent('keydown',
     { key: 'Escape', bubbles: true, cancelable: true }));
   lim2Doc.getElementById('desctoggle').click();  // the mode's way in
-  const bigBlurb = 'x'.repeat(2001);
-  lim2Doc.getElementById('descedit').value = bigBlurb;
+  const bigBlub = 'x'.repeat(2001);
+  lim2Doc.getElementById('descedit').value = bigBlub;
   lim2Doc.getElementById('descedit').dispatchEvent(
     new dLim2.window.Event('input', { bubbles: true }));
   lim2Doc.getElementById('descedit').dispatchEvent(
     new dLim2.window.Event('input', { bubbles: true }));
   ok(lim2Doc.getElementById('descedit').value.length === 2001
      && lim2Doc.getElementById('descedit').classList.contains('error'),
-     'all 2001 blurb characters land (the silent maxlength clamp is'
+     'all 2001 blub characters land (the silent maxlength clamp is'
      + ' dead), ringed red live');
   const limDescs = () => apiCalls.filter((c) =>
     c.action === 'describe').length;
@@ -4035,13 +4061,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   lim2Doc.getElementById('descgo').click();
   await sleep(80);
   ok(limDescs() === limDescs0
-     && lim2Doc.getElementById('descedit').value === bigBlurb
+     && lim2Doc.getElementById('descedit').value === bigBlub
      && !lim2Doc.getElementById('desc').classList.contains('viewing')
      && lim2Doc.getElementById('banner').textContent
-          .includes(STR.blurbTooLongBanner),
+          .includes(STR.blubTooLongBanner),
      "SAVE is refused before the wire in the server's words; the"
      + ' draft stays in the open editor');
-  // Cmd/Ctrl+Enter commits the blurb from the keyboard (the textarea
+  // Cmd/Ctrl+Enter commits the blub from the keyboard (the textarea
   // convention; plain Enter stays a newline)
   lim2Doc.getElementById('descedit').value = 'shipshape';
   lim2Doc.getElementById('descedit').dispatchEvent(
@@ -4052,11 +4078,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     new dLim2.window.KeyboardEvent('keydown',
       { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }));
   await until(() => gas.handle({ action: 'state', slug: 'limits' })
-    .blurb === 'shipshape');
+    .blub === 'shipshape');
   ok(gas.handle({ action: 'state', slug: 'limits' })
-       .blurb === 'shipshape'
+       .blub === 'shipshape'
      && lim2Doc.getElementById('desc').classList.contains('viewing'),
-     'Cmd/Ctrl+Enter commits the blurb from the keyboard');
+     'Cmd/Ctrl+Enter commits the blub from the keyboard');
 
   /* --- 2q4. the auction name wears its button too (dreev, after
      finding it buttonless: the ONE irreversible field must show its
@@ -4123,7 +4149,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      where instant retirement plays the disable's role: a double
      press sends ONE write. */
   gas.handle({ action: 'describe', slug: 'dblsave', base: 0,
-    blurb: '' });
+    blub: '' });
   const dDbl = await makePage('/dblsave?api=' + API_URL);
   const dblDoc = dDbl.window.document;
   dblDoc.getElementById('descedit').value = 'once';
@@ -4132,10 +4158,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   dblDoc.getElementById('descgo').click();
   dblDoc.getElementById('descgo').click();  // the double-click
   await until(() => gas.handle({ action: 'state', slug: 'dblsave' })
-    .blurb === 'once');
+    .blub === 'once');
   ok(apiCalls.filter((c) => c.action === 'describe'
        && c.slug === 'dblsave').length === 1,
-     'a double-pressed blurb SAVE sends one write: the field went'
+     'a double-pressed blub SAVE sends one write: the field went'
      + ' clean at the first press and a clean commit is a no-op');
 
   ok(dCrea.window.location.pathname === '/poker'
@@ -4152,15 +4178,15 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      name field itself turning red (cleared on input), same recipe as
      every other field objection. --------------------------------- */
   gas.handle({ action: 'add', slug: 'renrace',
-    uname: 'alice', userid: 'userid-renrace-alice' });
+    snym: 'alice', usid: 'usid-renrace-alice' });
   gas.handle({ action: 'add', slug: 'renrace',
-    uname: 'bob', userid: 'userid-renrace-bob' });
+    snym: 'bob', usid: 'usid-renrace-bob' });
   const dR = await makePage('/renrace?api=' + API_URL);
   await sleep(20);
   gas.handle({ action: 'add', slug: 'renrace',
-    uname: 'zed', userid: 'userid-renrace-zed' });
+    snym: 'zed', usid: 'usid-renrace-zed' });
   const bobName = dR.window.document
-    .querySelector('.tile[data-uname="bob"] .rename input');
+    .querySelector('.tile[data-snym="bob"] .rename input');
   bobName.value = 'zed';
   bobName.form.dispatchEvent(
     new dR.window.Event('submit', { bubbles: true, cancelable: true }));
@@ -4169,9 +4195,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // for both truths (this raced: a null tile crashed the suite once)
   await until(() => !dR.window.document.getElementById('banner').hidden
     && dR.window.document
-         .querySelector('.tile[data-uname="bob"] .rename input') !== null);
+         .querySelector('.tile[data-snym="bob"] .rename input') !== null);
   const recoveredBobName = dR.window.document
-    .querySelector('.tile[data-uname="bob"] .rename input');
+    .querySelector('.tile[data-snym="bob"] .rename input');
   ok(dR.window.document.getElementById('banner').textContent
        .includes(STR.nameTakenBanner)
      && recoveredBobName.classList.contains('error')
@@ -4187,21 +4213,21 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      Replicata: this browser is alice; before its next poll, someone
      adds zed and alice renames herself to zed. Expectata: the stale
      collision refuses loudly; identity and bid memory are untouched
-     BY CONSTRUCTION (they key on the userid, which no rename request
+     BY CONSTRUCTION (they key on the usid, which no rename request
      ever changes) — the field reddens with the text kept, and zed's
      row is never claimed. */
   gas.handle({ action: 'add', slug: 'selfrenrace',
-    uname: 'alice', userid: 'userid-selfrenrace-alice' });
+    snym: 'alice', usid: 'usid-selfrenrace-alice' });
   gas.handle({ action: 'add', slug: 'selfrenrace',
-    uname: 'bob', userid: 'userid-selfrenrace-bob' });
-  const selfBids = '{"userid-selfrenrace-alice":"alice draft"}';
+    snym: 'bob', usid: 'usid-selfrenrace-bob' });
+  const selfBids = '{"usid-selfrenrace-alice":"alice draft"}';
   const dSelfRen = await makePage('/selfrenrace?api=' + API_URL, (w) => {
-    w.localStorage.setItem('tauction-pids',
-      '{"selfrenrace":"userid-selfrenrace-alice"}');
+    w.localStorage.setItem('tauction-usids',
+      '{"selfrenrace":"usid-selfrenrace-alice"}');
     w.localStorage.setItem('tauction-mybids:selfrenrace', selfBids);
   });
   gas.handle({ action: 'add', slug: 'selfrenrace',
-    uname: 'zed', userid: 'userid-selfrenrace-zed' });
+    snym: 'zed', usid: 'usid-selfrenrace-zed' });
   renameTo(dSelfRen, 'alice', 'zed');
   await until(() => !dSelfRen.window.document
     .getElementById('banner').hidden);
@@ -4209,8 +4235,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     && row(dSelfRen.window.document, 'alice').classList.contains('mine'));
   const restoredAlice = row(dSelfRen.window.document, 'alice')
     .querySelector('.rename input');
-  ok(dSelfRen.window.localStorage.getItem('tauction-pids')
-       === '{"selfrenrace":"userid-selfrenrace-alice"}'
+  ok(dSelfRen.window.localStorage.getItem('tauction-usids')
+       === '{"selfrenrace":"usid-selfrenrace-alice"}'
      && dSelfRen.window.localStorage.getItem(
        'tauction-mybids:selfrenrace') === selfBids
      && restoredAlice.classList.contains('error')
@@ -4219,7 +4245,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'the refused self-rename leaves identity and bid memory untouched'
      + ' by construction; the field objects, zed is never claimed');
   ok(dB.window.document.getElementById('descedit').value === 'B version'
-     && gas.handle({ action: 'state', slug: 'descy' }).blurb
+     && gas.handle({ action: 'state', slug: 'descy' }).blub
           === 'A version',
      "B's words survive in B's editor; A's words survive on the server");
   await until(() =>  // the bounce boots B straight back into the editor
@@ -4238,7 +4264,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' (the arrival-caret law): the red editor waits its turn');
   ok(dB.window.document.getElementById('descview').textContent
        .includes('B version'),
-     'the pane is the PREVIEW while the editor is open (README blurb'
+     'the pane is the PREVIEW while the editor is open (README blub'
      + " spec item 5): B's words stay painted; what won surfaces in"
      + ' the war popup, not by flipping the pane');
   dB.window.document.querySelector('#war-dlg .dlg-x').click();
@@ -4255,7 +4281,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     dB.window.document.getElementById('war-dlg').open);
   ok(dB.window.document.getElementById('war-title').textContent
        === STR.warTitle(2)
-     && gas.handle({ action: 'state', slug: 'descy' }).blurb
+     && gas.handle({ action: 'state', slug: 'descy' }).blub
           === 'A version',
      'insisting bounces again as TAKE 2, in the escalated title:'
      + " repeat SAVEs never clobber A's win");
@@ -4274,20 +4300,20 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      which locked faire out of her own seat when Safari re-minted her
      device id. */
   gas.handle({ action: 'add', slug: 'race2',
-    uname: 'alice', userid: 'userid-race2-alice' });
+    snym: 'alice', usid: 'usid-race2-alice' });
   gas.handle({ action: 'add', slug: 'race2',
-    uname: 'bea', userid: 'userid-race2-bea' });
+    snym: 'bea', usid: 'usid-race2-bea' });
   const r1 = await makePage('/race2?api=' + API_URL);
   const r2 = await makePage('/race2?api=' + API_URL);
   claimRow(r1, 'alice');
   await until(() => gas.handle({ action: 'state', slug: 'race2' })
-    .claims['userid-race2-alice'] !== undefined);
+    .claims['usid-race2-alice'] !== undefined);
   ok(!row(r2.window.document, 'alice').querySelector('.tu').disabled,
      "machine 2 hasn't polled yet: its stale screen still offers alice");
   claimRow(r2, 'alice');  // the race click: the takeover
   await until(() => gas.handle({ action: 'state', slug: 'race2' })
-    .claims['userid-race2-alice']
-      === r2.window.localStorage.getItem('tauction-device'));
+    .claims['usid-race2-alice']
+      === r2.window.localStorage.getItem('tauction-dvid'));
   ok(row(r2.window.document, 'alice').classList.contains('mine')
      && r2.window.document.getElementById('banner').hidden,
      'the later claim TAKES the seat: machine 2 is alice, no drama');
@@ -4301,7 +4327,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // machine 1's consolation: bea is open, and life goes on
   claimRow(r1, 'bea');
   await until(() => gas.handle({ action: 'state', slug: 'race2' })
-    .claims['userid-race2-bea'] !== undefined);
+    .claims['usid-race2-bea'] !== undefined);
   ok(row(r1.window.document, 'bea').classList.contains('mine'),
      'machine 1 claims the open seat instead and lives happily');
 
@@ -4309,7 +4335,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      Every way two machines can want the same seat in a NEW auction. */
   // (i) truly simultaneous clicks: both ops in flight at once
   gas.handle({ action: 'add', slug: 'race4',
-    uname: 'alice', userid: 'userid-race4-alice' });
+    snym: 'alice', usid: 'usid-race4-alice' });
   const s1 = await makePage('/race4?api=' + API_URL);
   const s2 = await makePage('/race4?api=' + API_URL);
   mockDelay = 250;  // both claims fly together
@@ -4321,9 +4347,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await sleep(900);
   mockDelay = 0;
   const claim4 = gas.handle({ action: 'state', slug: 'race4' })
-    .claims['userid-race4-alice'];
-  const dev1 = s1.window.localStorage.getItem('tauction-device');
-  const dev2 = s2.window.localStorage.getItem('tauction-device');
+    .claims['usid-race4-alice'];
+  const dev1 = s1.window.localStorage.getItem('tauction-dvid');
+  const dev2 = s2.window.localStorage.getItem('tauction-dvid');
   ok(claim4 === dev1 || claim4 === dev2,
      'exactly one of the simultaneous claims wins on the server');
   const winner = claim4 === dev1 ? s1 : s2;
@@ -4339,8 +4365,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // recovery: a new browser identity reclaims her own seat)
   claimRow(loser, 'alice');
   await until(() => gas.handle({ action: 'state', slug: 'race4' })
-    .claims['userid-race4-alice']
-      === loser.window.localStorage.getItem('tauction-device'));
+    .claims['usid-race4-alice']
+      === loser.window.localStorage.getItem('tauction-dvid'));
   await until(() => row(winner.window.document, 'alice')
     .querySelector('.tu').classList.contains('taken'));
   ok(row(loser.window.document, 'alice').classList.contains('mine')
@@ -4352,7 +4378,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // machine re-latches by its remembered hint — no click, no noise
   claimRow(loser, 'alice');  // own lit star: release
   await until(() => gas.handle({ action: 'state', slug: 'race4' })
-    .claims['userid-race4-alice'] === undefined);
+    .claims['usid-race4-alice'] === undefined);
   await until(() =>
     row(winner.window.document, 'alice').classList.contains('mine'));
   ok(!row(winner.window.document, 'alice').querySelector('.tu').classList
@@ -4362,7 +4388,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' machine never forgot who they wanted to be — gold star, no'
      + ' click, no noise');
 
-  /* --- 2l. the takeover bid: claim + bid while the ops fly ---------------
+  /* --- 2l. the takeover xbid: claim + bid while the ops fly ---------------
      Replicata: same stale-screen setup, but machine 2 clicks alice's
      star and IMMEDIATELY types a bid while its claim op is still in
      flight (the optimistic editor appears at once). Expectata
@@ -4373,12 +4399,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      seat still refuses server-side, pinned in gas-quals; the UI
      always claims first, so its chain arrives in order.) */
   gas.handle({ action: 'add', slug: 'race3',
-    uname: 'alice', userid: 'userid-race3-alice' });
+    snym: 'alice', usid: 'usid-race3-alice' });
   const r3 = await makePage('/race3?api=' + API_URL);
   const r4 = await makePage('/race3?api=' + API_URL);
   claimRow(r3, 'alice');
   await until(() => gas.handle({ action: 'state', slug: 'race3' })
-    .claims['userid-race3-alice'] !== undefined);
+    .claims['usid-race3-alice'] !== undefined);
   mockDelay = 300;        // r4's ops fly slowly: the window for typing
   claimRow(r4, 'alice');  // stale screen, optimistic editor appears
   typeBid(r4, 'takeover bid');
@@ -4387,8 +4413,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   mockDelay = 0;
   const race3st = gas.handle({ action: 'state', slug: 'race3' });
   ok(bidderNamed(race3st, 'alice') !== undefined
-     && race3st.claims['userid-race3-alice']
-          === r4.window.localStorage.getItem('tauction-device'),
+     && race3st.claims['usid-race3-alice']
+          === r4.window.localStorage.getItem('tauction-dvid'),
      'the takeover claim and its bid both land: machine 2 is alice,'
      + ' bid in');
   await until(() =>  // the RENDERED truth on the unseated machine
@@ -4407,13 +4433,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      alice while you faced bob's blank editor. Expectata: the stars
      lock the instant you commit. */
   gas.handle({ action: 'add', slug: 'flightlock',
-    uname: 'alice', userid: 'userid-flightlock-alice' });
+    snym: 'alice', usid: 'usid-flightlock-alice' });
   gas.handle({ action: 'add', slug: 'flightlock',
-    uname: 'bob', userid: 'userid-flightlock-bob' });
+    snym: 'bob', usid: 'usid-flightlock-bob' });
   const domFL = await makePage('/flightlock?api=' + API_URL);
   claimRow(domFL, 'alice');
   await until(() => gas.handle({ action: 'state', slug: 'flightlock' })
-    .claims['userid-flightlock-alice'] !== undefined);
+    .claims['usid-flightlock-alice'] !== undefined);
   mockDelay = 400;
   typeBid(domFL, 'my treasure');
   submitBid(domFL);
@@ -4424,7 +4450,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   claimRow(domFL, 'bob');  // the mid-flight click must be inert
   await settled(domFL);
   mockDelay = 0;
-  ok(domFL.window.localStorage.getItem('tauction-uname') === 'alice'
+  ok(domFL.window.localStorage.getItem('tauction-snym') === 'alice'
      && row(domFL.window.document, 'alice').classList.contains('mine')
      && myEditor(domFL.window.document).value === 'my treasure',
      'your bid stays in YOUR editor: no blank field, no orphaned bid');
@@ -4472,7 +4498,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      self-claim is SOFT (registered on the server only by a bid or an
      explicit claim), so machine 2 sees alice claimable at first — but
      the moment machine 1 bids, every other machine shows dibs: the
-     filled star and its rig-naming tip. (Post-takeover-ruling the
+     filled star and its anym-naming tip. (Post-takeover-ruling the
      star stays LIVE — dibs inform, they don't lock.) */
   const m1 = await makePage('/twoalices?api=' + API_URL);
   addName(m1, 'alice');
@@ -4503,7 +4529,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
           === STR.claimedByTip(STR.mysteryDevice + ' '
             + m1.window.navigator.language + ' in Portland, OR'
             + STR.orByTimezone + TZCITY),
-     "the taken star FILLS in, and its tip rigs the claimant's rig,"
+     "the taken star FILLS in, and its tip anyms the claimant's anym,"
      + " language, and rough geography — IP city crammed alongside"
      + " the timezone city (jsdom's UA parses to dreev's"
      + ' mystery-device fallback; the geo comes from the fixture)');
@@ -4534,10 +4560,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'a fresh cache means NO lookup: reload-heavy dev must not burn'
      + ' the rate limit');
   ok(gas.handle({ action: 'state', slug: 'geocache2' })
-       .rigs[pidOf(gas.handle({ action: 'state', slug: 'geocache2' }), 'gina')]
+       .anyms[usidOf(gas.handle({ action: 'state', slug: 'geocache2' }), 'gina')]
        === STR.mysteryDevice + ' ' + g2.window.navigator.language
          + ' in Rainbow City, AL' + STR.orByTimezone + TZCITY,
-     "...and the cached geography actually decorates the blurb (the"
+     "...and the cached geography actually decorates the blub (the"
      + ' seeded city shows, proving no silent refetch either)');
   const g3 = await makePage('/geocache3?api=' + API_URL, (win) => {
     win.localStorage.setItem('tauction-geo', 'Nowhere, ZZ');
@@ -4586,13 +4612,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
 
   /* --- 2r4. no geography yet? the timezone stands in -------------------
      Replicata (dreev 2026-08-05, copying molecall's smarter device
-     blurb): the geo service is down (or hasn't answered yet); claim
+     blub): the geo service is down (or hasn't answered yet); claim
      a seat and bid.
-     Expectata: the rig still ends in a location — the IANA timezone
+     Expectata: the anym still ends in a location — the IANA timezone
      ("... in America/Chicago"), free and permissionless and often
      city-named, which locate() upgrades to city precision when the
      IP lookup lands.
-     Resultata pre-fix: the rig stopped at the language ("mystery
+     Resultata pre-fix: the anym stopped at the language ("mystery
      device en-US"), no location at all — and off wifi the IP lookup
      names the carrier's city anyway (everyone "in San Jose"), so
      the truthful timezone is the better opening bid. */
@@ -4605,20 +4631,20 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const tzOfPage =
     gTz.window.Intl.DateTimeFormat().resolvedOptions().timeZone;
   ok((gas.handle({ action: 'state', slug: 'geotz' })
-       .rigs[pidOf(gas.handle({ action: 'state', slug: 'geotz' }), 'tia')]
+       .anyms[usidOf(gas.handle({ action: 'state', slug: 'geotz' }), 'tia')]
        || '').endsWith(' in ' + tzOfPage),
-     'with no geography to be had, the rig ends in the IANA timezone'
+     'with no geography to be had, the anym ends in the IANA timezone'
      + ' — a location tail from birth, no lookup required, got '
        + gas.handle({ action: 'state', slug: 'geotz' })
-         .rigs[pidOf(gas.handle({ action: 'state', slug: 'geotz' }), 'tia')]);
+         .anyms[usidOf(gas.handle({ action: 'state', slug: 'geotz' }), 'tia')]);
   geoFixture = { city: 'Portland', region_code: 'OR' };
 
   /* --- 2r2. accented geography must never cost a bid -------------------
      Replicata: the IP lookup names a city with non-ASCII characters
      (São Paulo, Zürich, Montréal); claim a seat or place a bid.
-     Resultata pre-fix: RIG carried the accents into the request
-     and Code.gs's printable-ASCII rig contract refused the
-     WHOLE thing — 'bad rig', a bid lost to decoration.
+     Resultata pre-fix: ANYM carried the accents into the request
+     and Code.gs's printable-ASCII anym contract refused the
+     WHOLE thing — 'bad anym', a bid lost to decoration.
      Expectata: the client ASCII-fies its own decoration (São -> Sao)
      and clamps it to the contract's 64 chars; the bid always lands. */
   geoFixture = { city: 'São Paulo', region_code: 'SP' };
@@ -4633,11 +4659,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
           .length === 1,
      'a São Paulo bidder bids fine: decoration never blocks the act');
   ok((gas.handle({ action: 'state', slug: 'geosp' })
-       .rigs[pidOf(gas.handle({ action: 'state', slug: 'geosp' }), 'ze')] || '')
+       .anyms[usidOf(gas.handle({ action: 'state', slug: 'geosp' }), 'ze')] || '')
        .endsWith(' in Sao Paulo, SP' + STR.orByTimezone + TZCITY),
-     'the blurb arrives ASCII-fied (São -> Sao), got '
+     'the blub arrives ASCII-fied (São -> Sao), got '
        + gas.handle({ action: 'state', slug: 'geosp' })
-       .rigs[pidOf(gas.handle({ action: 'state', slug: 'geosp' }), 'ze')]);
+       .anyms[usidOf(gas.handle({ action: 'state', slug: 'geosp' }), 'ze')]);
   geoFixture = { city: 'Portland', region_code: 'OR' };
   // a city cached by PRE-FIX code sanitizes at use, not just at
   // store: the day-long TTL must not keep the bug alive for a day
@@ -4650,11 +4676,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   submitBid(gZu);
   await settled(gZu);
   ok((gas.handle({ action: 'state', slug: 'geozu' })
-       .rigs[pidOf(gas.handle({ action: 'state', slug: 'geozu' }), 'ueli')] || '')
+       .anyms[usidOf(gas.handle({ action: 'state', slug: 'geozu' }), 'ueli')] || '')
        .endsWith(' in Zurich, ZH' + STR.orByTimezone + TZCITY),
      'a cached pre-fix city sanitizes on use (Zürich -> Zurich), got '
        + gas.handle({ action: 'state', slug: 'geozu' })
-       .rigs[pidOf(gas.handle({ action: 'state', slug: 'geozu' }), 'ueli')]);
+       .anyms[usidOf(gas.handle({ action: 'state', slug: 'geozu' }), 'ueli')]);
   // the length half of the contract: a thrice-Welsh-length city
   // clamps to 160 (the single Welsh wonder fits since the 2026-08-05
   // widening for the crammed timezone tail)
@@ -4670,12 +4696,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await settled(gLl);
   ok(gas.handle({ action: 'state', slug: 'geoll' }).bidders.length === 1
      && (gas.handle({ action: 'state', slug: 'geoll' })
-       .rigs[pidOf(gas.handle({ action: 'state', slug: 'geoll' }), 'wyn')] || '')
+       .anyms[usidOf(gas.handle({ action: 'state', slug: 'geoll' }), 'wyn')] || '')
           .length === 160,
-     "a Welsh-cubed blurb clamps to the contract's 160 chars and the"
+     "a Welsh-cubed blub clamps to the contract's 160 chars and the"
      + ' bid still lands, got '
        + gas.handle({ action: 'state', slug: 'geoll' })
-       .rigs[pidOf(gas.handle({ action: 'state', slug: 'geoll' }), 'wyn')]);
+       .anyms[usidOf(gas.handle({ action: 'state', slug: 'geoll' }), 'wyn')]);
 
   /* --- 2s. flipping to view paints INSTANTLY --------------------------
      Replicata (dreev): type markdown, click the toggle, and the box
@@ -4700,9 +4726,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'the rendered markdown appears the instant SAVE is pressed,'
      + ' not when the database answers');
   await until(() => gas.handle({ action: 'state', slug: 'instadesc' })
-    .blurb === '# Big News\n\nmuch **bold**');
+    .blub === '# Big News\n\nmuch **bold**');
   mockDelay = 0;
-  ok(gas.handle({ action: 'state', slug: 'instadesc' }).blurb
+  ok(gas.handle({ action: 'state', slug: 'instadesc' }).blub
        === '# Big News\n\nmuch **bold**'
      && instaView.querySelector('h1') !== null,
      '...and the background write lands the same text; the settle'
@@ -4711,7 +4737,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   /* --- 2t. every CONTROL is a tab stop (dreev 2026-07-27, reversing
      his 07-16 tab law after the conventions audit: keyboard-only
      users could not claim a star, remove a row, press the reveal
-     padlock, share, or reopen a rendered blurb). Buttons and links
+     padlock, share, or reopen a rendered blub). Buttons and links
      are tabbable, per convention; only the auction LABEL keeps
      tabindex -1 (focusable for tap-tips, never a stop — a label is
      not a control). This is a structural fence: it sweeps every
@@ -4731,7 +4757,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && dTab.window.document.getElementById('slug').tabIndex === 0,
      '...and the editable fields remain tab stops themselves');
   ok(dTab.window.document.querySelector(
-       '.tile[data-uname="tia"] .rebid textarea').tabIndex === 0,
+       '.tile[data-snym="tia"] .rebid textarea').tabIndex === 0,
      'your own bid editor included');
   ok(dTab.window.document.querySelector('label[for="slug"]')
        .tabIndex === -1,
@@ -4761,7 +4787,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const dPwa = await makePage('/?api=' + API_URL);
   await sleep(20);
   gas.handle({ action: 'add', slug: 'occupied',
-    uname: 'zoe', userid: 'userid-occupied-zoe' });
+    snym: 'zoe', usid: 'usid-occupied-zoe' });
   dPwa.window.document.getElementById('slug').focus();
   type(dPwa, 'slug', 'occupied');
   commitName(dPwa);
@@ -4846,11 +4872,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        + ' summons owns it');
   }
   gas.handle({ action: 'add', slug: 'tipflow',
-    uname: 'ann', userid: 'userid-tipflow-ann' });
+    snym: 'ann', usid: 'usid-tipflow-ann' });
   gas.handle({ action: 'add', slug: 'tipflow',
-    uname: 'bo', userid: 'userid-tipflow-bo' });
+    snym: 'bo', usid: 'usid-tipflow-bo' });
   const dTip2 = await makePage('/tipflow?api=' + API_URL,
-    (w) => w.localStorage.setItem('tauction-uname', 'bo'));
+    (w) => w.localStorage.setItem('tauction-snym', 'bo'));
   await sleep(20);  // arriving as bo: further adds are facilitator-
                     // style and steal no focus from the parked tip
   const annStar = row(dTip2.window.document, 'ann').querySelector('.tu');
@@ -4865,20 +4891,20 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // a rival claims ann elsewhere; OUR next render must retitle the
   // OPEN tip without the pointer moving (the live-refresh)
   gas.handle({ action: 'claim', slug: 'tipflow',
-    uname: 'ann', userid: 'userid-tipflow-ann',
-               devid: 'd-rival', rig: 'rival rig' });
+    snym: 'ann', usid: 'usid-tipflow-ann',
+               dvid: 'd-rival', anym: 'rival anym' });
   // (no focus moves: focusing elsewhere would rightly drop the
   // parked tip — the pin is about the RENDER retitling it)
   type(dTip2, 'roster-input', 'zed');
   submitName(dTip2);
   await until(() => dTip2.window.document.getElementById('tip').textContent
-    === STR.claimedByTip('rival rig'));
+    === STR.claimedByTip('rival anym'));
   ok(dTip2.window.document.getElementById('tip').textContent
-       === STR.claimedByTip('rival rig'),
+       === STR.claimedByTip('rival anym'),
      "the render retitles the open tip in place: it follows the truth"
      + ' without waiting for the pointer');
   // ann's row vanishes entirely; the tip must not haunt a dead host
-  gas.handle({ action: 'remove', slug: 'tipflow', userid: 'userid-tipflow-ann' });
+  gas.handle({ action: 'remove', slug: 'tipflow', usid: 'usid-tipflow-ann' });
   annStar.dispatchEvent(new dTip2.window.FocusEvent('focusin',
     { bubbles: true }));
   type(dTip2, 'roster-input', 'yaz');
@@ -4894,11 +4920,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // stayed up as an EMPTY bubble until the pointer moved. Expectata:
   // it vanishes — REVEAL! speaks for itself.
   gas.handle({ action: 'add', slug: 'tipgone',
-    uname: 'ann', userid: 'userid-tipgone-ann' });
+    snym: 'ann', usid: 'usid-tipgone-ann' });
   gas.handle({ action: 'add', slug: 'tipgone',
-    uname: 'bo', userid: 'userid-tipgone-bo' });
+    snym: 'bo', usid: 'usid-tipgone-bo' });
   gas.handle({ action: 'bid', slug: 'tipgone',
-    uname: 'ann', userid: 'userid-tipgone-ann', bid: 'a' });
+    snym: 'ann', usid: 'usid-tipgone-ann', xbid: 'a' });
   const dTip3 = await makePage('/tipgone?api=' + API_URL);
   await sleep(20);
   const sealT = dTip3.window.document.getElementById('reveal');
@@ -4912,7 +4938,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'parked on the waiting REVEAL button: its tip is up, naming'
      + ' the straggler');
   gas.handle({ action: 'bid', slug: 'tipgone',  // the last bid
-    uname: 'bo', userid: 'userid-tipgone-bo', bid: 'b' });  // from elsewhere
+    snym: 'bo', usid: 'usid-tipgone-bo', xbid: 'b' });  // from elsewhere
   dTip3.window.__intervals.find((i) => i.ms === 5000).fn();
   await until(() => !sealT.disabled);
   await sleep(10);
@@ -4981,15 +5007,15 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      longer exists to defend.] Every bid-bearing row's × is gray from
      the moment the bid lands; the gavel grays the rest. */
   gas.handle({ action: 'add', slug: 'frozencut',
-    uname: 'pam', userid: 'userid-frozencut-pam' });
+    snym: 'pam', usid: 'usid-frozencut-pam' });
   gas.handle({ action: 'add', slug: 'frozencut',
-    uname: 'quinn', userid: 'userid-frozencut-quinn' });
+    snym: 'quinn', usid: 'usid-frozencut-quinn' });
   gas.handle({ action: 'add', slug: 'frozencut',
-    uname: 'rex', userid: 'userid-frozencut-rex' });
+    snym: 'rex', usid: 'usid-frozencut-rex' });
   gas.handle({ action: 'bid', slug: 'frozencut',
-    uname: 'pam', userid: 'userid-frozencut-pam', bid: 'p' });
+    snym: 'pam', usid: 'usid-frozencut-pam', xbid: 'p' });
   gas.handle({ action: 'bid', slug: 'frozencut',
-    uname: 'quinn', userid: 'userid-frozencut-quinn', bid: 'q' });
+    snym: 'quinn', usid: 'usid-frozencut-quinn', xbid: 'q' });
   const dFz = await makePage('/frozencut?api=' + API_URL);
   await sleep(20);
   ok(row(dFz.window.document, 'pam').querySelector('.x').disabled
@@ -5000,14 +5026,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // the raced removal the UI can't produce: the server refuses it,
   // atomically, in the Latin
   const rmRes = gas.handle({ action: 'remove', slug: 'frozencut',
-    userid: 'userid-frozencut-pam' });
+    usid: 'usid-frozencut-pam' });
   ok(rmRes.error && rmRes.error.code === 'removeBidder'
      && names(gas.handle({ action: 'state', slug: 'frozencut' }))
           === 'pam,quinn,rex',
      'a raced remove of a bidder bounces off the server: nothing'
      + ' changes');
   gas.handle({ action: 'remove', slug: 'frozencut',
-    userid: 'userid-frozencut-rex' });
+    usid: 'usid-frozencut-rex' });
   gas.handle({ action: 'reveal', slug: 'frozencut' });
   await until(() => dFz.window.document.getElementById('status')
     .classList.contains('revealed'));
@@ -5023,7 +5049,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      name i want to make a bid for?". Both intents are OBVIOUS, so
      both now work: they claim bee's seat and ready the editor. --- */
   gas.handle({ action: 'add', slug: 'hallway',
-    uname: 'bee', userid: 'userid-hallway-bee' });
+    snym: 'bee', usid: 'usid-hallway-bee' });
   const dHall = await makePage('/hallway?api=' + API_URL);
   await sleep(20);
   row(dHall.window.document, 'bee').querySelector('.tile-bid').click();
@@ -5035,7 +5061,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' caret in the editor: the intent was never ambiguous');
   claimRow(dHall, 'bee');  // release again (radio) for scene (b)
   await until(() => gas.handle({ action: 'state', slug: 'hallway' })
-    .claims['userid-hallway-bee'] === undefined);
+    .claims['usid-hallway-bee'] === undefined);
   const dHall2 = await makePage('/hallway?api=' + API_URL);
   await sleep(20);
   dHall2.window.document.getElementById('roster-input').focus();
@@ -5096,7 +5122,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && STR.addCopy !== STR.saveCopy,
      'a tapped-away name is not yet anybody: it waits in the + row,'
      + " hot, its button standing in ITS OWN copy — distinct from the"
-     + " blurb's (the shared-constant leak, 2026-07-29, reds here)");
+     + " blub's (the shared-constant leak, 2026-07-29, reds here)");
   dAdd.window.document.getElementById('roster-go').click();
   await settled(dAdd);
   ok(row(dAdd.window.document, 'gala') !== null
@@ -5171,7 +5197,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   submitBid(dBlur);  // (jsdom fires no implicit submit off the click)
   await until(() => (bidderNamed(gas.handle(
     { action: 'state', slug: 'blursave' }), 'bea') || {}).bcount === 1);
-  ok(true, 'pressing SUBMIT places the bid: no enter required');
+  ok(true, 'pressing SUBMIT places the xbid: no enter required');
   await settled(dBlur);
   typeBid(dBlur, 'enter then blur');
   submitBid(dBlur);
@@ -5427,12 +5453,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      the reveal — land first. Expectata: the revision bounces with the
      gavel-fell error; the sheet keeps the pre-reveal bid. */
   gas.handle({ action: 'add', slug: 'wire',
-    uname: 'ann', userid: 'userid-wire-ann' });
+    snym: 'ann', usid: 'usid-wire-ann' });
   gas.handle({ action: 'add', slug: 'wire',
-    uname: 'zed', userid: 'userid-wire-zed' });
+    snym: 'zed', usid: 'usid-wire-zed' });
   gas.handle({ action: 'bid', slug: 'wire',
-    uname: 'zed', userid: 'userid-wire-zed', bid: 'safe',
-               devid: 'dz' });
+    snym: 'zed', usid: 'usid-wire-zed', xbid: 'safe',
+               dvid: 'dz' });
   const domWire = await makePage('/wire?api=' + API_URL);
   claimRow(domWire, 'ann');
   typeBid(domWire, 'first thoughts');
@@ -5449,7 +5475,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
           .includes(STR.refusalCopy.gavelFell({})),
      'losing the under-the-wire race is announced explicitly, in'
      + " dreev's words");
-  ok(bidNamed(gas.handle({ action: 'state', slug: 'wire' }), 'ann').bid === 'first thoughts',
+  ok(bidNamed(gas.handle({ action: 'state', slug: 'wire' }), 'ann').xbid === 'first thoughts',
      'the sheet keeps the bid that beat the gavel');
 
   /* --- the under-the-wire race you can't lose AGAINST YOURSELF ----------
@@ -5462,12 +5488,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      rides the same chain as every other write, so the revision
      stands. */
   gas.handle({ action: 'add', slug: 'selfwire',
-    uname: 'ann', userid: 'userid-selfwire-ann' });
+    snym: 'ann', usid: 'usid-selfwire-ann' });
   gas.handle({ action: 'add', slug: 'selfwire',
-    uname: 'zed', userid: 'userid-selfwire-zed' });
+    snym: 'zed', usid: 'usid-selfwire-zed' });
   gas.handle({ action: 'bid', slug: 'selfwire',
-    uname: 'zed', userid: 'userid-selfwire-zed', bid: 'z',
-               devid: 'dz' });
+    snym: 'zed', usid: 'usid-selfwire-zed', xbid: 'z',
+               dvid: 'dz' });
   const domSW = await makePage('/selfwire?api=' + API_URL);
   claimRow(domSW, 'ann');
   typeBid(domSW, 'first thoughts');
@@ -5488,7 +5514,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(domSW.window.document.getElementById('banner').hidden,
      'no Womp Womp by your own hand: your reveal press never overtakes'
      + ' your still-flying revision');
-  ok(bidNamed(gas.handle({ action: 'state', slug: 'selfwire' }), 'ann').bid === 'final answer',
+  ok(bidNamed(gas.handle({ action: 'state', slug: 'selfwire' }), 'ann').xbid === 'final answer',
      'the revision beat the gavel: writes land in click order');
   ok(myEditor(domSW.window.document).value === 'final answer'
      && myEditor(domSW.window.document).disabled,
@@ -5566,12 +5592,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      pixel-true (aspect-ratio corrected), pinned here by recomputing
      every cannon's bearing from its own recorded burst. */
   gas.handle({ action: 'add', slug: 'jackpot',
-    uname: 'ann', userid: 'userid-jackpot-ann' });
+    snym: 'ann', usid: 'usid-jackpot-ann' });
   gas.handle({ action: 'add', slug: 'jackpot',
-    uname: 'bo', userid: 'userid-jackpot-bo' });
+    snym: 'bo', usid: 'usid-jackpot-bo' });
   gas.handle({ action: 'bid', slug: 'jackpot',
-    uname: 'bo', userid: 'userid-jackpot-bo',
-               bid: 'york', devid: 'db' });
+    snym: 'bo', usid: 'usid-jackpot-bo',
+               xbid: 'york', dvid: 'db' });
   const domJk = await makePage('/jackpot?api=' + API_URL);
   claimRow(domJk, 'ann');
   typeBid(domJk, 'york');   // the minds meet
@@ -5611,9 +5637,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
 
   /* --- 3b. shimmer + stacks: re-bids glow anew in every window ---------- */
   gas.handle({ action: 'add', slug: 'wobble',
-    uname: 'ann', userid: 'userid-wobble-ann' });
+    snym: 'ann', usid: 'usid-wobble-ann' });
   gas.handle({ action: 'add', slug: 'wobble',
-    uname: 'zed', userid: 'userid-wobble-zed' });
+    snym: 'zed', usid: 'usid-wobble-zed' });
   const domA = await makePage('/wobble?api=' + API_URL);
   claimRow(domA, 'ann');
   typeBid(domA, 'first');
@@ -5650,7 +5676,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await until(() =>  // domB polls
     tiles(domB.window.document, '.updated').length > 0);
   const shim = tiles(domB.window.document, '.updated');
-  ok(shim.length === 1 && shim[0].dataset.uname === 'ann',
+  ok(shim.length === 1 && shim[0].dataset.snym === 'ann',
      "ann's row shimmers in another window after her re-bid");
   await until(() =>  // the next poll retires it
     !tiles(domB.window.document, '.updated').length);
@@ -5680,16 +5706,16 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      switch-after-bidding flow, with its multi-identity bid memory,
      died here with his blessing). */
   gas.handle({ action: 'add', slug: 'switcheroo',
-    uname: 'alice', userid: 'userid-switcheroo-alice' });
+    snym: 'alice', usid: 'usid-switcheroo-alice' });
   gas.handle({ action: 'add', slug: 'switcheroo',
-    uname: 'bob', userid: 'userid-switcheroo-bob' });
+    snym: 'bob', usid: 'usid-switcheroo-bob' });
   gas.handle({ action: 'add', slug: 'switcheroo',
-    uname: 'cam', userid: 'userid-switcheroo-cam' });
+    snym: 'cam', usid: 'usid-switcheroo-cam' });
   const domS = await makePage('/switcheroo?api=' + API_URL);
   const docS = domS.window.document;
   claimRow(domS, 'alice');
   claimRow(domS, 'bob');  // radio: one click switches alice -> bob
-  ok(domS.window.localStorage.getItem('tauction-uname') === 'bob'
+  ok(domS.window.localStorage.getItem('tauction-snym') === 'bob'
      && row(docS, 'bob').querySelector('.tu').classList.contains('selected'),
      'one click on another star switches who you are (bidless: free)');
   claimRow(domS, 'bob');  // your own lit star: release to nobody
@@ -5707,7 +5733,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
           .contains('selected'),
      'your bid locks the whole radio; your star stays lit');
   claimRow(domS, 'cam');  // a locked star: the click must be inert
-  ok(domS.window.localStorage.getItem('tauction-uname') === 'bob'
+  ok(domS.window.localStorage.getItem('tauction-snym') === 'bob'
      && row(docS, 'cam').querySelector('.tu').getAttribute('data-tip')
           === 'Too late to claim as you',
      'clicking a locked star does nothing, and its tip says so');
@@ -5739,7 +5765,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(Object.values(JSON.parse(
        domR.window.localStorage.getItem('tauction-mybids:race') || '{}'))
        .includes('zoom zoom'),
-     'bid remembered under the auction it was placed on (userid-keyed)');
+     'bid remembered under the auction it was placed on (usid-keyed)');
 
   /* --- 3g. submitting shows progress; the editor stays HOT --------------
      (dreev: down to the wire you might change your mind while your
@@ -5876,7 +5902,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   /* --- 3k. writes fly SIGNLESS (dreev 2026-07-28, the no-spinners
      ruling, superseding both 2026-07-21's desc-local mini gavel and
      2026-07-27's row-local ones): no roster op, claim, release, or
-     blurb save grays or gavels ANYTHING. The commit pulse is the
+     blub save grays or gavels ANYTHING. The commit pulse is the
      feedback; failures banner; the one gavel + table gray remain
      for untrusted-picture moments only (arrival, transport failure,
      the typed-name probe, the reveal). ----------------------------- */
@@ -5911,7 +5937,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     new domY.window.Event('input', { bubbles: true }));
   docY.getElementById('descgo').click();
   ok(noSigns(),
-     'a blurb save in flight: nothing busy either — the instant'
+     'a blub save in flight: nothing busy either — the instant'
      + ' rendered paint is the whole show');
   mockDelay = 0;
   await until(() => drained(domY));
@@ -5920,13 +5946,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      renders too, so a mid-gesture click or focused editor can never be
      destroyed by someone else's update arriving. */
   gas.handle({ action: 'add', slug: 'reuse',
-    uname: 'ann', userid: 'userid-reuse-ann' });
+    snym: 'ann', usid: 'usid-reuse-ann' });
   gas.handle({ action: 'add', slug: 'reuse',
-    uname: 'zed', userid: 'userid-reuse-zed' });
+    snym: 'zed', usid: 'usid-reuse-zed' });
   const domN = await makePage('/reuse?api=' + API_URL);
   const annBefore = row(domN.window.document, 'ann');
   gas.handle({ action: 'bid', slug: 'reuse',
-    uname: 'zed', userid: 'userid-reuse-zed', bid: 'zzz' });
+    snym: 'zed', usid: 'usid-reuse-zed', xbid: 'zzz' });
   await until(() =>  // a poll brings a genuinely CHANGED state
     row(domN.window.document, 'zed').classList.contains('has-bid'));
   ok(row(domN.window.document, 'zed').classList.contains('has-bid'),
@@ -5939,9 +5965,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // wall-clock breathe phase)
   const strip = (h) => h.replace(/animation-delay:[^;"]*;?/g, '');
   gas.handle({ action: 'add', slug: 'idem',
-    uname: 'pip', userid: 'userid-idem-pip' });
+    snym: 'pip', usid: 'usid-idem-pip' });
   gas.handle({ action: 'add', slug: 'idem',
-    uname: 'quo', userid: 'userid-idem-quo' });
+    snym: 'quo', usid: 'usid-idem-quo' });
   const domI = await makePage('/idem?api=' + API_URL);
   claimRow(domI, 'pip');   // A -> B: pip becomes mine (editor appears)
   claimRow(domI, 'pip');   // B -> A: released again
@@ -5955,11 +5981,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   /* --- 3f. a hand-written log row (sheet surgery) still counts ----------
      [reworked for the 2026-07-17 append-only log: the old fixture
      seeded a blank-bcount legacy row; bcount is derived now, so a
-     bare (slug, uname, bid, tbid) row IS the whole story] ------- */
-  gas.__ss.sheets['seats'].appendRow(['legacy', 'userid-legacy-oldtimer',
+     bare (slug, snym, bid, tbid) row IS the whole story] ------- */
+  gas.__ss.sheets['seats'].appendRow(['legacy', 'usid-legacy-oldtimer',
     'oldtimer', '', '', '2026-01-01T00:00:00.000Z',
     '2026-01-01T00:00:00.000Z', '']);
-  gas.__ss.sheets['bids'].appendRow(['legacy', 'userid-legacy-oldtimer',
+  gas.__ss.sheets['bids'].appendRow(['legacy', 'usid-legacy-oldtimer',
     'ancient bid', '2026-01-01T00:00:00.000Z']);
   const domL = await makePage('/legacy?api=' + API_URL);
   const rowL = tiles(domL.window.document, '.has-bid')[0];
@@ -6011,8 +6037,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && row(doc4, 'evy') !== null,
      'named empty rows for the roster');
   await sleep(800); // settings debounce
-  ok(apiCalls.some((c) => c.action === 'add' && c.uname === 'dee')
-     && apiCalls.some((c) => c.action === 'add' && c.uname === 'evy'),
+  ok(apiCalls.some((c) => c.action === 'add' && c.snym === 'dee')
+     && apiCalls.some((c) => c.action === 'add' && c.snym === 'evy'),
      'adds pushed to the server as row ops');
 
   // dee self-claimed at her add (2j)
@@ -6034,13 +6060,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      server; the other order self-heals because a bid rebuilds its
      seat. Either way every rendered row is a full member. */
   gas.handle({ action: 'add', slug: 'cutcheck',
-    uname: 'pat', userid: 'userid-cutcheck-pat' });
+    snym: 'pat', usid: 'usid-cutcheck-pat' });
   gas.handle({ action: 'add', slug: 'cutcheck',
-    uname: 'quinn', userid: 'userid-cutcheck-quinn' });
+    snym: 'quinn', usid: 'usid-cutcheck-quinn' });
   gas.handle({ action: 'bid', slug: 'cutcheck',
-    uname: 'pat', userid: 'userid-cutcheck-pat', bid: 'stays' });
+    snym: 'pat', usid: 'usid-cutcheck-pat', xbid: 'stays' });
   const cutRefusal = gas.handle({ action: 'remove', slug: 'cutcheck',
-    userid: 'userid-cutcheck-pat' });  // the raced removal, refused
+    usid: 'usid-cutcheck-pat' });  // the raced removal, refused
   const domC = await makePage('/cutcheck?api=' + API_URL);
   const patRow = row(domC.window.document, 'pat');
   ok(cutRefusal.error && cutRefusal.error.code === 'removeBidder'
@@ -6052,11 +6078,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'a raced remove of a bidder is refused: the row stands, whole,'
      + " its × gray with dreev's too-late tip");
   // the other race order: quinn's seat is removed while her first
-  // bid flies; the bid rebuilds the seat — same userid, self-healed
+  // bid flies; the bid rebuilds the seat — same usid, self-healed
   gas.handle({ action: 'remove', slug: 'cutcheck',
-    userid: 'userid-cutcheck-quinn' });
+    usid: 'usid-cutcheck-quinn' });
   gas.handle({ action: 'bid', slug: 'cutcheck',
-    uname: 'quinn', userid: 'userid-cutcheck-quinn', bid: 'back in' });
+    snym: 'quinn', usid: 'usid-cutcheck-quinn', xbid: 'back in' });
   const domC2 = await makePage('/cutcheck?api=' + API_URL);
   ok(row(domC2.window.document, 'quinn') !== null
      && row(domC2.window.document, 'quinn').classList.contains('has-bid'),
@@ -6070,11 +6096,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
 
   /* --- 5. XSS: a bid with markup renders inert; walk-ons show cut ------- */
   gas.handle({ action: 'bid', slug: 'piesplit',
-    uname: 'rando', userid: 'userid-piesplit-rando', bid: 'me too!' });
+    snym: 'rando', usid: 'usid-piesplit-rando', xbid: 'me too!' });
   const gasRes = gas.handle({ action: 'bid', slug: 'piesplit',
-    uname: 'evy',
-    userid: pidOf(gas.handle({ action: 'state', slug: 'piesplit' }), 'evy'),
-    bid: '<img src=x onerror=alert(1)>' });
+    snym: 'evy',
+    usid: usidOf(gas.handle({ action: 'state', slug: 'piesplit' }), 'evy'),
+    xbid: '<img src=x onerror=alert(1)>' });
   ok(gasRes.revealed === false, 'roster complete -> still sealed');
   ok(gas.handle({ action: 'reveal', slug: 'piesplit' }).revealed,
      'revealed by the button');
@@ -6105,7 +6131,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      URL, so nobody stumbles into a stranger's auction by picking
      "pizza". Following a link always joins. */
   gas.handle({ action: 'add', slug: 'occupied',
-    uname: 'stranger', userid: 'userid-occupied-stranger' });
+    snym: 'stranger', usid: 'usid-occupied-stranger' });
   const domG = await makePage('/?api=' + API_URL);
   type(domG, 'slug', 'occupied');
   commitName(domG);
@@ -6304,14 +6330,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      poll answer landing mid-flight must NOT cut the drumroll short —
      the fence that separates the pinned-gavel fix from a naive
      unpin-on-any-answer. */
-  gas.handle({ action: 'add', slug: 'drumroll', uname: 'ada',
-    userid: 'userid-drum-ada' });
-  gas.handle({ action: 'add', slug: 'drumroll', uname: 'ben',
-    userid: 'userid-drum-ben' });
-  gas.handle({ action: 'bid', slug: 'drumroll', uname: 'ada',
-    userid: 'userid-drum-ada', bid: 'a farthing' });
-  gas.handle({ action: 'bid', slug: 'drumroll', uname: 'ben',
-    userid: 'userid-drum-ben', bid: 'tuppence' });
+  gas.handle({ action: 'add', slug: 'drumroll', snym: 'ada',
+    usid: 'usid-drum-ada' });
+  gas.handle({ action: 'add', slug: 'drumroll', snym: 'ben',
+    usid: 'usid-drum-ben' });
+  gas.handle({ action: 'bid', slug: 'drumroll', snym: 'ada',
+    usid: 'usid-drum-ada', xbid: 'a farthing' });
+  gas.handle({ action: 'bid', slug: 'drumroll', snym: 'ben',
+    usid: 'usid-drum-ben', xbid: 'tuppence' });
   const domDrum = await makePage('/drumroll?api=' + API_URL);
   const ddoc = domDrum.window.document;
   await until(() => !ddoc.getElementById('reveal').disabled
@@ -6377,14 +6403,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        + ' on the + row from the start, dimmed with its section');
   }
   {
-    gas.handle({ action: 'add', slug: 'bigswitch', uname: 'ada',
-      userid: 'userid-big-ada' });
-    gas.handle({ action: 'add', slug: 'bigswitch', uname: 'ben',
-      userid: 'userid-big-ben' });
-    gas.handle({ action: 'bid', slug: 'bigswitch', uname: 'ada',
-      userid: 'userid-big-ada', bid: 'a farthing' });
-    gas.handle({ action: 'bid', slug: 'bigswitch', uname: 'ben',
-      userid: 'userid-big-ben', bid: 'tuppence' });
+    gas.handle({ action: 'add', slug: 'bigswitch', snym: 'ada',
+      usid: 'usid-big-ada' });
+    gas.handle({ action: 'add', slug: 'bigswitch', snym: 'ben',
+      usid: 'usid-big-ben' });
+    gas.handle({ action: 'bid', slug: 'bigswitch', snym: 'ada',
+      usid: 'usid-big-ada', xbid: 'a farthing' });
+    gas.handle({ action: 'bid', slug: 'bigswitch', snym: 'ben',
+      usid: 'usid-big-ben', xbid: 'tuppence' });
     const domBig = await makePage('/bigswitch?api=' + API_URL);
     const bdoc = domBig.window.document;
     await until(() => !bdoc.getElementById('reveal').disabled);
@@ -6405,8 +6431,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        'revealed: the lamp still keeps its counsel');
   }
 
-  /* --- BLURBVER (dreev's spec, 2026-07-30): the pencil's tooltip is
-     the blurb's version counter, straight off the CAS token — which
+  /* --- BLUBVER (dreev's spec, 2026-07-30): the pencil's tooltip is
+     the blub's version counter, straight off the CAS token — which
      is now a plain number instead of the old timestamp+hash (an
      integer under the write lock can never collide; the stamp
      needed a bolted-on random tail). 0 = never described; every
@@ -6503,14 +6529,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      races. */
   {
     gas.handle({ action: 'describe', slug: 'warlocal', base: 0,
-      blurb: 'first truth' });
+      blub: 'first truth' });
     const domWL = await makePage('/warlocal?api=' + API_URL);
     const wdoc = domWL.window.document;
     await until(() => wdoc.getElementById('descedit').dataset.base === '1');
     wdoc.getElementById('desctoggle').click();
     type(domWL, 'descedit', 'my rival words');
     gas.handle({ action: 'describe', slug: 'warlocal', base: 1,
-      blurb: 'their newer truth' });  // the foreign save...
+      blub: 'their newer truth' });  // the foreign save...
     domWL.window.__intervals.find((i) => i.ms === 5000).fn();  // ...a
     await until(() =>  // poll delivers it (the dirty editor's base
       domWL.window.__logs.some((l) =>  // rightly stays put)

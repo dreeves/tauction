@@ -8,13 +8,13 @@
 const ctx = require('./fake-gas')();
 const ss = ctx.__ss;
 
-// THE PID ERA (2026-07-19): the userid is the identity; unames are
-// display labels. Real clients mint uuid pids; here a STABLE fake userid
-// derives from (slug, uname) so scenarios stay readable. names()
+// THE PID ERA (2026-07-19): the usid is the identity; snyms are
+// display labels. Real clients mint uuid pids; here a STABLE fake usid
+// derives from (slug, snym) so scenarios stay readable. names()
 // flattens a state's live-seat labels for roster-shaped asserts;
 // cutNames() the flagged ones.
-const userid = (a, u) => ('userid-' + a + '-' + u).toLowerCase();
-const names = (st) => st.seats.map((s) => s.uname).join(',');
+const usid = (a, u) => ('usid-' + a + '-' + u).toLowerCase();
+const names = (st) => st.seats.map((s) => s.snym).join(',');
 
 // Every action's result is checked against THE CLOSED-STATE COVENANT
 // (dreev found live auction test0916 revealed with a solo, bidless
@@ -37,10 +37,10 @@ const call = (req) => {
   if (st && !st.error && st.revealed) {
     ok(st.seats.length >= 2
        && st.seats.every((s) =>
-            st.bidders.some((b) => b.userid === s.userid)),
+            st.bidders.some((b) => b.usid === s.usid)),
        'closed-state covenant after "' + req.action + '" on '
          + st.slug + ': roster=' + JSON.stringify(names(st))
-         + ' bidders=' + JSON.stringify(st.bidders.map((b) => b.userid)));
+         + ' bidders=' + JSON.stringify(st.bidders.map((b) => b.usid)));
   }
   return st;
 };
@@ -103,20 +103,20 @@ ok(JSON.parse(ctx.doGet({}).body).ok, 'bare GET -> friendly liveness JSON');
 
 // 3. first bid (mixed case + padding get normalized); an empty roster can
 //    never reveal, so rosterless bids stay sealed
-st = call({ action: 'bid', slug: 'Tau', uname: 'Alice',
-            userid: userid('tau', 'alice'), bid: '  3 tacos ' });
+st = call({ action: 'bid', slug: 'Tau', snym: 'Alice',
+            usid: usid('tau', 'alice'), xbid: '  3 tacos ' });
 ok(!st.error, 'bid accepted: ' + st.error);
-ok(st.bidders.length === 1 && st.bidders[0].userid === userid('tau', 'alice'),
-   'bidder recorded, keyed by userid');
+ok(st.bidders.length === 1 && st.bidders[0].usid === usid('tau', 'alice'),
+   'bidder recorded, keyed by usid');
 ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(st.bidders[0].tmod),
    'bidder carries ISO tmod stamp');
 ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(st.bidders[0].tini),
    'bidder carries ISO tini stamp (the bid-cell tooltip needs it)');
 ok(st.bidders[0].bcount === 1, 'first submission counts 1');
 ok(names(st) === 'alice', 'bidding claims a roster seat, labeled');
-ok(ss.sheets['seats'].data[1][1] === userid('tau', 'alice')
+ok(ss.sheets['seats'].data[1][1] === usid('tau', 'alice')
    && ss.sheets['seats'].data[1][2] === 'alice',
-   'seat written to the sheet: userid and label');
+   'seat written to the sheet: usid and label');
 ok(st.revealed === false && st.bids === null,
    'solo roster never reveals: an auction takes two');
 ok(ss.sheets['bids'].data[1][2] === '3 tacos', 'bid trimmed');
@@ -138,8 +138,8 @@ ok(ss.sheets['bids'].fonts['1,1'] === 'Roboto Mono'
 //    LATEST row, and tini/tmod/bcount arrive in the payload DERIVED
 const stamp1 = st.bidders[0].tmod;
 const t0 = Date.now(); while (Date.now() - t0 < 3);  // ensure stamps differ
-st = call({ action: 'bid', slug: 'tau', uname: 'alice',
-            userid: userid('tau', 'alice'), bid: 'sushi' });
+st = call({ action: 'bid', slug: 'tau', snym: 'alice',
+            usid: usid('tau', 'alice'), xbid: 'sushi' });
 ok(ss.sheets['bids'].data.length === 3
    && ss.sheets['bids'].data[1][2] === '3 tacos'
    && ss.sheets['bids'].data[2][2] === 'sushi'
@@ -150,70 +150,70 @@ ok(st.bidders[0].tini === stamp1,
    'derived tini = the first tbid (first submission time survives)');
 ok(st.bidders[0].bcount === 2, 'derived bcount = the row count');
 ok(st.bidders.length === 1
-   && call({ action: 'state', slug: 'tau' }).bidders[0].userid
-        === userid('tau', 'alice'),
+   && call({ action: 'state', slug: 'tau' }).bidders[0].usid
+        === usid('tau', 'alice'),
    'one BIDDER in the payload however many rows: latest-row-wins');
 
 // The UI owns the consecutive-same-bid no-op BEFORE the wire. Once a
 // bid request reaches this append-only API it is a submission, even
 // when its sealed text matches the last row. Server-side equality
 // would make unchanged bcount an oracle for guessing a sealed bid.
-const wireDupe = { action: 'bid', slug: 'wiredupe', uname: 'ann',
-  userid: userid('wiredupe', 'ann'), bid: 'same sealed words',
-  devid: 'dev-wiredupe' };
+const wireDupe = { action: 'bid', slug: 'wiredupe', snym: 'ann',
+  usid: usid('wiredupe', 'ann'), xbid: 'same sealed words',
+  dvid: 'dev-wiredupe' };
 call(wireDupe);
 st = call(wireDupe);
 ok(st.bidders[0].bcount === 2
    && ss.sheets['bids'].data.filter(
-        (r) => r[0] === 'wiredupe' && r[1] === userid('wiredupe', 'ann')).length
+        (r) => r[0] === 'wiredupe' && r[1] === usid('wiredupe', 'ann')).length
       === 2,
    'two explicit wire submissions remain two log rows: the server never'
      + ' reveals sealed-text equality');
 
-// 4b. Replicata: a userid that is literally "constructor" (valid by the
-//     userid grammar) submits a bid. Expectata: aggregated like any userid.
+// 4b. Replicata: a usid that is literally "constructor" (valid by the
+//     usid grammar) submits a bid. Expectata: aggregated like any usid.
 //     Resultata pre-fix: Object.prototype.constructor impersonated an
 //     aggregate entry, so the sheet row existed but the bidder vanished.
-call({ action: 'add', slug: 'reserved', uname: 'constructor',
-       userid: 'constructor' });
-call({ action: 'add', slug: 'reserved', uname: 'alice',
-       userid: userid('reserved', 'alice') });
-st = call({ action: 'bid', slug: 'reserved', uname: 'constructor',
-            userid: 'constructor', bid: 'reserved words are people too' });
-ok(st.bidders.some((b) => b.userid === 'constructor'),
-   'valid reserved-key userid is aggregated: its logged bid cannot vanish');
-call({ action: 'bid', slug: 'reserved', uname: 'alice',
-       userid: userid('reserved', 'alice'), bid: 'ordinary' });
+call({ action: 'add', slug: 'reserved', snym: 'constructor',
+       usid: 'constructor' });
+call({ action: 'add', slug: 'reserved', snym: 'alice',
+       usid: usid('reserved', 'alice') });
+st = call({ action: 'bid', slug: 'reserved', snym: 'constructor',
+            usid: 'constructor', xbid: 'reserved words are people too' });
+ok(st.bidders.some((b) => b.usid === 'constructor'),
+   'valid reserved-key usid is aggregated: its logged bid cannot vanish');
+call({ action: 'bid', slug: 'reserved', snym: 'alice',
+       usid: usid('reserved', 'alice'), xbid: 'ordinary' });
 ok(!call({ action: 'reveal', slug: 'reserved' }).error,
    'reserved-key bidder counts toward reveal readiness');
 const reservedState = call({ action: 'state', slug: 'reserved' });
 ok(reservedState.claims.constructor === undefined
-   && reservedState.rigs.constructor === undefined,
-   'userid-keyed payload maps have no inherited reserved-key entries');
+   && reservedState.anyms.constructor === undefined,
+   'usid-keyed payload maps have no inherited reserved-key entries');
 
 // 5. reveal is a human act: a complete roster only UNLOCKS it.
 //    (The motivating bug: two drive-by bidders who never stated a roster
 //    must not see each other's bids just because they're "all in".)
-call({ action: 'add', slug: 'tau', uname: 'Alice',
-       userid: userid('tau', 'alice') });
-st = call({ action: 'add', slug: 'tau', uname: 'bob',
-            userid: userid('tau', 'bob') });
-st = call({ action: 'add', slug: 'tau', uname: 'alice',
-            userid: userid('tau', 'alice') });
+call({ action: 'add', slug: 'tau', snym: 'Alice',
+       usid: usid('tau', 'alice') });
+st = call({ action: 'add', slug: 'tau', snym: 'bob',
+            usid: usid('tau', 'bob') });
+st = call({ action: 'add', slug: 'tau', snym: 'alice',
+            usid: usid('tau', 'alice') });
 ok(!st.error && names(st) === 'alice,bob',
    'adds are idempotent + normalized: one seat per person');
 ok(call({ action: 'reveal', slug: 'tau' }).error,
    'reveal refused while bob is outstanding');
-st = call({ action: 'bid', slug: 'tau', uname: 'bob',
-            userid: userid('tau', 'bob'), bid: '$40' });
+st = call({ action: 'bid', slug: 'tau', snym: 'bob',
+            usid: usid('tau', 'bob'), xbid: '$40' });
 ok(st.revealed === false && st.bids === null,
    'roster complete: still sealed until someone reveals');
 st = call({ action: 'reveal', slug: 'tau' });
 ok(st.revealed === true, 'pressing reveal reveals');
 ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(st.tfin),
    'the reveal stamps its moment (the Closed line needs it)');
-ok(st.bids.length === 2 && st.bids[0].userid === userid('tau', 'alice')
-   && st.bids[0].bid === 'sushi' && st.bids[1].bid === '$40', 'bids exposed');
+ok(st.bids.length === 2 && st.bids[0].usid === usid('tau', 'alice')
+   && st.bids[0].xbid === 'sushi' && st.bids[1].xbid === '$40', 'bids exposed');
 ok(ss.sheets['bids'].colors['2,3'] === null
    && ss.sheets['bids'].colors['3,3'] === null,
    'revealed bids repainted visible');
@@ -223,45 +223,45 @@ ok(!call({ action: 'reveal', slug: 'tau' }).error,
 // 6. the gavel drop is a BRIGHT LINE (2026-07-16, dreev — reversing
 //    the old permissive-after-reveal pin): no bid lands after tfin,
 //    and the loser of an under-the-wire race hears it explicitly
-st = call({ action: 'bid', slug: 'tau', uname: 'carl',
-            userid: userid('tau', 'carl'), bid: 'too late' });
+st = call({ action: 'bid', slug: 'tau', snym: 'carl',
+            usid: usid('tau', 'carl'), xbid: 'too late' });
 ok(code(st) === 'gavelFell'
    && call({ action: 'state', slug: 'tau' }).bids.length === 2
    && !names(call({ action: 'state', slug: 'tau' })).includes('carl'),
    'a bid after the gavel falls is refused outright: nothing written');
-st = call({ action: 'bid', slug: 'tau', uname: 'alice',
-            userid: userid('tau', 'alice'), bid: 'revised!' });
+st = call({ action: 'bid', slug: 'tau', snym: 'alice',
+            usid: usid('tau', 'alice'), xbid: 'revised!' });
 ok(code(st) === 'gavelFell'
-   && call({ action: 'state', slug: 'tau' }).bids[0].bid === 'sushi',
+   && call({ action: 'state', slug: 'tau' }).bids[0].xbid === 'sushi',
    "even the bidder's own revision bounces: the record is the record");
-st = call({ action: 'rename', slug: 'tau', userid: userid('tau', 'alice'),
+st = call({ action: 'rename', slug: 'tau', usid: usid('tau', 'alice'),
             to: 'mallory' });
 ok(code(st) === 'auctionClosed'
    && names(call({ action: 'state', slug: 'tau' })).includes('alice')
    && call({ action: 'state', slug: 'tau' }).bids
-        .some((b) => b.userid === userid('tau', 'alice')),
+        .some((b) => b.usid === usid('tau', 'alice')),
    'names freeze at the gavel too (dreev 2026-07-17, reversing'
    + ' always-editable: a post-close rename could swap around who bid'
    + " what): refused, and alice's bid stays alice's");
 // ...and so do SEATS: found hunting dreev's one-more-bug 2026-07-17 —
-// post-reveal claims re-attributed a revealed bid to a stranger's rig,
+// post-reveal claims re-attributed a revealed bid to a stranger's anym,
 // and releases reopened seats for the taking. The whole record
 // freezes at the gavel.
-st = call({ action: 'claim', slug: 'tau', userid: userid('tau', 'alice'),
-            devid: 'd-x', rig: 'mallory rig' });
+st = call({ action: 'claim', slug: 'tau', usid: usid('tau', 'alice'),
+            dvid: 'd-x', anym: 'mallory anym' });
 ok(code(st) === 'auctionClosed'
    && call({ action: 'state', slug: 'tau' })
-        .claims[userid('tau', 'alice')] === undefined,
+        .claims[usid('tau', 'alice')] === undefined,
    "identities freeze at the gavel: a post-close claim can't dress a"
-   + " revealed bid in a stranger's rig");
-st = call({ action: 'release', slug: 'tau', userid: userid('tau', 'alice'),
-            devid: 'd-x' });
+   + " revealed bid in a stranger's anym");
+st = call({ action: 'release', slug: 'tau', usid: usid('tau', 'alice'),
+            dvid: 'd-x' });
 ok(code(st) === 'auctionClosed',
    'releases freeze too: no reopening seats after the game');
 // (2026-07-16, per dreev: the roster is CLOSED once revealed — adds
 // refuse rather than merely not-resealing)
-st = call({ action: 'add', slug: 'tau', uname: 'zed',
-            userid: userid('tau', 'zed') });
+st = call({ action: 'add', slug: 'tau', snym: 'zed',
+            usid: usid('tau', 'zed') });
 ok(st.error && !names(call({ action: 'state', slug: 'tau' }))
      .includes('zed'),
    'adding a participant after the reveal is refused: game over');
@@ -271,7 +271,7 @@ ok(ss.sheets['bids'].colors['2,3'] === null,
 // from a closed auction": the freeze doctrine never reached remove.
 // The old pins blessed permissive removal; now the whole record —
 // seats, bids, cut-row zombie purges — freezes at the gavel.]
-st = call({ action: 'remove', slug: 'tau', userid: userid('tau', 'bob') });
+st = call({ action: 'remove', slug: 'tau', usid: usid('tau', 'bob') });
 ok(code(st) === 'auctionClosed'
    && names(call({ action: 'state', slug: 'tau' })).includes('bob'),
    'removing a seat from a CLOSED auction is refused: the roster is'
@@ -281,26 +281,26 @@ ok(call({ action: 'state', slug: 'tau' }).revealed === true,
 
 // 6b. end-early = ex the straggler, THEN press reveal; roster edits
 //     alone never reveal anything
-call({ action: 'add', slug: 'photon', uname: 'pat',
-       userid: userid('photon', 'pat') });
-call({ action: 'add', slug: 'photon', uname: 'quinn',
-       userid: userid('photon', 'quinn') });
-st = call({ action: 'add', slug: 'photon', uname: 'rey',
-            userid: userid('photon', 'rey') });
-call({ action: 'bid', slug: 'photon', uname: 'pat',
-       userid: userid('photon', 'pat'), bid: 'one photon' });
-st = call({ action: 'bid', slug: 'photon', uname: 'rey',
-            userid: userid('photon', 'rey'), bid: 'two photons' });
+call({ action: 'add', slug: 'photon', snym: 'pat',
+       usid: usid('photon', 'pat') });
+call({ action: 'add', slug: 'photon', snym: 'quinn',
+       usid: usid('photon', 'quinn') });
+st = call({ action: 'add', slug: 'photon', snym: 'rey',
+            usid: usid('photon', 'rey') });
+call({ action: 'bid', slug: 'photon', snym: 'pat',
+       usid: usid('photon', 'pat'), xbid: 'one photon' });
+st = call({ action: 'bid', slug: 'photon', snym: 'rey',
+            usid: usid('photon', 'rey'), xbid: 'two photons' });
 ok(st.revealed === false, 'photon sealed while quinn is outstanding');
 ok(call({ action: 'reveal', slug: 'photon' }).error,
    'reveal refused with a straggler on the roster');
 st = call({ action: 'remove', slug: 'photon',
-            userid: userid('photon', 'quinn') });
+            usid: usid('photon', 'quinn') });
 ok(st.revealed === false, 'shrinking the roster alone reveals nothing');
 st = call({ action: 'reveal', slug: 'photon' });
 ok(st.revealed === true, 'ex the straggler, then reveal: end-early');
-st = call({ action: 'add', slug: 'photon', uname: 'quinn',
-            userid: userid('photon', 'quinn') });
+st = call({ action: 'add', slug: 'photon', snym: 'quinn',
+            usid: usid('photon', 'quinn') });
 ok(st.error && call({ action: 'state', slug: 'photon' }).revealed === true,
    'the ended auction refuses new participants; the latch holds');
 
@@ -310,21 +310,21 @@ ok(st.error && call({ action: 'state', slug: 'photon' }).revealed === true,
 //     a race — the UI grays that ×). Expectata: refused loudly, in
 //     the Latin, and NOTHING changes: a sealed bid is never deletable
 //     and now never orphaned either, so no cut state exists at all.
-call({ action: 'add', slug: 'zombie', uname: 'zomb',
-       userid: userid('zombie', 'zomb') });
-call({ action: 'add', slug: 'zombie', uname: 'keep',
-       userid: userid('zombie', 'keep') });
-call({ action: 'bid', slug: 'zombie', uname: 'zomb',
-       userid: userid('zombie', 'zomb'), bid: 'undead' });
+call({ action: 'add', slug: 'zombie', snym: 'zomb',
+       usid: usid('zombie', 'zomb') });
+call({ action: 'add', slug: 'zombie', snym: 'keep',
+       usid: usid('zombie', 'keep') });
+call({ action: 'bid', slug: 'zombie', snym: 'zomb',
+       usid: usid('zombie', 'zomb'), xbid: 'undead' });
 st = call({ action: 'remove', slug: 'zombie',
-            userid: userid('zombie', 'zomb') });
+            usid: usid('zombie', 'zomb') });
 ok(code(st) === 'removeBidder'
    && names(call({ action: 'state', slug: 'zombie' })) === 'zomb,keep'
    && call({ action: 'state', slug: 'zombie' }).bidders.length === 1,
    'removing a bidder is refused outright: seat, bid, and roster all'
    + ' untouched');
 st = call({ action: 'remove', slug: 'zombie',
-            userid: userid('zombie', 'keep') });
+            usid: usid('zombie', 'keep') });
 ok(!st.error && names(st) === 'zomb'
    && ss.sheets['seats'].data.filter(r => r[0] === 'zombie').length === 1,
    'removing a BIDLESS person deletes the seat row outright: no flag,'
@@ -333,58 +333,58 @@ ok(!st.error && names(st) === 'zomb'
 // 6d. the removal race, other order: ada's seat is removed while her
 //     FIRST bid is in flight (she was bidless when the remove landed,
 //     so it succeeded). Expectata: her bid simply rebuilds the seat —
-//     same userid, nothing orphaned, the race self-heals.
-call({ action: 'add', slug: 'boson', uname: 'ada',
-       userid: userid('boson', 'ada') });
-call({ action: 'add', slug: 'boson', uname: 'ben',
-       userid: userid('boson', 'ben') });
-st = call({ action: 'remove', slug: 'boson', userid: userid('boson', 'ada') });
+//     same usid, nothing orphaned, the race self-heals.
+call({ action: 'add', slug: 'boson', snym: 'ada',
+       usid: usid('boson', 'ada') });
+call({ action: 'add', slug: 'boson', snym: 'ben',
+       usid: usid('boson', 'ben') });
+st = call({ action: 'remove', slug: 'boson', usid: usid('boson', 'ada') });
 ok(names(st) === 'ben', 'removing bidless ada deletes her seat');
-st = call({ action: 'bid', slug: 'boson', uname: 'ada',
-            userid: userid('boson', 'ada'), bid: 'x anyway' });
+st = call({ action: 'bid', slug: 'boson', snym: 'ada',
+            usid: usid('boson', 'ada'), xbid: 'x anyway' });
 ok(names(st) === 'ben,ada' && st.bidders.length === 1,
-   "ada's in-flight bid rebuilds her seat: same userid, race healed");
+   "ada's in-flight bid rebuilds her seat: same usid, race healed");
 ok(st.revealed === false, 'still sealed: ben is outstanding');
 
 // 6c. rows with a blank bcount: an existing bid row implies at
 //     least one submission — never 0 (green row + 0 is a contradiction)
-ss.sheets['bids'].appendRow(['relic', userid('relic', 'oldtimer'),
+ss.sheets['bids'].appendRow(['relic', usid('relic', 'oldtimer'),
   'ancient bid', '', '2026-01-01T00:00:00.000Z',
   '2026-01-01T00:00:00.000Z']);
 st = call({ action: 'state', slug: 'relic' });
 ok(st.bidders[0].bcount === 1, 'legacy bid row counts as 1, never 0');
 const t1 = Date.now(); while (Date.now() - t1 < 3);
-st = call({ action: 'bid', slug: 'relic', uname: 'oldtimer',
-            userid: userid('relic', 'oldtimer'), bid: 'newer' });
+st = call({ action: 'bid', slug: 'relic', snym: 'oldtimer',
+            usid: usid('relic', 'oldtimer'), xbid: 'newer' });
 ok(st.bidders[0].bcount === 2, 'legacy re-bid counts as 2');
 
 // 7. walk-on bidders don't gate the reveal
-call({ action: 'add', slug: 'gluon', uname: 'dee',
-       userid: userid('gluon', 'dee') });
-st = call({ action: 'add', slug: 'gluon', uname: 'evy',
-            userid: userid('gluon', 'evy') });
-st = call({ action: 'bid', slug: 'gluon', uname: 'dee',
-            userid: userid('gluon', 'dee'), bid: 'I bid 2 dishes' });
+call({ action: 'add', slug: 'gluon', snym: 'dee',
+       usid: usid('gluon', 'dee') });
+st = call({ action: 'add', slug: 'gluon', snym: 'evy',
+            usid: usid('gluon', 'evy') });
+st = call({ action: 'bid', slug: 'gluon', snym: 'dee',
+            usid: usid('gluon', 'dee'), xbid: 'I bid 2 dishes' });
 ok(st.revealed === false, 'waiting on evy');
-st = call({ action: 'bid', slug: 'gluon', uname: 'rando',
-            userid: userid('gluon', 'rando'), bid: 'me too!' });
+st = call({ action: 'bid', slug: 'gluon', snym: 'rando',
+            usid: usid('gluon', 'rando'), xbid: 'me too!' });
 ok(st.revealed === false && names(st).includes('rando'),
    'walk-on joins the roster; reveal still waits on evy');
-st = call({ action: 'bid', slug: 'gluon', uname: 'evy',
-            userid: userid('gluon', 'evy'), bid: '1 dish + dessert' });
+st = call({ action: 'bid', slug: 'gluon', snym: 'evy',
+            usid: usid('gluon', 'evy'), xbid: '1 dish + dessert' });
 ok(st.revealed === false, 'complete (including the walk-on) but still sealed');
 st = call({ action: 'reveal', slug: 'gluon' });
 ok(st.revealed === true && st.bids.length === 3, 'reveal exposes all three');
-// a walk-on bid whose LABEL is already live under someone else's userid
+// a walk-on bid whose LABEL is already live under someone else's usid
 // is a doppelganger, refused (live labels are unique; identity is
-// the userid, but the ledger must stay legible)
-st = call({ action: 'bid', slug: 'gluon2', uname: 'solo',
-            userid: userid('gluon2', 'solo'), bid: 'first' });
-st = call({ action: 'bid', slug: 'gluon2', uname: 'solo',
-            userid: 'userid-gluon2-imposter', bid: 'second' });
+// the usid, but the ledger must stay legible)
+st = call({ action: 'bid', slug: 'gluon2', snym: 'solo',
+            usid: usid('gluon2', 'solo'), xbid: 'first' });
+st = call({ action: 'bid', slug: 'gluon2', snym: 'solo',
+            usid: 'usid-gluon2-imposter', xbid: 'second' });
 ok(code(st) === 'nameTaken'
    && call({ action: 'state', slug: 'gluon2' }).bidders.length === 1,
-   'a doppelganger walk-on (live label, foreign userid) is refused');
+   'a doppelganger walk-on (live label, foreign usid) is refused');
 
 // 7b. the auction description: arbitrary markdown, editable by anyone
 //     before OR after the close, guarded against silent clobbers by
@@ -395,103 +395,103 @@ ok(code(st) === 'nameTaken'
 //     collide the way a wall-clock stamp could, and it doubles as
 //     the pencil tooltip's number.
 st = call({ action: 'state', slug: 'tau' });
-ok(st.blurb === '' && st.bver === 0,
-   'no blurb to start: version 0, a number');
-ok(!('tblurb' in st),
-   'the payload carries no tblurb: the stamp era is fully out');
+ok(st.blub === '' && st.bver === 0,
+   'no blub to start: version 0, a number');
+ok(!('tblub' in st),
+   'the payload carries no tblub: the stamp era is fully out');
 st = call({ action: 'describe', slug: 'tau',
-            blurb: '# Brunch\n\nBring **cash**.', base: 0 });
-ok(!st.error && st.blurb === '# Brunch\n\nBring **cash**.'
+            blub: '# Brunch\n\nBring **cash**.', base: 0 });
+ok(!st.error && st.blub === '# Brunch\n\nBring **cash**.'
    && st.bver === 1,
-   'a blurb lands, newlines and all, and increments to version 1');
+   'a blub lands, newlines and all, and increments to version 1');
 st = call({ action: 'describe', slug: 'tau',
-            blurb: 'second thoughts', base: 1 });
-ok(!st.error && st.blurb === 'second thoughts' && st.bver === 2,
+            blub: 'second thoughts', base: 1 });
+ok(!st.error && st.blub === 'second thoughts' && st.bver === 2,
    'an edit based on the current version goes through: version 2');
 st = call({ action: 'describe', slug: 'tau',
-            blurb: 'clobber attempt', base: 1 });
+            blub: 'clobber attempt', base: 1 });
 ok(code(st) === 'simulEdits'
-   && call({ action: 'state', slug: 'tau' }).blurb === 'second thoughts',
+   && call({ action: 'state', slug: 'tau' }).blub === 'second thoughts',
    'an edit based on a STALE version is refused: no silent clobbering');
 // ...and the refusal CARRIES the snapshot that refused it (generated
 // under the same write lock), so the client's war diff needs no
 // second round trip — same payload a success returns, plus the error
-ok(st.slug === 'tau' && st.blurb === 'second thoughts'
+ok(st.slug === 'tau' && st.blub === 'second thoughts'
    && st.bver === call({ action: 'state', slug: 'tau' }).bver
    && Array.isArray(st.bidders),
    'the CAS refusal rides on a full state snapshot: theirs arrives'
    + ' with the verdict');
-st = call({ action: 'describe', slug: 'tau', blurb: 'sneak', base: '' });
+st = call({ action: 'describe', slug: 'tau', blub: 'sneak', base: '' });
 ok(code(st) === 'simulEdits'
-   && call({ action: 'state', slug: 'tau' }).blurb === 'second thoughts',
+   && call({ action: 'state', slug: 'tau' }).blub === 'second thoughts',
    "'' is not a spelling of virgin (Number('') would coerce to 0"
    + ' silently): a malformed base is a stale base');
-st = call({ action: 'describe', slug: 'tau', blurb: 'x'.repeat(2001),
+st = call({ action: 'describe', slug: 'tau', blub: 'x'.repeat(2001),
             base: call({ action: 'state', slug: 'tau' }).bver });
 ok(st.error, 'a novel is refused (2000 chars is plenty)');
 ok(call({ action: 'state', slug: 'tau' }).bver === 2,
    'a refusal moves no version: the counter counts COMMITS only');
-ok(!call({ action: 'describe', slug: 'tau', blurb: 'post-close note',
+ok(!call({ action: 'describe', slug: 'tau', blub: 'post-close note',
            base: call({ action: 'state', slug: 'tau' }).bver }).error,
-   'the blurb stays editable after the gavel: tau is revealed');
+   'the blub stays editable after the gavel: tau is revealed');
 
 // 7c. Replicata: save only a description, with no roster or bids.
 //     Expectata: the state says the auction exists, so typed-name
 //     occupancy does not confuse it with a virgin name. Resultata
 //     pre-fix: those two states had no explicit distinguishing field.
 st = call({ action: 'describe', slug: 'desconly',
-            blurb: 'description without participants', base: 0 });
+            blub: 'description without participants', base: 0 });
 ok(st.exists === true && st.seats.length === 0 && st.bidders.length === 0,
    'description-only auction reports existing despite an empty ledger');
 
 // 8. seats are rows in the users tab; adds upsert, removes delete
-st = call({ action: 'add', slug: 'muon', uname: 'a',
-            userid: userid('muon', 'a') });
-st = call({ action: 'add', slug: 'muon', uname: 'a',
-            userid: userid('muon', 'a') });
+st = call({ action: 'add', slug: 'muon', snym: 'a',
+            usid: usid('muon', 'a') });
+st = call({ action: 'add', slug: 'muon', snym: 'a',
+            usid: usid('muon', 'a') });
 ok(!st.error && names(st) === 'a',
-   'an exact same-userid add retry is idempotent');
-st = call({ action: 'add', slug: 'muon', uname: 'b',
-            userid: userid('muon', 'b') });
+   'an exact same-usid add retry is idempotent');
+st = call({ action: 'add', slug: 'muon', snym: 'b',
+            usid: usid('muon', 'b') });
 ok(names(st) === 'a,b', 'roster grows in insertion order');
 ok(ss.sheets['seats'].data.filter(r => r[0] === 'muon').length === 2,
    'duplicate add: still one seat row');
 // Replicata: another browser submits a live label under its own fresh
-// userid (two people type alice). Expectata (dreev 2026-07-21, reversing
+// usid (two people type alice). Expectata (dreev 2026-07-21, reversing
 // the 07-20 loud refusal — the error read as wrong when alice WAS
 // added, exactly as requested): the goal state already holds, so this
 // is idempotent SUCCESS — no error, no doppelganger, zero sheet
-// writes, not even a tmod bump; the loser's userid stays unseated and
+// writes, not even a tmod bump; the loser's usid stays unseated and
 // they converge as an ordinary latecomer. Renames onto a live label
 // still refuse: their goal is a CHANGE, which genuinely didn't
 // happen. Resultata pre-flip: it threw nameTakenCopy at a satisfied
 // request.
 const collisionWrites = ctx.__tally.writes;
-st = call({ action: 'add', slug: 'muon', uname: 'a',
-            userid: 'userid-muon-second-browser' });
+st = call({ action: 'add', slug: 'muon', snym: 'a',
+            usid: 'usid-muon-second-browser' });
 ok(!st.error && names(st) === 'a,b'
-   && st.seats.find((s) => s.uname === 'a').userid === userid('muon', 'a')
+   && st.seats.find((s) => s.snym === 'a').usid === usid('muon', 'a')
    && ss.sheets['seats'].data.filter(r => r[0] === 'muon').length === 2
    && ctx.__tally.writes === collisionWrites,
-   'a live label under a different userid is idempotent success: zero'
+   'a live label under a different usid is idempotent success: zero'
    + ' writes, no doppelganger, the original seat stands');
 ok(ss.sheets['auctions'].data.filter(r => r[0] === 'muon').length === 1,
    'one auctions row per auction');
-st = call({ action: 'remove', slug: 'muon', userid: userid('muon', 'a') });
+st = call({ action: 'remove', slug: 'muon', usid: usid('muon', 'a') });
 ok(names(st) === 'b'
    && ss.sheets['seats'].data.filter(r => r[0] === 'muon').length === 1,
    'removing a bidless person deletes the seat row');
 ok(!call({ action: 'remove', slug: 'muon',
-           userid: userid('muon', 'ghost') }).error,
+           usid: usid('muon', 'ghost') }).error,
    'removing an absent seat is a harmless no-op');
 // re-adding a removed name is a plain fresh add: they were bidless
 // when removed (guaranteed now), so there is nothing to continue
-st = call({ action: 'add', slug: 'muon', uname: 'a',
-            userid: 'userid-muon-freshly-minted' });
+st = call({ action: 'add', slug: 'muon', snym: 'a',
+            usid: 'usid-muon-freshly-minted' });
 ok(!st.error && names(st) === 'b,a'
-   && st.seats.find((s) => s.uname === 'a').userid
-        === 'userid-muon-freshly-minted',
-   're-adding a removed name mints a fresh seat under the new userid');
+   && st.seats.find((s) => s.snym === 'a').usid
+        === 'usid-muon-freshly-minted',
+   're-adding a removed name mints a fresh seat under the new usid');
 
 // 8b. claims: who-is-who is server truth, so two machines can't both
 //     be alice. FIRST COME, FIRST SERVED (2026-07-16; the old
@@ -502,20 +502,20 @@ ok(!st.error && names(st) === 'b,a'
 //     only the holder may release; one device holds at most one seat
 //     per auction (claiming anew releases your old one, radio-style);
 //     bidding registers the claim iff the seat is yours or open.
-const annP = userid('higgs', 'ann');
-const benP = userid('higgs', 'ben');
-const ceeP = userid('higgs', 'cee');
-call({ action: 'add', slug: 'higgs', uname: 'ann', userid: annP });
-st = call({ action: 'add', slug: 'higgs', uname: 'ben', userid: benP });
+const annP = usid('higgs', 'ann');
+const benP = usid('higgs', 'ben');
+const ceeP = usid('higgs', 'cee');
+call({ action: 'add', slug: 'higgs', snym: 'ann', usid: annP });
+st = call({ action: 'add', slug: 'higgs', snym: 'ben', usid: benP });
 ok(st.claims && Object.keys(st.claims).length === 0,
    'no claims yet: empty map');
-st = call({ action: 'claim', slug: 'higgs', userid: annP, devid: 'dev-1',
-            rig: 'a Mac (Chrome)' });
+st = call({ action: 'claim', slug: 'higgs', usid: annP, dvid: 'dev-1',
+            anym: 'a Mac (Chrome)' });
 ok(!st.error && st.claims[annP] === 'dev-1', 'claim registers the device');
-ok(st.rigs[annP] === 'a Mac (Chrome)',
-   "the claimant's self-reported rig rides along");
-st = call({ action: 'claim', slug: 'higgs', userid: annP, devid: 'dev-1',
-            rig: 'a Mac (Chrome)' });
+ok(st.anyms[annP] === 'a Mac (Chrome)',
+   "the claimant's self-reported anym rides along");
+st = call({ action: 'claim', slug: 'higgs', usid: annP, dvid: 'dev-1',
+            anym: 'a Mac (Chrome)' });
 ok(!st.error && st.claims[annP] === 'dev-1', 're-claiming your own seat is'
    + ' idempotent (a device that lost localStorage re-latches)');
 // Replicata (faire, /carnoon, 2026-07-21): her phone claimed her
@@ -526,166 +526,166 @@ ok(!st.error && st.claims[annP] === 'dev-1', 're-claiming your own seat is'
 // marker, not auth — it TAKES the seat, last write wins, honor
 // system like every other op. Resultata pre-flip: ERROR1304; her
 // only escape was removing and re-adding herself.
-st = call({ action: 'claim', slug: 'higgs', userid: annP, devid: 'dev-2',
-            rig: 'an iPhone (Safari)' });
+st = call({ action: 'claim', slug: 'higgs', usid: annP, dvid: 'dev-2',
+            anym: 'an iPhone (Safari)' });
 ok(!st.error && st.claims[annP] === 'dev-2'
-   && st.rigs[annP] === 'an iPhone (Safari)',
-   'a claim on a held seat TAKES it: last write wins, new rig blurbed');
-st = call({ action: 'release', slug: 'higgs', userid: annP,
-            devid: 'dev-1' });
+   && st.anyms[annP] === 'an iPhone (Safari)',
+   'a claim on a held seat TAKES it: last write wins, new anym blubed');
+st = call({ action: 'release', slug: 'higgs', usid: annP,
+            dvid: 'dev-1' });
 ok(code(st) === 'notYourSeat'
    && call({ action: 'state', slug: 'higgs' }).claims[annP] === 'dev-2',
    'only the CURRENT holder may release a seat');
-st = call({ action: 'release', slug: 'higgs', userid: annP });
+st = call({ action: 'release', slug: 'higgs', usid: annP });
 ok(code(st) === 'releaseNeedsDevice'
    && call({ action: 'state', slug: 'higgs' }).claims[annP] === 'dev-2',
    'a device-less release is refused: vacating a seat means saying'
    + ' WHO is leaving');
-st = call({ action: 'release', slug: 'higgs', userid: benP,
-            devid: 'dev-9' });
+st = call({ action: 'release', slug: 'higgs', usid: benP,
+            dvid: 'dev-9' });
 ok(!st.error, 'releasing an unheld seat is a no-op (a merely-local'
    + ' soft claim must release without drama)');
-st = call({ action: 'release', slug: 'higgs', userid: annP,
-            devid: 'dev-2' });
+st = call({ action: 'release', slug: 'higgs', usid: annP,
+            dvid: 'dev-2' });
 ok(!st.error && st.claims[annP] === undefined,
    'the holder releases: seat open again');
-st = call({ action: 'claim', slug: 'higgs', userid: benP, devid: 'dev-1' });
-st = call({ action: 'claim', slug: 'higgs', userid: annP, devid: 'dev-1' });
+st = call({ action: 'claim', slug: 'higgs', usid: benP, dvid: 'dev-1' });
+st = call({ action: 'claim', slug: 'higgs', usid: annP, dvid: 'dev-1' });
 ok(st.claims[annP] === 'dev-1' && st.claims[benP] === undefined,
-   'one seat per devid: claiming ann releases your ben, radio-style');
+   'one seat per dvid: claiming ann releases your ben, radio-style');
 ok(ss.sheets['seats'].data.filter(r => r[0] === 'higgs' && r[1] === annP)
      .length === 1, 'claims live on the seat row: upsert, not append');
-st = call({ action: 'bid', slug: 'higgs', uname: 'ann', userid: annP,
-            bid: 'a boson', devid: 'dev-3' });
-ok(code(st) === 'bidSeatHeld' && st.error.rig === 'a Mac (Chrome)'
-   && st.error.uname === 'ann'
+st = call({ action: 'bid', slug: 'higgs', snym: 'ann', usid: annP,
+            xbid: 'a boson', dvid: 'dev-3' });
+ok(code(st) === 'bidSeatHeld' && st.error.anym === 'a Mac (Chrome)'
+   && st.error.snym === 'ann'
    && call({ action: 'state', slug: 'higgs' }).bidders.length === 0,
-   "a bid can't hijack a held seat: refused, naming the holder's rig"
+   "a bid can't hijack a held seat: refused, naming the holder's anym"
    + " and the seat's label, and no bid row written");
-st = call({ action: 'bid', slug: 'higgs', uname: 'ben', userid: benP,
-            bid: 'legal', devid: 'dev-3' });
+st = call({ action: 'bid', slug: 'higgs', snym: 'ben', usid: benP,
+            xbid: 'legal', dvid: 'dev-3' });
 ok(!st.error && st.claims[benP] === 'dev-3',
    'bidding an OPEN seat registers your claim on it');
-st = call({ action: 'bid', slug: 'higgs', uname: 'ben', userid: benP,
-            bid: 'nope' });
-ok(code(st) === 'bidSeatHeld' && st.error.rig === ''
-   && st.error.uname === 'ben',
+st = call({ action: 'bid', slug: 'higgs', snym: 'ben', usid: benP,
+            xbid: 'nope' });
+ok(code(st) === 'bidSeatHeld' && st.error.anym === ''
+   && st.error.snym === 'ben',
    'a device-less bid (old client) counts as nobody: refused on a'
    + ' held seat too');
-call({ action: 'add', slug: 'higgs', uname: 'cee', userid: ceeP });
-st = call({ action: 'bid', slug: 'higgs', uname: 'cee', userid: ceeP,
-            bid: 'old' });
+call({ action: 'add', slug: 'higgs', snym: 'cee', usid: ceeP });
+st = call({ action: 'bid', slug: 'higgs', snym: 'cee', usid: ceeP,
+            xbid: 'old' });
 ok(!st.error && st.claims[ceeP] === undefined,
    'a device-less bid on an open seat still works, claiming nothing');
-ok(call({ action: 'claim', slug: 'higgs', userid: annP,
-          devid: 'BAD DEVICE!' }).error, 'garbage device id rejected');
-ok(call({ action: 'claim', slug: 'higgs', userid: ceeP,
-          devid: '' }).error,
+ok(call({ action: 'claim', slug: 'higgs', usid: annP,
+          dvid: 'BAD DVID!' }).error, 'garbage device id rejected');
+ok(call({ action: 'claim', slug: 'higgs', usid: ceeP,
+          dvid: '' }).error,
    'a claim with no device is a client bug: refused');
-ok(call({ action: 'claim', slug: 'higgs', userid: 'userid-higgs-nobody',
-          devid: 'dev-8' }).error,
+ok(call({ action: 'claim', slug: 'higgs', usid: 'usid-higgs-nobody',
+          dvid: 'dev-8' }).error,
    'claiming a seat that does not exist is refused (the client only'
    + ' ever claims rows it can see; ops serialize behind the add)');
-// the rig contract the client must meet: printable ASCII, max 160
+// the anym contract the client must meet: printable ASCII, max 160
 // chars (widened from 64, 2026-08-05, for the crammed
 // city-or-by-timezone tail; 160 matches the bid limit) — the
 // frontend ASCII-fies and clamps its decoration to fit (a São Paulo
 // bidder must never lose a bid to an accent)
-st = call({ action: 'claim', slug: 'higgs', userid: annP,
-            devid: 'dev-1', rig: 'Mac in São Paulo' });
-ok(code(st) === 'badRig',
-   'a non-ASCII rig is refused: the contract is printable'
+st = call({ action: 'claim', slug: 'higgs', usid: annP,
+            dvid: 'dev-1', anym: 'Mac in São Paulo' });
+ok(code(st) === 'badAnym',
+   'a non-ASCII anym is refused: the contract is printable'
    + ' ASCII, and the server never silently fixes inputs');
-ok(call({ action: 'claim', slug: 'higgs', userid: annP,
-          devid: 'dev-1', rig: 'y'.repeat(161) }).error,
-   'a 161-char rig is refused');
-ok(!call({ action: 'claim', slug: 'higgs', userid: annP,
-           devid: 'dev-1', rig: 'y'.repeat(160) }).error,
-   'a 160-char rig is accepted: the fence sits at exactly 160');
+ok(call({ action: 'claim', slug: 'higgs', usid: annP,
+          dvid: 'dev-1', anym: 'y'.repeat(161) }).error,
+   'a 161-char anym is refused');
+ok(!call({ action: 'claim', slug: 'higgs', usid: annP,
+           dvid: 'dev-1', anym: 'y'.repeat(160) }).error,
+   'a 160-char anym is accepted: the fence sits at exactly 160');
 
-// 8c. renames are LABEL EDITS (the userid era's whole point): one cell
+// 8c. renames are LABEL EDITS (the usid era's whole point): one cell
 //     changes; bids, claims, stamps, and counts don't even notice
-call({ action: 'add', slug: 'strange', uname: 'alicw',
-       userid: userid('strange', 'alicw') });
-call({ action: 'add', slug: 'strange', uname: 'bob',
-       userid: userid('strange', 'bob') });
-call({ action: 'claim', slug: 'strange', userid: userid('strange', 'alicw'),
-       devid: 'dev-9' });
-st = call({ action: 'bid', slug: 'strange', uname: 'alicw',
-            userid: userid('strange', 'alicw'), bid: 'six',
-            devid: 'dev-9' });  // the holder's own bid
+call({ action: 'add', slug: 'strange', snym: 'alicw',
+       usid: usid('strange', 'alicw') });
+call({ action: 'add', slug: 'strange', snym: 'bob',
+       usid: usid('strange', 'bob') });
+call({ action: 'claim', slug: 'strange', usid: usid('strange', 'alicw'),
+       dvid: 'dev-9' });
+st = call({ action: 'bid', slug: 'strange', snym: 'alicw',
+            usid: usid('strange', 'alicw'), xbid: 'six',
+            dvid: 'dev-9' });  // the holder's own bid
 const stampB4 = st.bidders[0].tmod;
 st = call({ action: 'rename', slug: 'strange',
-            userid: userid('strange', 'alicw'), to: 'Alice' });
+            usid: usid('strange', 'alicw'), to: 'Alice' });
 ok(!st.error && names(st) === 'alice,bob',
    'typo fixed in place, normalized, order kept');
-ok(st.claims[userid('strange', 'alicw')] === 'dev-9',
-   'the claim rides the renamed seat (same userid: nothing moved)');
+ok(st.claims[usid('strange', 'alicw')] === 'dev-9',
+   'the claim rides the renamed seat (same usid: nothing moved)');
 ok(st.bidders.length === 1
-   && st.bidders[0].userid === userid('strange', 'alicw')
+   && st.bidders[0].usid === usid('strange', 'alicw')
    && st.bidders[0].tmod === stampB4 && st.bidders[0].bcount === 1,
    'the bid follows the rename: stamps and count intact');
 ok(call({ action: 'rename', slug: 'strange',
-          userid: userid('strange', 'alicw'), to: 'bob' })
+          usid: usid('strange', 'alicw'), to: 'bob' })
    .error, 'renaming onto an existing live name is refused');
 ok(call({ action: 'rename', slug: 'strange',
-          userid: userid('strange', 'ghost'), to: 'gus' })
+          usid: usid('strange', 'ghost'), to: 'gus' })
    .error, 'renaming a nonexistent participant is refused');
 ok(call({ action: 'rename', slug: 'strange',
-          userid: userid('strange', 'bob'), to: '1bad' })
+          usid: usid('strange', 'bob'), to: '1bad' })
    .error, 'renaming to an invalid name is refused');
 ok(!call({ action: 'rename', slug: 'strange',
-           userid: userid('strange', 'bob'), to: 'bob' })
+           usid: usid('strange', 'bob'), to: 'bob' })
    .error, 'renaming to the same name is a no-op');
 
 // 8d. [REWRITTEN 2026-07-19: bidders can't be removed at all, so a
 //     bidder's label stays seated and reserved — renaming onto it
 //     collides like any live label, and bid histories can never
 //     merge because bids ride pids.]
-call({ action: 'add', slug: 'cutrename', uname: 'alice',
-       userid: userid('cutrename', 'alice') });
-call({ action: 'add', slug: 'cutrename', uname: 'bob',
-       userid: userid('cutrename', 'bob') });
-call({ action: 'bid', slug: 'cutrename', uname: 'bob',
-       userid: userid('cutrename', 'bob'), bid: 'bobs bid' });
+call({ action: 'add', slug: 'cutrename', snym: 'alice',
+       usid: usid('cutrename', 'alice') });
+call({ action: 'add', slug: 'cutrename', snym: 'bob',
+       usid: usid('cutrename', 'bob') });
+call({ action: 'bid', slug: 'cutrename', snym: 'bob',
+       usid: usid('cutrename', 'bob'), xbid: 'bobs bid' });
 st = call({ action: 'remove', slug: 'cutrename',
-            userid: userid('cutrename', 'bob') });
+            usid: usid('cutrename', 'bob') });
 ok(code(st) === 'removeBidder',
    "bob has bid, so bob stays: his seat and label are permanent");
 st = call({ action: 'rename', slug: 'cutrename',
-            userid: userid('cutrename', 'alice'), to: 'bob' });
+            usid: usid('cutrename', 'alice'), to: 'bob' });
 const cutRenameState = call({ action: 'state', slug: 'cutrename' });
 ok(code(st) === 'nameTaken'
    && names(cutRenameState) === 'alice,bob'
-   && cutRenameState.bidders[0].userid === userid('cutrename', 'bob'),
+   && cutRenameState.bidders[0].usid === usid('cutrename', 'bob'),
    "a bidder's label is reserved by their permanent seat: renames"
    + ' collide, histories never merge');
 
 // 9. validation
-ok(call({ action: 'bid', slug: 'ta_u', uname: 'a',
-          userid: 'userid-x-aaaa', bid: 'x' }).error,
+ok(call({ action: 'bid', slug: 'ta_u', snym: 'a',
+          usid: 'usid-x-aaaa', xbid: 'x' }).error,
    'bad slug rejected');
-ok(call({ action: 'bid', slug: 'tau2', uname: '1abc',
-          userid: 'userid-tau2-x', bid: 'x' }).error,
+ok(call({ action: 'bid', slug: 'tau2', snym: '1abc',
+          usid: 'usid-tau2-x', xbid: 'x' }).error,
    'name starting with digit rejected');
-ok(call({ action: 'bid', slug: 'tau2', uname: 'a b',
-          userid: 'userid-tau2-y', bid: 'x' }).error,
+ok(call({ action: 'bid', slug: 'tau2', snym: 'a b',
+          usid: 'usid-tau2-y', xbid: 'x' }).error,
    'name with space rejected');
-ok(code(call({ action: 'bid', slug: 'tau2', uname: 'abc',
-               userid: 'NOT A PID!', bid: 'x' })) === 'badUserid',
-   'garbage userid rejected');
-ok(code(call({ action: 'bid', slug: 'tau2', uname: 'abc',
-               bid: 'x' })) === 'badUserid',
-   'a MISSING userid is rejected too: old-shape clients fail loudly,'
+ok(code(call({ action: 'bid', slug: 'tau2', snym: 'abc',
+               usid: 'NOT A PID!', xbid: 'x' })) === 'badUsid',
+   'garbage usid rejected');
+ok(code(call({ action: 'bid', slug: 'tau2', snym: 'abc',
+               xbid: 'x' })) === 'badUsid',
+   'a MISSING usid is rejected too: old-shape clients fail loudly,'
    + ' never half-write');
-ok(call({ action: 'bid', slug: 'tau2', uname: 'abc',
-          userid: userid('tau2', 'abc'), bid: '' }).error,
+ok(call({ action: 'bid', slug: 'tau2', snym: 'abc',
+          usid: usid('tau2', 'abc'), xbid: '' }).error,
    'empty bid rejected');
-ok(call({ action: 'bid', slug: 'tau2', uname: 'abc',
-          userid: userid('tau2', 'abc'), bid: 'y'.repeat(161) })
+ok(call({ action: 'bid', slug: 'tau2', snym: 'abc',
+          usid: usid('tau2', 'abc'), xbid: 'y'.repeat(161) })
    .error, '81-char bid rejected');
-ok(!call({ action: 'bid', slug: 'tau2', uname: 'abc',
-           userid: userid('tau2', 'abc'), bid: 'y'.repeat(160) })
+ok(!call({ action: 'bid', slug: 'tau2', snym: 'abc',
+           usid: usid('tau2', 'abc'), xbid: 'y'.repeat(160) })
    .error, '160-char bid accepted');
 
 // 9b. Replicata: send a virgin claim/bid whose device decoration or id
@@ -693,14 +693,14 @@ ok(!call({ action: 'bid', slug: 'tau2', uname: 'abc',
 //     Resultata pre-fix: touchAuction + ensureSeat ran first, so an error
 //     response left a phantom roster seat with no claim and no bid.
 const atomicValidationCases = [
-  { action: 'claim', slug: 'badclaim', userid: 'userid-badclaim-alice',
-    devid: 'dev-1', rig: 'São Paulo' },
-  { action: 'bid', slug: 'badbidblurb', uname: 'alice',
-    userid: 'userid-badbidblurb-alice', bid: 'ten',
-    devid: 'dev-1', rig: 'São Paulo' },
-  { action: 'bid', slug: 'badbiddevice', uname: 'alice',
-    userid: 'userid-badbiddevice-alice', bid: 'ten',
-    devid: 'BAD DEVICE!', rig: 'a rig' },
+  { action: 'claim', slug: 'badclaim', usid: 'usid-badclaim-alice',
+    dvid: 'dev-1', anym: 'São Paulo' },
+  { action: 'bid', slug: 'badbidblub', snym: 'alice',
+    usid: 'usid-badbidblub-alice', xbid: 'ten',
+    dvid: 'dev-1', anym: 'São Paulo' },
+  { action: 'bid', slug: 'badbiddevice', snym: 'alice',
+    usid: 'usid-badbiddevice-alice', xbid: 'ten',
+    dvid: 'BAD DVID!', anym: 'a anym' },
 ];
 const atomicValidationResults = atomicValidationCases.map((req) => {
   const refusal = call(req);
@@ -720,29 +720,29 @@ ok(atomicValidationResults.every(Boolean),
 //     pre-fix of the atomicity half: the visible state was
 //     unchanged, but tmod was silently bumped before the holder
 //     check.
-call({ action: 'add', slug: 'heldatomic', uname: 'alice',
-       userid: userid('heldatomic', 'alice') });
+call({ action: 'add', slug: 'heldatomic', snym: 'alice',
+       usid: usid('heldatomic', 'alice') });
 call({ action: 'claim', slug: 'heldatomic',
-       userid: userid('heldatomic', 'alice'),
-       devid: 'holder', rig: 'holder rig' });
+       usid: usid('heldatomic', 'alice'),
+       dvid: 'holder', anym: 'holder anym' });
 const atomicSheetData = () => JSON.stringify(
   ['auctions', 'seats', 'bids'].map((name) => ss.sheets[name].data));
 const rivalClaim = call({ action: 'claim', slug: 'heldatomic',
-  userid: userid('heldatomic', 'alice'),
-  devid: 'rival', rig: 'rival rig' });
+  usid: usid('heldatomic', 'alice'),
+  dvid: 'rival', anym: 'rival anym' });
 ok(!rivalClaim.error
-   && rivalClaim.claims[userid('heldatomic', 'alice')] === 'rival',
+   && rivalClaim.claims[usid('heldatomic', 'alice')] === 'rival',
    'the rival claim takes the held seat: last write wins');
 const beforeRival = atomicSheetData();
 { const t = Date.now(); while (Date.now() - t < 3); }
 const rivalBid = call({ action: 'bid', slug: 'heldatomic',
-  uname: 'alice', userid: userid('heldatomic', 'alice'),
-  bid: 'hijack', devid: 'rival2', rig: 'third rig' });
+  snym: 'alice', usid: usid('heldatomic', 'alice'),
+  xbid: 'hijack', dvid: 'rival2', anym: 'third anym' });
 ok(rivalBid.error && atomicSheetData() === beforeRival,
    'a bare bid on a held seat still refuses, leaving every sheet'
    + ' cell unchanged');
-ok(call({ action: 'add', slug: 'tau2', uname: '1bad',
-          userid: 'userid-tau2-bad' }).error,
+ok(call({ action: 'add', slug: 'tau2', snym: '1bad',
+          usid: 'usid-tau2-bad' }).error,
    'bad roster name rejected');
 ok(call({ action: 'settings', slug: 'tau2', roster: ['a'] }).error,
    'the old whole-roster settings action is gone');
@@ -775,12 +775,12 @@ ok(String(st.error) === COPY.schemaDriftCopy('seats',
      UHEAD.map((h, i) => i === 3 ? 'device' : h).join(', '),
      UHEAD.join(', ')),
    'a drifted tab refuses reads, naming the tab and both layouts');
-st = call({ action: 'bid', slug: 'tau3', uname: 'zoe',
-            userid: userid('tau3', 'zoe'), bid: 'nope' });
+st = call({ action: 'bid', slug: 'tau3', snym: 'zoe',
+            usid: usid('tau3', 'zoe'), xbid: 'nope' });
 ok(String(st.error).includes('schema drift')
    && !ss.sheets['bids'].data.some((r) => r[0] === 'tau3'),
    'writes refuse too: nothing lands positionally in a drifted world');
-uhead[3] = 'devid';
+uhead[3] = 'dvid';
 resetTabMemo();
 ok(!call({ action: 'state', slug: 'tau' }).error,
    'headers restored: same tabs read fine again');
@@ -803,20 +803,20 @@ resetTabMemo();
 // a bidder is unremovable BEFORE the gavel (their bid protects the
 // seat) and everything is unremovable after it — belt and suspenders
 // around the same invariant: a revealed record never loses a bid
-call({ action: 'add', slug: 'frozenx', uname: 'gus',
-       userid: userid('frozenx', 'gus') });
-call({ action: 'add', slug: 'frozenx', uname: 'hana',
-       userid: userid('frozenx', 'hana') });
-call({ action: 'bid', slug: 'frozenx', uname: 'gus',
-       userid: userid('frozenx', 'gus'), bid: 'g' });
-call({ action: 'bid', slug: 'frozenx', uname: 'hana',
-       userid: userid('frozenx', 'hana'), bid: 'h' });
+call({ action: 'add', slug: 'frozenx', snym: 'gus',
+       usid: usid('frozenx', 'gus') });
+call({ action: 'add', slug: 'frozenx', snym: 'hana',
+       usid: usid('frozenx', 'hana') });
+call({ action: 'bid', slug: 'frozenx', snym: 'gus',
+       usid: usid('frozenx', 'gus'), xbid: 'g' });
+call({ action: 'bid', slug: 'frozenx', snym: 'hana',
+       usid: usid('frozenx', 'hana'), xbid: 'h' });
 call({ action: 'reveal', slug: 'frozenx' });
 st = call({ action: 'remove', slug: 'frozenx',
-            userid: userid('frozenx', 'gus') });
+            usid: usid('frozenx', 'gus') });
 ok(code(st) === 'auctionClosed'
    && call({ action: 'state', slug: 'frozenx' }).bids
-        .some((b) => b.userid === userid('frozenx', 'gus')),
+        .some((b) => b.usid === usid('frozenx', 'gus')),
    "the gavel freezes removes wholesale: gus's revealed bid stays on"
    + ' the record');
 
@@ -831,7 +831,7 @@ const CODE_GS = require('fs').readFileSync(
 const actions = [...CODE_GS.matchAll(/case '(\w+)':/g)].map((m) => m[1]);
 const FROZEN = ['bid', 'add', 'rename', 'claim', 'release', 'remove'];
 const OPEN = ['state', 'reveal',   // reads and the idempotent latch
-              'describe',          // the blurb: editable post-close
+              'describe',          // the blub: editable post-close
                                    // by dreev's explicit design
               'editing'];          // ...and its presence heartbeat
                                    // rides the same exemption
@@ -843,9 +843,9 @@ ok(actions.length >= 9 && actions.every((a) =>
 // participants for adds, no-editing for the rest) — all refusals
 const REFUSALS = ['auctionClosed', 'gavelFell', 'rosterClosed'];
 FROZEN.forEach((a) => {
-  const r = call({ action: a, slug: 'tau', uname: 'alice',
-                   userid: userid('tau', 'alice'), to: 'zzz', bid: 'x',
-                   devid: 'd-z', base: '' });
+  const r = call({ action: a, slug: 'tau', snym: 'alice',
+                   usid: usid('tau', 'alice'), to: 'zzz', xbid: 'x',
+                   dvid: 'd-z', base: '' });
   ok(REFUSALS.includes(code(r)),
      'frozen action refuses on a closed auction: ' + a + ' -> '
      + JSON.stringify(r.error));
@@ -856,7 +856,7 @@ FROZEN.forEach((a) => {
 //     covenant-breaking state is REFUSED loudly, never rendered as
 //     nonsense (replicata: test0916 — revealed, roster [alice],
 //     no bids anywhere)
-ss.sheets['seats'].appendRow(['tau', 'userid-tau-ghost', 'ghost', '',
+ss.sheets['seats'].appendRow(['tau', 'usid-tau-ghost', 'ghost', '',
   '2026-07-18T00:00:00.000Z', '2026-07-18T00:00:00.000Z']);
 st = call({ action: 'state', slug: 'tau' });
 ok(String(st.error).includes('covenant'),
@@ -875,17 +875,17 @@ ok(!call({ action: 'state', slug: 'tau' }).error,
 //     1.6-3.0s.) Pinned so a future convenience read can't quietly
 //     double the round trips. Budgets include the per-execution
 //     header checks: one read per tab touched, every request.
-call({ action: 'add', slug: 'thrift', uname: 'ann',
-       userid: userid('thrift', 'ann') });
-call({ action: 'add', slug: 'thrift', uname: 'ben',
-       userid: userid('thrift', 'ben') });
-call({ action: 'bid', slug: 'thrift', uname: 'ann',
-       userid: userid('thrift', 'ann'), bid: 'a1', devid: 'dev-thrift' });
-call({ action: 'bid', slug: 'thrift', uname: 'ann',
-       userid: userid('thrift', 'ann'), bid: 'a2', devid: 'dev-thrift' });
-call({ action: 'bid', slug: 'thrift', uname: 'ann',
-       userid: userid('thrift', 'ann'), bid: 'a3',
-       devid: 'dev-thrift' });  // a pile: a repaint-all would show
+call({ action: 'add', slug: 'thrift', snym: 'ann',
+       usid: usid('thrift', 'ann') });
+call({ action: 'add', slug: 'thrift', snym: 'ben',
+       usid: usid('thrift', 'ben') });
+call({ action: 'bid', slug: 'thrift', snym: 'ann',
+       usid: usid('thrift', 'ann'), xbid: 'a1', dvid: 'dev-thrift' });
+call({ action: 'bid', slug: 'thrift', snym: 'ann',
+       usid: usid('thrift', 'ann'), xbid: 'a2', dvid: 'dev-thrift' });
+call({ action: 'bid', slug: 'thrift', snym: 'ann',
+       usid: usid('thrift', 'ann'), xbid: 'a3',
+       dvid: 'dev-thrift' });  // a pile: a repaint-all would show
 const budget = (req, reads, writes, label) => {
   const t = ctx.__tally;
   const r0 = t.reads, w0 = t.writes, o0 = t.opens;
@@ -901,12 +901,12 @@ const budget = (req, reads, writes, label) => {
 // batchGet, headers checked from the same payload — so a read costs
 // 1, and a write-then-read action costs 2 (the post-write refresh)
 budget({ action: 'state', slug: 'thrift' }, 1, 0, 'a state read');
-budget({ action: 'add', slug: 'thrift', uname: 'cee',
-         userid: userid('thrift', 'cee') }, 2, 2,
+budget({ action: 'add', slug: 'thrift', snym: 'cee',
+         usid: usid('thrift', 'cee') }, 2, 2,
   'seating a participant');
-budget({ action: 'bid', slug: 'thrift', uname: 'ann',
-         userid: userid('thrift', 'ann'), bid: 'a4',
-         devid: 'dev-thrift' }, 2, 5,
+budget({ action: 'bid', slug: 'thrift', snym: 'ann',
+         usid: usid('thrift', 'ann'), xbid: 'a4',
+         dvid: 'dev-thrift' }, 2, 5,
   're-bidding (the hot path, a pile of three behind it)');
 
 // 15. THE ARMOR (gridScience, 2026-07-18: rows born when appendRow
@@ -927,23 +927,23 @@ ok(ss.sheets['bids'].plainTextRows >= ARMOR
      + ' rows deep, got ' + ss.sheets['bids'].plainTextRows);
 const pit = ss.sheets['bids'];
 while (pit.data.length < ARMOR - 1) {  // header + ARMOR-2 data rows:
-  pit.data.push(['ballast', 'userid-ballast-b', 'x',  // next append lands
+  pit.data.push(['ballast', 'usid-ballast-b', 'x',  // next append lands
     '2026-01-01T00:00:00.000Z']);                  // on the LAST
 }                                                  // armored row
-st = call({ action: 'bid', slug: 'pit', uname: 'penult',
-            userid: userid('pit', 'penult'), bid: 'fits',
-            devid: 'd-pit' });
+st = call({ action: 'bid', slug: 'pit', snym: 'penult',
+            usid: usid('pit', 'penult'), xbid: 'fits',
+            dvid: 'd-pit' });
 ok(!st.error && pit.data.length === ARMOR,
-   'the last armored row still accepts a bid: ' + st.error);
-st = call({ action: 'bid', slug: 'pit', uname: 'over',
-            userid: userid('pit', 'over'), bid: 'spills',
-            devid: 'd-pit2' });
+   'the last armored row still accepts a xbid: ' + st.error);
+st = call({ action: 'bid', slug: 'pit', snym: 'over',
+            usid: usid('pit', 'over'), xbid: 'spills',
+            dvid: 'd-pit2' });
 const pitAfter = call({ action: 'state', slug: 'pit' });
 ok(ARMOR_COPY !== null && String(st.error) === ARMOR_COPY('bids')
    && pit.data.length === ARMOR
-   && !pitAfter.bidders.some((b) => b.userid === userid('pit', 'over'))
-   && !pitAfter.seats.some((s) => s.userid === userid('pit', 'over'))
-   && pitAfter.claims[userid('pit', 'over')] === undefined,
+   && !pitAfter.bidders.some((b) => b.usid === usid('pit', 'over'))
+   && !pitAfter.seats.some((s) => s.usid === usid('pit', 'over'))
+   && pitAfter.claims[usid('pit', 'over')] === undefined,
    'one row past the armor refuses loudly, and no bid row lands: '
      + st.error);
 ok(typeof ctx.armThePit === 'function',
@@ -981,7 +981,7 @@ ok(fenceAt !== -1 && SHEETY.every((w) => !business.includes(w)),
      + SHEETY.filter((w) => business.includes(w)).join(', '));
 
 // 17. length limits refuse with the specific words, never clamp
-//     (names 20 per dreev 2026-07-27, blurb 2000) — exact boundaries
+//     (names 20 per dreev 2026-07-27, blub 2000) — exact boundaries
 //     (last, on a throwaway auction: earlier sections pin absolute
 //     sheet-row positions)
 ok(code(call({ action: 'state', slug: 'a'.repeat(21) }))
@@ -989,46 +989,46 @@ ok(code(call({ action: 'state', slug: 'a'.repeat(21) }))
    'a 21-character auction name is refused with the length code');
 ok(!call({ action: 'state', slug: 'a'.repeat(20) }).error,
    'a 20-character auction name is legal: the boundary is exact');
-ok(code(call({ action: 'add', slug: 'limits', uname: 'b'.repeat(21),
-               userid: 'userid-limits-b21' })) === 'unameTooLong',
+ok(code(call({ action: 'add', slug: 'limits', snym: 'b'.repeat(21),
+               usid: 'usid-limits-b21' })) === 'snymTooLong',
    'a 21-character participant name is refused with the length code');
-ok(!call({ action: 'add', slug: 'limits', uname: 'b'.repeat(20),
-           userid: 'userid-limits-b20' }).error,
+ok(!call({ action: 'add', slug: 'limits', snym: 'b'.repeat(20),
+           usid: 'usid-limits-b20' }).error,
    'a 20-character participant name is legal');
 ok(code(call({ action: 'describe', slug: 'limits', base: 0,
-               blurb: 'x'.repeat(2001) })) === 'blurbTooLong',
-   'a 2001-character blurb is refused with the length code');
+               blub: 'x'.repeat(2001) })) === 'blubTooLong',
+   'a 2001-character blub is refused with the length code');
 ok(!call({ action: 'describe', slug: 'limits', base: 0,
-           blurb: 'x'.repeat(2000) }).error,
-   'a 2000-character blurb is legal');
+           blub: 'x'.repeat(2000) }).error,
+   'a 2000-character blub is legal');
 
 // 18. refusals and no-ops mutate NOTHING, and hand-gutted sheets
 //     refuse rather than corrupt (Sol's audit, 2026-07-29)
-call({ action: 'describe', slug: 'mutless', base: 0, blurb: 'v1' });
-call({ action: 'add', slug: 'mutless', uname: 'ann',
-  userid: 'userid-mutless-ann' });
+call({ action: 'describe', slug: 'mutless', base: 0, blub: 'v1' });
+call({ action: 'add', slug: 'mutless', snym: 'ann',
+  usid: 'usid-mutless-ann' });
 const mutRow = () =>
   ss.sheets['auctions'].data.find((r) => r[0] === 'mutless');
 mutRow()[1] = 'TINI-SENTINEL';  // hand-poke: any rewrite erases this
 ok(code(call({ action: 'describe', slug: 'mutless', base: 'stale',
-               blurb: 'v2' })) === 'simulEdits'
+               blub: 'v2' })) === 'simulEdits'
    && mutRow()[1] === 'TINI-SENTINEL' && mutRow()[3] === 'v1',
-   'a refused describe mutates nothing: no tmod bump, blurb intact');
-ok(call({ action: 'release', slug: 'mutless', userid: 'userid-mutless-ann',
-          devid: 'rig-noop' }).error === undefined
+   'a refused describe mutates nothing: no tmod bump, blub intact');
+ok(call({ action: 'release', slug: 'mutless', usid: 'usid-mutless-ann',
+          dvid: 'anym-noop' }).error === undefined
    && mutRow()[1] === 'TINI-SENTINEL',
    'a no-op release (open seat) mutates nothing');
-call({ action: 'claim', slug: 'mutless', userid: 'userid-mutless-ann',
-  devid: 'rig-a', rig: 'rig a' });
+call({ action: 'claim', slug: 'mutless', usid: 'usid-mutless-ann',
+  dvid: 'anym-a', anym: 'anym a' });
 mutRow()[1] = 'TINI-SENTINEL';
 ok(code(call({ action: 'release', slug: 'mutless',
-     userid: 'userid-mutless-ann', devid: 'rig-b' })) === 'notYourSeat'
+     usid: 'usid-mutless-ann', dvid: 'anym-b' })) === 'notYourSeat'
    && mutRow()[1] === 'TINI-SENTINEL',
    'a REFUSED release (not your seat) mutates nothing');
 // ...and the two inline assert-family diagnostics, provoked: a
 // hand-mangled version cell, and a storage-layer write to a field
 // the schema doesn't know
-call({ action: 'describe', slug: 'rotver', blurb: 'v1', base: 0 });
+call({ action: 'describe', slug: 'rotver', blub: 'v1', base: 0 });
 ss.sheets['auctions'].data.find((r) => r[0] === 'rotver')[4] = 'MMXXVI';
 st = call({ action: 'state', slug: 'rotver' });
 ok(String(st.error).includes('bver corrupt')
@@ -1046,11 +1046,11 @@ ok(patchErr === 'patch: field not in auctions',
 // ...and the tbid-forgery tripwire: placeBid mints strictly
 // increasing stamps (max(now, prev+1ms)), so a duplicate can only
 // be a hand-edited log — refused at read, never rendered
-call({ action: 'add', slug: 'dupbid', uname: 'dee',
-       userid: 'userid-dupbid-dee' });
-ss.sheets['bids'].appendRow(['dupbid', 'userid-dupbid-dee', 'x',
+call({ action: 'add', slug: 'dupbid', snym: 'dee',
+       usid: 'usid-dupbid-dee' });
+ss.sheets['bids'].appendRow(['dupbid', 'usid-dupbid-dee', 'x',
   '2026-08-03T00:00:00.000Z', 'd-dup']);
-ss.sheets['bids'].appendRow(['dupbid', 'userid-dupbid-dee', 'y',
+ss.sheets['bids'].appendRow(['dupbid', 'usid-dupbid-dee', 'y',
   '2026-08-03T00:00:00.000Z', 'd-dup']);
 ok(String(call({ action: 'state', slug: 'dupbid' }).error)
      .includes('duplicate tbid'),
@@ -1060,14 +1060,14 @@ ss.sheets['bids'].data.splice(-2, 2);  // scene hygiene
 
 // reveal on a ghost auction: users and bids rows exist, the auctions
 // row hand-deleted — refuse loudly, never write tfin into the HEADER
-call({ action: 'add', slug: 'ghostrow', uname: 'gia',
-  userid: 'userid-ghostrow-gia' });
-call({ action: 'add', slug: 'ghostrow', uname: 'hal',
-  userid: 'userid-ghostrow-hal' });
-call({ action: 'bid', slug: 'ghostrow', userid: 'userid-ghostrow-gia',
-  uname: 'gia', bid: 'a' });
-call({ action: 'bid', slug: 'ghostrow', userid: 'userid-ghostrow-hal',
-  uname: 'hal', bid: 'b' });
+call({ action: 'add', slug: 'ghostrow', snym: 'gia',
+  usid: 'usid-ghostrow-gia' });
+call({ action: 'add', slug: 'ghostrow', snym: 'hal',
+  usid: 'usid-ghostrow-hal' });
+call({ action: 'bid', slug: 'ghostrow', usid: 'usid-ghostrow-gia',
+  snym: 'gia', xbid: 'a' });
+call({ action: 'bid', slug: 'ghostrow', usid: 'usid-ghostrow-hal',
+  snym: 'hal', xbid: 'b' });
 const aData18 = ss.sheets['auctions'].data;
 aData18.splice(aData18.findIndex((r) => r[0] === 'ghostrow'), 1);
 const head18 = JSON.stringify(aData18[0]);
@@ -1079,10 +1079,10 @@ ok(String(ghost18.error) === COPY.patchGhostCopy('auctions')
 
 const virgin18 = call({ action: 'state', slug: 'mutlessvirgin' });
 const staleVirgin18 = call({ action: 'describe',
-  slug: 'mutlessvirgin', base: 'stale', blurb: 'never lands' });
+  slug: 'mutlessvirgin', base: 'stale', blub: 'never lands' });
 const releasedVirgin18 = call({ action: 'release',
-  slug: 'mutlessvirgin', userid: 'userid-mutlessvirgin-ann',
-  devid: 'rig-noop' });
+  slug: 'mutlessvirgin', usid: 'usid-mutlessvirgin-ann',
+  dvid: 'anym-noop' });
 ok(virgin18.exists === false
    && code(staleVirgin18) === 'simulEdits'
    && releasedVirgin18.exists === false
@@ -1096,78 +1096,78 @@ require('vm').runInContext(
   + ' static now() { return 1785267296789; }'
   + ' };', ctx);
 const sameMs18a = call({ action: 'describe', slug: 'samems',
-  base: 0, blurb: 'first' });
+  base: 0, blub: 'first' });
 const sameMs18b = call({ action: 'describe', slug: 'samems',
-  base: sameMs18a.bver, blurb: 'second' });
+  base: sameMs18a.bver, blub: 'second' });
 const sameMs18stale = call({ action: 'describe', slug: 'samems',
-  base: sameMs18a.bver, blurb: 'stale third' });
+  base: sameMs18a.bver, blub: 'stale third' });
 require('vm').runInContext('Date = NativeDate18;', ctx);
 ok(sameMs18a.bver === 1 && sameMs18b.bver === 2
    && code(sameMs18stale) === 'simulEdits'
-   && call({ action: 'state', slug: 'samems' }).blurb === 'second',
-   'same-millisecond blurb saves still get distinct CAS identities:'
+   && call({ action: 'state', slug: 'samems' }).blub === 'second',
+   'same-millisecond blub saves still get distinct CAS identities:'
    + ' the counter never consults the clock');
 ok(ss.sheets['auctions'].data.find((r) => r[0] === 'samems')[5] !== ''
    && ss.sheets['auctions'].data.find((r) => r[0] === 'samems')[2]
         === '',
-   'a blurb save stamps tbed on the same patch slab, and touches no'
+   'a blub save stamps tbed on the same patch slab, and touches no'
    + ' other stamp');
 // same-millisecond BIDS: tbid is minted max(now, prev+1ms), so the
 // log stays strictly ordered even under a frozen clock, and the row
-// records the submitting devid ('' for deviceless old clients)
+// records the submitting dvid ('' for deviceless old clients)
 require('vm').runInContext('var NDm = Date;'
   + ' Date = class extends NDm {'
   + ' static now() { return 1785267296789; } };', ctx);
-call({ action: 'add', slug: 'mono', uname: 'mo',
-       userid: 'userid-mono-mo' });
-call({ action: 'bid', slug: 'mono', uname: 'mo',
-       userid: 'userid-mono-mo', bid: 'a' });
-call({ action: 'bid', slug: 'mono', uname: 'mo',
-       userid: 'userid-mono-mo', bid: 'b' });
+call({ action: 'add', slug: 'mono', snym: 'mo',
+       usid: 'usid-mono-mo' });
+call({ action: 'bid', slug: 'mono', snym: 'mo',
+       usid: 'usid-mono-mo', xbid: 'a' });
+call({ action: 'bid', slug: 'mono', snym: 'mo',
+       usid: 'usid-mono-mo', xbid: 'b' });
 require('vm').runInContext('Date = NDm;', ctx);
 const monoRows = ss.sheets['bids'].data.filter((r) => r[0] === 'mono');
 ok(monoRows.length === 2 && monoRows[0][3] < monoRows[1][3]
    && monoRows[1][4] === '',
    'same-millisecond bids mint strictly increasing tbids; deviceless'
-   + " bids record devid ''");
+   + " bids record dvid ''");
 ok(ss.sheets['bids'].data.some((r) =>
      r[0] === 'thrift' && r[4] === 'dev-thrift'),
-   'a bid row records the submitting devid: the cheating-forensics'
+   'a bid row records the submitting dvid: the cheating-forensics'
    + ' trail');
 
-// 18c. EDITING PRESENCE (dreev 2026-07-31; PER-DEVICE ROWS
-//      2026-08-02): an open blurb editor heartbeats into ITS OWN
-//      devices row (blug/bluid/tblug), so state.editors
+// 18c. EDITING PRESENCE (dreev 2026-07-31; PER-DVID ROWS
+//      2026-08-02): an open blub editor heartbeats into ITS OWN
+//      devices row (blug/blid/blip), so state.editors
 //      carries the whole desk crowd — every fresh editor, not a
 //      last-write-wins slot. A vanished editor ages out at the TTL;
 //      SAVE/DISCARD clear only the device's own slot (a foreign
 //      clear is structurally impossible: you only write your row).
-call({ action: 'add', slug: 'nib', uname: 'ann', userid: userid('nib', 'ann') });
-st = call({ action: 'editing', slug: 'nib', userid: userid('nib', 'ann'),
-            devid: 'dev-nib-a', rig: 'Mac Chrome' });
+call({ action: 'add', slug: 'nib', snym: 'ann', usid: usid('nib', 'ann') });
+st = call({ action: 'editing', slug: 'nib', usid: usid('nib', 'ann'),
+            dvid: 'dev-nib-a', anym: 'Mac Chrome' });
 ok(!st.error && st.editors.length === 1
-   && st.editors[0].userid === userid('nib', 'ann')
-   && st.editors[0].devid === 'dev-nib-a'
-   && st.editors[0].rig === 'Mac Chrome',
+   && st.editors[0].usid === usid('nib', 'ann')
+   && st.editors[0].dvid === 'dev-nib-a'
+   && st.editors[0].anym === 'Mac Chrome',
    'an editing heartbeat surfaces the editor in the state payload');
-st = call({ action: 'editing', slug: 'nib', devid: 'dev-nib-w',
-            rig: 'iPhone Safari' });
+st = call({ action: 'editing', slug: 'nib', dvid: 'dev-nib-w',
+            anym: 'iPhone Safari' });
 ok(!st.error && st.editors.length === 2
-   && st.editors.some((e) => e.userid === '' && e.devid === 'dev-nib-w'
-        && e.rig === 'iPhone Safari'),
+   && st.editors.some((e) => e.usid === '' && e.dvid === 'dev-nib-w'
+        && e.anym === 'iPhone Safari'),
    'a second (walk-in) editor JOINS the crowd: per-device rows,'
    + ' nobody clobbers anybody');
-st = call({ action: 'editing', slug: 'nib', devid: 'dev-nib-a',
+st = call({ action: 'editing', slug: 'nib', dvid: 'dev-nib-a',
             stop: true });
 ok(!st.error && st.editors.length === 1
-   && st.editors[0].devid === 'dev-nib-w',
+   && st.editors[0].dvid === 'dev-nib-w',
    "a stop clears only the stopping device's own slot");
-st = call({ action: 'editing', slug: 'nib', devid: 'dev-nib-w',
+st = call({ action: 'editing', slug: 'nib', dvid: 'dev-nib-w',
             stop: true });
 ok(!st.error && st.editors.length === 0,
    'the last editor stopping empties the desk');
-call({ action: 'editing', slug: 'nib', devid: 'dev-nib-w',
-       rig: 'iPhone Safari' });
+call({ action: 'editing', slug: 'nib', dvid: 'dev-nib-w',
+       anym: 'iPhone Safari' });
 require('vm').runInContext(
   'var NativeDateNib = Date;'
   + ' Date = class extends NativeDateNib {'
@@ -1176,117 +1176,117 @@ ok(call({ action: 'state', slug: 'nib' }).editors.length === 0,
    'a vanished editor ages out at the TTL: 26s of silence and the'
    + ' pencil rests');
 require('vm').runInContext('Date = NativeDateNib;', ctx);
-st = call({ action: 'editing', slug: 'nib2x', devid: 'dev-nib-w' });
+st = call({ action: 'editing', slug: 'nib2x', dvid: 'dev-nib-w' });
 ok(call({ action: 'state', slug: 'nib' }).editors.length === 0
    && st.editors.length === 1,
    "ONE slot per device: editing elsewhere moves the device's"
    + ' presence (the two-tabs-one-device trade, chosen)');
-call({ action: 'editing', slug: 'nib2x', devid: 'dev-nib-w',
+call({ action: 'editing', slug: 'nib2x', dvid: 'dev-nib-w',
        stop: true });
 // the auction-slot special case DISSOLVED with per-device rows: a
 // VIRGIN auction takes presence too (the slot never touches the
 // auctions tab), and stays virgin doing it
 st = call({ action: 'editing', slug: 'virginib',
-            devid: 'dev-nib-w', rig: 'iPhone Safari' });
+            dvid: 'dev-nib-w', anym: 'iPhone Safari' });
 ok(!st.error && st.editors.length === 1 && st.exists === false
    && !ss.sheets['auctions'].data.some((r) => r[0] === 'virginib'),
    'presence works on a VIRGIN auction and mints no auctions row:'
    + ' the slot lives on the device');
-call({ action: 'editing', slug: 'virginib', devid: 'dev-nib-w',
+call({ action: 'editing', slug: 'virginib', dvid: 'dev-nib-w',
        stop: true });
-// dreev's dev sequence, cell-for-cell (2026-08-04 replicata "tblug
+// dreev's dev sequence, cell-for-cell (2026-08-04 replicata "blip
 // stayed empty": every server path proved green live, so the suite
 // pins the exact journey — a device row born via CLAIM, then the
 // editor opens, and the SHEET CELLS themselves move, not just the
-// payload): tblug/blug stamp on the same row (no doppelganger row),
-// a re-beat moves tblug FORWARD, and the stop zeroes the cell.
-call({ action: 'add', slug: 'devseq', uname: 'dev', userid: 'userid-devseq-dev' });
-call({ action: 'claim', slug: 'devseq', userid: 'userid-devseq-dev',
-       devid: 'dev-seq-1', rig: 'seq rig' });
+// payload): blip/blug stamp on the same row (no doppelganger row),
+// a re-beat moves blip FORWARD, and the stop zeroes the cell.
+call({ action: 'add', slug: 'devseq', snym: 'dev', usid: 'usid-devseq-dev' });
+call({ action: 'claim', slug: 'devseq', usid: 'usid-devseq-dev',
+       dvid: 'dev-seq-1', anym: 'seq anym' });
 st = call({ action: 'editing', slug: 'devseq',
-            userid: 'userid-devseq-dev', devid: 'dev-seq-1',
-            rig: 'seq rig' });
+            usid: 'usid-devseq-dev', dvid: 'dev-seq-1',
+            anym: 'seq anym' });
 const seqRows = ss.sheets['devices'].data.filter(
   (r) => r[0] === 'dev-seq-1');
 ok(st.editors.length === 1 && seqRows.length === 1
-   && seqRows[0][4] === 'devseq' && seqRows[0][5] === 'userid-devseq-dev'
+   && seqRows[0][4] === 'devseq' && seqRows[0][5] === 'usid-devseq-dev'
    && seqRows[0][6] !== '',
    'a beat after a CLAIM patches the claim-born row in place: blug,'
-   + ' bluid, tblug stamped in the cells, one row only');
-const tblugWas = seqRows[0][6];
+   + ' blid, blip stamped in the cells, one row only');
+const blipWas = seqRows[0][6];
 require('vm').runInContext(
   'var NDseq = Date;'
   + ' Date = class extends NDseq {'
   + ' constructor() { super(NDseq.now() + 5000); }'
   + ' static now() { return NDseq.now() + 5000; } };', ctx);
 call({ action: 'editing', slug: 'devseq',
-       userid: 'userid-devseq-dev', devid: 'dev-seq-1', rig: 'seq rig' });
+       usid: 'usid-devseq-dev', dvid: 'dev-seq-1', anym: 'seq anym' });
 require('vm').runInContext('Date = NDseq;', ctx);
 ok(ss.sheets['devices'].data.find((r) => r[0] === 'dev-seq-1')[6]
-     > tblugWas,
-   'a re-beat moves tblug FORWARD in the cell: the heartbeat is'
+     > blipWas,
+   'a re-beat moves blip FORWARD in the cell: the heartbeat is'
    + ' visibly alive from the sheet');
-call({ action: 'editing', slug: 'devseq', devid: 'dev-seq-1',
+call({ action: 'editing', slug: 'devseq', dvid: 'dev-seq-1',
        stop: true });
 ok(ss.sheets['devices'].data.find((r) => r[0] === 'dev-seq-1')[6]
      === '',
-   "the stop zeroes the tblug cell (an empty tblug means the editor"
+   "the stop zeroes the blip cell (an empty blip means the editor"
    + ' CLOSED, working as ruled)');
-st = call({ action: 'editing', slug: 'tau', devid: 'd-z',
-            rig: 'late rig' });
-ok(!st.error && st.editors.length === 1 && st.editors[0].userid === '',
-   "editing presence works on a CLOSED auction too (the blurb is the"
+st = call({ action: 'editing', slug: 'tau', dvid: 'd-z',
+            anym: 'late anym' });
+ok(!st.error && st.editors.length === 1 && st.editors[0].usid === '',
+   "editing presence works on a CLOSED auction too (the blub is the"
    + ' one field the gavel never froze)');
-call({ action: 'editing', slug: 'tau', devid: 'd-z', stop: true });
+call({ action: 'editing', slug: 'tau', dvid: 'd-z', stop: true });
 ok(code(call({ action: 'editing', slug: 'tau' }))
      === 'editingNeedsDevice',
    'a device-less beat is refused like its claim/release siblings:'
    + ' presence needs to say WHOSE');
 
 // 18d. THE DEVICES TABLE (dreev 2026-08-02): one row per device —
-//      devid, blurb, tini, tmod — the rig description's ONE home;
-//      users and auctions carry devid REFERENCES only and
+//      dvid, blub, tini, tmod — the anym description's ONE home;
+//      users and auctions carry dvid REFERENCES only and
 //      getState joins. Rows are written devices-FIRST so a dangling
 //      reference can never be minted; upserts fire only on change,
 //      so the steady state costs zero extra writes; and a '' report
-//      never erases a known blurb (ignorance is not news — the
+//      never erases a known blub (ignorance is not news — the
 //      device didn't stop being a Mac).
-call({ action: 'add', slug: 'rig', uname: 'ada', userid: userid('rig', 'ada') });
-st = call({ action: 'claim', slug: 'rig', userid: userid('rig', 'ada'),
-            devid: 'dev-rig-1', rig: 'Mac Chrome' });
-ok(!st.error && st.rigs[userid('rig', 'ada')] === 'Mac Chrome'
+call({ action: 'add', slug: 'anym', snym: 'ada', usid: usid('anym', 'ada') });
+st = call({ action: 'claim', slug: 'anym', usid: usid('anym', 'ada'),
+            dvid: 'dev-anym-1', anym: 'Mac Chrome' });
+ok(!st.error && st.anyms[usid('anym', 'ada')] === 'Mac Chrome'
    && ss.sheets['devices'].data.some((r) =>
-        r[0] === 'dev-rig-1' && r[1] === 'Mac Chrome'),
-   'a claim mints the devices row and the rigs map joins from it');
+        r[0] === 'dev-anym-1' && r[1] === 'Mac Chrome'),
+   'a claim mints the devices row and the anyms map joins from it');
 const devWrites = ctx.__tally.writes;
-st = call({ action: 'claim', slug: 'rig', userid: userid('rig', 'ada'),
-            devid: 'dev-rig-1', rig: 'Mac Chrome' });
+st = call({ action: 'claim', slug: 'anym', usid: usid('anym', 'ada'),
+            dvid: 'dev-anym-1', anym: 'Mac Chrome' });
 ok(!st.error
-   && ss.sheets['devices'].data.filter((r) => r[0] === 'dev-rig-1')
+   && ss.sheets['devices'].data.filter((r) => r[0] === 'dev-anym-1')
         .length === 1
    && ctx.__tally.writes - devWrites <= 2,
-   're-claiming with an unchanged blurb rewrites nothing in devices:'
+   're-claiming with an unchanged blub rewrites nothing in devices:'
    + ' upsert only on change');
-st = call({ action: 'claim', slug: 'rig', userid: userid('rig', 'ada'),
-            devid: 'dev-rig-1',
-            rig: 'Mac Chrome in Portland, OR' });
+st = call({ action: 'claim', slug: 'anym', usid: usid('anym', 'ada'),
+            dvid: 'dev-anym-1',
+            anym: 'Mac Chrome in Portland, OR' });
 ok(!st.error
-   && st.rigs[userid('rig', 'ada')] === 'Mac Chrome in Portland, OR',
-   "a changed blurb (the geo finally landed) updates the device's"
+   && st.anyms[usid('anym', 'ada')] === 'Mac Chrome in Portland, OR',
+   "a changed blub (the geo finally landed) updates the device's"
    + ' one row');
-st = call({ action: 'claim', slug: 'rig', userid: userid('rig', 'ada'),
-            devid: 'dev-rig-1' });
+st = call({ action: 'claim', slug: 'anym', usid: usid('anym', 'ada'),
+            dvid: 'dev-anym-1' });
 ok(!st.error
-   && st.rigs[userid('rig', 'ada')] === 'Mac Chrome in Portland, OR',
-   "a blurbless claim never erases the known rig: '' is ignorance,"
+   && st.anyms[usid('anym', 'ada')] === 'Mac Chrome in Portland, OR',
+   "a blubless claim never erases the known anym: '' is ignorance,"
    + ' not news');
-call({ action: 'add', slug: 'rig2', uname: 'ada',
-       userid: userid('rig2', 'ada') });
-st = call({ action: 'claim', slug: 'rig2', userid: userid('rig2', 'ada'),
-            devid: 'dev-rig-1' });
-ok(!st.error && st.rigs[userid('rig2', 'ada')]
+call({ action: 'add', slug: 'rig2', snym: 'ada',
+       usid: usid('rig2', 'ada') });
+st = call({ action: 'claim', slug: 'rig2', usid: usid('rig2', 'ada'),
+            dvid: 'dev-anym-1' });
+ok(!st.error && st.anyms[usid('rig2', 'ada')]
      === 'Mac Chrome in Portland, OR',
-   'the rig is known ACROSS auctions: one device, one row, every'
+   'the anym is known ACROSS auctions: one device, one row, every'
    + ' claimed seat wears it');
 
 // 19. REFUSAL COVERAGE, closed by construction: every code Code.gs
@@ -1323,7 +1323,7 @@ ok(!st.error && st.rigs[userid('rig2', 'ada')]
 }
 
 // 21. REFERENCE INTEGRITY, swept over every scenario above: each
-//     nonempty devid the sheet references — seat claims,
+//     nonempty dvid the sheet references — seat claims,
 //     presence slots — must have its devices row. Devices-first
 //     write ordering makes a dangling reference unmintable in code;
 //     this sweep proves it empirically across the whole suite's
@@ -1335,7 +1335,7 @@ ok(!st.error && st.rigs[userid('rig2', 'ada')]
     .filter((d) => d !== '' && d !== undefined);
   const dangling = [...new Set(refs.filter((d) => !known.has(d)))];
   ok(dangling.length === 0,
-     'every referenced devid has its devices row — dangling: ['
+     'every referenced dvid has its devices row — dangling: ['
      + dangling.sort().join(' ') + ']');
 }
 

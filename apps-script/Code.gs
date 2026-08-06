@@ -1,7 +1,7 @@
 // Tauction API — Google Apps Script web app fronting the spreadsheet.
 //
 // Vocabulary: "slug" = an auction's name, which is also its URL slug;
-// "uname" = a bidder's username, shown with an @ in the UI.
+// "snym" = a seat's display name, shown with an @ in the UI.
 //
 // Deploying: `npm run deploy` from the repo (clasp). Manual fallback:
 // paste into the sheet's Apps Script editor, then Deploy -> Manage
@@ -12,41 +12,41 @@ const SHEET_ID = '1hclphAZ3zQIq14Nip1ZxTDSoE9ygXqAv27RwP1hiMA8';
 
 // Column vocabulary (dreev's): tini = time-initial (created), tmod =
 // time-modified, tfin = time-final (the reveal moment), tbid = a
-// submission's moment, devid = a browser's anonymous uuid.
+// submission's moment, dvid = a browser's anonymous uuid.
 //
-// THE USERID: a person id, a uuid minted client-side at add-time.
-// The userid IS the identity — seats, bids, claims, and the client's
-// memory all key on it — and the uname is just its display label, so
+// THE USID: a seat id, a uuid minted client-side at add-time.
+// The usid IS the identity — seats, bids, claims, and the client's
+// memory all key on it — and the snym is just its display label, so
 // renames are one-cell label edits: no bid re-keying, no client
 // rename transactions, no orphaned identities.
-const AUCTIONS_HEAD = ['slug', 'tini', 'tfin', 'blurb', 'bver',
+const AUCTIONS_HEAD = ['slug', 'tini', 'tfin', 'blub', 'bver',
                        'tbed'];
 // The bids tab is an append-only LOG: every submission is its own
 // row, nothing is ever overwritten, and the payload's tini/tmod/
 // bcount are DERIVED
-const BIDS_HEAD     = ['slug', 'userid', 'bid', 'tbid',
-                       'devid'];
-// A users row IS a roster seat, and every seat is live: removing a
+const BIDS_HEAD     = ['slug', 'usid', 'xbid', 'tbid',
+                       'dvid'];
+// A seats row IS a roster seat, and every seat is live: removing a
 // bidless person deletes their row outright, and a person who HAS
 // bid cannot be removed at all (a sealed bid is never deletable, so
 // it can never be orphaned; the straggler you ex to end early is
 // bidless by definition). Future per-person
 // attributes (weights/shares) append as columns to the right.
-const SEATS_HEAD    = ['slug', 'userid', 'uname', 'devid',
+const SEATS_HEAD    = ['slug', 'usid', 'snym', 'dvid',
                        'tini', 'tmod'];
 
 // THE DEVICES TABLE (dreev 2026-08-02): one row per device ever
-// seen, the rig self-description's ONE home ("Mac Chrome in
-// Portland, OR"). Everything else stores devid REFERENCES and
+// seen, the anym self-description's ONE home ("Mac Chrome in
+// Portland, OR"). Everything else stores dvid REFERENCES and
 // getState joins. Rows are written devices-FIRST — touchDevice
 // before any write that references the device — so a dangling
 // reference can never be minted.
-// blug/bluid/tblug are the device's EDITING-PRESENCE
+// blug/blid/blip are the device's EDITING-PRESENCE
 // slot (per-device, so a whole desk crowd can show at once): which
-// auction's blurb this device has open, as whom ('' = walk-in), and
+// auction's blub this device has open, as whom ('' = walk-in), and
 // the latest heartbeat. Ephemeral by TTL — see noteEditing.
-const DEVICES_HEAD  = ['devid', 'rig', 'tini', 'tmod',
-                       'blug', 'bluid', 'tblug'];
+const DEVICES_HEAD  = ['dvid', 'anym', 'tini', 'tmod',
+                       'blug', 'blid', 'blip'];
 
 // Every cell that will ever hold data is armored plain-text at tab
 // creation: Sheets otherwise reinterprets writes ("007" -> 7, "3/4"
@@ -157,38 +157,38 @@ function cleanSlug(s) {
   return s;
 }
 
-function cleanUname(s) {
+function cleanSnym(s) {
   s = String(s || '').toLowerCase();
-  if (s.length > 20) throw { code: 'unameTooLong' };
+  if (s.length > 20) throw { code: 'snymTooLong' };
   if (!/^[a-z][a-z0-9]{0,19}$/.test(s)) {
-    throw { code: 'badUname' };
+    throw { code: 'badSnym' };
   }
   return s;
 }
 
-// A devid is a client-minted uuid; empty means "release the claim"
-function cleanDevid(s) {
+// A dvid is a client-minted uuid; empty means "release the claim"
+function cleanDvid(s) {
   s = String(s == null ? '' : s);
-  if (!/^[a-z0-9-]{0,64}$/.test(s)) throw { code: 'badDevid' };
+  if (!/^[a-z0-9-]{0,64}$/.test(s)) throw { code: 'badDvid' };
   return s;
 }
 
-// A userid is a client-minted uuid: the person's identity, forever
-function cleanUserid(s) {
+// A usid is a client-minted uuid: the person's identity, forever
+function cleanUsid(s) {
   s = String(s == null ? '' : s);
-  if (!/^[a-z0-9-]{8,64}$/.test(s)) throw { code: 'badUserid' };
+  if (!/^[a-z0-9-]{8,64}$/.test(s)) throw { code: 'badUsid' };
   return s;
 }
 
-// The claimant's self-reported rig ("a Mac (Chrome)") — decoration for
+// The claimant's self-reported anym ("a Mac (Chrome)") — decoration for
 // the who-claimed-this tooltip, printable ASCII only, max 160 chars
 // (matching the bid limit; widened from 64 on 2026-08-05 for the
 // crammed city-or-by-timezone tail). (Apps Script web apps can't read
 // request headers, so the client must tell us; honor system, like
 // everything.)
-function cleanRig(s) {
+function cleanAnym(s) {
   s = String(s == null ? '' : s);
-  if (!/^[ -~]{0,160}$/.test(s)) throw { code: 'badRig' };
+  if (!/^[ -~]{0,160}$/.test(s)) throw { code: 'badAnym' };
   return s;
 }
 
@@ -196,7 +196,7 @@ function cleanRig(s) {
    Everything Google-Sheets-specific lives in this section, behind the
    fence line at its end — the business logic below the fence speaks
    only in RECORDS (rows zipped with their tab's header: {slug: ...,
-   uname: ..., all strings}) and 0-based record indexes. Switching to
+   snym: ..., all strings}) and 0-based record indexes. Switching to
    a real database later means rewriting this section (plus withLock,
    its platform sibling above): load / insert / patch / erase per
    table, and the two sheet-cosmetic seal calls, which a database
@@ -354,7 +354,7 @@ function erase(kind, i) {
 // Sheet-only decoration — a real database would no-op both: sealed
 // bid text is white-on-white for anyone peeking at the spreadsheet,
 // and the reveal hands the color back
-const BID_COL = BIDS_HEAD.indexOf('bid') + 1;
+const BID_COL = BIDS_HEAD.indexOf('xbid') + 1;
 function sealBid(i) {
   tab('bids').getRange(i + 2, BID_COL).setFontColor('#ffffff');
 }
@@ -396,24 +396,24 @@ function armThePit() {
 function getState(slug) {
   const arow = load('auctions').find(r => r.slug === slug);
 
-  // The SEATS are the users rows (in insertion order): userid + display
-  // label. The claims map rides along: userid -> devid for seats
+  // The SEATS are the users rows (in insertion order): usid + display
+  // label. The claims map rides along: usid -> dvid for seats
   // someone holds. Every seat is live — removal deletes, and bidders
   // cannot be removed — so the seats ARE the roster that gates the
   // reveal.
-  // the devices join: devid -> its one self-description row
-  const rigOf = Object.create(null);
+  // the devices join: dvid -> its one self-description row
+  const anymOf = Object.create(null);
   load('devices').forEach(r => {
-    if (r.rig) rigOf[r.devid] = r.rig;
+    if (r.anym) anymOf[r.dvid] = r.anym;
   });
   const seats = [];
   const claims = Object.create(null);
-  const rigs = Object.create(null);  // userid -> the holder's rig
+  const anyms = Object.create(null);  // usid -> the holder's anym
   load('seats').forEach(r => {
     if (r.slug !== slug) return;
-    seats.push({ userid: r.userid, uname: r.uname });
-    if (r.devid) claims[r.userid] = r.devid;
-    if (r.devid && rigOf[r.devid]) rigs[r.userid] = rigOf[r.devid];
+    seats.push({ usid: r.usid, snym: r.snym });
+    if (r.dvid) claims[r.usid] = r.dvid;
+    if (r.dvid && anymOf[r.dvid]) anyms[r.usid] = anymOf[r.dvid];
   });
   const roster = seats;
 
@@ -422,8 +422,8 @@ function getState(slug) {
   // reseal them. A complete roster merely makes the reveal button pressable.
   const tfin = arow ? arow.tfin : '';  // the reveal moment, ISO
   const revealed = tfin !== '';
-  const blurb = arow ? arow.blurb : '';    // freeform markdown
-  // the blurb's version counter (CAS token AND the pencil tooltip's
+  const blub = arow ? arow.blub : '';    // freeform markdown
+  // the blub's version counter (CAS token AND the pencil tooltip's
   // number): 0 = never described, +1 per committed save. Sheets may
   // hand the cell back as a string; a cell that isn't a whole number
   // is corruption and refuses loudly.
@@ -439,10 +439,10 @@ function getState(slug) {
   // sweeper needed
   const editors = [];
   load('devices').forEach(r => {
-    if (r.blug === slug && r.tblug
-        && Date.now() - new Date(r.tblug).getTime() < EDITOR_TTL_MS) {
-      editors.push({ userid: r.bluid, devid: r.devid,
-                     rig: r.rig });
+    if (r.blug === slug && r.blip
+        && Date.now() - new Date(r.blip).getTime() < EDITOR_TTL_MS) {
+      editors.push({ usid: r.blid, dvid: r.dvid,
+                     anym: r.anym });
     }
   });
 
@@ -452,7 +452,7 @@ function getState(slug) {
   // The payload keeps its vocabulary, derived per person from the log:
   // tini = first tbid, tmod = latest, bcount = row count. ISO stamps
   // compare lexicographically; rows are in submission order.
-  const agg = Object.create(null);  // userid -> derived bidder, in first-bid order
+  const agg = Object.create(null);  // usid -> derived bidder, in first-bid order
   const stamps = Object.create(null);  // tbid forgery tripwire
   load('bids').forEach(r => {
     if (r.slug !== slug) return;
@@ -464,46 +464,46 @@ function getState(slug) {
     }
     stamps[r.tbid] = true;
     if (revealed && r.tbid > tfin) return;  // after the gavel: not in
-    const a = agg[r.userid] || (agg[r.userid] =
-      { userid: r.userid, bcount: 0, tini: r.tbid });
+    const a = agg[r.usid] || (agg[r.usid] =
+      { usid: r.usid, bcount: 0, tini: r.tbid });
     a.bcount++;
     a.tmod = r.tbid;
-    a.bid = r.bid;
+    a.xbid = r.xbid;
   });
   const people = Object.keys(agg).map(p => agg[p]);
   const bidders = people.map(a =>
-    ({ userid: a.userid, bcount: a.bcount, tini: a.tini, tmod: a.tmod }));
+    ({ usid: a.usid, bcount: a.bcount, tini: a.tini, tmod: a.tmod }));
 
   // the closed-state covenant, asserted on every read: a revealed
   // auction has two-plus (uncut) roster seats, every one of them with
   // a bid — forever (the post-close freezes make it eternal)
   if (revealed && !(roster.length >= 2
-      && roster.every(s => bidders.some(b => b.userid === s.userid)))) {
+      && roster.every(s => bidders.some(b => b.usid === s.usid)))) {
     throw covenantCopy(slug, 'roster ['
-      + roster.map(s => s.uname).join(', ') + '] but bids only from ['
-      + bidders.map(b => b.userid).join(', ') + ']');
+      + roster.map(s => s.snym).join(', ') + '] but bids only from ['
+      + bidders.map(b => b.usid).join(', ') + ']');
   }
 
   return {
     slug: slug, exists: arow !== undefined,
     seats: seats, bidders: bidders, revealed: revealed,
-    tfin: tfin, blurb: blurb, bver: bver, editors: editors,
-    claims: claims, rigs: rigs,
-    bids: revealed ? people.map(a => ({ userid: a.userid, bid: a.bid }))
+    tfin: tfin, blub: blub, bver: bver, editors: editors,
+    claims: claims, anyms: anyms,
+    bids: revealed ? people.map(a => ({ usid: a.usid, xbid: a.xbid }))
                    : null,
   };
 }
 
-// This auction's seat record index for a userid (-1 if none)
-function seatIndex(slug, userid) {
+// This auction's seat record index for a usid (-1 if none)
+function seatIndex(slug, usid) {
   return load('seats').findIndex(
-    r => r.slug === slug && r.userid === userid);
+    r => r.slug === slug && r.usid === usid);
 }
 
 // The seat carrying a display label (labels are unique per auction)
-function seatByName(slug, uname) {
+function seatByName(slug, snym) {
   return load('seats').find(r => r.slug === slug
-    && r.uname === uname);
+    && r.snym === snym);
 }
 
 // The reveal button. Anyone may press it once the roster is complete —
@@ -512,9 +512,9 @@ function reveal(req) {
   const slug = cleanSlug(req.slug);
   const st = getState(slug);
   if (st.revealed) return st;  // racing presses: both succeed
-  const bidPids = st.bidders.map(b => b.userid);
+  const bidUsids = st.bidders.map(b => b.usid);
   if (!(st.seats.length >= 2
-        && st.seats.every(s => bidPids.indexOf(s.userid) !== -1))) {
+        && st.seats.every(s => bidUsids.indexOf(s.usid) !== -1))) {
     throw { code: 'notReady' };
   }
   const i = load('auctions').findIndex(r => r.slug === slug);
@@ -555,17 +555,17 @@ function ensureAuction(slug) {
   }
 }
 
-// Make sure a seat exists for this userid+label; adding is idempotent
-// (labels change only via rename, so an existing userid's seat is left
+// Make sure a seat exists for this usid+label; adding is idempotent
+// (labels change only via rename, so an existing usid's seat is left
 // exactly as found)
-function ensureSeat(slug, userid, uname) {
+function ensureSeat(slug, usid, snym) {
   const now = new Date().toISOString();
-  if (seatIndex(slug, userid) !== -1) return;
-  insert('seats', { slug: slug, userid: userid, uname: uname,
-                    devid: '', tini: now, tmod: now });
+  if (seatIndex(slug, usid) !== -1) return;
+  insert('seats', { slug: slug, usid: usid, snym: snym,
+                    dvid: '', tini: now, tmod: now });
 }
 
-// The auction blurb: freeform markdown, editable by anyone at any
+// The auction blub: freeform markdown, editable by anyone at any
 // time — before or after the close. Concurrent edits are guarded by
 // compare-and-swap on bver: the request carries the version the
 // edit was based on, and a stale base is refused loudly rather than
@@ -575,8 +575,8 @@ function ensureSeat(slug, userid, uname) {
 // consulted, and the same number is the pencil tooltip's.
 function describe(req) {
   const slug = cleanSlug(req.slug);
-  const blurb = String(req.blurb == null ? '' : req.blurb);
-  if (blurb.length > 2000) throw { code: 'blurbTooLong' };
+  const blub = String(req.blub == null ? '' : req.blub);
+  if (blub.length > 2000) throw { code: 'blubTooLong' };
   // the verdict comes BEFORE any write (a refusal must mutate
   // nothing, tmod included) — a missing row reads as the virgin
   // version 0, so a fresh auction's first describe passes
@@ -595,86 +595,86 @@ function describe(req) {
   }
   ensureAuction(slug);
   const i = load('auctions').findIndex(r => r.slug === slug);
-  // tbed (the blurb's own edit stamp) rides the same patch slab: a
+  // tbed (the blub's own edit stamp) rides the same patch slab: a
   // last-edited time at zero marginal writes
-  patch('auctions', i, { blurb: blurb, bver: current + 1,
+  patch('auctions', i, { blub: blub, bver: current + 1,
                          tbed: new Date().toISOString() });
   return getState(slug);
 }
 
-// The blurb editor's presence heartbeat (dreev 2026-07-31; per-
+// The blub editor's presence heartbeat (dreev 2026-07-31; per-
 // device rows 2026-08-02): while an editor is open its client pings
 // every ~10s into its OWN devices row, and getState shows every
 // editor whose last ping is fresh (EDITOR_TTL_MS covers two missed
 // beats plus slack — a closed tab simply ages out). One slot per
-// DEVICE — the whole desk crowd shows at once, and a foreign clear
+// DVID — the whole desk crowd shows at once, and a foreign clear
 // is structurally impossible, since a device only ever writes its
 // own row. Disclosed if: a stop clears the slot only while it still
 // points at this auction (a newer beat for another auction owns the
-// row now). The gavel doesn't apply: the blurb is editable
+// row now). The gavel doesn't apply: the blub is editable
 // post-close, so its presence rides the same exemption; and the
 // auctions tab is never touched, so virgin auctions take presence
 // and stay virgin.
 const EDITOR_TTL_MS = 25000;
 function noteEditing(req) {
   const slug = cleanSlug(req.slug);
-  const userid = req.userid ? cleanUserid(req.userid) : '';  // '' = unseated
-  const devid = cleanDevid(req.devid);
-  if (!devid) throw { code: 'editingNeedsDevice' };
-  const rig = cleanRig(req.rig);
+  const usid = req.usid ? cleanUsid(req.usid) : '';  // '' = unseated
+  const dvid = cleanDvid(req.dvid);
+  if (!dvid) throw { code: 'editingNeedsDevice' };
+  const anym = cleanAnym(req.anym);
   const now = new Date().toISOString();
-  const i = touchDevice(devid, rig);  // devices first
+  const i = touchDevice(dvid, anym);  // devices first
   if (req.stop) {
     if (load('devices')[i].blug === slug) {
-      patch('devices', i, { tmod: now, tblug: '' });
+      patch('devices', i, { tmod: now, blip: '' });
     }
   } else {
-    patch('devices', i, { tmod: now, blug: slug, bluid: userid,
-                          tblug: now });
+    patch('devices', i, { tmod: now, blug: slug, blid: usid,
+                          blip: now });
   }
   return getState(slug);
 }
 
 // The roster is CLOSED once revealed: the game is over, and a fresh
 // participant could neither bid meaningfully nor be waited on.
-// Adding is IDEMPOTENT on the label (dreev's ruling): if the label is already seated — same userid or
+// Adding is IDEMPOTENT on the label (dreev's ruling): if the label is already seated — same usid or
 // not — the requested goal state holds, so this is success, sans
 // writes (not even a tmod bump). The race loser converges as an
-// ordinary latecomer: their next snapshot unseats their ghost userid and
+// ordinary latecomer: their next snapshot unseats their ghost usid and
 // the claimable star is the re-attach affordance. Renames onto a live
 // label still refuse: their goal is a CHANGE, which didn't happen.
 function addParticipant(req) {
   const slug = cleanSlug(req.slug);
-  const uname = cleanUname(req.uname);
-  const userid = cleanUserid(req.userid);
+  const snym = cleanSnym(req.snym);
+  const usid = cleanUsid(req.usid);
   if (getState(slug).revealed) throw { code: 'rosterClosed' };
-  if (seatIndex(slug, userid) === -1 && seatByName(slug, uname)) {
+  if (seatIndex(slug, usid) === -1 && seatByName(slug, snym)) {
     return getState(slug);  // the label is seated: mission complete
   }
   ensureAuction(slug);
-  ensureSeat(slug, userid, uname);
+  ensureSeat(slug, usid, snym);
   return getState(slug);
 }
 
-// Renaming is a LABEL EDIT, nothing more: the userid is the identity,
+// Renaming is a LABEL EDIT, nothing more: the usid is the identity,
 // so bids, claims, memory, and reveal-gating don't even notice. One
 // cell changes. (This one-liner replaced a re-key of the seat AND
 // every bid log row AND the client's rename-transaction machinery —
-// the whole reason pids exist.) Renaming onto a live label is
+// the whole reason usids exist.) Renaming onto a live label is
 // refused.
 function renameParticipant(req) {
   const slug = cleanSlug(req.slug);
-  const userid = cleanUserid(req.userid);
-  const to = cleanUname(req.to);
+  const usid = cleanUsid(req.usid);
+  const to = cleanSnym(req.to);
   // names freeze at the gavel: a post-close rename could swap
   // around who bid what (dreev's ruling)
   if (getState(slug).revealed) throw { code: 'auctionClosed' };
-  const i = seatIndex(slug, userid);
-  if (i === -1) throw { code: 'noSuchOne', userid: userid };
-  if (load('seats')[i].uname === to) return getState(slug);
+  const i = seatIndex(slug, usid);
+  if (i === -1) throw { code: 'noSuchOne', usid: usid };
+  if (load('seats')[i].snym === to) return getState(slug);
   const twin = seatByName(slug, to);
-  if (twin && twin.userid !== userid) throw { code: 'nameTaken' };
-  patch('seats', i, { uname: to, tmod: new Date().toISOString() });
+  if (twin && twin.usid !== usid) throw { code: 'nameTaken' };
+  patch('seats', i, { snym: to, tmod: new Date().toISOString() });
   ensureAuction(slug);
   return getState(slug);
 }
@@ -687,12 +687,12 @@ function renameParticipant(req) {
 // reached by losing a race). Absent seat: harmless no-op.
 function removeParticipant(req) {
   const slug = cleanSlug(req.slug);
-  const userid = cleanUserid(req.userid);
+  const usid = cleanUsid(req.usid);
   // the record freezes at the gavel
   if (getState(slug).revealed) throw { code: 'auctionClosed' };
-  const i = seatIndex(slug, userid);
+  const i = seatIndex(slug, usid);
   if (i === -1) return getState(slug);  // absent: a harmless no-op
-  if (load('bids').some(r => r.slug === slug && r.userid === userid)) {
+  if (load('bids').some(r => r.slug === slug && r.usid === usid)) {
     throw { code: 'removeBidder' };
   }
   ensureAuction(slug);
@@ -710,17 +710,17 @@ function removeParticipant(req) {
 // held, radio-style.
 function saveClaim(req) {
   const slug = cleanSlug(req.slug);
-  const userid = cleanUserid(req.userid);
-  const devid = cleanDevid(req.devid);
-  if (!devid) throw { code: 'claimNeedsDevice' };
+  const usid = cleanUsid(req.usid);
+  const dvid = cleanDvid(req.dvid);
+  if (!dvid) throw { code: 'claimNeedsDevice' };
   // identity is part of the frozen record, like names and bids: a
-  // post-close claim would dress a revealed bid in a stranger's rig
+  // post-close claim would dress a revealed bid in a stranger's anym
   if (getState(slug).revealed) throw { code: 'auctionClosed' };
-  const rig = cleanRig(req.rig);
-  if (seatIndex(slug, userid) === -1) throw { code: 'noSuchOne', userid: userid };
-  touchDevice(devid, rig);  // devices first, always
+  const anym = cleanAnym(req.anym);
+  if (seatIndex(slug, usid) === -1) throw { code: 'noSuchOne', usid: usid };
+  touchDevice(dvid, anym);  // devices first, always
   ensureAuction(slug);
-  setDevid(slug, userid, devid);
+  setDvid(slug, usid, dvid);
   return getState(slug);
 }
 
@@ -728,37 +728,37 @@ function saveClaim(req) {
 // no-op: a merely-local soft claim must release without drama.
 function releaseClaim(req) {
   const slug = cleanSlug(req.slug);
-  const userid = cleanUserid(req.userid);
-  const devid = cleanDevid(req.devid);
-  if (!devid) throw { code: 'releaseNeedsDevice' };
+  const usid = cleanUsid(req.usid);
+  const dvid = cleanDvid(req.dvid);
+  if (!dvid) throw { code: 'releaseNeedsDevice' };
   if (getState(slug).revealed) throw { code: 'auctionClosed' };  // frozen too
-  const held = deviceOf(slug, userid);
-  if (held && held !== devid) {
+  const held = deviceOf(slug, usid);
+  if (held && held !== dvid) {
     throw { code: 'notYourSeat' };
   }
   // only an ACTUAL release writes: refused and no-op requests mutate
   // nothing, not even tmod
   if (held) {
     ensureAuction(slug);
-    setDevid(slug, userid, '');
+    setDvid(slug, usid, '');
   }
   return getState(slug);
 }
 
-// The devid currently holding a seat ('' if open or no such seat)
-function deviceOf(slug, userid) {
-  const i = seatIndex(slug, userid);
-  return i === -1 ? '' : load('seats')[i].devid;
+// The dvid currently holding a seat ('' if open or no such seat)
+function deviceOf(slug, usid) {
+  const i = seatIndex(slug, usid);
+  return i === -1 ? '' : load('seats')[i].dvid;
 }
 
-function setDevid(slug, userid, devid) {
+function setDvid(slug, usid, dvid) {
   const now = new Date().toISOString();
   load('seats').forEach((r, i) => {
     if (r.slug !== slug) return;
-    if (r.userid === userid) {
-      patch('seats', i, { devid: devid, tmod: now });
-    } else if (devid && r.devid === devid) {
-      patch('seats', i, { devid: '', tmod: now });
+    if (r.usid === usid) {
+      patch('seats', i, { dvid: dvid, tmod: now });
+    } else if (dvid && r.dvid === dvid) {
+      patch('seats', i, { dvid: '', tmod: now });
     }
   });
 }
@@ -767,37 +767,37 @@ function setDevid(slug, userid, devid) {
 // references it (so a dangling reference is unmintable; a refusal
 // after it leaves at worst a harmless orphan row) — and return its
 // record index. Two disclosed ifs beyond the upsert itself: an
-// unchanged blurb costs no write, and a '' report never erases a
-// known blurb — ignorance is not news, the device didn't stop being
-// a Mac. '' devid (old clients, nobody) touches nothing: -1.
-function touchDevice(devid, rig) {
-  if (!devid) return -1;
+// unchanged blub costs no write, and a '' report never erases a
+// known blub — ignorance is not news, the device didn't stop being
+// a Mac. '' dvid (old clients, nobody) touches nothing: -1.
+function touchDevice(dvid, anym) {
+  if (!dvid) return -1;
   const now = new Date().toISOString();
-  const i = load('devices').findIndex(r => r.devid === devid);
+  const i = load('devices').findIndex(r => r.dvid === dvid);
   if (i === -1) {
-    return insert('devices', { devid: devid, rig: rig,
+    return insert('devices', { dvid: dvid, anym: anym,
                                tini: now, tmod: now });
   }
-  if (rig && load('devices')[i].rig !== rig) {
-    patch('devices', i, { rig: rig, tmod: now });
+  if (anym && load('devices')[i].anym !== anym) {
+    patch('devices', i, { anym: anym, tmod: now });
   }
   return i;
 }
 
-// The holder's rig, RAW from its devices row ('' when the device
+// The holder's anym, RAW from its devices row ('' when the device
 // never described itself; the client's mystery-device fallback
 // decorates it), for the seat-taken refusal that names who beat you
-function holderRig(slug, userid) {
+function holderAnym(slug, usid) {
   const dev = load('devices')
-    .find(r => r.devid === deviceOf(slug, userid));
-  return dev === undefined ? '' : dev.rig;
+    .find(r => r.dvid === deviceOf(slug, usid));
+  return dev === undefined ? '' : dev.anym;
 }
 
 function placeBid(req) {
   const slug = cleanSlug(req.slug);
-  const userid = cleanUserid(req.userid);
-  const uname = cleanUname(req.uname);  // the label, for walk-on seats
-  const bid = String(req.bid == null ? '' : req.bid).trim();
+  const usid = cleanUsid(req.usid);
+  const snym = cleanSnym(req.snym);  // the label, for walk-on seats
+  const bid = String(req.xbid == null ? '' : req.xbid).trim();
   if (!bid) throw { code: 'emptyBid' };
   if (bid.length > 160) throw { code: 'bidTooLong' };
   // The gavel drop is a bright line: no bid lands after tfin. This is
@@ -806,38 +806,38 @@ function placeBid(req) {
   if (getState(slug).revealed) {
     throw { code: 'gavelFell' };
   }
-  const devid = req.devid === undefined ? ''
-    : cleanDevid(req.devid);
-  const rig = cleanRig(req.rig);
-  const held = deviceOf(slug, userid);
+  const dvid = req.dvid === undefined ? ''
+    : cleanDvid(req.dvid);
+  const anym = cleanAnym(req.anym);
+  const held = deviceOf(slug, usid);
 
   // bidding claims a roster seat: your own bid must never read as
   // not-counting (a bid rebuilds its seat if a raced removal took
-  // it). A WALK-ON bid (no seat for this userid yet) whose label is
-  // already seated under someone else's userid is a doppelganger,
+  // it). A WALK-ON bid (no seat for this usid yet) whose label is
+  // already seated under someone else's usid is a doppelganger,
   // refused.
   // Bidding as someone is claiming to be them, and claims are first
   // come, first served: a bid may not touch a seat someone else holds.
-  // Old clients carry no devid and count as nobody — fine on an
+  // Old clients carry no dvid and count as nobody — fine on an
   // open seat, refused on a held one.
-  if (held && held !== devid) {
-    throw { code: 'bidSeatHeld', rig: holderRig(slug, userid),
-            uname: uname };
+  if (held && held !== dvid) {
+    throw { code: 'bidSeatHeld', anym: holderAnym(slug, usid),
+            snym: snym };
   }
-  const twin = seatByName(slug, uname);
-  if (seatIndex(slug, userid) === -1 && twin && twin.userid !== userid) {
+  const twin = seatByName(slug, snym);
+  if (seatIndex(slug, usid) === -1 && twin && twin.usid !== usid) {
     throw { code: 'nameTaken' };
   }
   // no partial writes: every row this bid may append is capacity-
   // checked BEFORE the first one lands (a refusal must not leave a
   // half-created seat)
   assertRoom('bids');
-  if (seatIndex(slug, userid) === -1) assertRoom('seats');
-  touchDevice(devid, rig);  // devices first, always
+  if (seatIndex(slug, usid) === -1) assertRoom('seats');
+  touchDevice(dvid, anym);  // devices first, always
   ensureAuction(slug);
-  ensureSeat(slug, userid, uname);
-  if (devid) {
-    setDevid(slug, userid, devid);
+  ensureSeat(slug, usid, snym);
+  if (dvid) {
+    setDvid(slug, usid, dvid);
   }
 
   // every submission is its own log row; the read side derives the
@@ -851,8 +851,8 @@ function placeBid(req) {
     r.slug === slug && r.tbid > m ? r.tbid : m, '');
   const tbid = new Date(Math.max(Date.now(),
     (prev === '' ? 0 : new Date(prev).getTime()) + 1)).toISOString();
-  const at = insert('bids', { slug: slug, userid: userid, bid: bid,
-                              tbid: tbid, devid: devid });
+  const at = insert('bids', { slug: slug, usid: usid, xbid: bid,
+                              tbid: tbid, dvid: dvid });
   // seal THIS submission white-on-white as it lands — one write, not
   // a repaint of the whole pile (its elders were sealed at their own
   // appends; reveal() unmasks the lot)

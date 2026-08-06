@@ -108,8 +108,8 @@ async function shoot(page, name) {
 }
 
 // Add a person via the ledger's + row
-async function addName(page, uname) {
-  await page.type('#roster-input', uname);
+async function addName(page, snym) {
+  await page.type('#roster-input', snym);
   await page.keyboard.press('Enter');
 }
 
@@ -118,8 +118,8 @@ async function addName(page, uname) {
 // typing straight through in-flight op acks must just work.
 
 // Claim a row as yourself via its star, then wait for the editor
-async function claimRow(page, uname) {
-  await page.click('.tile[data-uname="' + uname + '"] .tu');
+async function claimRow(page, snym) {
+  await page.click('.tile[data-snym="' + snym + '"] .tu');
   await page.waitForSelector('.tile.mine .rebid textarea');
 }
 
@@ -182,8 +182,8 @@ async function bid(page, bidText) {
     ok((await alice.$$('#status .tile:not(.addrow)')).length === 0,
        'no roster yet: the ledger is just the + row');
     // the description block: RESTS RENDERED with its pencil (README
-    // blurb spec item 1, 2026-07-29 — reversing the edit-at-rest
-    // arrival for blank rigs); the pencil opens the editing mode
+    // blub spec item 1, 2026-07-29 — reversing the edit-at-rest
+    // arrival for blank anyms); the pencil opens the editing mode
     // with textarea, live preview, and its SAVE/DISCARD row
     ok(await alice.evaluate(() => {
       const t = document.getElementById('descedit');
@@ -195,7 +195,7 @@ async function bid(page, bidText) {
         && !document.getElementById('descgo')
              .checkVisibility({ visibilityProperty: true });
     }), 'the description rests RENDERED, pencil standing: the way in'
-       + ' is one click, blank blurb or not');
+       + ' is one click, blank blub or not');
     await alice.click('#desctoggle');
     ok(await alice.evaluate(() => {
       const t = document.getElementById('descedit');
@@ -242,7 +242,7 @@ async function bid(page, bidText) {
         && Math.abs(e.left - v.left) < 1;
     }), 'phone editing mode stacks: source above, rendered preview'
        + ' below, flush left (spec item 4)');
-    await shoot(alice, 'story1-blurb-editing-phone');
+    await shoot(alice, 'story1-blub-editing-phone');
     await alice.click('#slug');  // clicking away...
     await new Promise((r) => setTimeout(r, 150));
     ok(await alice.evaluate(() =>
@@ -266,7 +266,7 @@ async function bid(page, bidText) {
       && !document.getElementById('status').classList.contains('stale')
       && getComputedStyle(document.querySelector('#status > .gavel'))
            .opacity === '0'),
-       'the in-flight blurb save shows NO busy sign anywhere: no'
+       'the in-flight blub save shows NO busy sign anywhere: no'
        + ' gavel spins for a write');
     // ...but it does wear the away-tint, held until the settle (the
     // wait rides out the tint's own 0.45s fade-in, safely inside the
@@ -309,7 +309,7 @@ async function bid(page, bidText) {
         && box.backgroundColor === 'rgba(0, 0, 0, 0)'
         && !document.getElementById('desc').classList
              .contains('committed');
-    }), 'and the settled blurb rests boxless and untinted: prose on'
+    }), 'and the settled blub rests boxless and untinted: prose on'
        + ' the page, not a field — the box itself says "editable'
        + ' here" (dreev)');
 
@@ -461,8 +461,8 @@ async function bid(page, bidText) {
        + ' shackle seated on the body');
     ok(await alice.evaluate(() =>
       document.querySelectorAll('#tiles .tu').length === 2
-      && document.querySelector('.tile[data-uname="alice"] .tu.selected')
-      && !document.querySelector('.tile[data-uname="bob"] .tu.selected')),
+      && document.querySelector('.tile[data-snym="alice"] .tu.selected')
+      && !document.querySelector('.tile[data-snym="bob"] .tu.selected')),
        'her first add lit her own star (2j); bob waits hollow');
     ok(await alice.evaluate(() => {
       const alpha = (c) => {
@@ -477,7 +477,7 @@ async function bid(page, bidText) {
         && parseFloat(cs.fontSize) > 16;
     }), 'a claimable star is a true radio hollow: same glyph, outline'
        + ' only, big enough to want to press');
-    await alice.hover('.tile[data-uname="bob"] .x');
+    await alice.hover('.tile[data-snym="bob"] .x');
     ok(await alice.evaluate(() => {
       const probe = document.createElement('span');
       probe.style.color = 'var(--err-fg)';
@@ -485,7 +485,7 @@ async function bid(page, bidText) {
       const danger = getComputedStyle(probe).color;
       probe.remove();
       return getComputedStyle(
-        document.querySelector('.tile[data-uname="bob"] .x')).color === danger;
+        document.querySelector('.tile[data-snym="bob"] .x')).color === danger;
     }), 'the trailing × reddens on hover: reads as "remove this row"');
 
     ok(await alice.evaluate(() =>
@@ -514,28 +514,28 @@ async function bid(page, bidText) {
        A typed name now WAITS with its SAVE, and the star click lands
        trivially: no hidden write, no rebuild mid-gesture.] */
     await alice.type('#roster-input', 'carol');
-    await alice.click('.tile[data-uname="bob"] .tu');  // a radio switch
-    await alice.waitForSelector('.tile[data-uname="bob"].mine',
+    await alice.click('.tile[data-snym="bob"] .tu');  // a radio switch
+    await alice.waitForSelector('.tile[data-snym="bob"].mine',
                                 { timeout: 2000 });
     ok(true, 'clicking a star works even mid-add: no hidden write, no'
        + ' rebuild, nothing to swallow the click');
     await new Promise((r) => setTimeout(r, 150));
     ok(await alice.evaluate(() =>
-      !document.querySelector('.tile[data-uname="carol"]')
+      !document.querySelector('.tile[data-snym="carol"]')
       && document.getElementById('roster-input').value === 'carol'
       && getComputedStyle(document.getElementById('roster-go'))
            .display !== 'none'),
        'and the tapped-away name is NOT committed: it waits in the'
        + ' + row, SAVE standing (the finger taps the button now)');
     await alice.click('#roster-go');
-    await alice.waitForSelector('.tile[data-uname="carol"]');
+    await alice.waitForSelector('.tile[data-snym="carol"]');
     ok(await alice.$eval('#roster-input', (e) => e.value) === '',
        'SAVE lands carol and clears the row for the next name');
-    await alice.click('.tile[data-uname="carol"] .x');  // tidy the scene
+    await alice.click('.tile[data-snym="carol"] .x');  // tidy the scene
     await alice.waitForFunction(() =>
-      !document.querySelector('.tile[data-uname="carol"]'));
-    await alice.click('.tile[data-uname="alice"] .tu');  // and back
-    await alice.waitForSelector('.tile[data-uname="alice"].mine');
+      !document.querySelector('.tile[data-snym="carol"]'));
+    await alice.click('.tile[data-snym="alice"] .tu');  // and back
+    await alice.waitForSelector('.tile[data-snym="alice"].mine');
 
     ok(await alice.evaluate(() =>
       document.activeElement === document.querySelector('.tile.mine .rebid textarea')),
@@ -566,50 +566,50 @@ async function bid(page, bidText) {
     // Editing a name highlights the FIELD: the person cell wears the
     // + row's ring recipe — the underline special case is retired
     // (dreev 2026-07-27: "shouldn't the field just highlight
-    // itself?"). No SAVE exists here at all: unames blur-commit
+    // itself?"). No SAVE exists here at all: snyms blur-commit
     // (dreev 2026-07-28, the commit taxonomy).
-    await alice.click('.tile[data-uname="bob"] .rename input');
+    await alice.click('.tile[data-snym="bob"] .rename input');
     ok(await alice.evaluate(() => {
       const cell = document.querySelector(
-        '.tile[data-uname="bob"] .tile-name');
+        '.tile[data-snym="bob"] .tile-name');
       const inp = cell.querySelector('.rename input');
       return getComputedStyle(cell).outlineWidth === '2px'
         && getComputedStyle(cell).outlineStyle === 'solid'
         && getComputedStyle(inp).boxShadow === 'none'
         && !document.querySelector(
-               '.tile[data-uname="bob"] .rename .go');
+               '.tile[data-snym="bob"] .rename .go');
     }), 'editing a name rings the person cell itself, star lassoed'
        + ' like the + row rings its @ — no underline, and no SAVE:'
        + ' a name field commits by leaving');
     await alice.keyboard.type('by');
     await alice.click('.legend');  // wander off mid-edit: THE commit
-    await alice.waitForSelector('.tile[data-uname="bobby"]');
+    await alice.waitForSelector('.tile[data-snym="bobby"]');
     ok(true, 'wandering off an edited name COMMITS it: cheap label'
        + ' edits are frictionless (dreev 2026-07-28)');
-    await alice.click('.tile[data-uname="bobby"] .rename input');
+    await alice.click('.tile[data-snym="bobby"] .rename input');
     await alice.keyboard.press('End');
     await alice.keyboard.type('xx');
     await alice.keyboard.press('Escape');  // never mind, pre-blur
     await new Promise((r) => setTimeout(r, 300));
     ok(await alice.evaluate(() =>
-      document.querySelector('.tile[data-uname="bobby"] .rename input')
+      document.querySelector('.tile[data-snym="bobby"] .rename input')
         .value === 'bobby'),
        "Escape still means never-mind: its revert lands before the"
        + ' blur, which then finds a clean field and commits nothing');
     // bob is bobby now; put him back for the legs below
-    await alice.click('.tile[data-uname="bobby"] .rename input');
-    await alice.$eval('.tile[data-uname="bobby"] .rename input',
+    await alice.click('.tile[data-snym="bobby"] .rename input');
+    await alice.$eval('.tile[data-snym="bobby"] .rename input',
       (e) => { e.value = ''; });
     await alice.keyboard.type('bob');
     await alice.keyboard.press('Enter');
-    await alice.waitForSelector('.tile[data-uname="bob"]');
-    /* Replicata (dreev 2026-07-28: "red outline on uname doesn't
+    await alice.waitForSelector('.tile[data-snym="bob"]');
+    /* Replicata (dreev 2026-07-28: "red outline on snym doesn't
        match the field at all"): rename bob onto a taken name; the
        refusal reddens. Expectata: the ring wraps the person CELL —
        the visible box, where the focus ring lives — not the
        borderless input inside it. */
-    await alice.click('.tile[data-uname="bob"] .rename input');
-    await alice.$eval('.tile[data-uname="bob"] .rename input',
+    await alice.click('.tile[data-snym="bob"] .rename input');
+    await alice.$eval('.tile[data-snym="bob"] .rename input',
       (e) => { e.value = ''; });
     await alice.keyboard.type('alice');  // taken: the guard refuses
     await alice.click('.legend');        // the blur-commit
@@ -617,14 +617,14 @@ async function bid(page, bidText) {
       !document.getElementById('banner').hidden);
     ok(await alice.evaluate(() => {
       const cell = document.querySelector(
-        '.tile[data-uname="bob"] .tile-name');
+        '.tile[data-snym="bob"] .tile-name');
       const inp = cell.querySelector('input');
       return getComputedStyle(cell).outlineStyle === 'solid'
         && getComputedStyle(cell).filter.includes('drop-shadow')
         && getComputedStyle(inp).outlineStyle === 'none';
     }), 'the name objection rings the person CELL, the visible box —'
        + ' never the borderless input inside it');
-    await alice.click('.tile[data-uname="bob"] .rename input');
+    await alice.click('.tile[data-snym="bob"] .rename input');
     await alice.keyboard.press('Escape');  // never mind; tidy the scene
     await alice.evaluate(() =>
       document.getElementById('banner-x').click());
@@ -1022,8 +1022,8 @@ async function bid(page, bidText) {
         const m = c.match(/(?:rgba\([^)]+,\s*|\/\s*)([\d.]+)\)\s*$/);
         return m ? parseFloat(m[1]) : 1;
       };
-      const taken = document.querySelector('.tile[data-uname="alice"] .tu');
-      const plain = document.querySelector('.tile[data-uname="bob"] .tu');
+      const taken = document.querySelector('.tile[data-snym="alice"] .tu');
+      const plain = document.querySelector('.tile[data-snym="bob"] .tu');
       // (post-takeover-ruling the taken star is enabled: dibs inform,
       // they don't lock — the fill and tip carry the message)
       return !taken.disabled && !plain.disabled
@@ -1036,7 +1036,7 @@ async function bid(page, bidText) {
                               + tzcity(Intl.DateTimeFormat()
                                   .resolvedOptions().timeZone));
     }), "alice's star fills in on bob's screen — claimed by someone"
-       + ' else, says the tip, naming the rig — while open seats stay'
+       + ' else, says the tip, naming the anym — while open seats stay'
        + ' hollow');
     ok(await bob.evaluate(() => getComputedStyle(
          document.querySelector('#status .seal .shackle')).transform)
@@ -1229,7 +1229,7 @@ async function bid(page, bidText) {
     await addName(alice, 'evy');
     await alice.waitForFunction(() =>
       document.querySelectorAll('#tiles .tile').length === 2
-      && !!document.querySelector('.tile[data-uname="evy"]'));
+      && !!document.querySelector('.tile[data-snym="evy"]'));
     ok(true, 'empty rows appear for @dee and @evy');
     ok(await alice.evaluate(() =>
       !document.querySelector('.tile.mine')
@@ -1241,7 +1241,7 @@ async function bid(page, bidText) {
     ok(true, 'adding her remembered name back re-latches automatically');
     await bid(alice, 'sweep the porch');
     await alice.waitForFunction(() =>
-      document.querySelector('.tile[data-uname="alice"]')
+      document.querySelector('.tile[data-snym="alice"]')
         .classList.contains('has-bid'));
     ok(true, 'she bids in place on her reclaimed row');
 
@@ -1256,12 +1256,12 @@ async function bid(page, bidText) {
     await alice.waitForFunction(() =>
       document.querySelectorAll('#tiles .tile.has-bid').length === 2);
     ok(await alice.evaluate(() => {
-      const evy = document.querySelector('.tile[data-uname="evy"]');
+      const evy = document.querySelector('.tile[data-snym="evy"]');
       return evy && !evy.classList.contains('has-bid');
     }), "alice sees @evy's row still hollow");
     ok(await alice.evaluate(() =>
       document.querySelector('#tiles .tile.has-bid .x').disabled
-      && !document.querySelector('.tile[data-uname="evy"] .x').disabled),
+      && !document.querySelector('.tile[data-snym="evy"] .x').disabled),
        'x live on the hollow row, grayed once a bid is in');
 
     // the ledger reads as a table: person column and bid column line up
@@ -1281,15 +1281,15 @@ async function bid(page, bidText) {
     // dreev 2026-07-19); then alice ends early: × the bidless
     // straggler right off the ledger.
     gas.handle({ action: 'bid', slug: 'chores',
-      uname: 'zed', userid: 'userid-chores-zed',
-                 bid: 'zed was here' });
+      snym: 'zed', usid: 'usid-chores-zed',
+                 xbid: 'zed was here' });
     await alice.waitForFunction(() =>
-      document.querySelector('.tile[data-uname="zed"]'));
+      document.querySelector('.tile[data-snym="zed"]'));
     ok(await alice.evaluate(() =>
-      document.querySelector('.tile[data-uname="zed"] .x').disabled),
+      document.querySelector('.tile[data-snym="zed"] .x').disabled),
        "the walk-on's bid grays his × on arrival: a bid protects its"
        + ' seat');
-    await alice.click('.tile[data-uname="evy"] .x');
+    await alice.click('.tile[data-snym="evy"] .x');
     await alice.waitForFunction(() => !document.getElementById('reveal').disabled);
     await alice.click('#reveal');
     await alice.waitForFunction(() =>
@@ -1307,10 +1307,10 @@ async function bid(page, bidText) {
     await carol.goto(BASE + '/gesture', { waitUntil: 'networkidle0' });
     await carol.waitForSelector('#tiles');
     await addName(carol, 'cat');  // self-claims (2j): carol is cat
-    await carol.waitForSelector('.tile[data-uname="cat"]');
+    await carol.waitForSelector('.tile[data-snym="cat"]');
     opDelay = 400;
     await addName(carol, 'dog');  // its ack lands mid-gesture below
-    const starBox = await (await carol.$('.tile[data-uname="dog"] .tu'))
+    const starBox = await (await carol.$('.tile[data-snym="dog"] .tu'))
       .boundingBox();
     await carol.mouse.move(starBox.x + starBox.width / 2,
                            starBox.y + starBox.height / 2);
@@ -1318,7 +1318,7 @@ async function bid(page, bidText) {
     await new Promise((r) => setTimeout(r, 700));  // ack + render land
     opDelay = 0;
     await carol.mouse.up();
-    await carol.waitForSelector('.tile[data-uname="dog"].mine .rebid textarea',
+    await carol.waitForSelector('.tile[data-snym="dog"].mine .rebid textarea',
                                 { timeout: 2000 });
     ok(true, 'a click straddling an op-ack render still lands (the very'
        + ' row whose ack was in flight)');
@@ -1354,7 +1354,7 @@ async function bid(page, bidText) {
       && !document.getElementById('status').classList.contains('stale')
       && getComputedStyle(document.querySelector('#status > .gavel'))
         .opacity === '0'
-      && document.querySelector('.tile[data-uname="fox"]') !== null),
+      && document.querySelector('.tile[data-snym="fox"]') !== null),
        'a slow add spins NO gavel and grays nothing: the optimistic'
        + ' row just stands');
     ok(await carol.evaluate(() => {
@@ -1421,7 +1421,7 @@ async function bid(page, bidText) {
       !document.querySelector('.rebid.busy'));
     ok(true, 'the volley settles invisibly');
     /* ---- names are live text fields: click in, type, enter ------------ */
-    await carol.click('.tile[data-uname="fox"] .rename input');
+    await carol.click('.tile[data-snym="fox"] .rename input');
     ok(await carol.evaluate(() => {
       // one focus language: the person CELL wears the ring, exactly
       // like the + row's wrapper (the stand-in underline retired,
@@ -1432,26 +1432,26 @@ async function bid(page, bidText) {
       const accent = getComputedStyle(probe).color;
       probe.remove();
       const cell = getComputedStyle(document.querySelector(
-        '.tile[data-uname="fox"] .tile-name'));
+        '.tile[data-snym="fox"] .tile-name'));
       const inp = getComputedStyle(
-        document.querySelector('.tile[data-uname="fox"] .rename input'));
+        document.querySelector('.tile[data-snym="fox"] .rename input'));
       return cell.outlineStyle === 'solid' && cell.outlineWidth === '2px'
         && cell.outlineColor === accent
         && inp.outlineStyle === 'none' && inp.boxShadow === 'none';
     }), 'the focused name field highlights its whole cell in the'
        + ' focus accent, the at-wrap ring recipe');
-    await carol.$eval('.tile[data-uname="fox"] .rename input',
+    await carol.$eval('.tile[data-snym="fox"] .rename input',
                       (e) => e.select());
     await carol.keyboard.type('foxy');
     await carol.keyboard.press('Enter');
-    await carol.waitForSelector('.tile[data-uname="foxy"]');
+    await carol.waitForSelector('.tile[data-snym="foxy"]');
     ok(true, 'the name is just an editable field: type and enter renames');
 
     /* ---- error banners overlay; they never shift the page ------------- */
     const statusTop = await carol.evaluate(() =>
       document.getElementById('status').getBoundingClientRect().top);
-    await carol.click('.tile[data-uname="dog"] .rename input');
-    await carol.$eval('.tile[data-uname="dog"] .rename input',
+    await carol.click('.tile[data-snym="dog"] .rename input');
+    await carol.$eval('.tile[data-snym="dog"] .rename input',
                       (e) => e.select());
     await carol.keyboard.type('foxy');  // taken!
     await carol.keyboard.press('Enter');
@@ -1481,7 +1481,7 @@ async function bid(page, bidText) {
     await thumb.keyboard.press('Enter');
     await thumb.type('#roster-input', 'bo');
     await thumb.keyboard.press('Enter');
-    await thumb.waitForSelector('.tile[data-uname="bo"]');
+    await thumb.waitForSelector('.tile[data-snym="bo"]');
     ok(true, 'the + row takes names from the return key');
     await thumb.waitForSelector('.tile.mine .rebid textarea');
     ok(true, 'her first thumbed-in name is hers (2j): editor ready');
@@ -1490,23 +1490,23 @@ async function bid(page, bidText) {
     await thumb.waitForSelector('.tile.mine.has-bid');
     ok(true, 'return submits the bid: the editor keydown, no'
        + ' button, no mouse');
-    await thumb.tap('.tile[data-uname="bo"] .rename input');
-    await thumb.$eval('.tile[data-uname="bo"] .rename input',
+    await thumb.tap('.tile[data-snym="bo"] .rename input');
+    await thumb.$eval('.tile[data-snym="bo"] .rename input',
                       (e) => e.select());
     await thumb.keyboard.type('bob');
     await thumb.keyboard.press('Enter');
-    await thumb.waitForSelector('.tile[data-uname="bob"]');
+    await thumb.waitForSelector('.tile[data-snym="bob"]');
     ok(true, 'renaming works by thumb: tap, type, return');
     await thumb.type('#roster-input', 'oops');
     await thumb.keyboard.press('Enter');
-    await thumb.waitForSelector('.tile[data-uname="oops"]');
-    await thumb.tap('.tile[data-uname="oops"] .x');
+    await thumb.waitForSelector('.tile[data-snym="oops"]');
+    await thumb.tap('.tile[data-snym="oops"] .x');
     await thumb.waitForFunction(() =>
-      !document.querySelector('.tile[data-uname="oops"]'));
+      !document.querySelector('.tile[data-snym="oops"]'));
     ok(true, 'tapping a × removes the row');
     const thumb2 = await makePage(browser, mobileViewport);
     await thumb2.goto(BASE + '/thumbs', { waitUntil: 'networkidle0' });
-    await thumb2.tap('.tile[data-uname="bob"] .tu');
+    await thumb2.tap('.tile[data-snym="bob"] .tu');
     await thumb2.waitForSelector('.tile.mine .rebid textarea');
     ok(true, 'tapping a star (a touch, not a click) claims the row');
     /* Replicata (dreev, phone): ALL tooltips vanished, surviving
@@ -1557,14 +1557,14 @@ async function bid(page, bidText) {
        320px phone still doesn't scroll sideways. Resultata pre-fix:
        13.6px fields, 24x32px stars. */
     gas.handle({ action: 'add', slug: 'fatfinger',
-      uname: 'alice', userid: 'userid-fat-alice' });
+      snym: 'alice', usid: 'usid-fat-alice' });
     gas.handle({ action: 'add', slug: 'fatfinger',
-      uname: 'bob', userid: 'userid-fat-bob' });
+      snym: 'bob', usid: 'usid-fat-bob' });
     gas.handle({ action: 'describe', slug: 'fatfinger', base: 0,
-      blurb: 'A blurb, so the pencil shows.' });
+      blub: 'A blub, so the pencil shows.' });
     const fat = await makePage(browser, mobileViewport);
     await fat.goto(BASE + '/fatfinger', { waitUntil: 'networkidle0' });
-    await fat.tap('.tile[data-uname="alice"] .tu');
+    await fat.tap('.tile[data-snym="alice"] .tu');
     await fat.waitForSelector('.tile.mine .rebid textarea');
     await fat.type('.tile.mine .rebid textarea', 'draft');  // SUBMIT
                                     // stands only over a draft
@@ -1573,7 +1573,7 @@ async function bid(page, bidText) {
        '#descedit', '.descview'].map((sel) => [sel, parseFloat(
         getComputedStyle(document.querySelector(sel)).fontSize)]));
     ok(fatFonts.every(([, px]) => px >= 16),
-       'coarse pointer: every field and the blurb read at >=16px'
+       'coarse pointer: every field and the blub read at >=16px'
        + ' (no iOS zoom-jump): ' + JSON.stringify(fatFonts));
     const fatHits = await fat.evaluate(() =>
       ['.tile:not(.mine) .tu', '.tile:not(.mine) .x', '#reveal',
@@ -1753,15 +1753,15 @@ async function bid(page, bidText) {
     };`;
     const fine2 = await makePage(browser, DESKTOP);
     await fine2.goto(BASE + '/fatfinger', { waitUntil: 'networkidle0' });
-    await fine2.waitForSelector('.tile[data-uname="bob"]');
+    await fine2.waitForSelector('.tile[data-snym="bob"]');
     await fine2.evaluate(BELOW_JS);
-    await fine2.click('.tile[data-uname="bob"] .rename input');
-    await fine2.type('.tile[data-uname="bob"] .rename input', 'x');
+    await fine2.click('.tile[data-snym="bob"] .rename input');
+    await fine2.type('.tile[data-snym="bob"] .rename input', 'x');
     await fine2.click('#roster-input');
     await fine2.type('#roster-input', 'x');
     await fine2.click('#desctoggle');
     await fine2.type('#descedit', 'x');
-    await fine2.click('.tile[data-uname="alice"] .tu');
+    await fine2.click('.tile[data-snym="alice"] .tu');
     await fine2.waitForSelector('.tile.mine .rebid textarea');
     await fine2.type('.tile.mine .rebid textarea', 'x');
     await auditLayout(fine2, 'named page, every field hot');
@@ -1955,38 +1955,38 @@ async function bid(page, bidText) {
        too. Post-takeover-ruling (dreev 2026-07-21, after faire's
        lockout): the later tap TAKES the seat, phone 1 converges
        QUIETLY to the filled-but-live star (its tooltip naming the
-       rig that took it), takes bea instead, and the game plays out
+       anym that took it), takes bea instead, and the game plays out
        normally — one holder per seat throughout, honor system. */
     gas.handle({ action: 'add', slug: 'squabble',
-      uname: 'alice', userid: 'userid-squabble-alice' });
+      snym: 'alice', usid: 'usid-squabble-alice' });
     gas.handle({ action: 'add', slug: 'squabble',
-      uname: 'bea', userid: 'userid-squabble-bea' });
+      snym: 'bea', usid: 'usid-squabble-bea' });
     const p1 = await makePage(browser, mobileViewport);
     const p2 = await makePage(browser, mobileViewport);
     await p1.goto(BASE + '/squabble', { waitUntil: 'networkidle0' });
     await p2.goto(BASE + '/squabble', { waitUntil: 'networkidle0' });
-    await p1.tap('.tile[data-uname="alice"] .tu');
-    await p1.waitForSelector('.tile[data-uname="alice"].mine');
-    ok(await p2.$eval('.tile[data-uname="alice"] .tu',
+    await p1.tap('.tile[data-snym="alice"] .tu');
+    await p1.waitForSelector('.tile[data-snym="alice"].mine');
+    ok(await p2.$eval('.tile[data-snym="alice"] .tu',
         (e) => !e.disabled),
        "phone 2's stale screen still offers alice: the race is on");
-    await p2.tap('.tile[data-uname="alice"] .tu');
-    await p2.waitForSelector('.tile[data-uname="alice"].mine');
+    await p2.tap('.tile[data-snym="alice"] .tu');
+    await p2.waitForSelector('.tile[data-snym="alice"].mine');
     await p1.waitForFunction(() =>
-      document.querySelector('.tile[data-uname="alice"] .tu.taken')
+      document.querySelector('.tile[data-snym="alice"] .tu.taken')
       && !document.querySelector('#tiles .rebid'));
     ok(await p1.evaluate(() =>
       document.getElementById('banner').hidden
-      && !document.querySelector('.tile[data-uname="alice"] .tu')
+      && !document.querySelector('.tile[data-snym="alice"] .tu')
            .disabled
-      && document.querySelector('.tile[data-uname="alice"] .tu')
+      && document.querySelector('.tile[data-snym="alice"] .tu')
            .getAttribute('data-tip')
-           // the tip up to the rig, whatever the copy says
+           // the tip up to the anym, whatever the copy says
            .startsWith(claimedByTip('').slice(0, -1))),
        'phone 1 is unseated QUIETLY: no red banner — the star fills'
        + ' in, stays live, and its tooltip says whose thumb took it');
-    await p1.tap('.tile[data-uname="bea"] .tu');
-    await p1.waitForSelector('.tile[data-uname="bea"].mine .rebid textarea');
+    await p1.tap('.tile[data-snym="bea"] .tu');
+    await p1.waitForSelector('.tile[data-snym="bea"].mine .rebid textarea');
     ok(true, 'phone 1 takes the open seat instead, one tap');
     await p1.type('.tile.mine .rebid textarea', 'a dozen eggs');
     await p1.keyboard.press('Enter');
@@ -2040,12 +2040,12 @@ async function bid(page, bidText) {
        write was ever made or lost. */
     const wire = await makePage(browser, DESKTOP);
     gas.handle({ action: 'add', slug: 'wirestory',
-      uname: 'ann', userid: 'userid-wirestory-ann' });
+      snym: 'ann', usid: 'usid-wirestory-ann' });
     gas.handle({ action: 'add', slug: 'wirestory',
-      uname: 'bee', userid: 'userid-wirestory-bee' });
+      snym: 'bee', usid: 'usid-wirestory-bee' });
     gas.handle({ action: 'bid', slug: 'wirestory',
-      uname: 'bee', userid: 'userid-wirestory-bee',
-                 bid: 'bee bid' });
+      snym: 'bee', usid: 'usid-wirestory-bee',
+                 xbid: 'bee bid' });
     await wire.goto(BASE + '/wirestory', { waitUntil: 'networkidle0' });
     await claimRow(wire, 'ann');
     await wire.type('.tile.mine .rebid textarea', 'first word');
@@ -2070,7 +2070,7 @@ async function bid(page, bidText) {
     }), 'the dying draft just stays: visible, unsent, its grayed'
        + ' SUBMIT saying why — and no banner, since nothing was lost');
     ok(gas.handle({ action: 'state', slug: 'wirestory' }).bids
-         .find((b) => b.userid === 'userid-wirestory-ann').bid === 'first word',
+         .find((b) => b.usid === 'usid-wirestory-ann').xbid === 'first word',
        'the sheet keeps the pre-gavel bid');
     await auditLayout(wire, 'revealed page, dead draft standing');
     await auditNames(wire, 'revealed page, dead draft standing');
@@ -2159,10 +2159,10 @@ async function bid(page, bidText) {
        warn-and-rebase): NOTHING warns cletus mid-composition when
        winifred's save lands under his draft; the conflict is found at
        HIS save, refused in the server's words; and a fresh load
-       always shows the database's blurb — his unsaved words die with
+       always shows the database's blub — his unsaved words die with
        the tab, exactly what the refusal banner told him to expect. */
     gas.handle({ action: 'describe', slug: 'clobstory',
-      blurb: 'original', base: 0 });
+      blub: 'original', base: 0 });
     const cle = await makePage(browser, DESKTOP);
     await cle.goto(BASE + '/clobstory', { waitUntil: 'networkidle0' });
     await cle.click('#desctoggle');  // pencil: to the source (focuses)
@@ -2170,7 +2170,7 @@ async function bid(page, bidText) {
     await cle.keyboard.type(' plus cletus');
     // winifred lands from her own machine mid-draft...
     gas.handle({ action: 'describe', slug: 'clobstory',
-      blurb: 'per winifred',
+      blub: 'per winifred',
       base: gas.handle({ action: 'state', slug: 'clobstory' }).bver });
     // ...and the next polls say NOTHING to cletus: his words, his
     // caret, no banner — conflicts are save-time business
@@ -2207,7 +2207,7 @@ async function bid(page, bidText) {
         && document.getElementById('descedit').classList
              .contains('error');
     }, 1)
-       && gas.handle({ action: 'state', slug: 'clobstory' }).blurb
+       && gas.handle({ action: 'state', slug: 'clobstory' }).blub
             === 'per winifred',
        'the collision surfaces at HIS save as the war popup: her'
        + ' words red-deleted, his green-inserted in VS Code inks,'
@@ -2249,7 +2249,7 @@ async function bid(page, bidText) {
     await cle.keyboard.press('End');
     await cle.keyboard.type(' — cletus insists');
     gas.handle({ action: 'describe', slug: 'clobstory',
-      blurb: 'winifred again',
+      blub: 'winifred again',
       base: gas.handle({ action: 'state', slug: 'clobstory' }).bver });
     await cle.click('#descgo');
     await cle.waitForFunction(() =>
@@ -2263,7 +2263,7 @@ async function bid(page, bidText) {
     await cle.waitForFunction(() =>
       document.getElementById('descview').textContent
         .includes('cletus insists'));
-    ok(gas.handle({ action: 'state', slug: 'clobstory' }).blurb
+    ok(gas.handle({ action: 'state', slug: 'clobstory' }).blub
          === 'per winifred — cletus insists',
        'Overwrite with mine: the informed win lands — appended to'
        + " HER words, because Keep theirs adopted the record into"
@@ -2290,7 +2290,7 @@ async function bid(page, bidText) {
     await phw.click('#desctoggle');
     await phw.keyboard.type('phone draft ');
     gas.handle({ action: 'describe', slug: 'clobstory',
-      blurb: 'rival for the phone',
+      blub: 'rival for the phone',
       base: gas.handle({ action: 'state', slug: 'clobstory' }).bver });
     await phw.click('#descgo');
     await phw.waitForFunction(() =>
@@ -2518,7 +2518,7 @@ async function bid(page, bidText) {
        + ' auction can actually close');
     ok(await mo.evaluate(() => {
       const long = document.querySelector(
-        '.tile[data-uname="leo"] .bid-card');
+        '.tile[data-snym="leo"] .bid-card');
       const short = document.querySelector(
         '.tile.mine .rebid').firstElementChild;
       return long.getBoundingClientRect().height
@@ -2561,10 +2561,10 @@ async function bid(page, bidText) {
        + ' growing to show both');
     await poet.keyboard.press('Enter');  // Enter still means SEND
     await poet.waitForSelector('.tile.mine.has-bid');
-    gas.handle({ action: 'add', slug: 'poembid', uname: 'zed',
-      userid: 'userid-poem-zed' });
-    gas.handle({ action: 'bid', slug: 'poembid', uname: 'zed',
-      userid: 'userid-poem-zed', bid: 'a limerick' });
+    gas.handle({ action: 'add', slug: 'poembid', snym: 'zed',
+      usid: 'usid-poem-zed' });
+    gas.handle({ action: 'bid', slug: 'poembid', snym: 'zed',
+      usid: 'usid-poem-zed', xbid: 'a limerick' });
     const reader = await makePage(browser, DESKTOP);
     await reader.goto(BASE + '/poembid', { waitUntil: 'networkidle0' });
     await reader.waitForFunction(() =>
@@ -2582,9 +2582,9 @@ async function bid(page, bidText) {
       document.getElementById('status').classList.contains('revealed'));
     ok(await reader.evaluate(() => {
       const poem = document.querySelector(
-        '.tile[data-uname="ann"] .bid-text');
+        '.tile[data-snym="ann"] .bid-text');
       const one = document.querySelector(
-        '.tile[data-uname="zed"] .bid-card');
+        '.tile[data-snym="zed"] .bid-card');
       return poem.textContent === 'roses are red\nviolets are blue'
         && getComputedStyle(poem).whiteSpace === 'pre-wrap'
         // taller by at least a text line (padding keeps the naive
@@ -2596,7 +2596,7 @@ async function bid(page, bidText) {
        + ' downward, never sideways off the page');
 
     /* ========== The scribbling pencil (dreev 2026-07-31) ==========
-       dalia opens the blurb editor; on eric's screen the discourse
+       dalia opens the blub editor; on eric's screen the discourse
        pencil takes accent ink and rocks about its tip, its tooltip
        naming her; her DISCARD rests it again — all through the real
        heartbeat, poll, and CSS animation. */
@@ -2607,7 +2607,7 @@ async function bid(page, bidText) {
     await shoot(dalia, 'story-pencil-discourse');
     const eric = await makePage(browser, DESKTOP);
     await eric.goto(BASE + '/quillst', { waitUntil: 'networkidle0' });
-    await eric.waitForSelector('.tile[data-uname="dalia"]');
+    await eric.waitForSelector('.tile[data-snym="dalia"]');
     await dalia.click('#desctoggle');
     await eric.waitForFunction(() => document.getElementById('desc')
       .classList.contains('scribbling'));
@@ -2634,7 +2634,7 @@ async function bid(page, bidText) {
        whole regime). Two browsers on one auction at live-shaped
        latency, doing what a real pair does: simultaneous adds
        inside the arrival gray, bids (the instant-feedback laws), a
-       blurb edit-war (the local verdict), and the reveal — with
+       blub edit-war (the local verdict), and the reveal — with
        convergence and the busy signs asserted at every beat. */
     readDelay = 1200;
     opDelay = 1200;
@@ -2649,9 +2649,9 @@ async function bid(page, bidText) {
     await addName(wa, 'ann');   // both type inside the arrival gray,
     await addName(wb, 'ben');   // simultaneously
     ok(await wa.$eval('#tiles', (e) =>  // the self-claimed row's name
-         !!e.querySelector('.tile[data-uname="ann"]'))  // lives in an
+         !!e.querySelector('.tile[data-snym="ann"]'))  // lives in an
        && await wb.$eval('#tiles', (e) =>  // INPUT: key on the row,
-         !!e.querySelector('.tile[data-uname="ben"]')),  // not text
+         !!e.querySelector('.tile[data-snym="ben"]')),  // not text
        'live wire: both adds paint at the keystroke, both browsers');
     await wa.waitForFunction(() => !document.getElementById('status')
       .classList.contains('stale'));

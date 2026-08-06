@@ -30,14 +30,14 @@ function ok(cond, label) {
     process.exit(1);
   }
   ok(r.slug === 'tau' && Array.isArray(r.seats)
-     && r.seats.every((se) => typeof se.userid === 'string'
-                           && typeof se.uname === 'string')
+     && r.seats.every((se) => typeof se.usid === 'string'
+                           && typeof se.snym === 'string')
      && Array.isArray(r.bidders)
-     && r.bidders.every((b) => typeof b.userid === 'string'
+     && r.bidders.every((b) => typeof b.usid === 'string'
                             && typeof b.tini === 'string'
                             && typeof b.tmod === 'string')
      && r.claims !== null && typeof r.claims === 'object'
-     && r.rigs !== null && typeof r.rigs === 'object'
+     && r.anyms !== null && typeof r.anyms === 'object'
      && typeof r.tfin === 'string',
      'live state shape matches what app.js expects: ' + JSON.stringify(r).slice(0, 120));
   // Self-HEALING preamble: a previous run that died between its
@@ -47,16 +47,16 @@ function ok(cond, label) {
   // unheld seat is a documented no-op, so this is safe in every state.
   await fetch(API, { method: 'POST',
     body: JSON.stringify({ action: 'release', slug: 'smoketest',
-      userid: 'userid-smoketest-smokey', devid: 'smoke-dev' }) });
+      usid: 'usid-smoketest-smokey', dvid: 'smoke-dev' }) });
   // end-to-end write+read: place a smoke bid, read it back from the
   // returned post-write state (self-seeding: no fixture data needed)
   r = await (await fetch(API, { method: 'POST',
     body: JSON.stringify({ action: 'bid', slug: 'smoketest',
-      uname: 'smokey', userid: 'userid-smoketest-smokey',
-      bid: 'smoke ' + Date.now() }) })).json();
+      snym: 'smokey', usid: 'usid-smoketest-smokey',
+      xbid: 'smoke ' + Date.now() }) })).json();
   ok(!r.error, 'live bid accepted: ' + JSON.stringify(r).slice(0, 120));
   const smokey = (r.bidders || []).find(
-    (b) => b.userid === 'userid-smoketest-smokey');
+    (b) => b.usid === 'usid-smoketest-smokey');
   ok(smokey !== undefined && smokey.bcount >= 1,
      'live bid readable with bcount >= 1: '
        + JSON.stringify(r.bidders).slice(0, 120));
@@ -65,22 +65,22 @@ function ok(cond, label) {
   // action: release", the hard way)
   r = await (await fetch(API, { method: 'POST',
     body: JSON.stringify({ action: 'claim', slug: 'smoketest',
-      userid: 'userid-smoketest-smokey', devid: 'smoke-dev',
-      rig: 'a smoke test' }) })).json();
-  ok(!r.error && r.claims['userid-smoketest-smokey'] === 'smoke-dev'
-     && r.rigs['userid-smoketest-smokey'] === 'a smoke test',
-     'live claim registers devid + blurb: '
-       + JSON.stringify(r.claims) + JSON.stringify(r.rigs));
+      usid: 'usid-smoketest-smokey', dvid: 'smoke-dev',
+      anym: 'a smoke test' }) })).json();
+  ok(!r.error && r.claims['usid-smoketest-smokey'] === 'smoke-dev'
+     && r.anyms['usid-smoketest-smokey'] === 'a smoke test',
+     'live claim registers dvid + blub: '
+       + JSON.stringify(r.claims) + JSON.stringify(r.anyms));
   r = await (await fetch(API, { method: 'POST',
     body: JSON.stringify({ action: 'release', slug: 'smoketest',
-      userid: 'userid-smoketest-smokey',
-      devid: 'not-the-holder' }) })).json();
+      usid: 'usid-smoketest-smokey',
+      dvid: 'not-the-holder' }) })).json();
   ok(r.error && r.error.code === 'notYourSeat',
      'live release by a non-holder refused: ' + JSON.stringify(r).slice(0, 80));
   r = await (await fetch(API, { method: 'POST',
     body: JSON.stringify({ action: 'release', slug: 'smoketest',
-      userid: 'userid-smoketest-smokey', devid: 'smoke-dev' }) })).json();
-  ok(!r.error && r.claims['userid-smoketest-smokey'] === undefined,
+      usid: 'usid-smoketest-smokey', dvid: 'smoke-dev' }) })).json();
+  ok(!r.error && r.claims['usid-smoketest-smokey'] === undefined,
      'live release vacates the seat (self-cleaning: the next run\'s'
      + ' device-less smoke bid needs it open)');
   console.log('live-quals: all ' + passed
