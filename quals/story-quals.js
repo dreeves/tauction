@@ -182,6 +182,41 @@ async function bid(page, bidText) {
       getComputedStyle(document.querySelector('#status .addrow')).opacity
         === '0.4'),
        'the disabled + row dims its marker and field together');
+    /* THE BUSY VEIL (dreev 2026-08-06: the gavel hammering over
+       dimmed-but-still-chunky arcade chrome read janky — opacity
+       dims, it doesn't dissolve 2px navy outlines): ONE busy
+       mechanism, a frosted pane (backdrop blur + paper tint on
+       #status::before) under the gavel, replacing the tiles-dim
+       outright; the gavel itself wears the sprite treatment — ink
+       outline + hard ground shadow, no soft blur left. The .stale
+       class is the app's own signal; it is flipped by hand here
+       purely to read the CSS truths. */
+    ok(await alice.evaluate(() => {
+      const v = getComputedStyle(
+        document.getElementById('status'), '::before');
+      return v.position === 'absolute'
+        && (v.backdropFilter || '').includes('blur')
+        && v.opacity === '0' && v.pointerEvents === 'none';
+    }), 'the veil rests invisible: backdrop blur armed, opacity 0,'
+       + ' stealing no pointer');
+    ok(await alice.evaluate(() => {
+      const f = getComputedStyle(
+        document.querySelector('#status > .gavel')).filter;
+      return f.split('drop-shadow').length - 1 >= 5
+        && !f.includes('1px 5px');
+    }), 'the gavel is a SPRITE: four ink-outline drop-shadows plus'
+       + ' a hard ground shadow, the soft halo gone');
+    ok(await alice.evaluate(async () => {
+      const s = document.getElementById('status');
+      s.classList.add('stale');
+      await new Promise((r) => setTimeout(r, 600));  // outwait the
+                                       // 0.3s no-flash delay
+      const veil = getComputedStyle(s, '::before').opacity;
+      const tiles = getComputedStyle(s.querySelector('.tiles')).opacity;
+      s.classList.remove('stale');
+      return veil === '1' && tiles === '1';
+    }), 'stale raises the veil past the no-flash delay while the'
+       + ' tiles keep full ink: one busy mechanism, not two');
     await alice.type('#slug', 'brunch');
     await alice.keyboard.press('Enter');  // names commit on deliberate
                                           // gestures only, never a timer

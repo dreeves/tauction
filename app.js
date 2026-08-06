@@ -467,6 +467,18 @@ async function fetchPulse(sheetId) {
   return m[1] === undefined ? '0' : m[1];
 }
 
+// The ONE weather ritual (dreev's transport-death ruling): no user
+// action was lost, so nothing banners — the ledger veils under the
+// hammering gavel, the greppable detail goes to the console, and an
+// open war popup shows the weather in words instead of a gavel
+// hammering on a dead wire (item 17). Both poll legs — the CSV
+// pulse and the state fetch — die into this same ritual.
+function weather(coded) {
+  console.warn(coded);
+  $('status').classList.add('stale');
+  paintWar();
+}
+
 async function refresh() {
   // (the !slug leg: an unnamed page has nothing to fetch — the user
   // has not picked an auction yet)
@@ -495,12 +507,7 @@ async function refresh() {
     try {
       wver = await fetchPulse(state.sheet);
     } catch (e) {
-      // the FULL weather ritual, same as the dead state fetch below:
-      // an open war popup must show the weather's words, never a
-      // gavel hammering on a dead wire (item 17)
-      console.warn(e2159(e.message));
-      $('status').classList.add('stale');
-      paintWar();
+      weather(e2159(e.message));
       refreshing = false;
       return;
     }
@@ -527,11 +534,7 @@ async function refresh() {
   try {
     res = await apiGet({ action: 'state', slug: a });
   } catch (e) {
-    console.warn(e2152(e.message));
-    $('status').classList.add('stale');
-    paintWar();  // an open war popup shows the weather in the
-                 // refusal's words (item 17): never a gavel
-                 // hammering on a dead wire
+    weather(e2152(e.message));
   }
   try {
     if (res !== null) {

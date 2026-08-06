@@ -411,8 +411,9 @@ const Z_LADDER = {
   '#tip': 10,                // a summoned tip outranks everything ours
   '.fete': 5,                // the SOLD stamp moment
   '#banner': 4,              // ambient news over content
-  '.gavel': 2,               // the busy sign over the grayed ledger
+  '.gavel': 2,               // the busy sign over the veiled ledger
   '.corner': 2,              // share/help float over the slug card
+  '#status::before': 1,      // the busy veil, under the gavel
 };                           // (the confetti canvas is fired at
                              // zIndex 5: above the page, below the
                              // summoned tips at 6)
