@@ -49,6 +49,12 @@ BIDS
 * tbid -- bid timestamp (the only bid that counts is the latest ≤ tfin)
 * dvid -- ID of the device this bid was placed from, for forensic purposes only
 
+PULSE
+* wver -- world version: one global write counter, +1 per committed write
+
+That last one is a hack to avoid overwhelming Google Sheets. 
+Clients can poll that wver value via the sheet's public CSV endpoint and not use up the quota for this app. Then they only need to do a proper read with the Apps Script API when wver changes.
+
 
 ### Spec for editing the auction description
 
@@ -86,6 +92,8 @@ Previously:
 
 5. When not on wifi it seems everyone's phone claims to be in San Jose or Sacramento or Seattle (in reality we were all in Portland). Why is that and is there anything in the device data that can tell us not to trust the location?
 
+6. Can we make this... brighter, cleaner, more video-game-ish? Or what about a 1980s Apple II aesthetic? Can you go down some rabbit holes and come up with something sock-off-knocking? Reread and digest AGENTS.md before starting. And maybe show me a screenshot for me to thumbs-up/down before revamping. Random idea: emulate Nicky Case?
+
 Next:
 
-1. Can we make this... brighter, cleaner, more video-game-ish? Or what about a 1980s Apple II aesthetic? Can you go down some rabbit holes and come up with something sock-off-knocking? Reread and digest AGENTS.md before starting. And maybe show me a screenshot for me to thumbs-up/down before revamping. Random idea: emulate Nicky Case?
+1. Did we lose the blurring of the page while the gavelspinner is spinning?

@@ -64,6 +64,15 @@ async function bridge(page) {
         headers: { 'access-control-allow-origin': '*' },
         body: JSON.stringify({ city: 'Portland', region_code: 'OR' }) });
     }
+    // the CSV pulse (2026-08-06): the sheet's gviz face, served from
+    // the fake's pulse tab in the gviz headers=1 shape
+    if (req.url().includes('/gviz/tq')) {
+      const rows = gas.__ss.sheets.pulse ? gas.__ss.sheets.pulse.data : [];
+      const line = rows[1] ? '\n"' + rows[1][0] + '"' : '';
+      return req.respond({ status: 200, contentType: 'text/csv',
+        headers: { 'access-control-allow-origin': '*' },
+        body: '"wver"' + line });
+    }
     if (!req.url().startsWith('https://script.google.com/')) return req.continue();
     const q = req.method() === 'POST'
       ? JSON.parse(req.postData())

@@ -102,6 +102,21 @@ class FakeSheet {
 
 module.exports = function makeGas() {
   const tally = { reads: 0, writes: 0, opens: 0 };  // service-call meter
+  // CacheService, honest: persistent across executions (unlike the
+  // per-execution memos RESET clears) with TTL expiry — but against
+  // a FAKE clock this harness owns. Default schedule: the clock hops
+  // past any sane TTL at each entry point, so every request lands in
+  // a fresh cache era and the rest of the suite keeps its
+  // fresh-read-per-request semantics (direct __ss pokes stay visible
+  // immediately). The cache quals freeze the clock to hold a window
+  // open and advance it by hand to test expiry.
+  let cacheNow = 0;
+  let cacheFrozen = false;
+  const cacheStore = {};
+  // one-shot quota simulation: the next batchGet throws the
+  // Google-shaped exception the real meter throws (2026-08-06's
+  // production banner), then the meter breathes again
+  let quotaTripped = false;
   const ss = {
     sheets: {},
     getSheetByName(n) { return this.sheets[n] || null; },
@@ -123,6 +138,14 @@ module.exports = function makeGas() {
     // row, and a blank sheet's valueRange carries no values key.
     Sheets: { Spreadsheets: { Values: {
       batchGet: (id, opts) => {
+        if (quotaTripped) {
+          quotaTripped = false;
+          throw new Error("GoogleJsonResponseException: API call to"
+            + ' sheets.spreadsheets.values.batchGet failed with'
+            + " error: Quota exceeded for quota metric 'Read"
+            + " requests' and limit 'Read requests per minute per"
+            + " user' of service 'sheets.googleapis.com'");
+        }
         // The real values API reads the backend over REST and CANNOT
         // see buffered SpreadsheetApp writes (live-quals caught a
         // claim missing from its own response). The fake enforces
@@ -151,6 +174,16 @@ module.exports = function makeGas() {
         }) };
       },
     } } },
+    CacheService: { getScriptCache: () => ({
+      get: (k) => {
+        const e = cacheStore[k];
+        return e !== undefined && e.exp > cacheNow ? e.val : null;
+      },
+      put: (k, v, ttlS) => {
+        cacheStore[k] = { val: String(v), exp: cacheNow + ttlS * 1000 };
+      },
+      remove: (k) => { delete cacheStore[k]; },
+    }) },
     Logger: { log: () => {} },
   };
   vm.createContext(ctx);
@@ -166,14 +199,27 @@ module.exports = function makeGas() {
     + " Object.keys(" + g + ").forEach(function (k) {"
     + " delete " + g + "[k]; });";
   const RESET = "if (typeof ssMemo !== 'undefined') ssMemo = null;"
+    + "if (typeof wroteAny !== 'undefined') wroteAny = false;"
     + clear('sheetMemo') + clear('rowsMemo') + clear('tabsChecked');
   const reset = () => vm.runInContext(RESET, ctx);
   ['handle', 'doGet', 'doPost'].forEach((f) => {
     const raw = ctx[f];
-    // an execution boundary auto-flushes in real Apps Script
-    ctx[f] = (e) => { reset(); tally.unflushed = false; return raw(e); };
+    // an execution boundary auto-flushes in real Apps Script — and,
+    // unless a cache qual froze the clock, lands in a fresh cache era
+    ctx[f] = (e) => {
+      reset();
+      tally.unflushed = false;
+      if (!cacheFrozen) cacheNow += 3600 * 1000;
+      return raw(e);
+    };
   });
   ctx.__ss = ss;  // the fake spreadsheet, for asserting on sheet contents
   ctx.__tally = tally;  // reads/writes/opens, for the budget quals
+  ctx.__cacheCtl = {  // the cache quals' time machine
+    freeze: () => { cacheFrozen = true; },
+    thaw: () => { cacheFrozen = false; },
+    advance: (ms) => { cacheNow += ms; },
+  };
+  ctx.__quotaTrip = () => { quotaTripped = true; };
   return ctx;
 };

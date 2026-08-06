@@ -346,6 +346,8 @@ function assertState(res) {
     && res.anyms !== null && typeof res.anyms === 'object'
     && !Array.isArray(res.anyms)
     && Object.values(res.anyms).every((v) => typeof v === 'string')
+    && typeof res.sheet === 'string' && res.sheet !== ''
+    && typeof res.wver === 'string' && /^\d+$/.test(res.wver)
     && (res.bids === null || (Array.isArray(res.bids)
       && res.bids.every((b) => typeof b.usid === 'string'
         && typeof b.xbid === 'string'))),
@@ -443,6 +445,28 @@ function ingest(res) {
   }
 }
 
+// The sheet's public CSV face: the pulse tab as gviz emits it.
+// headers=1 is load-bearing — every armored column is plain text,
+// and unhinted gviz swallows the whole column as a many-row header
+// (pinned by curl against the real endpoint, 2026-08-06). Two
+// legitimate shapes: header-only (a database no write has ever
+// touched) and header + one counted row; anything else — Google's
+// empty 200 for a missing tab, an HTML login page from an unshared
+// sheet — fails the assert, which the gate treats as weather.
+function pulseUrl(sheetId) {
+  return 'https://docs.google.com/spreadsheets/d/' + sheetId
+    + '/gviz/tq?tqx=out:csv&sheet=pulse&headers=1';
+}
+
+async function fetchPulse(sheetId) {
+  const r = await fetch(pulseUrl(sheetId));
+  const text = await r.text();
+  const m = text.match(/^"wver"(?:\r?\n"(\d+)")?\r?\n?$/);
+  assert(m !== null,
+         'pulse CSV shape: ' + JSON.stringify(text.slice(0, 80)));
+  return m[1] === undefined ? '0' : m[1];
+}
+
 async function refresh() {
   // (the !slug leg: an unnamed page has nothing to fetch — the user
   // has not picked an auction yet)
@@ -450,6 +474,46 @@ async function refresh() {
   refreshing = true;
   const a = slug;  // the auction this request is for
   const seqAtRequest = settleSeq;
+  // THE PULSE GATE (dreev-ratified 2026-08-06, after Google's
+  // 60-reads/min-per-user meter fell to five open tabs): before
+  // spending an API read — the OWNER's quota, shared by every
+  // visitor — ask the sheet's own CSV face, on the VISITOR's quota,
+  // whether the world moved. Skippable only with a picture in hand
+  // whose wver matches the pulse and nobody at the desk: presence
+  // freshness is clock-run, not write-run — an editor aging out
+  // writes nothing, so only a real state read may calm the pencil.
+  // Pulse weather is weather (the poll-death convention below):
+  // gray, console, no banner — and NO fallback API read, which
+  // would silently re-spend the quota the pulse exists to guard.
+  // (state.sheet truthy = a snapshot that KNOWS its sheet: the
+  // virgin seed carries '' and a cached snapshot from before the
+  // pulse era carries nothing — both fall through to the API read,
+  // which is the only thing that can upgrade them)
+  if (state !== null && state.slug === a && state.sheet
+      && state.editors.length === 0) {
+    let wver = null;
+    try {
+      wver = await fetchPulse(state.sheet);
+    } catch (e) {
+      // the FULL weather ritual, same as the dead state fetch below:
+      // an open war popup must show the weather's words, never a
+      // gavel hammering on a dead wire (item 17)
+      console.warn(e2159(e.message));
+      $('status').classList.add('stale');
+      paintWar();
+      refreshing = false;
+      return;
+    }
+    if (wver === state.wver) {
+      // the picture is CONFIRMED current: any weather-gray retires
+      // without an API read — except the reveal's drumroll, which
+      // belongs to its settle alone (the adoption path's same
+      // disclosed exception)
+      if (!revealInFlight) $('status').classList.remove('stale');
+      refreshing = false;
+      return;
+    }
+  }
   // Only the network call sits in its own try (placeBid's precedent):
   // transport death is WEATHER, not news (dreev's ruling) — no
   // user action was lost, so nothing banners. The ledger grays
@@ -2275,6 +2339,12 @@ function paintCached() {
 function virginState(a) {
   return { slug: a, exists: false, seats: [], bidders: [],
            revealed: false, tfin: '', blub: '', bver: 0,
+           editors: [],
+           // the one honest delta from the server's virgin answer:
+           // which sheet to pulse-poll is wire truth this seed can't
+           // know — and the '' is exactly what keeps the pulse gate
+           // shut until a real snapshot lands
+           sheet: '', wver: '0',
            claims: umap(), anyms: umap(), bids: null };
 }
 

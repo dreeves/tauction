@@ -61,6 +61,8 @@ let fetchDown = false;
 // Simulate the ambiguous transport case: the server commits a write,
 // but its response dies on the way back to the browser.
 let dropWriteResponse = null;
+let pulseHits = 0;    // gviz CSV pulse fetches (the visitor-quota poll)
+let pulseDown = false;  // pulse-only weather, for the gate's quals
 
 function mockFetch(url, opts) {
   url = String(url);
@@ -68,6 +70,18 @@ function mockFetch(url, opts) {
   if (url.includes('ipwho.is')) {
     geoHits++;
     return Promise.resolve({ json: () => Promise.resolve(geoFixture) });
+  }
+  // the sheet's CSV face: the pulse tab as gviz emits it (headers=1
+  // shape pinned by curl against the real endpoint, 2026-08-06) —
+  // header-only while no write has ever landed
+  if (url.includes('/gviz/tq')) {
+    pulseHits++;
+    if (fetchDown || pulseDown) {
+      return Promise.reject(new TypeError('Failed to fetch'));
+    }
+    const rows = gas.__ss.sheets.pulse ? gas.__ss.sheets.pulse.data : [];
+    const line = rows[1] ? '\n"' + rows[1][0] + '"' : '';
+    return Promise.resolve({ text: () => Promise.resolve('"wver"' + line) });
   }
   if (!url.startsWith(API_URL)) return Promise.reject(new Error('unexpected URL ' + url));
   if (fetchDown) return Promise.reject(new TypeError('Failed to fetch'));
@@ -356,16 +370,16 @@ const README_MD =
   fs.readFileSync(path.join(REPO, 'README.md'), 'utf8');
 const specTabs = {};
 for (const m of README_MD.matchAll(
-    /^(AUCTIONS|SEATS|DEVICES|BIDS)\n((?:\* \w+ --.*\n?)+)/gm)) {
+    /^(AUCTIONS|SEATS|DEVICES|BIDS|PULSE)\n((?:\* \w+ --.*\n?)+)/gm)) {
   specTabs[m[1].toLowerCase()] =
     [...m[2].matchAll(/^\* (\w+) --/gm)].map((x) => x[1]);
 }
-ok(Object.keys(specTabs).length === 4,
-   'README schema section yields all four tabs, got: '
+ok(Object.keys(specTabs).length === 5,
+   'README schema section yields all five tabs, got: '
    + Object.keys(specTabs).join(', '));
 for (const [tab, headName] of [['auctions', 'AUCTIONS_HEAD'],
     ['bids', 'BIDS_HEAD'], ['seats', 'SEATS_HEAD'],
-    ['devices', 'DEVICES_HEAD']]) {
+    ['devices', 'DEVICES_HEAD'], ['pulse', 'PULSE_HEAD']]) {
   const head = CODE_GS
     .match(new RegExp(headName + '\\s*=\\s*\\[([^\\]]+)\\]'))[1]
     .match(/'([^']+)'/g).map((s) => s.slice(1, -1));
@@ -2225,9 +2239,17 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const domWarm = await makePage('/warm?api=' + API_URL, (win) =>
     win.localStorage.setItem('tauction-state:warm', JSON.stringify(seeded)));
   ok(tiles(domWarm.window.document).length === 2,
-     'cached rows paint instantly, before the live fetch lands');
-  ok(domWarm.window.document.getElementById('status').classList.contains('stale'),
-     'the instant paint is grayed until the live fetch confirms');
+     'cached rows paint instantly, before any live confirmation');
+  // the pulse era (2026-08-06): an unmoved wver IS a live
+  // confirmation — the warm cache ungrays on the cheap CSV read
+  // alone, and the owner's api quota is never touched
+  const warmStates = () => apiCalls.filter((c) =>
+    c.action === 'state' && c.slug === 'warm').length;
+  await until(() => !domWarm.window.document.getElementById('status')
+    .classList.contains('stale'));
+  ok(warmStates() === 0,
+     'the PULSE confirms the warm cache: ungrayed with ZERO api'
+     + ' state reads');
   const domCold = await makePage('/coldload?api=' + API_URL);
   ok(tiles(domCold.window.document).length === 0
      && !domCold.window.document.querySelector('#tiles .loading')
@@ -2238,7 +2260,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await sleep(1000);
   mockDelay = 0;
   ok(!domWarm.window.document.getElementById('status').classList.contains('stale'),
-     'warm page ungrays once the live fetch lands');
+     'warm page stays ungrayed: the pulse confirmation owed no'
+     + ' follow-up fetch');
   ok(!domCold.window.document.getElementById('status').classList
        .contains('stale'),
      'the cold page ungrays once the state lands');
@@ -2360,7 +2383,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(wifiDoc.getElementById('status').classList.contains('stale'),
      'instead the ledger grays under the gavel: the one honest'
      + ' statement is that this picture may be stale');
-  ok(warns.some((w) => w.includes('ERROR2152')
+  // dead wire on a gated tick dies at the poll's FIRST leg — the
+  // CSV pulse (2026-08-06) — so the greppable code here is 2159;
+  // 2152 remains the state-fetch leg's code for ungated deaths
+  ok(warns.some((w) => w.includes('ERROR2159')
        && w.includes('Failed to fetch')),
      'the detail lands on the console, greppable by its code, for'
      + ' whoever is debugging');
@@ -2377,6 +2403,84 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && row(wifiDoc, 'ann') !== null,
      'the first landed poll re-brightens the ledger — self-healing by'
      + ' construction, still bannerless in both directions');
+
+  /* --- 1c3b. THE PULSE GATE (dreev-ratified 2026-08-06): before
+     spending an API read (the owner's shared 60/min quota), the poll
+     asks the sheet's public CSV face — the visitor's own quota —
+     whether the world moved. Steady state costs ZERO api reads; a
+     moved pulse pays exactly one; presence holds the gate open
+     (editor freshness is clock-run, not write-run); pulse weather is
+     weather. */
+  gas.handle({ action: 'add', slug: 'pulsy',
+    snym: 'ann', usid: 'usid-pulsy-ann' });
+  const dGate = await makePage('/pulsy?api=' + API_URL);
+  const gateDoc = dGate.window.document;
+  await until(() => row(gateDoc, 'ann')
+    && !gateDoc.getElementById('status').classList.contains('stale'));
+  // slug-scoped: earlier scenes' pages are still alive on their own
+  // 5s intervals, and an unscoped count is wall-clock roulette
+  const stateCount = () => apiCalls.filter((c) =>
+    c.action === 'state' && c.slug === 'pulsy').length;
+  let statesBefore = stateCount();
+  let pulsesBefore = pulseHits;
+  setVisibility(dGate, 'hidden');
+  setVisibility(dGate, 'visible');
+  await sleep(60);
+  ok(pulseHits > pulsesBefore && stateCount() === statesBefore,
+     'a no-news poll asks the CSV pulse and spends NO api read');
+  ok(!gateDoc.getElementById('status').classList.contains('stale'),
+     'a matching pulse CONFIRMS the picture: no gray, no gavel');
+  gas.handle({ action: 'add', slug: 'pulsy', snym: 'bo',
+               usid: 'usid-pulsy-bo' });  // news lands server-side
+  statesBefore = stateCount();
+  setVisibility(dGate, 'hidden');
+  setVisibility(dGate, 'visible');
+  await until(() => row(gateDoc, 'bo') !== null);
+  ok(stateCount() === statesBefore + 1,
+     'a moved pulse pays exactly ONE state read, and the news is on'
+     + ' the ledger');
+  // presence holds the gate open: an editor aging OUT writes
+  // nothing, so only a real state read can ever calm the pencil
+  gas.handle({ action: 'editing', slug: 'pulsy',
+               dvid: 'dev-rival-pulse', usid: '', anym: '' });
+  setVisibility(dGate, 'hidden');
+  setVisibility(dGate, 'visible');
+  await until(() =>
+    gateDoc.getElementById('desc').classList.contains('scribbling'));
+  statesBefore = stateCount();
+  setVisibility(dGate, 'hidden');
+  setVisibility(dGate, 'visible');
+  await sleep(60);
+  ok(stateCount() === statesBefore + 1,
+     'while ANYONE is at the desk every tick reads state, matching'
+     + ' pulse or not: presence freshness is clock-run');
+  // ...and the aging-OUT of that editor is exactly the case the open
+  // gate exists for: expire the blip by hand (no write, no pulse
+  // bump) — the presence condition alone must discover the calm
+  gas.__ss.sheets.devices.data.forEach((r) => {
+    if (r[0] === 'dev-rival-pulse') r[6] = '2020-01-01T00:00:00.000Z';
+  });
+  setVisibility(dGate, 'hidden');
+  setVisibility(dGate, 'visible');
+  await until(() => !gateDoc.getElementById('desc')
+    .classList.contains('scribbling'));
+  ok(true, 'the pencil calms though nothing bumped the pulse: the'
+     + ' presence condition carried the aging-out home');
+  // pulse weather: gray + console + NO fallback api read (a silent
+  // fallback would re-spend the quota the pulse exists to guard)
+  pulseDown = true;
+  const pulseWarns = dGate.window.__warns;
+  statesBefore = stateCount();
+  setVisibility(dGate, 'hidden');
+  setVisibility(dGate, 'visible');
+  await sleep(60);
+  ok(stateCount() === statesBefore
+     && gateDoc.getElementById('banner').hidden
+     && gateDoc.getElementById('status').classList.contains('stale')
+     && pulseWarns.some((w) => w.includes('ERROR2159')),
+     'pulse weather: the ledger grays, the console holds the detail'
+     + ' (ERROR2159), no banner, and NO silent fallback api read');
+  pulseDown = false;
 
   /* --- 1c4. THE CHRONICLE: the console narrates the ledger's story -----
      Replicata: debug any hallway session by opening the console.
@@ -2731,11 +2835,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await sleep(150);
   ok(retCalls() === 1,
      'a visible tab never peeks: the minute cadence is hidden-only');
+  const retPulses = pulseHits;
   setVisibility(dRet, 'hidden');
   setVisibility(dRet, 'visible');
   await sleep(300);
-  ok(retCalls() === 2,
-     'becoming visible refreshes at once — no waiting out the poll');
+  ok(pulseHits > retPulses && retCalls() === 1,
+     'becoming visible confirms at once — the pulse leg answers the'
+     + ' glance immediately (and owes no api read while the world'
+     + ' stood still), no waiting out the poll');
 
   /* --- 2. alice sets up /tau and bids in place; her bid stays visible --- */
   dom = await makePage('/tau?api=' + API_URL);

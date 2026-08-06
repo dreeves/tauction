@@ -48,6 +48,17 @@ const SEATS_HEAD    = ['slug', 'usid', 'snym', 'dvid',
 const DEVICES_HEAD  = ['dvid', 'anym', 'tini', 'tmod',
                        'blug', 'blid', 'blip'];
 
+// wver = world version: ONE global write counter in its own
+// one-cell tab, bumped inside every write's lock (mutate). Clients
+// poll this cell through the sheet's public CSV face — spending the
+// VISITOR's quota, not the owner's — and pay an API state read only
+// when it moves (dreev-ratified 2026-08-06, after the 60-reads/min
+// per-user meter fell to five open tabs). Global, never
+// per-auction: a virgin auction's presence heartbeats bump it
+// without ever touching the auctions tab (the virgin-stays-virgin
+// law).
+const PULSE_HEAD    = ['wver'];
+
 // Every cell that will ever hold data is armored plain-text at tab
 // creation: Sheets otherwise reinterprets writes ("007" -> 7, "3/4"
 // -> March 4th — silent sealed-bid corruption), and rows born when
@@ -111,16 +122,16 @@ function respond(obj) {
 function handle(req) {
   try {
     switch (req.action) {
-      case 'state':    return getState(cleanSlug(req.slug));
-      case 'bid':      return withLock(() => placeBid(req));
-      case 'claim':    return withLock(() => saveClaim(req));
-      case 'release':  return withLock(() => releaseClaim(req));
-      case 'describe': return withLock(() => describe(req));
-      case 'editing':  return withLock(() => noteEditing(req));
-      case 'add':      return withLock(() => addParticipant(req));
-      case 'remove':   return withLock(() => removeParticipant(req));
-      case 'rename':   return withLock(() => renameParticipant(req));
-      case 'reveal':   return withLock(() => reveal(req));
+      case 'state':    return cachedState(cleanSlug(req.slug));
+      case 'bid':      return mutate(req, () => placeBid(req));
+      case 'claim':    return mutate(req, () => saveClaim(req));
+      case 'release':  return mutate(req, () => releaseClaim(req));
+      case 'describe': return mutate(req, () => describe(req));
+      case 'editing':  return mutate(req, () => noteEditing(req));
+      case 'add':      return mutate(req, () => addParticipant(req));
+      case 'remove':   return mutate(req, () => removeParticipant(req));
+      case 'rename':   return mutate(req, () => renameParticipant(req));
+      case 'reveal':   return mutate(req, () => reveal(req));
       case undefined:  return { ok: 'tauction API is live',
                                 try: '?action=state&slug=tau' };
       default:         return { error: { code: 'unknownAction',
@@ -132,6 +143,64 @@ function handle(req) {
     // genuine crashes) is finished text, stringified verbatim
     return { error: (err && err.code) ? err : String(err) };
   }
+}
+
+// THE POLL COLLAPSER (dreev-ratified 2026-08-06, after production
+// hit Google's 60-reads/min-per-user meter: execute-as-me means
+// every visitor spends the owner's quota, and five open tabs at the
+// 5s poll saturate it). Every state poll inside a STATE_CACHE_S
+// window shares ONE batchGet via CacheService — only the pure read
+// path caches; every write invalidates its slug (mutate, below), so
+// a stale answer exists only BETWEEN writes and dies at the TTL.
+// 4s < the client's 5s poll: liveness unchanged in kind. The chosen
+// trade (pinned by a gas qual): out-of-band sheet edits — a human
+// typing in the sheet — now lag up to the TTL.
+const STATE_CACHE_S = 4;
+
+function cachedState(slug) {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('state:' + slug);
+  if (hit !== null) return JSON.parse(hit);
+  const res = getState(slug);
+  cache.put('state:' + slug, JSON.stringify(res), STATE_CACHE_S);
+  return res;
+}
+
+// The pulse cell's read-and-validate, asked UP FRONT (the armor
+// precedent: no partial writes) — a mangled cell refuses before the
+// op touches anything. Returns the current count.
+function pulseCheck() {
+  const prow = load('pulse')[0];
+  if (prow === undefined) return 0;
+  const cur = Number(prow.wver === '' ? NaN : prow.wver);
+  if (!Number.isInteger(cur) || cur < 0) {
+    throw 'pulse.wver corrupt: ' + JSON.stringify(prow.wver);
+  }
+  return cur;
+}
+
+// Every write bumps the pulse (inside the lock, so counts never
+// interleave) and invalidates its auction's cached poll answer
+// AFTER the lock releases: the op's own response is fresh truth,
+// and the next poll must re-read rather than resurrect the
+// pre-write picture. A refused write threw before the bump and
+// invalidates nothing (it mutated nothing).
+function mutate(req, fn) {
+  const res = withLock(() => {
+    const cur = pulseCheck();
+    const out = fn();
+    if (wroteAny) {  // real news only: no-ops don't wake the crowd
+      if (load('pulse').length === 0) insert('pulse', { wver: '1' });
+      else patch('pulse', 0, { wver: String(cur + 1) });
+      // the op built its response BEFORE the bump; restamp the one
+      // field rather than re-derive the whole state (a re-derivation
+      // would re-batchGet — the pulse memo just invalidated)
+      out.wver = String(cur + 1);
+    }
+    return out;
+  });
+  CacheService.getScriptCache().remove('state:' + cleanSlug(req.slug));
+  return res;
 }
 
 // Platform mutual exclusion (LockService is Apps Script's; a real
@@ -204,7 +273,8 @@ function cleanAnym(s) {
    ===================================================================== */
 
 const TABS = { auctions: AUCTIONS_HEAD, bids: BIDS_HEAD,
-               seats: SEATS_HEAD, devices: DEVICES_HEAD };
+               seats: SEATS_HEAD, devices: DEVICES_HEAD,
+               pulse: PULSE_HEAD };
 // the bids tab is where peeking would spoil the sealing; warn there only
 const TAB_WARNINGS =
   { bids: "IT'S CHEATING TO LOOK HERE DURING AN AUCTION" };
@@ -270,8 +340,21 @@ function loadAll() {
   // The flush is the write barrier; the fake refuses a batchGet
   // without it.
   SpreadsheetApp.flush();
-  const got = Sheets.Spreadsheets.Values.batchGet(SHEET_ID,
-    { ranges: Object.keys(TABS) }).valueRanges;
+  let got;
+  try {
+    got = Sheets.Spreadsheets.Values.batchGet(SHEET_ID,
+      { ranges: Object.keys(TABS) }).valueRanges;
+  } catch (err) {
+    // the per-user read meter ran dry — an honest crowd of five tabs
+    // can do it, so it refuses on the game channel in stringles
+    // words, never as GoogleJsonResponseException prose (dreev saw
+    // exactly that banner in production, 2026-08-06); the next poll
+    // retries into a fresh minute
+    if (String(err).indexOf('Quota exceeded') !== -1) {
+      throw { code: 'quotaChoke' };
+    }
+    throw err;
+  }
   Object.keys(TABS).forEach((kind, i) => {
     const rows = got[i].values || [[]];  // a blank tab omits values
     const headers = TABS[kind];
@@ -300,7 +383,15 @@ function load(kind) {
 
 // Call after any VALUE write to a tab: the next load() re-reads it.
 // (Format-only writes — the seal paint — change nothing load() sees.)
-function wrote(kind) { delete rowsMemo[kind]; }
+// wroteAny: did THIS execution actually touch a cell? The one
+// chokepoint every real mutation passes (patch/insert/erase all call
+// wrote), so mutate can bump the pulse only for real news — a
+// semantic no-op mutates nothing, not even tmod, not even the
+// pulse. Per-execution global: real Apps Script resets it each run;
+// the fake's RESET clears it by name.
+let wroteAny = false;
+
+function wrote(kind) { wroteAny = true; delete rowsMemo[kind]; }
 
 // Append a record inside the armor or refuse LOUDLY: a row born past
 // the plain-text armor gets silently reinterpreted by Sheets
@@ -484,11 +575,17 @@ function getState(slug) {
       + bidders.map(b => b.usid).join(', ') + ']');
   }
 
+  // the pulse pair: which sheet to poll for the wver cell (so ?api=
+  // test deployments pulse against their own sheet, never a baked
+  // constant) and the count this picture was drawn at
+  const prow = load('pulse')[0];
+
   return {
     slug: slug, exists: arow !== undefined,
     seats: seats, bidders: bidders, revealed: revealed,
     tfin: tfin, blub: blub, bver: bver, editors: editors,
     claims: claims, anyms: anyms,
+    sheet: SHEET_ID, wver: prow === undefined ? '0' : prow.wver,
     bids: revealed ? people.map(a => ({ usid: a.usid, xbid: a.xbid }))
                    : null,
   };

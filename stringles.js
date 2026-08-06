@@ -166,6 +166,7 @@ const e2155 = (msg) => 'ERROR2155: ' + msg;  // reveal POST failed
 const e2156 = 'ERROR2156: Missing API constant in app.js';
 const e2157 = (msg) => 'ERROR2157: ' + msg;  // auction-name probe failed
 const e2158 = (msg) => 'ERROR2158: ' + msg;  // editing-presence beat failed
+const e2159 = (msg) => 'ERROR2159: ' + msg;  // CSV pulse fetch failed
 const copyFailBanner = (msg) => 'Could not copy: ' + msg;
 
 // The server's refusals, one entry per code Code.gs can send (a qual
@@ -191,6 +192,7 @@ const gameRefusals = {
   gavelFell: () => 'Womp Womp! The auction closed before your bid got through',
   bidSeatHeld: (e) => 'Someone else (' + (e.anym || mysteryDevice)
     + ') already placed a bid as ' + e.snym + '!',
+  quotaChoke: () => 'Apparently this is too popular for Google Sheets to be a reasonable choice as a database; but hang tight and this should resolve on its own',
 };
 
 // These ERRORXXXX errors are things we don't expect an end user to ever be able

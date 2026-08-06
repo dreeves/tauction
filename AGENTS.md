@@ -173,6 +173,29 @@ exact string submitted as a bid.
 | `seats` | slug, usid, snym, dvid, tini, tmod |
 | `bids` | slug, usid, xbid, tbid, dvid |
 | `devices` | dvid, anym, tini, tmod, blug, blid, blip |
+| `pulse` | wver |
+
+The quota work (dreev-ratified 2026-08-06, after production hit
+Google's 60-reads/min-per-user Sheets meter — execute-as-me means
+every visitor spends the owner's quota, so five open tabs at the 5s
+poll saturated it): (1) state polls collapse through a 4s
+CacheService window per slug (only the pure read caches; every write
+invalidates its slug; out-of-band sheet edits now lag <= 4s, pinned
+as chosen); (2) an exhausted meter refuses as gameRefusals'
+quotaChoke in stringles Latin, never GoogleJsonResponseException
+prose; (3) THE PULSE: `pulse.wver`, one global write counter bumped
+inside every write's lock (real writes only — the no-op-mutates-
+nothing law holds; mutate restamps the op's own response so a client
+never chases its own write), which clients poll via the sheet's
+public gviz CSV endpoint (headers=1, load-bearing: armored columns
+are all plain text and unhinted gviz eats whole columns as headers)
+on the VISITOR's quota — state carries `sheet` + `wver`, and app.js's
+pulse gate skips the API read when the wver matches, nobody is at
+the desk (presence freshness is clock-run), and a real snapshot is
+in hand. Steady state costs zero API reads; pulse weather follows
+the poll-death convention (gray + console ERROR2159 + paintWar, no
+banner, no silent fallback API read). The hidden-tab title peek
+still reads state directly (1/min, deliberately ungated).
 
 The bids tab is an append-only LOG (2026-07-17): every submission is
 its own row, nothing is overwritten, and a person's standing bid is

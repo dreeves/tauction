@@ -1289,6 +1289,123 @@ ok(!st.error && st.anyms[usid('rig2', 'ada')]
    'the anym is known ACROSS auctions: one device, one row, every'
    + ' claimed seat wears it');
 
+// 18q. THE POLL COLLAPSER (dreev-ratified 2026-08-06, after the
+//      Sheets 60-reads/min-per-user quota fell to five open tabs:
+//      execute-as-me means every visitor spends the owner's meter).
+//      State polls inside a 4s CacheService window share ONE
+//      batchGet; writes invalidate their slug; expiry refreshes.
+//      The fake's cache clock hops past the TTL between requests by
+//      default (so every other qual keeps today's fresh-read
+//      semantics); these scenes freeze it to hold a window open.
+ctx.__cacheCtl.freeze();
+call({ action: 'add', slug: 'quota', snym: 'ada',
+       usid: usid('quota', 'ada') });
+let quotaReads = ctx.__tally.reads;
+st = call({ action: 'state', slug: 'quota' });
+ok(!st.error && ctx.__tally.reads === quotaReads + 1,
+   'a cold state poll pays its one batchGet');
+st = call({ action: 'state', slug: 'quota' });
+ok(!st.error && ctx.__tally.reads === quotaReads + 1,
+   'a second poll inside the window is FREE: the cache collapsed it');
+st = call({ action: 'add', slug: 'quota', snym: 'ben',
+            usid: usid('quota', 'ben') });
+ok(!st.error && st.seats.length === 2,
+   "a write's own response is fresh truth, never the cached picture");
+st = call({ action: 'state', slug: 'quota' });
+ok(!st.error && st.seats.length === 2,
+   'a write INVALIDATES its slug: the next poll re-reads instead of'
+   + ' resurrecting the pre-write picture');
+quotaReads = ctx.__tally.reads;
+st = call({ action: 'state', slug: 'quota' });
+ok(ctx.__tally.reads === quotaReads,
+   'the re-read re-primed the window: polls collapse again');
+// the chosen trade, pinned so it stays chosen: an out-of-band sheet
+// edit (a human typing in the sheet) lags up to the TTL
+ctx.__ss.sheets.seats.data.push(
+  ['quota', 'u-oob', 'oob', '', '2026-08-06T00:00:00.000Z',
+   '2026-08-06T00:00:00.000Z']);
+st = call({ action: 'state', slug: 'quota' });
+ok(!st.error && st.seats.length === 2,
+   'inside the window an out-of-band sheet edit is INVISIBLE — the'
+   + " cache's documented <=4s lag, chosen not forgotten");
+ctx.__cacheCtl.advance(4001);
+st = call({ action: 'state', slug: 'quota' });
+ok(!st.error && st.seats.length === 3,
+   'past the TTL the window closes: the out-of-band row appears');
+ctx.__cacheCtl.thaw();
+
+// 18r. THE QUOTA REFUSAL: when Google's read meter runs dry the
+//      client gets a refusal CODE (gameRefusals: five honest tabs
+//      can hit it), never GoogleJsonResponseException prose (dreev
+//      saw exactly that banner, 2026-08-06).
+ctx.__quotaTrip();
+st = call({ action: 'state', slug: 'quota2' });
+ok(st.error && st.error.code === 'quotaChoke',
+   "an exhausted read quota refuses as quotaChoke, the client's to"
+   + ' render in stringles words');
+st = call({ action: 'state', slug: 'quota2' });
+ok(!st.error, 'the choke is transient: the next poll breathes');
+
+// 18s. THE PULSE (dreev-ratified 2026-08-06, the CSV-poll half of
+//      the quota work): one GLOBAL write counter in its own
+//      one-cell tab, bumped inside every write's lock. A client
+//      polls the cheap did-anything-change cell via the sheet's
+//      public CSV face — the visitor's quota, not the owner's —
+//      and spends an API state read only on a real change. State
+//      carries the sheet id and current wver so the client can
+//      build the URL and compare.
+{
+  const virgin = require('./fake-gas')();
+  const v0 = virgin.handle({ action: 'state', slug: 'pulse1' });
+  ok(typeof v0.sheet === 'string' && v0.sheet.length > 0
+     && v0.sheet === (CODE_GS.match(/SHEET_ID = '([^']+)'/) || [])[1]
+     && v0.wver === '0',
+     'state names its sheet (the one Code.gs opens) and its wver; an'
+     + ' untouched database pulses 0');
+}
+st = call({ action: 'state', slug: 'pulse1' });
+const wv = Number(st.wver);
+st = call({ action: 'add', slug: 'pulse1', snym: 'ada',
+            usid: usid('pulse1', 'ada') });
+ok(st.wver === String(wv + 1)
+   && ctx.__ss.sheets.pulse.data[1][0] === String(wv + 1),
+   "a write bumps the pulse: +1 in the write's OWN response and in"
+   + ' the cell (the op derives its state pre-bump; mutate restamps'
+   + ' the field so a client never chases its own write)');
+call({ action: 'bid', slug: 'pulse1', snym: 'ada',
+       usid: usid('pulse1', 'ada'), xbid: 'x', dvid: 'dev-p1' });
+call({ action: 'editing', slug: 'pulse1', usid: usid('pulse1', 'ada'),
+       dvid: 'dev-p1' });
+st = call({ action: 'state', slug: 'pulse1' });
+ok(st.wver === String(wv + 3),
+   'every write kind bumps — bids and presence heartbeats included'
+   + " (a virgin auction's heartbeat still pulses: the counter is"
+   + ' GLOBAL, so the virgin-stays-virgin law is untouched)');
+st = call({ action: 'state', slug: 'pulse1' });
+ok(st.wver === String(wv + 3), 'reads never bump the pulse');
+call({ action: 'add', slug: 'pulse1', snym: 'ada',
+       usid: usid('pulse1', 'ada') });  // idempotent re-add: no-op
+st = call({ action: 'state', slug: 'pulse1' });
+ok(st.wver === String(wv + 3),
+   'a semantic NO-OP never bumps: the no-op-mutates-nothing law'
+   + ' (not even tmod, not even the pulse) — clients sleep through'
+   + ' non-news');
+// the write-side sanity assert (the bver-corrupt pattern), asked UP
+// FRONT so a mangled pulse refuses before any partial write lands
+{
+  const seatRows = ctx.__ss.sheets.seats.data.length;
+  ctx.__ss.sheets.pulse.data[1][0] = 'seven';
+  st = call({ action: 'add', slug: 'pulse1', snym: 'bee',
+              usid: usid('pulse1', 'bee') });
+  ok(typeof st.error === 'string' && st.error.includes('wver corrupt'),
+     'a hand-mangled pulse cell refuses the write loudly, naming'
+     + ' itself');
+  ok(ctx.__ss.sheets.seats.data.length === seatRows,
+     'the corrupt-pulse refusal is asked up front: no partial write'
+     + ' landed');
+  ctx.__ss.sheets.pulse.data[1][0] = '3';
+}
+
 // 19. REFUSAL COVERAGE, closed by construction: every code Code.gs
 //     can throw must have been provoked from the real API at least
 //     once somewhere above (the ledger lives in call()). A new
@@ -1312,14 +1429,16 @@ ok(!st.error && st.anyms[usid('rig2', 'ada')]
 {
   const ASSERT_WORDS = ['covenant broken', 'schema drift',
     'row to write', 'plain-text armor', 'patch: field not in',
-    'bver corrupt', 'duplicate tbid'];
+    'bver corrupt', 'duplicate tbid', 'wver corrupt'];
   const sites = [...CODE_GS.matchAll(/\bthrow (?!\{ code:)/g)].length;
   const unprovoked = ASSERT_WORDS.filter((w) =>
     ![...seenAssertWords].some((s) => s.includes(w)));
-  ok(sites === ASSERT_WORDS.length + 1 && unprovoked.length === 0,
+  ok(sites === ASSERT_WORDS.length + 2 && unprovoked.length === 0,
      'every assert-family diagnostic is registered and provoked ('
-     + sites + ' non-code throw sites; armorFull throws from two);'
-     + ' unprovoked: [' + unprovoked.join(' | ') + ']');
+     + sites + ' non-code throw sites; armorFull throws from two,'
+     + " and loadAll's quota catch re-throws non-quota platform"
+     + ' errors verbatim); unprovoked: ['
+     + unprovoked.join(' | ') + ']');
 }
 
 // 21. REFERENCE INTEGRITY, swept over every scenario above: each
