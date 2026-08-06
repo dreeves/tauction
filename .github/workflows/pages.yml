@@ -1,0 +1,43 @@
+# GitHub Pages via the modern Actions pipeline (2026-08-06),
+# replacing the legacy branch-built Jekyll pipeline whose pinned
+# actions GitHub is force-migrating off Node 20 (the warning on every
+# run) and whose deploys started dying in deployment_queued. Current
+# major of every action (pinned from releases/latest at authoring),
+# a plain static upload (nothing here needs Jekyll), and one deploy
+# at a time with in-progress runs superseded.
+#
+# One-time settings flip to activate: Settings -> Pages -> Source:
+# GitHub Actions (or: gh api -X PUT repos/dreeves/tauction/pages
+# --field build_type=workflow). Until that flip, this workflow and
+# the legacy pipeline both run on push; the flip retires the legacy
+# one.
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v5
