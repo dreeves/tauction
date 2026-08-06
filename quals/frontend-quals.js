@@ -345,6 +345,36 @@ const stripStrings = (src) => src
   .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
   .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
   .replace(/`(?:[^`\\]|\\.)*`/g, '``');
+// README = the schema spec (dreev's ruling, 2026-08-05): each tab's
+// bullet list under "### Database Schema", in bullet ORDER, is that
+// tab's header row. Parse both sides — the README bullets and
+// Code.gs's *_HEAD arrays — and pin them equal, order included. The
+// third link in the chain, code == live sheet, is Code.gs's own
+// schema-drift armor (checked on every read, smoke-tested at
+// deploy). So README, code, and sheet can never quietly diverge.
+const README_MD =
+  fs.readFileSync(path.join(REPO, 'README.md'), 'utf8');
+const specTabs = {};
+for (const m of README_MD.matchAll(
+    /^(AUCTIONS|SEATS|DEVICES|BIDS)\n((?:\* \w+ --.*\n?)+)/gm)) {
+  specTabs[m[1].toLowerCase()] =
+    [...m[2].matchAll(/^\* (\w+) --/gm)].map((x) => x[1]);
+}
+ok(Object.keys(specTabs).length === 4,
+   'README schema section yields all four tabs, got: '
+   + Object.keys(specTabs).join(', '));
+for (const [tab, headName] of [['auctions', 'AUCTIONS_HEAD'],
+    ['bids', 'BIDS_HEAD'], ['seats', 'SEATS_HEAD'],
+    ['devices', 'DEVICES_HEAD']]) {
+  const head = CODE_GS
+    .match(new RegExp(headName + '\\s*=\\s*\\[([^\\]]+)\\]'))[1]
+    .match(/'([^']+)'/g).map((s) => s.slice(1, -1));
+  ok(specTabs[tab].join(', ') === head.join(', '),
+     'the ' + tab + " tab's columns match the README spec, name and"
+     + ' order: README says [' + specTabs[tab].join(', ')
+     + '], Code.gs says [' + head.join(', ') + ']');
+}
+
 const DEAD_VOCAB =
   /\b(userid|uname|devid|rig|rigs|blurb|bluid|tblug|pid|pids)\b/gi;
 for (const [name, src] of [

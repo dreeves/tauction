@@ -88,6 +88,4 @@ Previously:
 
 Next:
 
-1. Database columns slightly out of order
-
-1. Can we make this... brighter, cleaner, more video-game-ish? Or what about a 1980s Apple II aesthetic? Can you go down some rabbit holes and come up with something sock-off-knocking?
+1. Can we make this... brighter, cleaner, more video-game-ish? Or what about a 1980s Apple II aesthetic? Can you go down some rabbit holes and come up with something sock-off-knocking? Reread and digest AGENTS.md before starting. And maybe show me a screenshot for me to thumbs-up/down before revamping. Random idea: emulate Nicky Case?
