@@ -744,7 +744,7 @@ function arcsOf(base) {
     const m = nre.exec(r.slug);
     if (m !== null) ns.push(Number(m[1]));
   });
-  return ns;
+  return ns.sort(function (a, b) { return a - b; });
 }
 
 function archive(req) {
