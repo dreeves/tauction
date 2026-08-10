@@ -6805,8 +6805,34 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     ok(doc.getElementById('evergreen').childNodes.length === 0,
        'an archive-less page carries no chain links: the slot is'
        + ' exactly as visible as its data');
+    // README Next item 1: titled markdown links render whole (the
+    // URL arm used to choke on the space before the title) —
+    // pinned end to end through the real blub pipeline (app.js is
+    // strict-mode: its functions never reach window, so the DOM is
+    // the only honest probe)
+    gas.handle({ action: 'describe', slug: 'titled', base: 0,
+      blub: '[anchor text](https://example.com "hover text")\n'
+        + '[x](https://e.com "a<b>b")' });
+    const domT = await makePage('/titled?api=' + API_URL);
+    await until(() => domT.window.document
+      .querySelector('#descview a') !== null);
+    {
+      const a = domT.window.document.querySelector('#descview a');
+      ok(a.getAttribute('href') === 'https://example.com'
+         && a.getAttribute('title') === 'hover text'
+         && a.textContent === 'anchor text',
+         'a titled markdown link renders: href, title, text');
+      ok(domT.window.document.querySelector('#descview b') === null,
+         'no tag smuggles through the hover text (escape-first'
+         + ' posture holds)');
+    }
+    mockDelay = 150;  // the archive takes a beat: the drumroll shows
     btn.click();
     btn.click();  // the double press: the guard must swallow it
+    ok(doc.getElementById('status').classList.contains('stale'),
+       "the archive wears the reveal's drumroll: gavel over the"
+       + ' grayed ledger until the verdict settles (README Next'
+       + ' item 3)');
     ok(btn.disabled === true,
        "the pressed Archive control disables at once (namego's"
        + ' double-submit precedent — archive is not idempotent)');
@@ -6818,6 +6844,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        && doc.getElementById('banner').hidden,
        'one press, one wire archive, no refusal banner: the double'
        + ' click died at the disabled button');
+    mockDelay = 0;
+    ok(!doc.getElementById('status').classList.contains('stale'),
+       "the drumroll lifted with the settle: the reborn page is"
+       + ' trusted truth');
     ok(tiles(doc).length === 0
        && !doc.getElementById('status').classList
             .contains('revealed'),

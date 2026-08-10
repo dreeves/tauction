@@ -1136,9 +1136,20 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
 .evergreen { display: contents; }
 
 .evergreen .arc {
-  padding: 0.1rem 0.5rem;  /* a real hit box around the glyph */
-  border: none;
-  background: none;
+  /* MINI-CHIPS (dreev: "nicer somehow, while still being subtle"):
+     the corner-icon recipe at whisper strength — hairline border,
+     card paper, a 2px hard shadow in border ink instead of the
+     chips' full 4px --pop. Flex-centered glyph. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.1rem;
+  height: 1.9rem;
+  padding: 0 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--card);
+  box-shadow: 2px 2px 0 0 var(--border);
   font: inherit;
   /* GLANCE-SIZED (dreev: "too small"): transport, not footnote
      punctuation — pinned >= 1.4rem by a story qual */
@@ -1154,12 +1165,17 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
    with the stamp's variable-width date or the Archive control */
 .evergreen .arc:first-child { margin-left: auto; }
 
-.evergreen .arc:hover:not(:disabled) { color: var(--accent); }
+.evergreen .arc:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
 
 .evergreen .arc:disabled {
   cursor: default;
+  box-shadow: none;  /* a flat chip: nothing to press */
   /* house dimming: color alpha, never element opacity */
   color: color-mix(in srgb, var(--muted) 45%, transparent);
+  border-color: color-mix(in srgb, var(--border) 55%, transparent);
 }
 
 /* the star's footnote: whisper-quiet, tucked under the ledger — but
@@ -2008,7 +2024,8 @@ footer .version { letter-spacing: 0.04em; }  /* full muted ink: the
      just grow the row — no margin hand-back needed there (footer
      stays inline and keeps the full recipe) */
   #status.revealed .archivego { padding-block: 0.9rem; }
-  .evergreen .arc { font-size: 1.7rem; padding: 0.6rem 0.7rem; }
+  .evergreen .arc { min-width: 2.75rem; height: 2.75rem;
+                    font-size: 1.7rem; padding: 0; }
   footer a { padding-block: 0.9rem; margin-block: -0.9rem; }
 
   /* the sealed decoy stays small: it is blurred nonsense whose only

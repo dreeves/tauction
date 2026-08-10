@@ -176,12 +176,14 @@ let settleSeq = 0;        // bumped when a write SETTLES: a read
                           // its response (the server may not have
                           // committed a write before then)
 let refreshing = false;
-let revealInFlight = false;  // the verdict's round trip: the ONE
-                          // write whose gray+gavel (the drumroll)
-                          // must hold until its own settle — every
-                          // other write leaves the busy sign to the
-                          // arrival/transport machinery (see the
-                          // discarded-snapshot unpin in refresh)
+let verdictInFlight = false;  // a VERDICT's round trip (reveal or
+                          // archive — the two table-wide one-way
+                          // ops): the writes whose gray+gavel (the
+                          // drumroll) must hold until their own
+                          // settle — every other write leaves the
+                          // busy sign to the arrival/transport
+                          // machinery (see the discarded-snapshot
+                          // unpin in refresh)
 let seenRevealed = false; // does this page believe the CURRENT
                           // auction is revealed? Adopted snapshots
                           // ASSIGN it — an archive rebirth
@@ -542,7 +544,7 @@ async function refresh() {
       // without an API read — except the reveal's drumroll, which
       // belongs to its settle alone (the adoption path's same
       // disclosed exception)
-      if (!revealInFlight) $('status').classList.remove('stale');
+      if (!verdictInFlight) $('status').classList.remove('stale');
       refreshing = false;
       return;
     }
@@ -583,7 +585,7 @@ async function refresh() {
       // (2026-07-30, two browsers adding simultaneously). Disclosed
       // exception: the reveal's drumroll belongs to the verdict and
       // only its settle may lift it.
-      else if (res.slug === slug && !revealInFlight) {
+      else if (res.slug === slug && !verdictInFlight) {
         $('status').classList.remove('stale');
       }
     }
@@ -1773,8 +1775,12 @@ function mdRender(md) {
         '<<' + (stash.push('<code>' + c + '</code>') - 1) + '>>')
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
       .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
-        '<a href="$2" target="_blank" rel="noopener">$1</a>')
+      .replace(
+        /\[([^\]]+)\]\((https?:\/\/[^\s)]+)(?: &quot;([^&]*)&quot;)?\)/g,
+        (m, txt, url, title) => '<a href="' + url
+          + '" target="_blank" rel="noopener"'
+          + (title === undefined ? '' : ' title="' + title + '"')
+          + '>' + txt + '</a>')
       .replace(/<<(\d+)>>/g, (_, i) => stash[i]);
   };
   // The grammar's dispatch: one kind per construct. Blank lines are
@@ -2308,9 +2314,17 @@ function pressArchive() {
   // success the control hides with the Closed stamp (CSS off
   // .revealed) and re-enables for its next appearance.
   $('archive').disabled = true;
+  // ...and the verdict drumroll (the reveal's precedent, README
+  // Next item 3): the gavel hammers over the grayed ledger until
+  // the archive's own settle — a table-wide one-way op deserves
+  // its wait sign
+  $('status').classList.add('stale');
+  verdictInFlight = true;
   queueOp({ action: 'archive', slug: slug },
-          () => { $('archive').disabled = false; },
-          () => { $('archive').disabled = false; });
+          () => { $('archive').disabled = false;
+                  verdictInFlight = false; },
+          () => { $('archive').disabled = false;
+                  verdictInFlight = false; });
 }
 
 function pressReveal() {
@@ -2324,7 +2338,7 @@ function pressReveal() {
   // hammers over the grayed ledger while it round-trips (the settle's
   // render lifts the stale)
   $('status').classList.add('stale');
-  revealInFlight = true;  // ...and that stale is the VERDICT's: a
+  verdictInFlight = true;  // ...and that stale is the VERDICT's: a
                           // poll answer landing mid-flight must not
                           // cut the drumroll (refresh's unpin)
   const at = startWrite();
@@ -2340,7 +2354,7 @@ function pressReveal() {
     }
     // the drumroll must fall even if the settle's ingest crashes
     // (chainOp banners it): a pinned gavel would read as poll death
-    try { settleWrite(res, at); } finally { revealInFlight = false; }
+    try { settleWrite(res, at); } finally { verdictInFlight = false; }
   });
 }
 

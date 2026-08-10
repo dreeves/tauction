@@ -2934,9 +2934,13 @@ async function bid(page, bidText) {
     // henceforth, per his fastidiousness ruling)
     ok(await past.evaluate(() => {
       const arc = document.querySelector('#evergreen .arc');
-      return parseFloat(getComputedStyle(arc).fontSize) >= 22;
-    }), 'the deck glyphs are at least 1.4rem: legible transport,'
-       + ' not footnote punctuation');
+      const cs = getComputedStyle(arc);
+      return parseFloat(cs.fontSize) >= 22
+        && cs.borderTopWidth === '1px'
+        && cs.backgroundColor !== 'rgba(0, 0, 0, 0)';
+    }), 'the deck glyphs are at least 1.4rem AND wear their chip'
+       + ' (border + card paper): legible, pressable-looking,'
+       + ' still quiet');
     ok(await past.evaluate(() => {
       const mid = (e) => {
         const r = e.getBoundingClientRect();

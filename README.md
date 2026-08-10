@@ -96,6 +96,8 @@ Previously:
 
 Next:
 
+1. Markdown: Both asterisks and underscores should do italics. Double asterisks for bold. Probably we should just do what github.com/dreeves/eat-the-richtext is doing.
+
 1. Why don't markdown links like [anchor text](https://example.com "hover text") work? Let's try a smarter markdown renderer?
 
 2. I don't love how you can submit a blurb (blub) and it acts like it worked and then a full second or so later it pops up the conflict dialog. I'd rather see the gavelspinner until there's confirmation that my changes went through. I know we're doing something fancy with "optimistic writes" or whatever but at least for editing the blurb, I don't like it.
