@@ -37,10 +37,18 @@ function el(tag, cls, text) {
   return e;
 }
 
+// THE ARCHIVE GRAMMAR (dreev-ratified 2026-08-09; format = plain
+// -archiveN, his later ruling — the Closed stamp already shows the
+// date). This ONE regex serves the URL matcher's suffix arm, the
+// grayed Archive control, and the typed-name gate (an -archiveN
+// name fits the 20-char field, so the name box must object); a
+// qual welds it byte-identical to Code.gs's copy.
+const ARCHIVE_RE = /-archive\d+$/;
+
 // The sanitizers rewrite CHARSET only (the live-constraint pattern:
 // an illegal character just never lands). Length is never their
 // business: every limit is an objection, never a chop.
-const sanAname = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+const sanAname = (s) => s.toLowerCase().replace(/[^a-z0-9-]/g, '');
 const sanSnym = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
                          .replace(/^[0-9]+/, '');
 
@@ -174,12 +182,16 @@ let revealInFlight = false;  // the verdict's round trip: the ONE
                           // other write leaves the busy sign to the
                           // arrival/transport machinery (see the
                           // discarded-snapshot unpin in refresh)
-let seenRevealed = false; // has ANY response — adopted (ingest) or
-                          // merely peeked at (peekTitle) — shown this
-                          // page the latch? Reveal is one-way, so
-                          // this only ever goes true, and the hidden
-                          // peek retires on it: a revealed auction
-                          // has no further news to poll for
+let seenRevealed = false; // does this page believe the CURRENT
+                          // auction is revealed? Adopted snapshots
+                          // ASSIGN it — an archive rebirth
+                          // legitimately un-reveals the page in
+                          // place, and the title peek must resume
+                          // for the new round — while the hidden
+                          // peek may only LATCH it true (it never
+                          // adopts, so it never unlatches). The
+                          // peek retires while it holds: a revealed
+                          // auction has no further news to poll for
 
 // This browser's anonymous device id. Claims are keyed by it on the
 // server, so every page agrees who's taken — two machines can't
@@ -433,7 +445,9 @@ function ingest(res) {
   // as the arrival table
   narrate(adopted ? state : null, res);
   state = res;
-  seenRevealed = seenRevealed || res.revealed;
+  seenRevealed = res.revealed;  // adopted truth, not a latch: see
+                                // the declaration — the archive
+                                // rebirth un-reveals in place
   localStorage.setItem('tauction-state:' + res.slug, JSON.stringify(res));
   // Your device's registered claim is authoritative for who you are.
   // (In the snym era this dragged bid memory along to the new name;
@@ -2206,6 +2220,24 @@ function settleWrite(res, at, onRefusal) {
   }
 }
 
+// The Archive control's press (dreev's archive spec, 2026-08-09):
+// the response snapshot IS the reborn fresh auction — adopted
+// through the normal settle path, so the page "refreshes" into the
+// next round in place, no reload. Refusals banner like any op's
+// (the raced double-archive lands here, in stringles words).
+function pressArchive() {
+  // the standard double-submit guard (namego's precedent): archive,
+  // unlike reveal, is NOT idempotent — a double click's second press
+  // would refuse on the just-reborn auction and banner over a
+  // success. Re-enabled on refusal (retry stays possible); on
+  // success the control hides with the Closed stamp (CSS off
+  // .revealed) and re-enables for its next appearance.
+  $('archive').disabled = true;
+  queueOp({ action: 'archive', slug: slug },
+          () => { $('archive').disabled = false; },
+          () => { $('archive').disabled = false; });
+}
+
 function pressReveal() {
   // (the press does NOT disable the button: the reveal is idempotent
   // server-side and rides the op chain, so a double press is a
@@ -2486,6 +2518,10 @@ function wireUp() {
     $('banner').hidden = true;
   });
   $('reveal').addEventListener('click', pressReveal);
+  // the Archive control (label from stringles; shown with the
+  // Closed stamp by CSS, grayed on an archive page by init)
+  $('archive').textContent = archiveCopy;
+  $('archive').addEventListener('click', pressArchive);
   $('desctoggle').addEventListener('click', editDesc);
   // the empty pane's invitation = the textarea's own placeholder,
   // single-sourced (the empty-state CSS label reads this attribute)
@@ -2583,8 +2619,10 @@ function wireUp() {
     const v = sanAname($('slug').value);
     if (v !== $('slug').value) $('slug').value = v;
     $('namego').textContent = startCopy(v);  // the deed, narrated live
-    // the live length objection, the bid editor's exact pattern
-    $('slug').classList.toggle('error', overlongName(v));
+    // the live objections, the bid editor's exact pattern: length,
+    // and the reserved archive shape (mintable only by archiving)
+    $('slug').classList.toggle('error',
+      overlongName(v) || ARCHIVE_RE.test(v));
   });
   // NAMES COMMIT ON ENTER OR THEIR BUTTON — nothing else. Never a
   // timer (dreev's mid-typing lockout report: a 500ms debounce
@@ -2605,6 +2643,17 @@ function wireUp() {
     // no guards here, just the assert that the invariant held
     assert($('slug').value !== '', 'commitAname on a blank name');
     const want = sanAname($('slug').value);
+    // the reserved-name gate FIRST (server truth: the length rule
+    // judges the BASE, so an overlong archive-shaped name is a
+    // squat, not a too-long name — gate order keeps the client's
+    // words the server's words in every case): archive-shaped
+    // names are mintable only by archiving (ensureAuction's
+    // archiveSquat refusal is the backstop)
+    if (ARCHIVE_RE.test(want)) {
+      banner(archiveSquatBanner);
+      $('slug').classList.add('error');
+      return;
+    }
     // refused before the wire, in the server's words, text kept
     if (overlongName(want)) {
       banner(slugTooLongBanner);
@@ -2681,10 +2730,19 @@ async function init() {
   // footer version) — question zero of any console session
   console.log('tauction ' + document.querySelector('.version').textContent);
 
-  // 1,20: the server's own slug limit — a longer slug would adopt
-  // a name every server call refuses (a dead page)
-  const m = location.pathname.match(/^\/([a-zA-Z0-9]{1,20})\/?$/);
-  if (m) slug = m[1].toLowerCase();
+  // An EXACT mirror of the server's cleanSlug verdict, arm for arm:
+  // charset first, then the ARCHIVE_RE suffix strips and the BASE
+  // alone answers for length (20) and nonemptiness — so /-archive1,
+  // which the server refuses as an empty base, adopts no slug here
+  // either (a slug the server refuses would be a dead page). The
+  // path is lowercased first, matching cleanSlug's own toLowerCase:
+  // case tolerance is total, base and suffix alike.
+  const p = (location.pathname.toLowerCase()
+    .match(/^\/([a-z0-9-]+)\/?$/) || [])[1];
+  if (p !== undefined) {
+    const base = p.replace(ARCHIVE_RE, '');
+    if (base !== '' && base.length <= 20) slug = p;
+  }
   $('slug').value = slug;
   $('slug').defaultValue = slug;  // the baseline Escape reverts to
   // the one-action-page state, explicit (its CSS gray rides this).
@@ -2693,6 +2751,14 @@ async function init() {
   // exist must be unrepresentable, keyboard included
   document.body.classList.toggle('unnamed', slug === '');
   $('desctoggle').disabled = slug === '';
+  // an archive page's Archive control rests GRAYED, its tip
+  // explaining (archiving an archive forks history — dreev: too
+  // gross); the slug is fixed for the page's whole life, so once
+  // is enough
+  if (ARCHIVE_RE.test(slug)) {
+    $('archive').disabled = true;
+    setTip($('archive'), archivedTip);
+  }
 
   if (!configured) {
     banner(e2156);

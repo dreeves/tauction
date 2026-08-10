@@ -833,8 +833,12 @@ const FROZEN = ['bid', 'add', 'rename', 'claim', 'release', 'remove'];
 const OPEN = ['state', 'reveal',   // reads and the idempotent latch
               'describe',          // the blub: editable post-close
                                    // by dreev's explicit design
-              'editing'];          // ...and its presence heartbeat
+              'editing',           // ...and its presence heartbeat
                                    // rides the same exemption
+              'archive'];          // the INVERSE freeze: archive
+                                   // exists only post-close (an
+                                   // unclosed auction refuses,
+                                   // qual section 22)
 ok(actions.length >= 9 && actions.every((a) =>
      FROZEN.includes(a) || OPEN.includes(a)),
    'every API action has a declared post-close policy: '
@@ -975,7 +979,8 @@ const SHEETY = ['SpreadsheetApp', 'openById', 'getSheetByName',
   'insertSheet', 'deleteSheet', 'getRange', 'getDataRange',
   'appendRow', 'deleteRow', 'insertRows', 'deleteRows', 'getMaxRows',
   'setValue', 'setNumberFormat', 'setFont', 'setBackground',
-  'setFrozenRows', 'ssMemo', 'sheetMemo', 'rowsMemo'];
+  'setFrozenRows', 'ssMemo', 'sheetMemo', 'rowsMemo',
+  'batchUpdate', 'getSheetId'];
 ok(fenceAt !== -1 && SHEETY.every((w) => !business.includes(w)),
    'no Sheets vocabulary below the storage fence; leaked: '
      + SHEETY.filter((w) => business.includes(w)).join(', '));
@@ -1406,6 +1411,312 @@ ok(st.wver === String(wv + 3),
   ctx.__ss.sheets.pulse.data[1][0] = '3';
 }
 
+/* --- 22. THE ARCHIVE (dreev-ratified 2026-08-09) ----------------------
+   A closed auction's slug is evergreen: 'archive' renames the whole
+   record — the auctions row, its seats, its bids log (slug key cells
+   only, content untouched) — to slug-archiveN (N = max+1 over the
+   existing incarnations, unbounded) and
+   rebirths the slug as a fresh auction whose blub is a markdown
+   pointer at the archive. The rename and the rebirth land in ONE
+   atomic Sheets batchUpdate (Google applies a batch all-or-nothing,
+   so a crashed execution can tear nothing), and bver CONTINUES
+   (old + 1) so a straggler's pre-archive draft always bounces off
+   the CAS instead of sometimes clobbering the pointer. Dashes became
+   legal in names with this change; the length rule (20) judges what
+   humans TYPE — the server-minted suffix rides exempt. The suffix
+   is dreev's 2026-08-09 LATER ruling: plain -archiveN (the Closed
+   stamp already shows the date), max+1, unbounded — so the name
+   gate and the server's squat refusal alone hold the namespace
+   (an -archive1 name IS typeable now). */
+
+// the new grammar: dashes are ordinary name characters now
+ok(!call({ action: 'state', slug: 'foo-bar' }).error,
+   'dashes are legal in auction names');
+ok(!call({ action: 'state', slug: '-'.repeat(20) }).error,
+   'a name of pure dashes is legal too: one flat charset, no edge'
+   + ' rules (ratified oddball)');
+ok(code(call({ action: 'state', slug: 'nope!' })) === 'badSlug',
+   'non-alphanumeric-non-dash characters still refuse');
+ok(code(call({ action: 'state', slug: '-archive1' })) === 'badSlug',
+   'a bare archive suffix is an EMPTY base: refused (and the client'
+   + ' URL matcher mirrors this verdict, adopting no slug)');
+// the suffix exemption: an archive slug reads fine at full length...
+ok(!call({ action: 'state',
+           slug: 'a'.repeat(20) + '-archive1' }).error,
+   'a maxed 20-char base plus the archive suffix is legal: the'
+   + ' length rule judges the BASE');
+// ...but the base is still capped at 20, suffix or no suffix
+ok(code(call({ action: 'state',
+               slug: 'a'.repeat(21) + '-archive1' }))
+     === 'slugTooLong',
+   'a 21-char base is refused even wearing the archive suffix');
+ok(code(call({ action: 'state', slug: 'a'.repeat(41) }))
+     === 'slugTooLong',
+   'a suffixless 41-char name is still just too long');
+
+// the happy path, end to end
+call({ action: 'bid', slug: 'evergreen', snym: 'alice',
+       usid: usid('evergreen', 'alice'), xbid: 'one louis',
+       dvid: 'dev-evgr-a' });
+call({ action: 'bid', slug: 'evergreen', snym: 'bob',
+       usid: usid('evergreen', 'bob'), xbid: 'two sous' });
+call({ action: 'describe', slug: 'evergreen', base: 0,
+       blub: 'the weekly veggie auction' });
+st = call({ action: 'reveal', slug: 'evergreen' });
+const evTfin = st.tfin;
+const evTo = 'evergreen-archive1';
+const evBidRows = ss.sheets['bids'].data
+  .filter((r) => r[0] === 'evergreen')
+  .map((r) => r.slice(1).join('|'));
+const evSeatRows = ss.sheets['seats'].data
+  .filter((r) => r[0] === 'evergreen')
+  .map((r) => r.slice(1).join('|'));
+const evARow = ss.sheets['auctions'].data
+  .find((r) => r[0] === 'evergreen').slice(1).join('|');
+st = call({ action: 'archive', slug: 'evergreen' });
+ok(!st.error, 'archive accepted: ' + JSON.stringify(st.error));
+ok(st.slug === 'evergreen' && st.exists === true
+   && st.revealed === false && st.seats.length === 0
+   && st.bidders.length === 0 && st.tfin === '',
+   'the response IS the reborn slug: a fresh, open, empty auction');
+ok(st.bver === 2,
+   "bver CONTINUES (old 1 + the pointer's own save): a straggler's"
+   + ' pre-archive draft can never CAS-match the reborn blub');
+const BLUBFN = require('vm').runInContext('archiveBlub', ctx);
+ok(st.blub === BLUBFN(evTo),
+   'the reborn blub is what archiveBlub mints: '
+   + JSON.stringify(st.blub));
+// dreev's spec copy VERBATIM — pinned here like the cheater banner:
+// spec-frozen English never derives from the code under test
+ok(st.blub === 'Previous incarnation of this auction:\n'
+     + '[tauction.dreev.es/' + evTo + '](https://tauction.dreev.es/'
+     + evTo + ')',
+   "the pointer prose is dreev's exact copy, byte for byte: "
+   + JSON.stringify(st.blub));
+ok(st.blub.indexOf('[tauction.dreev.es/' + evTo + ']'
+     + '(https://tauction.dreev.es/' + evTo + ')') !== -1,
+   'the pointer is a markdown link, anchortext = the URL sans'
+   + " https:// (dreev's anchortext ruling)");
+// the archive: the whole record, intact at its new name
+st = call({ action: 'state', slug: evTo });
+ok(st.revealed === true && st.tfin === evTfin
+   && names(st) === 'alice,bob'
+   && st.blub === 'the weekly veggie auction' && st.bver === 1,
+   'the archived auction is the old record wholesale: roster, blub,'
+   + ' bver, close stamp');
+ok(st.bids.length === 2 && st.bids[0].xbid === 'one louis'
+   && st.bids[1].xbid === 'two sous',
+   'the archived bids read intact');
+ok(st.claims[usid('evergreen', 'alice')] === 'dev-evgr-a',
+   "alice's claim rode along: the seats' dvid column moved with"
+   + ' the rows');
+ok(ss.sheets['bids'].data.filter((r) => r[0] === evTo)
+     .map((r) => r.slice(1).join('|')).join('\n')
+     === evBidRows.join('\n')
+   && ss.sheets['bids'].data.every((r) => r[0] !== 'evergreen'),
+   'the bids LOG was re-keyed only: same rows, same content, same'
+   + ' order, zero rows left under the old key');
+ok(ss.sheets['auctions'].data.filter((r) => r[0] === 'evergreen')
+     .length === 1
+   && ss.sheets['auctions'].data[ss.sheets['auctions'].data.length
+        - 1][0] === 'evergreen',
+   'exactly one reborn auctions row, appended last (inside the'
+   + ' armor)');
+ok(ss.sheets['seats'].data.filter((r) => r[0] === evTo)
+     .map((r) => r.slice(1).join('|')).join('\n')
+     === evSeatRows.join('\n')
+   && ss.sheets['auctions'].data.find((r) => r[0] === evTo)
+        .slice(1).join('|') === evARow,
+   'the archived auctions row and seats rows are re-keyed ONLY:'
+   + ' every non-key cell byte-identical (tini/tmod/tbed included)');
+// the CAS armor that bver continuity buys
+ok(code(call({ action: 'describe', slug: 'evergreen', base: 1,
+               blub: 'straggler draft' })) === 'simulEdits',
+   "a straggler's save against the pre-archive bver bounces off the"
+   + ' CAS: the pointer can never be silently clobbered');
+
+// archiving an archive: refused (dreev: foo-archive-...-archive-...
+// forks history, too gross; the client grays its control, so only
+// hand-rolled requests can even ask)
+ok(code(call({ action: 'archive', slug: evTo })) === 'archiveArchive',
+   'archiving an archive is refused');
+// nothing here to archive: virgin and still-open both refuse — and
+// this same code is what the LOSER of an archive race sees (the
+// rival's rename made the slug fresh), which is why it lives in
+// gameRefusals
+ok(code(call({ action: 'archive', slug: 'neverwas' }))
+     === 'archiveUnclosed',
+   'archiving a nonexistent auction is refused');
+call({ action: 'bid', slug: 'stillopen', snym: 'ann',
+       usid: usid('stillopen', 'ann'), xbid: 'x' });
+ok(code(call({ action: 'archive', slug: 'stillopen' }))
+     === 'archiveUnclosed',
+   'archiving a still-open auction is refused');
+ok(code(call({ action: 'archive', slug: 'evergreen' }))
+     === 'archiveUnclosed',
+   "a raced second archive refuses honestly: the rival's already"
+   + ' renamed it away');
+
+// the namespace guard: only the archive action may BIRTH an
+// archive-form slug. Born-on-first-touch there would let anyone eat
+// a letter (choking or misdirecting a later real archive) — the
+// arithmetic only guards the 20-char typed field, so the URL and
+// hand-rolled paths refuse at ensureAuction instead.
+ok(code(call({ action: 'add', slug: 'sly-archive1',
+               snym: 'sq', usid: 'usid-sly-sq' })) === 'archiveSquat',
+   'adding a seat on a virgin archive-form slug refuses');
+ok(code(call({ action: 'bid', slug: 'sly-archive1',
+               snym: 'sq', usid: 'usid-sly-sq', xbid: 'x',
+               dvid: 'dev-squat' }))
+     === 'archiveSquat',
+   'a walk-on bid on a virgin archive-form slug refuses (dvid and'
+   + ' all: only the documented devices-first orphan row may land)');
+ok(code(call({ action: 'describe', slug: 'sly-archive1',
+               base: 0, blub: 'squat words' })) === 'archiveSquat',
+   'describing a virgin archive-form slug refuses (describe births'
+   + ' rows too)');
+ok(ss.sheets['auctions'].data.every(
+     (r) => r[0] !== 'sly-archive1')
+   && ss.sheets['seats'].data.every(
+     (r) => r[0] !== 'sly-archive1'),
+   'the squat refusals minted NOTHING in auctions or seats (the'
+   + " dvid's devices row is touchDevice's documented"
+   + ' harmless-orphan exception)');
+// ...while a REAL archive stays fully alive: its blub still edits
+// (the gavel freezes everything but the blub) — the guard bites
+// only at birth
+ok(!call({ action: 'describe', slug: evTo, base: 1,
+           blub: 'annotated after archiving' }).error,
+   "an EXISTING archive's blub still edits: the squat guard never"
+   + ' touches born archives');
+
+// round two at the evergreen URL: the number counts past the taken 1
+call({ action: 'bid', slug: 'evergreen', snym: 'cara',
+       usid: usid('evergreen', 'cara'), xbid: 'r2 c' });
+call({ action: 'bid', slug: 'evergreen', snym: 'dev',
+       usid: usid('evergreen', 'dev'), xbid: 'r2 d' });
+st = call({ action: 'reveal', slug: 'evergreen' });
+const evTo2 = 'evergreen-archive2';
+st = call({ action: 'archive', slug: 'evergreen' });
+ok(!st.error && st.blub === BLUBFN(evTo2),
+   'the second archive takes the next number, and the fresh'
+   + ' pointer names IT: ' + JSON.stringify(st.blub));
+st = call({ action: 'state', slug: evTo2 });
+ok(st.revealed === true && names(st) === 'cara,dev',
+   'round two archived whole at its own name');
+st = call({ action: 'state', slug: evTo });
+ok(st.revealed === true && names(st) === 'alice,bob'
+   && st.bids[0].xbid === 'one louis',
+   "round one is UNTOUCHED by round two's archive: archive slugs"
+   + ' never cascade (the chain gains links, never rewrites them)');
+
+// the number is max+1 over the existing incarnations, NEVER
+// first-free: a hand-deleted middle round must not be refilled out
+// of order — chronology beats tidiness (and N is unbounded: no
+// per-day cap, no choke)
+call({ action: 'bid', slug: 'busy', snym: 'ann',
+       usid: usid('busy', 'ann'), xbid: 'a' });
+call({ action: 'bid', slug: 'busy', snym: 'ben',
+       usid: usid('busy', 'ben'), xbid: 'b' });
+st = call({ action: 'reveal', slug: 'busy' });
+ss.sheets['auctions'].data.push(
+  ['busy-archive1', st.tfin, '', '', '0', '']);
+ss.sheets['auctions'].data.push(
+  ['busy-archive3', st.tfin, '', '', '0', '']);
+ss.sheets['auctions'].data.push(
+  ['busy-archive9', st.tfin, '', '', '0', '']);
+ss.sheets['auctions'].data.push(
+  ['busy-archive10', st.tfin, '', '', '0', '']);
+resetTabMemo();
+st = call({ action: 'archive', slug: 'busy' });
+ok(!st.error && st.blub === BLUBFN('busy-archive11'),
+   'the probe is NUMERIC max+1 over whatever exists: 10 beats 9'
+   + ' (a lexical max would mint a duplicate) and the hand-made gap'
+   + ' at 2 is never refilled — ' + JSON.stringify(st.blub));
+
+// ...and a hand-edited N past 2^53 refuses loudly: maxN + 1 would
+// collide with maxN (float) or go exponential — either way an
+// unusable or duplicate name, so anti-postel says refuse
+call({ action: 'bid', slug: 'wild', snym: 'ann',
+       usid: usid('wild', 'ann'), xbid: 'a' });
+call({ action: 'bid', slug: 'wild', snym: 'ben',
+       usid: usid('wild', 'ben'), xbid: 'b' });
+st = call({ action: 'reveal', slug: 'wild' });
+ss.sheets['auctions'].data.push(
+  ['wild-archive1' + '0'.repeat(20), st.tfin, '', '', '0', '']);
+resetTabMemo();
+st = call({ action: 'archive', slug: 'wild' });
+ok(String(st.error).indexOf('beyond safe integers') !== -1,
+   'an absurd hand-edited incarnation count refuses the archive'
+   + ' loudly instead of minting a colliding or exponential name');
+
+// the pulse: an archive is ONE piece of news to the world
+call({ action: 'bid', slug: 'pulsy', snym: 'ann',
+       usid: usid('pulsy', 'ann'), xbid: 'a' });
+call({ action: 'bid', slug: 'pulsy', snym: 'ben',
+       usid: usid('pulsy', 'ben'), xbid: 'b' });
+call({ action: 'reveal', slug: 'pulsy' });
+const wverBefore = Number(ss.sheets['pulse'].data[1][0]);
+st = call({ action: 'archive', slug: 'pulsy' });
+ok(Number(ss.sheets['pulse'].data[1][0]) === wverBefore + 1
+   && st.wver === String(wverBefore + 1),
+   'archive bumps the pulse exactly once, response restamped');
+
+// the cache: an archive invalidates BOTH its slugs — its own (every
+// write invalidates its slug) and the archive name (a probed URL
+// may have cached the virgin answer seconds before)
+call({ action: 'bid', slug: 'cachy', snym: 'ann',
+       usid: usid('cachy', 'ann'), xbid: 'a' });
+call({ action: 'bid', slug: 'cachy', snym: 'ben',
+       usid: usid('cachy', 'ben'), xbid: 'b' });
+st = call({ action: 'reveal', slug: 'cachy' });
+const caTo = 'cachy-archive1';
+ctx.__cacheCtl.freeze();
+ok(call({ action: 'state', slug: caTo }).exists === false,
+   'the archive name reads virgin moments before the archive (and'
+   + ' caches that answer)');
+ok(call({ action: 'state', slug: 'cachy' }).revealed === true,
+   'the doomed slug reads closed moments before (cached too)');
+call({ action: 'archive', slug: 'cachy' });
+ok(call({ action: 'state', slug: caTo }).revealed === true,
+   "the archive invalidated its TARGET's cached virgin answer too");
+ok(call({ action: 'state', slug: 'cachy' }).revealed === false,
+   'and its own slug reads reborn, not the cached pre-archive'
+   + ' record');
+ctx.__cacheCtl.thaw();
+
+// the budget: two metered reads (the verdict's getState, the
+// response's) and two writes (ONE batchUpdate for the whole
+// rename + rebirth, plus the pulse bump)
+call({ action: 'bid', slug: 'thrifty', snym: 'ann',
+       usid: usid('thrifty', 'ann'), xbid: 'a' });
+call({ action: 'bid', slug: 'thrifty', snym: 'ben',
+       usid: usid('thrifty', 'ben'), xbid: 'b' });
+call({ action: 'reveal', slug: 'thrifty' });
+budget({ action: 'archive', slug: 'thrifty' }, 2, 2,
+  'archiving (the rename + rebirth is ONE atomic batchUpdate)');
+
+// the storage layer's atomic sibling: a MIXED batch — one valid
+// patch, then one bad field — refuses WHOLE (assert-family: a code
+// bug, not user traffic). The valid cell must not move: all-or-
+// nothing starts at build time, before anything flies.
+{
+  const a0 = ss.sheets['auctions'].data[1].slice();
+  let threw = '';
+  try {
+    require('vm').runInContext(
+      'batchWrite([{ kind: "auctions", i: 0,'
+      + ' changes: { tini: "POISON" } },'
+      + ' { kind: "auctions", i: 0, changes: { nope: "x" } }], [])',
+      ctx);
+  } catch (e) { threw = String(e); }
+  seenAssertWords.add(threw);
+  ok(threw.indexOf('batchWrite: field not in') !== -1
+     && ss.sheets['auctions'].data[1].join('|') === a0.join('|'),
+     'a mixed batch refuses whole: the valid patch ahead of the bad'
+     + ' field never landed');
+}
+
 // 19. REFUSAL COVERAGE, closed by construction: every code Code.gs
 //     can throw must have been provoked from the real API at least
 //     once somewhere above (the ledger lives in call()). A new
@@ -1429,13 +1740,15 @@ ok(st.wver === String(wv + 3),
 {
   const ASSERT_WORDS = ['covenant broken', 'schema drift',
     'row to write', 'plain-text armor', 'patch: field not in',
-    'bver corrupt', 'duplicate tbid', 'wver corrupt'];
+    'bver corrupt', 'duplicate tbid', 'wver corrupt',
+    'batchWrite: field not in', 'beyond safe integers'];
   const sites = [...CODE_GS.matchAll(/\bthrow (?!\{ code:)/g)].length;
   const unprovoked = ASSERT_WORDS.filter((w) =>
     ![...seenAssertWords].some((s) => s.includes(w)));
-  ok(sites === ASSERT_WORDS.length + 2 && unprovoked.length === 0,
+  ok(sites === ASSERT_WORDS.length + 3 && unprovoked.length === 0,
      'every assert-family diagnostic is registered and provoked ('
-     + sites + ' non-code throw sites; armorFull throws from two,'
+     + sites + ' non-code throw sites; armorFull throws from three'
+     + ' (assertRoom, insert, batchWrite),'
      + " and loadAll's quota catch re-throws non-quota platform"
      + ' errors verbatim); unprovoked: ['
      + unprovoked.join(' | ') + ']');

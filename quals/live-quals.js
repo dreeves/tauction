@@ -83,6 +83,16 @@ function ok(cond, label) {
   ok(!r.error && r.claims['usid-smoketest-smokey'] === undefined,
      'live release vacates the seat (self-cleaning: the next run\'s'
      + ' device-less smoke bid needs it open)');
+  // the deployed script must KNOW the archive action (the missing-
+  // action failure mode above, the hard way) — proven by its
+  // refusal on the never-revealed smoketest auction: a refusal
+  // mutates nothing, so no live data is ever renamed by a deploy
+  r = await (await fetch(API, { method: 'POST',
+    body: JSON.stringify({ action: 'archive',
+      slug: 'smoketest' }) })).json();
+  ok(r.error && r.error.code === 'archiveUnclosed',
+     'live archive action exists and refuses the open smoketest: '
+     + JSON.stringify(r).slice(0, 80));
   console.log('live-quals: all ' + passed
     + ' assertions passed — deployed API is current');
 })().catch((e) => { console.error(e); process.exit(1); });

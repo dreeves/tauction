@@ -95,3 +95,5 @@ Previously:
 6. Can we make this... brighter, cleaner, more video-game-ish? Or what about a 1980s Apple II aesthetic? Can you go down some rabbit holes and come up with something sock-off-knocking? Reread and digest AGENTS.md before starting. And maybe show me a screenshot for me to thumbs-up/down before revamping. Random idea: emulate Nicky Case?
 
 Next:
+
+1. Why don't markdown links like [anchor text](https://example.com "hover text") work?

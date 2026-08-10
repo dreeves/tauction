@@ -67,6 +67,8 @@ class FakeRange {
   }
 }
 
+let nextSheetId = 0;  // real tabs carry a numeric gid; so do fakes
+
 class FakeSheet {
   constructor(name, tally = { reads: 0, writes: 0, opens: 0 }) {
     this.name = name;
@@ -76,8 +78,10 @@ class FakeSheet {
     this.fonts = {};
     this.backgrounds = {};
     this.plainTextRows = 0;  // deepest row armored '@' (armor quals)
+    this.sheetId = ++nextSheetId;
   }
   getName() { return this.name; }
+  getSheetId() { return this.sheetId; }
   insertRowsAfter() { this.tally.writes++; }
   getRange(row, col, numRows = 1, numCols = 1) {
     return new FakeRange(this, row, col, numRows, numCols);
@@ -173,6 +177,45 @@ module.exports = function makeGas() {
                                    : { range: name, values: rows };
         }) };
       },
+    },
+    // The Advanced Sheets Service's WRITE face: ONE metered call
+    // applying every request all-or-nothing — validated first,
+    // applied second, mirroring Google's documented batch semantics
+    // ("if one request is unsuccessful, none of the other ...
+    // changes are written"). Only the updateCells shape batchWrite
+    // emits is spoken; anything else refuses loudly before touching
+    // a cell. REST writes are server-side commits: visible to the
+    // next batchGet with no flush, so unflushed stays untouched.
+    batchUpdate: (resource, id) => {
+      const byId = {};
+      Object.keys(ss.sheets).forEach((n) => {
+        byId[ss.sheets[n].sheetId] = ss.sheets[n];
+      });
+      const reqs = (resource && resource.requests) || [];
+      reqs.forEach((r) => {
+        const u = r.updateCells;
+        if (!u || !u.start || byId[u.start.sheetId] === undefined
+            || u.fields !== 'userEnteredValue'
+            || !Array.isArray(u.rows)) {
+          throw new Error('fake batchUpdate: unsupported request '
+            + JSON.stringify(r));
+        }
+      });
+      tally.writes++;
+      reqs.forEach((r) => {
+        const u = r.updateCells;
+        const sheet = byId[u.start.sheetId];
+        u.rows.forEach((row, dr) => {
+          const rowIdx = u.start.rowIndex + dr;
+          while (sheet.data.length <= rowIdx) sheet.data.push([]);
+          const cells = sheet.data[rowIdx];
+          row.values.forEach((v, dc) => {
+            const colIdx = u.start.columnIndex + dc;
+            while (cells.length <= colIdx) cells.push('');
+            cells[colIdx] = v.userEnteredValue.stringValue;
+          });
+        });
+      });
     } } },
     CacheService: { getScriptCache: () => ({
       get: (k) => {

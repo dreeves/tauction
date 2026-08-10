@@ -43,6 +43,7 @@ let writesInFlight = 0;  // ALL writes on the wire (drained() below)
 
 const WRITES = [
   'add', 'remove', 'rename', 'claim', 'release', 'bid', 'describe', 'reveal',
+  'archive',
 ];
 
 // Simulate an outdated deployed server whose payloads predate the
@@ -145,7 +146,8 @@ const STR = new Function(STRINGLES
   + ' slugTooLongBanner, snymTooLongBanner, blubTooLongBanner,'
   + ' revealCopy, descVerTip, editingBy, editingByMany, someoneOn,'
   + ' simulEditsBanner, refusalCopy,'
-  + ' gameRefusals, plumbingRefusals, orByTimezone };')();
+  + ' gameRefusals, plumbingRefusals, orByTimezone,'
+  + ' archiveCopy, archivedTip };')();
 const STAMP = STR.stampCopy;
 
 // The anym tail's timezone half, derived the same way app.js's tzcity
@@ -2156,10 +2158,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' here meant a gavel hammering forever');
   type(dom, 'slug', 'Fresh-1!');
   commitName(dom);
-  ok(doc.getElementById('slug').value === 'fresh1', 'slug sanitized');
+  ok(doc.getElementById('slug').value === 'fresh-1', 'slug sanitized');
   await until(() =>  // debounce + the gate's lookup: wait, don't sample
-    dom.window.location.pathname === '/fresh1');
-  ok(dom.window.location.pathname === '/fresh1'
+    dom.window.location.pathname === '/fresh-1');
+  ok(dom.window.location.pathname === '/fresh-1'
      && dom.window.location.search.includes('api='),
      'naming it navigates, keeping ?api=');
   ok(doc.getElementById('slug').disabled,
@@ -6172,7 +6174,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const doc4 = dom4.window.document;
   mockDelay = 150;
   type(dom4, 'slug', 'Pie-Split');
-  ok(doc4.getElementById('slug').value === 'piesplit', 'slug sanitized');
+  ok(doc4.getElementById('slug').value === 'pie-split', 'slug sanitized');
   commitName(dom4);  // the deliberate gesture; the probe is in flight
   ok(!doc4.getElementById('status').hidden
      && doc4.getElementById('status').classList.contains('stale'),
@@ -6181,7 +6183,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   mockDelay = 0;
   ok(!doc4.getElementById('status').classList.contains('stale'),
      'box ungrays once loaded');
-  ok(dom4.window.location.pathname === '/piesplit', 'URL follows slug edit');
+  ok(dom4.window.location.pathname === '/pie-split', 'URL follows slug edit');
 
   addName(dom4, 'dee');
   addName(dom4, 'evy');
@@ -6247,14 +6249,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      is deleted as dead code. ------------------------------------- */
 
   /* --- 5. XSS: a bid with markup renders inert; walk-ons show cut ------- */
-  gas.handle({ action: 'bid', slug: 'piesplit',
-    snym: 'rando', usid: 'usid-piesplit-rando', xbid: 'me too!' });
-  const gasRes = gas.handle({ action: 'bid', slug: 'piesplit',
+  gas.handle({ action: 'bid', slug: 'pie-split',
+    snym: 'rando', usid: 'usid-pie-split-rando', xbid: 'me too!' });
+  const gasRes = gas.handle({ action: 'bid', slug: 'pie-split',
     snym: 'evy',
-    usid: usidOf(gas.handle({ action: 'state', slug: 'piesplit' }), 'evy'),
+    usid: usidOf(gas.handle({ action: 'state', slug: 'pie-split' }), 'evy'),
     xbid: '<img src=x onerror=alert(1)>' });
   ok(gasRes.revealed === false, 'roster complete -> still sealed');
-  ok(gas.handle({ action: 'reveal', slug: 'piesplit' }).revealed,
+  ok(gas.handle({ action: 'reveal', slug: 'pie-split' }).revealed,
      'revealed by the button');
   await sleep(5100); // poll
   const html4 = doc4.getElementById('status').innerHTML;
@@ -6711,6 +6713,162 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
             .bver === 2,
        'Keep theirs adopts the record, base and all — and the local'
        + ' verdict truly sent NOTHING: the server never moved');
+  }
+
+  /* ============ THE ARCHIVE control (dreev 2026-08-09) ============
+     After the Closed stamp, an Archive control: one click renames
+     the closed record to its numbered archive slug, and the response
+     snapshot — the reborn fresh auction with a pointer blub —
+     repaints the page in place. On an already-archived page the
+     control is GRAYED, never gone (anti-magic); its showing only
+     with the Closed stamp rides the stamp's own CSS convention
+     (layout truth, patrolled by the story suite). */
+  {
+    gas.handle({ action: 'bid', slug: 'evrgrn', snym: 'ann',
+      usid: 'usid-evrgrn-ann', xbid: 'a shilling' });
+    gas.handle({ action: 'bid', slug: 'evrgrn', snym: 'ben',
+      usid: 'usid-evrgrn-ben', xbid: 'a crown' });
+    gas.handle({ action: 'describe', slug: 'evrgrn', base: 0,
+      blub: 'round one words' });
+    gas.handle({ action: 'reveal', slug: 'evrgrn' });
+    const arcSlug = 'evrgrn-archive1';
+    const dom = await makePage('/evrgrn?api=' + API_URL);
+    const doc = dom.window.document;
+    await until(() =>
+      doc.getElementById('closed').textContent !== '');
+    const btn = doc.getElementById('archive');
+    ok(btn !== null && btn.textContent === STR.archiveCopy
+       && btn.disabled === false && btn.tagName === 'BUTTON',
+       "the Archive control stands by the Closed stamp, in dreev's"
+       + ' copy, live on an ordinary closed auction (and a button:'
+       + ' a tab stop, like every control)');
+    btn.click();
+    btn.click();  // the double press: the guard must swallow it
+    ok(btn.disabled === true,
+       "the pressed Archive control disables at once (namego's"
+       + ' double-submit precedent — archive is not idempotent)');
+    await until(() => apiCalls.some((c) => c.action === 'archive')
+      && drained());
+    await until(() =>
+      doc.getElementById('closed').textContent === '');
+    ok(apiCalls.filter((c) => c.action === 'archive').length === 1
+       && doc.getElementById('banner').hidden,
+       'one press, one wire archive, no refusal banner: the double'
+       + ' click died at the disabled button');
+    ok(tiles(doc).length === 0
+       && !doc.getElementById('status').classList
+            .contains('revealed'),
+       'one click and the page IS the reborn auction: empty roster,'
+       + ' open for the next round, no reload needed');
+    const a = doc.querySelector('#descview a');
+    ok(a !== null
+       && a.getAttribute('href')
+            === 'https://tauction.dreev.es/' + arcSlug
+       && a.textContent === 'tauction.dreev.es/' + arcSlug,
+       'the pointer blub renders as a real link to the archive:'
+       + ' anchortext is the URL sans https://, and mdRender already'
+       + ' speaks markdown links — zero new rendering code');
+    ok(doc.getElementById('slug').value === 'evrgrn',
+       'the URL and name never moved: the slug is evergreen');
+
+    // the reborn page is LIVE again: the hidden-tab title peek
+    // resumes (seenRevealed follows adopted truth, no longer a
+    // one-way latch — the rebirth un-reveals in place)
+    gas.handle({ action: 'add', slug: 'evrgrn', snym: 'cyn',
+      usid: 'usid-evrgrn2-cyn' });
+    setVisibility(dom, 'hidden');
+    dom.window.__intervals.find((i) => i.ms === 60000).fn();
+    await until(() => dom.window.document.title
+      === STR.tabTitle(STR.waitingGlyph, 'evrgrn'));
+    ok(dom.window.document.title
+         === STR.tabTitle(STR.waitingGlyph, 'evrgrn'),
+       'the hidden-tab title peek RESUMES for the reborn round:'
+       + ' the reveal latch died with the rebirth');
+    setVisibility(dom, 'visible');
+
+    // the archived page: the whole record at its new name
+    const dom2 = await makePage('/' + arcSlug + '?api=' + API_URL);
+    const doc2 = dom2.window.document;
+    await until(() =>
+      doc2.getElementById('closed').textContent !== '');
+    ok(doc2.getElementById('slug').value === arcSlug,
+       'the archive URL loads: the client grammar speaks dashes'
+       + ' and the suffix');
+    ok(doc2.querySelector('.tile[data-snym="ann"]') !== null
+       && doc2.getElementById('status').classList
+            .contains('revealed'),
+       'the archived record reads whole at its new address');
+    const btn2 = doc2.getElementById('archive');
+    ok(btn2.disabled === true
+       && btn2.getAttribute('data-tip') === STR.archivedTip,
+       'an archive page wears its Archive control GRAYED, the tip'
+       + ' explaining the gray (grayed, never suppressed)');
+
+    // a SHOUTED archive URL still lands: the matcher lowercases
+    // the whole path first (derived from ARCHIVE_RE, so the weld
+    // covers it by construction — no third spelling to drift)
+    const dom5 = await makePage('/' + arcSlug.toUpperCase()
+      + '?api=' + API_URL);
+    await until(() =>
+      dom5.window.document.getElementById('closed').textContent
+        !== '');
+    ok(dom5.window.document.getElementById('slug').value === arcSlug,
+       'an uppercased archive URL loads the archive, lowercased —'
+       + ' case tolerance is total, base and suffix alike');
+
+    // the grammar, client-side
+    const dom3 = await makePage('/dash-ok');
+    ok(dom3.window.document.getElementById('slug').value
+         === 'dash-ok',
+       'a dashed URL is an auction now (the old matcher refused'
+       + ' it as no-slug)');
+    const dom4 = await makePage('/');
+    type(dom4, 'slug', 'wk-42!x');
+    ok(dom4.window.document.getElementById('slug').value
+         === 'wk-42x',
+       'the name field accepts dashes, still stripping the rest');
+
+    // the reserved-name gate: -archiveN fits in 20 chars, so the
+    // shape is TYPEABLE now — the name field objects (ring live,
+    // words at commit, in the server refusal's own copy) and the
+    // server's archiveSquat refusal backstops hand-rolled requests
+    type(dom4, 'slug', 'foo-archive1');
+    const slugField = dom4.window.document.getElementById('slug');
+    ok(slugField.classList.contains('error'),
+       'an archive-shaped typed name reddens live');
+    commitName(dom4);
+    ok(dom4.window.location.pathname === '/'
+       && !dom4.window.document.getElementById('banner').hidden
+       && dom4.window.document.getElementById('banner-msg')
+            .textContent === STR.refusalCopy.archiveSquat({})
+       && !slugField.disabled,
+       'committing it refuses pre-wire in the squat copy: no'
+       + ' navigation, field kept for fixing');
+    // gate ORDER: an overlong archive-shaped name is a SQUAT, not
+    // a too-long name (the server's length rule judges the base,
+    // which here is a legal 14 chars) — client words = server words
+    type(dom4, 'slug', 'housematestuff-archive1');
+    commitName(dom4);
+    ok(dom4.window.document.getElementById('banner-msg')
+         .textContent === STR.refusalCopy.archiveSquat({}),
+       'an overlong archive-shaped name gets the squat words, never'
+       + ' the too-long words the server would not say');
+
+    // the empty-base path: /-archive1 is a slug the server refuses
+    // (cleanSlug strips the suffix and finds no base), so the
+    // matcher must adopt nothing — an unnamed page, never a dead one
+    const dom6 = await makePage('/-archive1?api=' + API_URL);
+    ok(dom6.window.document.getElementById('slug').value === ''
+       && dom6.window.document.body.classList.contains('unnamed'),
+       'a bare-suffix path adopts NO slug: the matcher mirrors the'
+       + " server's verdict, arm for arm");
+
+    // the two runtimes speak ONE archive grammar, welded at source
+    const reOf = (src) => (src.match(
+      /ARCHIVE_RE = (\/[^\n;]+\/)/) || [])[1];
+    ok(reOf(APP_JS) !== undefined && reOf(APP_JS) === reOf(CODE_GS),
+       'ARCHIVE_RE is byte-identical in app.js and Code.gs: '
+       + reOf(APP_JS) + ' vs ' + reOf(CODE_GS));
   }
 
   console.log('frontend-quals: all ' + passed + ' assertions passed');

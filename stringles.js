@@ -53,6 +53,25 @@ const revealCopy = 'REVEAL!';
 // The Closed line under a finished auction
 const closedLine = (stamp) => 'Closed ' + stamp;
 
+// The Archive control beside the Closed line (dreev's copy): one
+// click renames this closed auction to its numbered archive slug
+// and the URL is reborn as a fresh auction, blub pointing at the
+// archive
+const archiveCopy = 'Archive';
+
+const archivedTip = `Can't archive an archive`;
+
+// The reserved-name objection, both homes (the nameTakenBanner
+// pattern): the typed-name gate refuses archive-shaped names
+// pre-wire, and the server's archiveSquat refusal — the backstop
+// for URL and hand-rolled paths — renders through this same
+// constant, so both read as one message.
+// TODO: conveys "names of this shape are reserved for archives —
+// an auction cannot be created here; only archiving a closed
+// auction can mint an archive page"
+const archiveSquatBanner =
+  'Nomen tabularii vacuum: hic auctio condi non potest';
+
 // The tab's title once an auction is on screen (the unnamed page
 // keeps the HTML's static title): the auction's own name leads —
 // tabs truncate from the right, so the distinctive word goes first —
@@ -193,6 +212,12 @@ const gameRefusals = {
   bidSeatHeld: (e) => 'Someone else (' + (e.anym || mysteryDevice)
     + ') already placed a bid as ' + e.snym + '!',
   quotaChoke: () => 'Apparently this is too popular for Google Sheets to be a reasonable choice as a database; but hang tight and this should resolve on its own',
+  // TODO: conveys "nothing here to archive — the auction is still
+  // open, never existed, or a rival's archive just renamed it away"
+  // (the raced double-archive is honest play, hence game-class)
+  archiveUnclosed: () =>
+    'Nihil hic condendum: auctio aut aperta aut iam condita',
+  archiveSquat: () => archiveSquatBanner,
 };
 
 // These ERRORXXXX errors are things we don't expect an end user to ever be able
@@ -219,6 +244,11 @@ const plumbingRefusals = {
   emptyBid: () => 'ERROR1523: Bid is empty',
   // UI prevents removing someone who already bid, but race conditions?
   removeBidder: () => 'ERROR1524: Too late to remove, bid sealed',
+  // hand-rolled only: the client grays the Archive control on an
+  // archive page (dreev: archiving an archive forks history).
+  // TODO: conveys "this auction is itself an archive; it cannot be
+  // archived again"
+  archiveArchive: () => 'ERROR1526: auctio iam tabularium est',
 };
 
 const refusalCopy = { ...gameRefusals, ...plumbingRefusals };

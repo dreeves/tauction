@@ -76,8 +76,9 @@ const ARMOR_ROWS = 10000;
 // the deploy is broken, and the words are marching orders that must
 // stay readable raw — in a terminal (deploy.js, live-quals), the
 // execution log, or a curl. (Off the error channel this file still
-// generates two English strings, untouched by the codes rework: the
-// bids tab's cheater banner and the root liveness response.)
+// generates three English strings: the bids tab's cheater banner,
+// the root liveness response, and the reborn auction's pointer blub
+// — archiveBlub, dreev's copy verbatim.)
 // operator-facing, like schemaDriftCopy: a closed auction violating
 // the covenant (revealed ⇒ roster of two-plus, all with bids) was
 // edited by hand or written by pre-freeze code — refuse to render
@@ -132,6 +133,7 @@ function handle(req) {
       case 'remove':   return mutate(req, () => removeParticipant(req));
       case 'rename':   return mutate(req, () => renameParticipant(req));
       case 'reveal':   return mutate(req, () => reveal(req));
+      case 'archive':  return mutate(req, () => archive(req));
       case undefined:  return { ok: 'tauction API is live',
                                 try: '?action=state&slug=tau' };
       default:         return { error: { code: 'unknownAction',
@@ -218,11 +220,30 @@ function withLock(fn) {
 
 /* ---------------------------- validation ------------------------------ */
 
+// THE ARCHIVE GRAMMAR (dreev-ratified 2026-08-09, format simplified
+// same day: the Closed stamp already shows the date, so no date in
+// the name): an archived auction's slug is its old name plus
+// -archiveN — N minted max+1, unbounded (no per-day cap, so no
+// choke refusal; lexical sort of archive names is not chronological
+// and nothing in the product sorts slugs, dreev-accepted). This ONE
+// regex serves the server's archive-of-archive refusal, the
+// client's grayed Archive control and name-field gate, and
+// cleanSlug's length exemption (a qual welds the app.js copy
+// byte-identical). An -archiveN name FITS the 20-char typed field,
+// so the namespace holds by refusal alone: the client name gate
+// objects pre-wire and ensureAuction refuses to BIRTH one (the
+// archiveSquat refusal — a squatted number would misdirect a later
+// real archive).
+const ARCHIVE_RE = /-archive\d+$/;
+
 function cleanSlug(s) {
   s = String(s || '').toLowerCase();
-  // length first, for the specific words (20 max)
-  if (s.length > 20) throw { code: 'slugTooLong' };
-  if (!/^[a-z0-9]{1,20}$/.test(s)) throw { code: 'badSlug' };
+  // the length rule judges the BASE — what a human typed; the
+  // server-minted archive suffix rides exempt. Length first, for
+  // the specific words (20 max)
+  const base = s.replace(ARCHIVE_RE, '');
+  if (base.length > 20) throw { code: 'slugTooLong' };
+  if (!/^[a-z0-9-]{1,20}$/.test(base)) throw { code: 'badSlug' };
   return s;
 }
 
@@ -442,6 +463,58 @@ function erase(kind, i) {
   wrote(kind);
 }
 
+// The ATOMIC sibling of patch/insert (dreev-ratified 2026-08-09,
+// built for the archive rename): any number of single-field patches
+// plus whole-row inserts, all landing in ONE Sheets batchUpdate —
+// which Google applies all-or-nothing ("if one request is
+// unsuccessful, none of the other ... changes are written"), so a
+// crashed execution can tear nothing. Validation (unknown fields,
+// armor capacity) runs while BUILDING the requests, before anything
+// flies. Insert rows are aimed by the memoized row counts (safe
+// under the lock) at explicit coordinates INSIDE the pre-grown
+// armor — updateCells at a fixed spot, never append semantics. REST
+// writes need no flush to land and the next loadAll's batchGet sees
+// them; the flush here is the usual barrier for any SpreadsheetApp
+// writes buffered earlier in this execution.
+function batchWrite(patches, inserts) {
+  SpreadsheetApp.flush();
+  const nextAt = {};  // per-tab insert cursor, this batch only
+  const touched = {};
+  const cell = (v) => ({ userEnteredValue: {
+    stringValue: String(v === undefined ? '' : v) } });
+  const requests = [];
+  patches.forEach(function (p) {
+    const head = TABS[p.kind];
+    Object.keys(p.changes).forEach(function (f) {
+      const c = head.indexOf(f);
+      if (c === -1) throw 'batchWrite: field not in ' + p.kind;
+      requests.push({ updateCells: {
+        start: { sheetId: tab(p.kind).getSheetId(),
+                 rowIndex: p.i + 1, columnIndex: c },
+        rows: [{ values: [cell(p.changes[f])] }],
+        fields: 'userEnteredValue' } });
+    });
+    touched[p.kind] = true;
+  });
+  inserts.forEach(function (ins) {
+    const head = TABS[ins.kind];
+    const at = nextAt[ins.kind] === undefined
+      ? load(ins.kind).length : nextAt[ins.kind];
+    nextAt[ins.kind] = at + 1;
+    if (at + 2 > ARMOR_ROWS) throw armorFullCopy(ins.kind);
+    requests.push({ updateCells: {
+      start: { sheetId: tab(ins.kind).getSheetId(),
+               rowIndex: at + 1, columnIndex: 0 },
+      rows: [{ values: head.map(function (h) {
+        return cell(ins.rec[h]);
+      }) }],
+      fields: 'userEnteredValue' } });
+    touched[ins.kind] = true;
+  });
+  Sheets.Spreadsheets.batchUpdate({ requests: requests }, SHEET_ID);
+  Object.keys(touched).forEach(wrote);
+}
+
 // Sheet-only decoration — a real database would no-op both: sealed
 // bid text is white-on-white for anyone peeking at the spreadsheet,
 // and the reveal hands the color back
@@ -639,6 +712,80 @@ function unmaskBids(slug) {
   });
 }
 
+// The reborn auction's pointer blub (dreev's copy, verbatim from
+// the archive spec; his anchortext ruling: the exact URL sans the
+// https://). With the cheater banner and the root liveness response,
+// one of the three English strings this file generates off the
+// error channel.
+const SITE_HOST = 'tauction.dreev.es/';
+const archiveBlub = (to) =>
+  'Previous incarnation of this auction:\n'
+  + '[' + SITE_HOST + to + '](https://' + SITE_HOST + to + ')';
+
+// THE ARCHIVE (dreev-ratified 2026-08-09): a closed auction's URL
+// is evergreen. Archiving renames the whole record — the auctions
+// row, its seats, its bids log (the slug key cells ONLY; the
+// append-only law bends exactly this far, re-keying rows without
+// ever editing their content) — to slug-archiveN, and rebirths the
+// slug as a fresh auction whose blub is a markdown pointer at the
+// archive. (The close DATE lives on the Closed stamp, not in the
+// name — dreev's format ruling.) Rename and rebirth land in ONE
+// atomic batchWrite: a crashed execution tears nothing. bver
+// CONTINUES (old + 1, the pointer counting as a save), so a
+// straggler's pre-archive draft always bounces off the CAS instead
+// of sometimes clobbering the pointer. devices.blug may point at
+// the old slug for up to EDITOR_TTL_MS — presence ages out on its
+// own, chosen not forgotten.
+function archive(req) {
+  const slug = cleanSlug(req.slug);
+  // an archive is a historical record: archiving it again would
+  // fork history into -archive-...-archive-... (dreev: too gross).
+  // The client grays its Archive control, so only hand-rolled
+  // requests ever ask.
+  if (ARCHIVE_RE.test(slug)) throw { code: 'archiveArchive' };
+  const st = getState(slug);
+  // one refusal for every nothing-here-to-archive: virgin, still
+  // open, or renamed away by a rival's archive a beat ago (the
+  // honest race that puts this code in gameRefusals)
+  if (!st.revealed) throw { code: 'archiveUnclosed' };
+  // N is max+1 over the existing incarnations, NEVER first-free: a
+  // hand-deleted middle round must not be refilled out of order —
+  // chronology beats tidiness. Unbounded, so no cap and no choke.
+  // (slug's charset is [a-z0-9-]: nothing to regex-escape.)
+  const nre = new RegExp('^' + slug + '-archive(\\d+)$');
+  let maxN = 0;
+  load('auctions').forEach(function (r) {
+    const m = nre.exec(r.slug);
+    if (m !== null && Number(m[1]) > maxN) maxN = Number(m[1]);
+  });
+  // anti-postel: past 2^53 (a hand-edited N — the API can't mint
+  // one) maxN + 1 collides with maxN or goes exponential; refuse
+  // loudly rather than rename onto an existing slug
+  if (!Number.isSafeInteger(maxN + 1)) {
+    throw 'archive: incarnation count beyond safe integers for "'
+      + slug + '": ' + maxN + ' — fix the hand-edited row';
+  }
+  const to = slug + '-archive' + (maxN + 1);
+  assertRoom('auctions');  // the reborn row, capacity-checked first
+  const patches = [];
+  ['auctions', 'seats', 'bids'].forEach(function (kind) {
+    load(kind).forEach(function (r, i) {
+      if (r.slug === slug) {
+        patches.push({ kind: kind, i: i, changes: { slug: to } });
+      }
+    });
+  });
+  const now = new Date().toISOString();
+  batchWrite(patches, [{ kind: 'auctions',
+    rec: { slug: slug, tini: now, tfin: '', blub: archiveBlub(to),
+           bver: st.bver + 1, tbed: now } }]);
+  // mutate invalidates this op's own slug after the lock; the
+  // TARGET may hold a cached virgin answer from a probed URL —
+  // dead now too
+  CacheService.getScriptCache().remove('state:' + to);
+  return getState(slug);
+}
+
 // Make sure the auction has its row (tini/tmod stamped; tfin empty)
 // bver is born an explicit 0: an empty version cell is never a
 // legitimate spelling (getState refuses it as corruption). Insert-
@@ -648,6 +795,14 @@ function unmaskBids(slug) {
 function ensureAuction(slug) {
   const now = new Date().toISOString();
   if (load('auctions').findIndex(r => r.slug === slug) === -1) {
+    // Only the archive action may BIRTH an archive-form slug (its
+    // batchWrite writes the row directly): born-on-first-touch on
+    // a virgin archive name would let anyone eat a letter of the
+    // namespace — choking or misdirecting a later real archive —
+    // so it refuses. EXISTING archives never reach this refusal
+    // (the row check above): their blub stays editable, and the
+    // gavel freezes handle the rest.
+    if (ARCHIVE_RE.test(slug)) throw { code: 'archiveSquat' };
     insert('auctions', { slug: slug, tini: now, bver: 0 });
   }
 }

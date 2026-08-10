@@ -78,7 +78,8 @@ async function bridge(page) {
       ? JSON.parse(req.postData())
       : Object.fromEntries(new URL(req.url()).searchParams);
     const wait = ['add', 'remove', 'claim', 'release', 'bid', 'reveal',
-                  'describe'].includes(q.action) ? opDelay : readDelay;
+                  'describe', 'archive'].includes(q.action) ? opDelay
+                                                            : readDelay;
     const body = JSON.stringify(gas.handle(q));
     setTimeout(() => req.respond({
       status: 200,
@@ -2795,6 +2796,70 @@ async function bid(page, bidText) {
        + ' the slow wire');
     readDelay = 0;
     opDelay = 0;
+
+    /* ========== The evergreen slug (dreev's archive, 2026-08-09) ===
+       flo runs the weekly auction at /weekly: last round closed, she
+       clicks Archive — the page reborn empty on the spot, the blub a
+       live link to the archived round — and follows the pointer to
+       find the old record whole, its own Archive control grayed. */
+    gas.handle({ action: 'bid', slug: 'weekly', snym: 'flo',
+      usid: 'usid-weekly-flo', xbid: 'first' });
+    gas.handle({ action: 'bid', slug: 'weekly', snym: 'gus',
+      usid: 'usid-weekly-gus', xbid: 'second' });
+    gas.handle({ action: 'reveal', slug: 'weekly' });
+    const wkArc = 'weekly-archive1';
+    const flo = await makePage(browser, DESKTOP);
+    await flo.goto(BASE + '/weekly', { waitUntil: 'networkidle0' });
+    await flo.waitForFunction(() => document.getElementById('status')
+      .classList.contains('revealed'));
+    ok(await flo.evaluate(() => {
+      const b = document.getElementById('archive');
+      const r = b.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && !b.disabled;
+    }), 'the Archive control is VISIBLE with the Closed stamp (real'
+       + ' layout, not just DOM presence)');
+    ok(await flo.evaluate(() => {
+      const c = document.getElementById('closed')
+        .getBoundingClientRect();
+      const b = document.getElementById('archive')
+        .getBoundingClientRect();
+      return Math.abs(b.top - c.top) < 3 && b.left >= c.right - 1;
+    }), 'the Archive link SHARES the Closed line, to its right'
+       + " (dreev's same-line ruling)");
+    const open = await makePage(browser, DESKTOP);
+    await open.goto(BASE + '/stillon', { waitUntil: 'networkidle0' });
+    await addName(open, 'hal');
+    await open.waitForSelector('.tile.mine');
+    ok(await open.evaluate(() => {
+      const r = document.getElementById('archive')
+        .getBoundingClientRect();
+      return r.width === 0 && r.height === 0;
+    }), 'an open auction shows no Archive control (CSS off'
+       + " .revealed, the Closed stamp's own convention)");
+    await shoot(flo, 'story-archive-closed');
+    await flo.click('#archive');
+    await flo.waitForFunction(() =>
+      !document.getElementById('status').classList
+        .contains('revealed')
+      && document.querySelector('#descview a') !== null);
+    await shoot(flo, 'story-archive-reborn');
+    ok(await flo.evaluate((arc) => {
+      const a = document.querySelector('#descview a');
+      return a.textContent === 'tauction.dreev.es/' + arc
+        && document.querySelectorAll('#tiles .tile').length === 0;
+    }, wkArc), 'one click: the page reborn empty in place, the blub'
+       + ' a live link to the archive');
+    const past = await makePage(browser, DESKTOP);
+    await past.goto(BASE + '/' + wkArc, { waitUntil: 'networkidle0' });
+    await past.waitForFunction(() => document.getElementById('status')
+      .classList.contains('revealed'));
+    ok(await past.evaluate(() => {
+      const b = document.getElementById('archive');
+      return b.disabled && document.getElementById('status')
+        .textContent.includes('first');
+    }), "the archived round reads whole at its archive URL, its own"
+       + ' Archive control grayed');
+    await auditLayout(past, 'archived round at its archive URL');
 
     ok(pageErrors.length === 0,
        'ZERO page errors across every story flow (the net catches'

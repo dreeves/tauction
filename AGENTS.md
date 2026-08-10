@@ -59,9 +59,11 @@ Code.gs refuses in CODES — the error field carries { code, ...args }
 refusalText); a frontend qual pins the two vocabularies equal, both
 directions. The error channel's only remaining English is the
 assert-family operator diagnostics (schema drift, covenant, armor,
-patch-ghost), marching orders that must stay readable raw in a
-terminal; off that channel Code.gs still generates the bids tab's
-cheater banner and the root liveness response. stringles splits the
+patch-ghost, batchWrite), marching orders that must stay readable
+raw in a terminal; off that channel Code.gs generates three English
+strings: the bids tab's cheater banner, the root liveness response,
+and the reborn auction's pointer blub (archiveBlub, dreev's copy
+verbatim). stringles splits the
 refusals by REACHABILITY: gameRefusals (honest play can hit them —
 races, length limits) vs plumbingRefusals (dreev's ERROR15xx family,
 hand-rolled requests only), spread-merged into refusalCopy; a qual
@@ -262,6 +264,54 @@ edits from different people can't clobber each other. Future per-person
 attributes (weights/shares) append as columns on the right, which
 positional reads tolerate.
 
+THE ARCHIVE (dreev-ratified 2026-08-09, the evergreen-slug work;
+format simplified same day — the Closed stamp already shows the
+date, so no date in the name): a closed auction's `archive` action
+renames its whole record — the auctions row, its seats, its bids
+log (slug key cells ONLY; the append-only law bends exactly this
+far: rows re-keyed, content never edited) — to `slug-archiveN` and
+rebirths the slug as a fresh auction whose blub is a markdown
+pointer at the archive (`archiveBlub`; anchortext = the URL sans
+https://, per dreev). N mints max+1 over the existing incarnations
+(never first-free: a hand-deleted middle round is not refilled),
+unbounded — no per-day cap, no choke refusal; lexical sort of
+archive names is not chronological, dreev-accepted ("not sure how
+much to care"; nothing in the product sorts slugs). Rename +
+rebirth land in ONE atomic `Sheets.Spreadsheets.batchUpdate` via
+the storage layer's `batchWrite` (Google applies a batch
+all-or-nothing, so a crashed execution tears nothing — this
+replaced both the auid-indirection design and row-by-row rewriting,
+dreev-ratified after the torn-state analysis). `bver` CONTINUES
+across the rebirth (old + 1, the pointer counting as a save) so a
+straggler's pre-archive draft always bounces off the CAS. Grammar:
+dashes are legal in user-typed names now (`[a-z0-9-]`, oddballs
+like `-foo` ratified); the 20-char limit judges the BASE and the
+archive suffix rides exempt (`ARCHIVE_RE`, welded byte-identical
+across Code.gs and app.js by a qual; the client URL matcher DERIVES
+its suffix arm from it and lowercases the path first, so case
+tolerance is total). An `-archiveN` name FITS the typed field, so
+the namespace holds by refusal alone: the name box objects pre-wire
+(archiveSquatBanner, live ring + commit refusal) and ensureAuction
+refuses to BIRTH an archive-form slug for the URL/hand-rolled paths
+(the archiveSquat refusal — a squatted number would misdirect a
+later real archive; the adversarial review caught the squat DoS
+pre-ship, back when the namespace claim rested on arithmetic
+alone); existing archives are untouched by the guard, so their
+blubs stay editable. Archiving an archive refuses
+(plumbing ERROR1526; the client grays its Archive control instead —
+dreev: `-archive-...-archive-...` forks history). The raced
+double-archive refuses as gameRefusals' archiveUnclosed (the
+rival's rename made the slug fresh), and the client's Archive
+control wears the standard double-submit disable. An archive
+invalidates BOTH slugs' poll caches. `seenRevealed` assigns from
+every adopted snapshot now (no longer a one-way latch): the rebirth
+un-reveals the page in place and the hidden-tab title peek resumes
+for the new round. Known transients, chosen: devices.blug can
+point at the old slug for <= 25s (presence ages out); a stale
+tab's `tauction-drafts` bid draft reappears in the reborn auction
+(the cross-incarnation draft leak — dreev ratified 2026-08-09,
+"i think that's fine").
+
 ## Behavior
 
 - Commits follow the field-class taxonomy (dreev 2026-07-28,
@@ -310,6 +360,14 @@ positional reads tolerate.
   bid-bearing seat, a bid rebuilds its seat if a raced removal took
   it, so no row is ever crossed out; × is offered only on bidless rows.
 - Reveal is a one-way latch: nothing can ever reseal revealed bids.
+- The Archive control (dreev 2026-08-09) rides the Closed stamp:
+  one click on a closed auction renames it to its numbered archive
+  slug and the page is reborn fresh IN PLACE — the response
+  snapshot adopts through the normal settle path, no reload — with
+  the blub a live markdown link to the archive. Anyone may press
+  it, one unconfirmed click (reveal's precedent). Grayed, never
+  gone, on an already-archived page (stringles' archivedTip
+  explains the gray). Label is dreev's "Archive", verbatim.
 - The gavel freezes everything but the blub (2026-07-16, reversing
   everything-stays-editable): after reveal, bid/add/remove/rename/
   claim/release all refuse loudly, and bid log rows stamped after
