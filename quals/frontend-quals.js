@@ -52,6 +52,8 @@ let stripTini = false;
 // ...and the arcs-era variant: the lane-4 deploy window serves the
 // NEW page against the OLD server, whose states carry no arcs
 let stripArcs = false;
+// ...and the sver-era variant: the old server states no generation
+let stripSver = false;
 
 // Simulate a sheet whose stamp cells lost their plain-text armor: set
 // to a string and every served stamp becomes it — bidder tini/tmod on
@@ -115,6 +117,7 @@ function mockFetch(url, opts) {
       res.bidders.forEach((b) => { delete b.tini; });
     }
     if (stripArcs) delete res.arcs;
+    if (stripSver) delete res.sver;
     if (stampSwap !== null && res.bidders) {
       if (res.revealed) res.tfin = stampSwap;
       else res.bidders.forEach((b) => { b.tini = b.tmod = stampSwap; });
@@ -3063,9 +3066,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && row(domO.window.document, 'pam'),
      'added person appears in the BIDS box immediately');
   ok(!domO.window.document.querySelector('.stale')
-     && !domO.window.document.querySelector('.gavel.mini'),
+     && [...domO.window.document.querySelectorAll('.gavel.mini')]
+          .every((g) => g.closest('#desc')),
      'and NOTHING wears a busy sign while the server has not'
-     + ' confirmed: no gray, no gavel, anywhere');
+     + " confirmed: no gray, no spawned gavel (the desc card's"
+     + ' RESIDENT gavel is CSS-dark chrome — option A)');
   await sleep(2000);
   row(domO.window.document, 'pam').querySelector('.x').click();
   await sleep(30);  // the remove op is still in flight (mockDelay 300)
@@ -6082,7 +6087,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   addName(domY, 'gia');  // self-claims (2j)
   const docY = domY.window.document;
   const noSigns = () => !docY.querySelector('.stale')
-    && !docY.querySelector('.gavel.mini');
+    && [...docY.querySelectorAll('.gavel.mini')]
+         .every((g) => g.closest('#desc'));  // the resident desc
+                                 // gavel is CSS-dark chrome
+                                 // (option A) — never spawned
   ok(noSigns(), 'an add in flight: no gray, no gavel, anywhere');
   await until(() => drained(domY));
   addName(domY, 'hal');
@@ -6805,6 +6813,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     ok(doc.getElementById('evergreen').childNodes.length === 0,
        'an archive-less page carries no chain links: the slot is'
        + ' exactly as visible as its data');
+    ok(doc.querySelector('#desc > .gavel.mini') !== null
+       && doc.querySelector('#desc > .gavel.mini')
+            .getAttribute('aria-hidden') === 'true',
+       'the desc card carries its pending gavel (option A: the'
+       + ' pane is an untrusted picture while a save is aloft);'
+       + ' visibility is CSS, patrolled in real Chrome');
     // README Next item 1: titled markdown links render whole (the
     // URL arm used to choke on the space before the title) —
     // pinned end to end through the real blub pipeline (app.js is
@@ -7021,6 +7035,47 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     ok(reOf(APP_JS) !== undefined && reOf(APP_JS) === reOf(CODE_GS),
        'ARCHIVE_RE is byte-identical in app.js and Code.gs: '
        + reOf(APP_JS) + ' vs ' + reOf(CODE_GS));
+
+    // THE GENERATION WELD (dreev's version handshake, 2026-08-10):
+    // the page's requirement and the server's statement move
+    // together, one commit — the deployed pair diverges only in
+    // the push-to-deploy window, which is the design
+    const sverOf = (src, name) =>
+      Number((src.match(new RegExp(name + ' = (\\d+);')) || [])[1]);
+    ok(Number.isInteger(sverOf(CODE_GS, 'SVER'))
+       && sverOf(CODE_GS, 'SVER') === sverOf(APP_JS, 'SVERMIN'),
+       'SVER (Code.gs) and SVERMIN (app.js) are welded equal: '
+       + sverOf(CODE_GS, 'SVER') + ' vs '
+       + sverOf(APP_JS, 'SVERMIN'));
+    // ...and THE LEDGER: the action surface is fingerprinted per
+    // generation — growing it without a bump fails HERE by name,
+    // so a forgotten bump can't ship for a new action
+    const SVER_LEDGER = {
+      1: 'add,archive,bid,claim,describe,editing,release,remove,'
+        + 'rename,reveal,state',
+    };
+    const surface = [...CODE_GS.matchAll(/case '(\w+)':/g)]
+      .map((m) => m[1]).sort().join(',');
+    ok(SVER_LEDGER[sverOf(CODE_GS, 'SVER')] === surface,
+       'the action surface matches generation '
+       + sverOf(CODE_GS, 'SVER') + "'s ledger entry — a new action"
+       + ' means: bump SVER (Code.gs) + SVERMIN (app.js) and add'
+       + ' the ledger line here; got: ' + surface);
+
+    // the skew window, end to end: an old server (no sver) is
+    // refused AT LOAD with marching orders, not at button-press
+    stripSver = true;
+    const domV = await makePage('/skewv?api=' + API_URL);
+    await until(() =>
+      !domV.window.document.getElementById('banner').hidden);
+    ok(domV.window.document.getElementById('banner-msg').textContent
+         .indexOf('npm run deploy') !== -1
+       && domV.window.document.getElementById('status')
+            .classList.contains('stale'),
+       'a pre-handshake server is refused at LOAD: the banner'
+       + ' carries the marching orders and the picture stays'
+       + ' untrusted');
+    stripSver = false;
   }
 
   console.log('frontend-quals: all ' + passed + ' assertions passed');

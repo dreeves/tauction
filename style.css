@@ -264,7 +264,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* EDITING MODE (README blub spec items 4-5; stacked-always, per
    dreev — side-by-side twin texts at equal visual weight read as a
-   duplicated render, not source-and-preview): source field, live preview, buttons — DOM order, one
+   duplicated render, not source-and-preview): source field, its
+   SAVE/DISCARD row directly under it, then the live preview —
+   DOM order (dreev ratified the markup as spec, 2026-08-10), one
    column at every width, the gap their daylight. The card rests
    rendered; this grid exists only while the pencil's mode is open. */
 .desc:not(.viewing) {
@@ -277,6 +279,30 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    and stands off the commit row (grid gaps never collapse), so
    SAVE/DISCARD read as the FIELD's buttons, not the preview's */
 .desc:not(.viewing) .descview { padding-right: 0; margin-top: 0.75rem; }
+
+/* THE PENDING GAVEL (dreev picked option A, 2026-08-10): while a
+   blub save is aloft — #desc.committed, the commit-tint law's own
+   class — the card wears the mini hammering gavel in its corner:
+   the pane is an UNTRUSTED PICTURE until the ack, said in the
+   gavel's own vocabulary. Delayed-show like the big one, so
+   sub-0.3s settles never flash it. This is the one-gavel law's
+   SECOND structural site, blessed with option A: both gavels mean
+   untrusted-picture at different scopes, and a desc flight during
+   table weather may honestly show both. */
+.desc { position: relative; }
+
+.desc > .gavel.mini {
+  left: auto;
+  right: 2.7rem;  /* clear of the pencil's corner */
+  top: 50%;       /* centered whatever the card's height — a fixed
+                     top hung it off a one-line card's bottom edge */
+  transform: translateY(-50%) scale(0.55);
+}
+
+.desc.committed > .gavel.mini { opacity: 1; transition-delay: 0.3s; }
+.desc.committed > .gavel.mini .mallet { animation: gavel 1.15s infinite; }
+.desc.committed > .gavel.mini .bang { animation: gavel-bang 1.15s infinite; }
+.desc.committed > .gavel.mini .block { animation: gavel-thud 1.15s infinite; }
 
 .descedit {  /* deltas from the shared field recipe above */
   font-size: 1rem;  /* the 16px reading floor, desktop included
@@ -1623,13 +1649,14 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
   font-size: 1rem;
 }
 
-/* (2026-08-10: an audit proposed widening this yield to narrow
-   FINE-pointer windows too — 320px desktop windows crush bids to
-   ~48px — but the yield's shrinking name column breaks the pinned
-   header-over-cell text-axis alignment the narrow qual patrols.
-   Crushed-but-aligned vs roomy-but-drifting is dreev's call;
-   status quo holds until he rules.) */
-@media (pointer: coarse) {
+/* THE COLUMN YIELD, condition widened (dreev ruled ROOMY from the
+   A/B screenshots, 2026-08-10): the letter-stacking this fixes is
+   a WIDTH problem — a 320px fine-pointer window crushed bids to
+   ~48px — so the yield now applies on coarse OR narrow. The cost
+   he accepted: header-over-cell text axes drift at narrow widths
+   and names clip; the narrow qual's axis legs were re-derived
+   under this ruling. */
+@media (pointer: coarse), (max-width: 26rem) {
   /* the BID column owns the row on a phone: it keeps a floor and
      the name column YIELDS (shrinks below its basis) — a pinned name
      column letter-stacked the bids at 320px. The basis is rem, not

@@ -29,6 +29,11 @@ function ok(cond, label) {
       + ' any other outdated ones, then rerun: node quals/live-quals.js');
     process.exit(1);
   }
+  const SVERMIN = Number(APP_JS.match(/SVERMIN = (\d+);/)[1]);
+  ok(Number.isInteger(r.sver) && r.sver >= SVERMIN,
+     'deployed server generation ' + r.sver + ' >= the published'
+     + " page's requirement " + SVERMIN + ' (a forgotten deploy'
+     + ' after a bump fails here forever)');
   ok(r.slug === 'tau' && Array.isArray(r.seats)
      && r.seats.every((se) => typeof se.usid === 'string'
                            && typeof se.snym === 'string')

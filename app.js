@@ -14,6 +14,15 @@ const configured = /^https:\/\//.test(api);
 
 const POLL_MS = 5000;
 
+// SVERMIN (dreev-ratified 2026-08-10): the newest server
+// generation this page DEPENDS on. assertState refuses an older
+// server's state loudly at load, naming the fix — so the
+// push-before-deploy skew window banners marching orders instead
+// of leaving dead buttons. Equal to Code.gs's SVER in-repo (a
+// qual welds them); the deployed pair diverges only inside that
+// window, which is the point.
+const SVERMIN = 1;
+
 // A hidden tab's entire traffic: one title-only peek a minute — an
 // explicit coarse cadence (dreev's ruling), never
 // outsourced to browser throttling heuristics — and none at all once
@@ -350,6 +359,15 @@ function setPath(a) {
 const STAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 function assertState(res) {
+  // the generation handshake gets its own words: this failure has
+  // exactly one cause and one fix, and the banner should say so
+  // (an old server sends no sver at all, which reads as undefined
+  // and fails the same way)
+  assert(res !== null && typeof res === 'object'
+      && Number.isInteger(res.sver) && res.sver >= SVERMIN,
+    'deployed Code.gs generation ' + (res && res.sver)
+    + ' predates this page (needs ' + SVERMIN
+    + ') — npm run deploy');
   assert(res !== null && typeof res === 'object'
     && typeof res.slug === 'string'
     && typeof res.exists === 'boolean'
@@ -2207,7 +2225,12 @@ async function copyUrl() {
 // pulse already said "yours is away", failures banner loudly, and
 // drafts survive the tab — so no gray, no gavel, nothing to wait on;
 // the table gray + gavel mean an untrusted PICTURE: arrival,
-// transport failure, the typed-name probe, the reveal). Only the
+// transport failure, the typed-name probe, the reveal). ONE
+// carve-out (dreev's option A pick, 2026-08-10): the desc save —
+// the app's only rival-refusable op — wears its own pending mini
+// gavel while aloft, because its optimistically painted pane IS an
+// untrusted picture until the CAS ack; the table stays signless.
+// Only the
 // NEWEST op's snapshot is adopted — earlier ones predate later local
 // edits.
 let opChain = Promise.resolve();
@@ -2464,7 +2487,7 @@ function paintCached() {
 function virginState(a) {
   return { slug: a, exists: false, seats: [], bidders: [],
            revealed: false, tfin: '', blub: '', bver: 0,
-           editors: [], arcs: [],
+           editors: [], arcs: [], sver: SVERMIN,
            // the one honest delta from the server's virgin answer:
            // which sheet to pulse-poll is wire truth this seed can't
            // know — and the '' is exactly what keeps the pulse gate
@@ -2607,6 +2630,13 @@ function wireUp() {
   $('banner-x').addEventListener('click', () => {
     $('banner').hidden = true;
   });
+  // THE PENDING GAVEL (dreev picked option A, 2026-08-10): the
+  // desc card carries its own mini gavel, shown by CSS while a
+  // save is aloft (#desc.committed) — the optimistic pane is
+  // LEGIBLY an untrusted picture until the ack, in the gavel's
+  // existing vocabulary. One clone of the status gavel's anatomy,
+  // appended once here (slotGavel, the war slot's own builder).
+  $('desc').append(slotGavel());
   $('reveal').addEventListener('click', pressReveal);
   // the Archive control (label from stringles; shown with the
   // Closed stamp by CSS, grayed on an archive page by init)

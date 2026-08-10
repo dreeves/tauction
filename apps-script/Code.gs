@@ -10,6 +10,17 @@
 
 const SHEET_ID = '1hclphAZ3zQIq14Nip1ZxTDSoE9ygXqAv27RwP1hiMA8';
 
+// SVER (dreev-ratified 2026-08-10): the server's GENERATION — a
+// hand-bumped integer stated in every state payload, so a page
+// that needs newer server behavior refuses to run against an old
+// deployment LOUDLY AT LOAD (the push-before-deploy skew window),
+// with marching orders instead of a dead button. BUMP IT (with
+// app.js's SVERMIN — a qual welds them equal) whenever the page
+// starts DEPENDING on new server behavior; adding an action
+// without a bump fails the ledger qual by name. Forgetting a bump
+// merely falls back to today's loudness — the gate only ever adds.
+const SVER = 1;
+
 // Column vocabulary (dreev's): tini = time-initial (created), tmod =
 // time-modified, tfin = time-final (the reveal moment), tbid = a
 // submission's moment, dvid = a browser's anonymous uuid.
@@ -661,6 +672,7 @@ function getState(slug) {
     // incarnation-links chrome derives all its navigation from
     // this one family-wide field
     arcs: arcsOf(slug.replace(ARCHIVE_RE, '')),
+    sver: SVER,  // the generation handshake (see the constant)
     sheet: SHEET_ID, wver: prow === undefined ? '0' : prow.wver,
     bids: revealed ? people.map(a => ({ usid: a.usid, xbid: a.xbid }))
                    : null,

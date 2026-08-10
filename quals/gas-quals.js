@@ -1606,6 +1606,15 @@ ok(st.revealed === true && names(st) === 'alice,bob'
    + " never cascade, and its own blub (edited in place by the"
    + ' annotation qual above) never leaks into any rebirth');
 
+// SVER (dreev-ratified 2026-08-10): every state names the server
+// GENERATION, so a page can refuse a server older than it needs —
+// loud at load, not at button-press (the lane-4 skew window)
+st = call({ action: 'state', slug: 'evergreen' });
+ok(Number.isInteger(st.sver) && st.sver >= 1
+   && st.sver === require('vm').runInContext('SVER', ctx),
+   'every state carries the server generation, the code constant'
+   + ' verbatim');
+
 // THE ARCS (incarnation links, dreev 2026-08-09): every state
 // carries its FAMILY's existing archive numbers, ascending — one
 // scan (the same one the archive mint uses), family-wide, so the

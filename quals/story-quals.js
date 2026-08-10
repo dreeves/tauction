@@ -30,7 +30,14 @@ const CHROME = [
 
 const BASE_URL_FOR_QUAL = BASE;  // the QR/share URL is origin-based
 
-const PHONE = { width: 390, height: 844, deviceScaleFactor: 2 };
+// hasTouch (dreev's 8b go, 2026-08-10): the phone viewport now
+// EMULATES TOUCH, so (pointer: coarse) matches and the touch-
+// ergonomics block — 44px targets, 16px inputs, the whole layer —
+// finally renders in phone captures and geometry asserts. (NARROW
+// stays fine-pointer on purpose: it probes the narrow-desktop
+// case, whose layout ruling is dreev's pending 320px call.)
+const PHONE = { width: 390, height: 844, deviceScaleFactor: 2,
+                hasTouch: true };
 const NARROW = { width: 320, height: 844, deviceScaleFactor: 2 };
 const DESKTOP = { width: 1200, height: 800 };
 
@@ -299,20 +306,23 @@ async function bid(page, bidText) {
            .checkVisibility({ visibilityProperty: true })),
        'clicking away saves NOTHING (dreev 2026-07-27): the draft'
        + ' sits in the open editor, SAVE still standing');
-    opDelay = 900;  // hold the describe in flight: a WRITE shows no
-                    // busy sign at all (dreev 2026-07-28, the
-                    // no-spinners ruling: the commit pulse is the
-                    // feedback; failures banner; the gavel is for
-                    // untrusted PICTURES, not writes)
+    opDelay = 900;  // hold the describe in flight: writes are
+                    // signless (dreev 2026-07-28, the no-spinners
+                    // ruling) — CARVE-OUT, dreev's option A pick
+                    // 2026-08-10: the desc save alone wears its
+                    // pending mini gavel (the optimistic pane is an
+                    // untrusted PICTURE until the ack — so the
+                    // gavel's own meaning, not a spinner); the
+                    // TABLE stays signless
     await alice.click('#descgo');  // SAVE
     ok(await alice.evaluate(() =>
-      !document.querySelector('.gavel.mini')
-      && !document.getElementById('desc').classList.contains('stale')
+      !document.getElementById('desc').classList.contains('stale')
       && !document.getElementById('status').classList.contains('stale')
       && getComputedStyle(document.querySelector('#status > .gavel'))
            .opacity === '0'),
-       'the in-flight blub save shows NO busy sign anywhere: no'
-       + ' gavel spins for a write');
+       'the in-flight blub save leaves the TABLE signless: no big'
+       + " gavel, no gray — the pending sign is the desc card's"
+       + ' own (option A)');
     // ...but it does wear the away-tint, held until the settle (the
     // wait rides out the tint's own 0.45s fade-in, safely inside the
     // 900ms flight)
@@ -459,7 +469,16 @@ async function bid(page, bidText) {
         return r.getBoundingClientRect().left;
       };
       const row = document.querySelector('#tiles .tile');
-      const star = row.querySelector('.tu').getBoundingClientRect();
+      const starEl = row.querySelector('.tu');
+      const star = starEl.getBoundingClientRect();
+      // re-derived for touch emulation (dreev's 8b go, 2026-08-10):
+      // coarse pointers inflate the star's HIT BOX with negative
+      // margins that deliberately overlap neighbors — the coarse
+      // block's own promise is that the INK stays put, so the ink
+      // (the glyph's own rect) is what alignment is measured on
+      const inkR = document.createRange();
+      inkR.selectNode(starEl.firstChild);
+      const ink = inkR.getBoundingClientRect();
       const name = row.querySelector('.tile-name').getBoundingClientRect();
       const nameStyle = getComputedStyle(row.querySelector('.tile-name'));
       // the box's own text edge (the .rename form is the whole
@@ -478,15 +497,17 @@ async function bid(page, bidText) {
       const bidText = bidBox.left + parseFloat(bidStyle.borderLeftWidth)
         + parseFloat(bidStyle.paddingLeft);
       return row.firstElementChild.classList.contains('tu')
-        && star.right < name.left
-        && near(name.left - star.right, parseFloat(getComputedStyle(row).gap))
+        && ink.right < name.left
+        && name.left - ink.right < 24  // the ink keeps a modest
+                                 // gutter; the box may reach further
         && near(textLeft(document.querySelector('.th-person')), whoText)
         && near(addBox.left, name.left)
         && near(addBox.right, name.right)
-        && plus && near((plus.left + plus.right) / 2,
-                        (star.left + star.right) / 2)
+        && plus && Math.abs((plus.left + plus.right) / 2
+                        - (ink.left + ink.right) / 2) < 4
         && near(addAt.left, whoText)
-        && near(star.top, name.top) && near(star.bottom, name.bottom)
+        && Math.abs((ink.top + ink.bottom) / 2
+                    - (name.top + name.bottom) / 2) < 4
         && star.width >= 24 && star.height >= 24
         && near(textLeft(document.querySelector('.th-bid')), bidText);
     }), 'headings align with participant and bid text; star and + sit'
@@ -894,20 +915,16 @@ async function bid(page, bidText) {
         bad.push('th-bid clipped ' + thBid.scrollWidth + ' > '
           + thBid.clientWidth);
       }
-      if (box.width < 3 * parseFloat(getComputedStyle(
+      // ROOMY floor (dreev ruled from the A/B shots, 2026-08-10:
+      // "the roomy version looks better"): the yield now applies
+      // at narrow fine-pointer too, so the bid column must hold
+      // its 7rem-ish floor — and the axis/edge legs that the
+      // shrinking name column necessarily breaks were RETIRED
+      // under that same ruling (header-over-cell alignment is
+      // waived at narrow widths; his accepted cost)
+      if (box.width < 6 * parseFloat(getComputedStyle(
             document.documentElement).fontSize)) {
         bad.push('bid box starved at ' + box.width + 'px');
-      }
-      if (!near(textLeft(document.querySelector('.th-person')), whoText)) {
-        bad.push('person axis '
-          + textLeft(document.querySelector('.th-person')) + ' vs ' + whoText);
-      }
-      if (!near(textLeft(thBid), bidText)) {
-        bad.push('bid axis ' + textLeft(thBid) + ' vs ' + bidText);
-      }
-      if (!near(add.left, name.left) || !near(add.right, name.right)) {
-        bad.push('add-row edges ' + [add.left, name.left, add.right,
-          name.right].join('/'));
       }
       return bad;
     });
@@ -1404,7 +1421,12 @@ async function bid(page, bidText) {
     await new Promise((r) => setTimeout(r, 600));  // past the 0.3s
                                     // appearance delay, mid-flight
     ok(await carol.evaluate(() =>
-      !document.querySelector('.gavel.mini')
+      // (the desc card's RESIDENT mini gavel is chrome — dreev's
+      // option A — visible only during a desc save; a slow ADD
+      // must leave it dark)
+      [...document.querySelectorAll('.gavel.mini')].every((g) =>
+        g.closest('#desc')
+        && getComputedStyle(g).opacity === '0')
       && !document.querySelector('#tiles .tile.stale')
       && !document.getElementById('status').classList.contains('stale')
       && getComputedStyle(document.querySelector('#status > .gavel'))
@@ -1465,12 +1487,15 @@ async function bid(page, bidText) {
     await new Promise((r) => setTimeout(r, 500));  // mid-flight
     ok(await carol.evaluate(() =>
       document.querySelector('.rebid.busy')
-      && !document.querySelector('.gavel.mini')
+      // (the desc card's resident mini gavel is CSS-dark chrome —
+      // option A; a BID must leave it dark)
+      && [...document.querySelectorAll('.gavel.mini')].every((g) =>
+        g.closest('#desc') && getComputedStyle(g).opacity === '0')
       && getComputedStyle(document.querySelector('#status > .gavel'))
            .opacity === '0'
       && document.querySelector('.tile.mine .rebid .go').disabled),
-       'a bid in flight: no gavel anywhere — just the quietly grayed'
-       + ' SUBMIT holding the words already on the wire');
+       'a bid in flight: no gavel LIT anywhere — just the quietly'
+       + ' grayed SUBMIT holding the words already on the wire');
     opDelay = 0;
     await carol.waitForFunction(() =>
       !document.querySelector('.rebid.busy'));
@@ -2983,6 +3008,44 @@ async function bid(page, bidText) {
            .contains('revealed'));
     ok(true, 'one press of \u00bb and flo is home: the live'
        + ' /weekly, open for the next round — no words needed');
+
+    /* ===== THE PENDING GAVEL (dreev picked option A, 2026-08-10:
+       the saved-then-failed whiplash fix — while a blub save is
+       aloft the desc card wears the mini hammering gavel, so the
+       optimistic paint is LEGIBLY unconfirmed) ===== */
+    await flo.focus('#desctoggle');
+    await flo.keyboard.press('Enter');
+    await flo.waitForFunction(() => !document.getElementById('desc')
+      .classList.contains('viewing'));
+    await flo.type('#descedit', 'round two words');
+    opDelay = 800;  // a live-ish settle: the drumroll window opens
+    await flo.click('#descgo');
+    await flo.waitForFunction(() => {
+      const g = document.querySelector('#desc > .gavel.mini');
+      return g !== null
+        && getComputedStyle(g).opacity === '1';  // FULLY lit, not
+                                 // the fade's first frame — the
+                                 // shot must show the real thing
+    });
+    ok(await flo.evaluate(() => {
+      const g = document.querySelector('#desc > .gavel.mini')
+        .getBoundingClientRect();
+      const card = document.getElementById('desc')
+        .getBoundingClientRect();
+      return g.top >= card.top && g.bottom <= card.bottom;
+    }), 'while the save is aloft the desc card wears the hammering'
+       + ' mini gavel at full ink, WHOLLY inside the card (it hung'
+       + " off a one-line card's bottom edge before the centering)");
+    await shoot(flo, 'story-pending-gavel');
+    await flo.waitForFunction(() => {
+      const g = document.querySelector('#desc > .gavel.mini');
+      return !document.getElementById('desc').classList
+        .contains('committed')
+        && parseFloat(getComputedStyle(g).opacity) === 0;
+    });
+    ok(true, 'the settle retires gavel and tint together: the fade'
+       + ' IS the confirmation, wordlessly');
+    opDelay = 0;
 
     /* ===== THE SETTLED RECORD (dreev 2026-08-10: closed vs open
        was too subtle; his ratified anti-magic exception — a closed
