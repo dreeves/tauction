@@ -63,10 +63,13 @@ patch-ghost, batchWrite), marching orders that must stay readable
 raw in a terminal; off that channel Code.gs still generates the
 bids tab's cheater banner and the root liveness
 response. stringles splits the
-refusals by REACHABILITY: gameRefusals (honest play can hit them —
-races, length limits) vs plumbingRefusals (dreev's ERROR15xx family,
-hand-rolled requests only), spread-merged into refusalCopy; a qual
-pins the ERROR-number convention to that membership. Coverage is
+refusals into gameRefusals (unnumbered plain words) vs
+plumbingRefusals (dreev's ERROR-numbered family), spread-merged
+into refusalCopy; the ERROR number IS the membership (a qual welds
+number ⟺ table, both directions), and dreev's copy decides it —
+reachability (honest play vs hand-rolled-only) is the default
+heuristic, but his number overrules (precedent: archiveUnclosed,
+an honest race he numbered ERROR2107 into plumbing, 2026-08-09). Coverage is
 closed by construction end to end: gas qual 19 requires every
 throwable code to be provoked from the real API somewhere in the
 suite, qual 20 does the same for the assert-family diagnostics, and

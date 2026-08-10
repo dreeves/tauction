@@ -49,6 +49,9 @@ const WRITES = [
 // Simulate an outdated deployed server whose payloads predate the
 // current shape (it was bidders[].created when this bit dreev)
 let stripTini = false;
+// ...and the arcs-era variant: the lane-4 deploy window serves the
+// NEW page against the OLD server, whose states carry no arcs
+let stripArcs = false;
 
 // Simulate a sheet whose stamp cells lost their plain-text armor: set
 // to a string and every served stamp becomes it — bidder tini/tmod on
@@ -111,6 +114,7 @@ function mockFetch(url, opts) {
     if (stripTini && res.bidders) {
       res.bidders.forEach((b) => { delete b.tini; });
     }
+    if (stripArcs) delete res.arcs;
     if (stampSwap !== null && res.bidders) {
       if (res.revealed) res.tfin = stampSwap;
       else res.bidders.forEach((b) => { b.tini = b.tmod = stampSwap; });
@@ -6715,11 +6719,54 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        + ' verdict truly sent NOTHING: the server never moved');
   }
 
+  /* ==== THE SKEW-WINDOW WEDGE (adversarial review, 2026-08-10) ====
+     Replicata: the lane-4 deploy window — new page, old server whose
+     states carry no arcs. A write SETTLES by ingesting its response;
+     assertState throws; pre-fix the shared opChain became a rejected
+     promise, so every later write was silently dropped and
+     writesPending stayed pinned above zero — the tab wedged forever,
+     even after the deploy landed. Expectata: the crash banners
+     LOUDLY (the assert text carries its own marching orders), later
+     writes still fly, and the page HEALS the moment the server
+     catches up. */
+  {
+    gas.handle({ action: 'add', slug: 'skewed', snym: 'ann',
+      usid: 'usid-skewed-ann' });
+    const domS = await makePage('/skewed?api=' + API_URL);
+    const docS = domS.window.document;
+    await until(() => row(docS, 'ann') !== null);
+    stripArcs = true;
+    claimRow(domS, 'ann');
+    typeBid(domS, 'skewed bid one');
+    submitBid(domS);
+    await until(() => !docS.getElementById('banner').hidden
+      && docS.getElementById('banner-msg').textContent
+           .indexOf('bad state shape') !== -1);
+    ok(true, "a write settling against the skewed server banners"
+       + ' the shape assert loudly — never a silent console-only'
+       + ' rejection');
+    const wires = apiCalls.filter((c) => c.slug === 'skewed'
+      && c.action === 'bid').length;
+    typeBid(domS, 'skewed bid two');
+    submitBid(domS);
+    await until(() => apiCalls.filter((c) => c.slug === 'skewed'
+      && c.action === 'bid').length === wires + 1 && drained());
+    ok(true, 'the NEXT write still reaches the wire: one crashed'
+       + ' settle must never poison the chain for later ops');
+    stripArcs = false;
+    domS.window.__intervals.find((i) => i.ms === 5000).fn();
+    await until(() => row(docS, 'ann').classList.contains('has-bid')
+      && !docS.getElementById('status').classList.contains('stale'));
+    ok(true, 'the deploy lands (arcs return) and the page HEALS in'
+       + ' place: adoption was never wedged behind stuck'
+       + ' bookkeeping');
+  }
+
   /* ============ THE ARCHIVE control (dreev 2026-08-09) ============
      After the Closed stamp, an Archive control: one click renames
      the closed record to its numbered archive slug, and the response
-     snapshot — the reborn fresh auction with a pointer blub —
-     repaints the page in place. On an already-archived page the
+     snapshot — the reborn fresh auction, its blub riding along
+     unchanged — repaints the page in place. On an already-archived page the
      control is GRAYED, never gone (anti-magic); its showing only
      with the Closed stamp rides the stamp's own CSS convention
      (layout truth, patrolled by the story suite). */

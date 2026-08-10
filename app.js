@@ -2046,11 +2046,12 @@ async function placeBid(usid, form) {
   // the lock from state truth)
   $('tiles').querySelectorAll('.tu').forEach((s) => { s.disabled = true; });
   const at = startWrite();
-  opChain = opChain.then(async () => {
+  chainOp(async () => {
     // only the network call sits in the try: an exception downstream
     // of a SUCCESSFUL write (say, a render bug) must crash loudly, not
     // settle the same write twice via the catch (the bookkeeping
-    // assert caught exactly that)
+    // assert caught exactly that; chainOp's own catch banners it
+    // without poisoning the chain)
     let res = null;
     try {
       res = await apiPost({ action: 'bid', slug: a, usid: usid,
@@ -2174,6 +2175,20 @@ async function copyUrl() {
 // NEWEST op's snapshot is adopted — earlier ones predate later local
 // edits.
 let opChain = Promise.resolve();
+
+// THE CHAIN LINK — the one way an op joins the chain: a crash
+// DOWNSTREAM of a settled write (a render bug, the bad-state-shape
+// assert against a version-skewed server) must stay LOUD without
+// poisoning the chain. An unhandled rejection here silently ate
+// every later write and left writesPending pinned above zero,
+// wedging adoption for the page's whole life (the adversarial
+// review's skew-window replicata, 2026-08-10). So the crash
+// banners — the assert text carries its own marching orders — and
+// the chain stays live for the next op.
+function chainOp(fn) {
+  opChain = opChain.then(fn).catch((e) => { banner(String(e)); });
+}
+
 function queueOp(body, onRefusal, onSuccess) {
   queueLazyOp(() => body, onRefusal, onSuccess);
 }
@@ -2186,7 +2201,7 @@ function queueLazyOp(request, onRefusal, onSuccess = () => {}) {
                    // invisible on fresh pages)
   if (!configured) return;
   const at = startWrite();
-  opChain = opChain.then(async () => {
+  chainOp(async () => {
     let res = null;
     try {
       res = await apiPost(request());
@@ -2286,15 +2301,16 @@ function pressReveal() {
   // the reveal rides the op chain like every other write: it must
   // never overtake your own still-flying revision on the wire (your
   // clicks land in the order you made them)
-  opChain = opChain.then(async () => {
+  chainOp(async () => {
     let res = null;
     try {
       res = await apiPost({ action: 'reveal', slug: slug });
     } catch (e) {
       banner(e2155(e.message));
     }
-    settleWrite(res, at);  // exactly once, whatever happened
-    revealInFlight = false;
+    // the drumroll must fall even if the settle's ingest crashes
+    // (chainOp banners it): a pinned gavel would read as poll death
+    try { settleWrite(res, at); } finally { revealInFlight = false; }
   });
 }
 

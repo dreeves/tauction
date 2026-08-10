@@ -2799,9 +2799,10 @@ async function bid(page, bidText) {
 
     /* ========== The evergreen slug (dreev's archive, 2026-08-09) ===
        flo runs the weekly auction at /weekly: last round closed, she
-       clicks Archive — the page reborn empty on the spot, the blub a
-       live link to the archived round — and follows the pointer to
-       find the old record whole, its own Archive control grayed. */
+       clicks Archive — the page reborn empty on the spot, the
+       tombstone slot linking its newest archive — and the archived
+       round reads whole at its own URL, Archive control grayed,
+       with the chain links leading home. */
     gas.handle({ action: 'bid', slug: 'weekly', snym: 'flo',
       usid: 'usid-weekly-flo', xbid: 'first' });
     gas.handle({ action: 'bid', slug: 'weekly', snym: 'gus',
