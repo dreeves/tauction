@@ -358,6 +358,9 @@ function assertState(res) {
     && res.anyms !== null && typeof res.anyms === 'object'
     && !Array.isArray(res.anyms)
     && Object.values(res.anyms).every((v) => typeof v === 'string')
+    && Array.isArray(res.arcs)
+    && res.arcs.every((n, i) => Number.isInteger(n) && n >= 1
+         && (i === 0 || res.arcs[i - 1] < n))
     && typeof res.sheet === 'string' && res.sheet !== ''
     && typeof res.wver === 'string' && /^\d+$/.test(res.wver)
     && (res.bids === null || (Array.isArray(res.bids)
@@ -1198,7 +1201,7 @@ function renderStatus() {
   // shimmer must still run: it retires those one-shot effects.
   const print = JSON.stringify([slug, wasRevealed, seen, seats,
     bidView(), state.seats, state.revealed, state.tfin,
-    state.claims, state.anyms, myUsid(), knownBids()]);
+    state.claims, state.anyms, state.arcs, myUsid(), knownBids()]);
   if (print === lastPrint) return;
   lastPrint = print;
 
@@ -1267,6 +1270,33 @@ function renderStatus() {
   // legacy branch is needed here)
   $('closed').textContent = state.revealed
     ? closedLine(closedStamp(state.tfin)) : '';
+  // THE INCARNATION LINKS (dreev 2026-08-09, the tombstone slot):
+  // every page links its family neighbors — home (the base, when
+  // standing on an archive) and the previous incarnation (the
+  // greatest existing N below this page's own; a live page counts
+  // as N = infinity, so it links the newest archive). ONE derived
+  // list from slug shape + state.arcs — no page-kind branches, no
+  // display gate: an empty list renders nothing. Anchortext = the
+  // full URL sans scheme (dreev's ruling); href keeps the search
+  // (the setPath convention, so an ?api= override survives the
+  // hop). The dataset.key guard is node stability (the descview
+  // pattern): links rebuild only when the list itself changes.
+  const base = slug.replace(ARCHIVE_RE, '');
+  const myN = base === slug ? Infinity
+    : Number(slug.slice(base.length + '-archive'.length));
+  const below = state.arcs.filter((n) => n < myN);
+  const kin = (base === slug ? [] : [base]).concat(
+    below.length === 0 ? []
+      : [base + '-archive' + below[below.length - 1]]);
+  const kinKey = JSON.stringify(kin);
+  if ($('evergreen').dataset.key !== kinKey) {
+    $('evergreen').dataset.key = kinKey;
+    $('evergreen').replaceChildren(...kin.map((k) => {
+      const a = el('a', null, location.host + '/' + k);
+      a.href = '/' + k + location.search;
+      return a;
+    }));
+  }
   const known = knownBids();
   const byPid = umap();
   bidView().forEach((b) => { byPid[b.usid] = b; });
@@ -2374,7 +2404,7 @@ function paintCached() {
 function virginState(a) {
   return { slug: a, exists: false, seats: [], bidders: [],
            revealed: false, tfin: '', blub: '', bver: 0,
-           editors: [],
+           editors: [], arcs: [],
            // the one honest delta from the server's virgin answer:
            // which sheet to pulse-poll is wire truth this seed can't
            // know — and the '' is exactly what keeps the pulse gate

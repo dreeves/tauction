@@ -76,9 +76,8 @@ const ARMOR_ROWS = 10000;
 // the deploy is broken, and the words are marching orders that must
 // stay readable raw — in a terminal (deploy.js, live-quals), the
 // execution log, or a curl. (Off the error channel this file still
-// generates three English strings: the bids tab's cheater banner,
-// the root liveness response, and the reborn auction's pointer blub
-// — archiveBlub, dreev's copy verbatim.)
+// generates two English strings, untouched by the codes rework: the
+// bids tab's cheater banner and the root liveness response.)
 // operator-facing, like schemaDriftCopy: a closed auction violating
 // the covenant (revealed ⇒ roster of two-plus, all with bids) was
 // edited by hand or written by pre-freeze code — refuse to render
@@ -658,6 +657,10 @@ function getState(slug) {
     seats: seats, bidders: bidders, revealed: revealed,
     tfin: tfin, blub: blub, bver: bver, editors: editors,
     claims: claims, anyms: anyms,
+    // the family's archive numbers, ascending (see arcsOf): the
+    // incarnation-links chrome derives all its navigation from
+    // this one family-wide field
+    arcs: arcsOf(slug.replace(ARCHIVE_RE, '')),
     sheet: SHEET_ID, wver: prow === undefined ? '0' : prow.wver,
     bids: revealed ? people.map(a => ({ usid: a.usid, xbid: a.xbid }))
                    : null,
@@ -712,30 +715,38 @@ function unmaskBids(slug) {
   });
 }
 
-// The reborn auction's pointer blub (dreev's copy, verbatim from
-// the archive spec; his anchortext ruling: the exact URL sans the
-// https://). With the cheater banner and the root liveness response,
-// one of the three English strings this file generates off the
-// error channel.
-const SITE_HOST = 'tauction.dreev.es/';
-const archiveBlub = (to) =>
-  'Previous incarnation of this auction:\n'
-  + '[' + SITE_HOST + to + '](https://' + SITE_HOST + to + ')';
-
 // THE ARCHIVE (dreev-ratified 2026-08-09): a closed auction's URL
 // is evergreen. Archiving renames the whole record — the auctions
 // row, its seats, its bids log (the slug key cells ONLY; the
 // append-only law bends exactly this far, re-keying rows without
 // ever editing their content) — to slug-archiveN, and rebirths the
-// slug as a fresh auction whose blub is a markdown pointer at the
-// archive. (The close DATE lives on the Closed stamp, not in the
-// name — dreev's format ruling.) Rename and rebirth land in ONE
-// atomic batchWrite: a crashed execution tears nothing. bver
-// CONTINUES (old + 1, the pointer counting as a save), so a
-// straggler's pre-archive draft always bounces off the CAS instead
-// of sometimes clobbering the pointer. devices.blug may point at
-// the old slug for up to EDITOR_TTL_MS — presence ages out on its
-// own, chosen not forgotten.
+// slug as a fresh auction. (The close DATE lives on the Closed
+// stamp, not in the name — dreev's format ruling.) THE BLUB RIDES
+// (dreev's kill-the-pointer ruling, later the same day: no
+// machinery ever writes INTO a blub): the reborn row inherits
+// blub, bver, and tbed unchanged, so the URL keeps its standing
+// description, the archive holds a frozen copy, and a straggler's
+// mid-archive draft lands as an ordinary edit on the continuous
+// blub. Rename and rebirth land in ONE atomic batchWrite: a
+// crashed execution tears nothing. devices.blug may point at the
+// old slug for up to EDITOR_TTL_MS — presence ages out on its own,
+// chosen not forgotten.
+// THE ARCS: a family's existing archive numbers, ascending — ONE
+// scan serving both the archive mint (max+1) and every state's
+// `arcs` payload (the incarnation-links chrome derives home and
+// previous-incarnation from it, client-side, with no extra reads).
+// base = any family member's slug with the suffix stripped; its
+// charset is [a-z0-9-], so nothing needs regex-escaping.
+function arcsOf(base) {
+  const nre = new RegExp('^' + base + '-archive(\\d+)$');
+  const ns = [];
+  load('auctions').forEach(function (r) {
+    const m = nre.exec(r.slug);
+    if (m !== null) ns.push(Number(m[1]));
+  });
+  return ns;
+}
+
 function archive(req) {
   const slug = cleanSlug(req.slug);
   // an archive is a historical record: archiving it again would
@@ -745,19 +756,14 @@ function archive(req) {
   if (ARCHIVE_RE.test(slug)) throw { code: 'archiveArchive' };
   const st = getState(slug);
   // one refusal for every nothing-here-to-archive: virgin, still
-  // open, or renamed away by a rival's archive a beat ago (the
-  // honest race that puts this code in gameRefusals)
+  // open, or renamed away by a rival's archive a beat ago (dreev's
+  // copy names that race; his ERROR number classes it plumbing)
   if (!st.revealed) throw { code: 'archiveUnclosed' };
   // N is max+1 over the existing incarnations, NEVER first-free: a
   // hand-deleted middle round must not be refilled out of order —
   // chronology beats tidiness. Unbounded, so no cap and no choke.
-  // (slug's charset is [a-z0-9-]: nothing to regex-escape.)
-  const nre = new RegExp('^' + slug + '-archive(\\d+)$');
-  let maxN = 0;
-  load('auctions').forEach(function (r) {
-    const m = nre.exec(r.slug);
-    if (m !== null && Number(m[1]) > maxN) maxN = Number(m[1]);
-  });
+  const ns = arcsOf(slug);
+  const maxN = ns.length === 0 ? 0 : ns[ns.length - 1];
   // anti-postel: past 2^53 (a hand-edited N — the API can't mint
   // one) maxN + 1 collides with maxN or goes exponential; refuse
   // loudly rather than rename onto an existing slug
@@ -775,10 +781,16 @@ function archive(req) {
       }
     });
   });
+  // the reborn row: fresh tini, open tfin — and the blub column
+  // carried from the raw record (tbed included; getState doesn't
+  // serve tbed, so read it here), never composed
+  const arow = load('auctions').find(function (r) {
+    return r.slug === slug;
+  });
   const now = new Date().toISOString();
   batchWrite(patches, [{ kind: 'auctions',
-    rec: { slug: slug, tini: now, tfin: '', blub: archiveBlub(to),
-           bver: st.bver + 1, tbed: now } }]);
+    rec: { slug: slug, tini: now, tfin: '', blub: arow.blub,
+           bver: arow.bver, tbed: arow.tbed } }]);
   // mutate invalidates this op's own slug after the lock; the
   // TARGET may hold a cached virgin answer from a probed URL —
   // dead now too

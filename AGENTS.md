@@ -60,10 +60,9 @@ refusalText); a frontend qual pins the two vocabularies equal, both
 directions. The error channel's only remaining English is the
 assert-family operator diagnostics (schema drift, covenant, armor,
 patch-ghost, batchWrite), marching orders that must stay readable
-raw in a terminal; off that channel Code.gs generates three English
-strings: the bids tab's cheater banner, the root liveness response,
-and the reborn auction's pointer blub (archiveBlub, dreev's copy
-verbatim). stringles splits the
+raw in a terminal; off that channel Code.gs still generates the
+bids tab's cheater banner and the root liveness
+response. stringles splits the
 refusals by REACHABILITY: gameRefusals (honest play can hit them —
 races, length limits) vs plumbingRefusals (dreev's ERROR15xx family,
 hand-rolled requests only), spread-merged into refusalCopy; a qual
@@ -270,9 +269,13 @@ date, so no date in the name): a closed auction's `archive` action
 renames its whole record — the auctions row, its seats, its bids
 log (slug key cells ONLY; the append-only law bends exactly this
 far: rows re-keyed, content never edited) — to `slug-archiveN` and
-rebirths the slug as a fresh auction whose blub is a markdown
-pointer at the archive (`archiveBlub`; anchortext = the URL sans
-https://, per dreev). N mints max+1 over the existing incarnations
+rebirths the slug as a fresh auction. THE BLUB RIDES (dreev's
+kill-the-pointer ruling, later 2026-08-09, deleting the reborn
+pointer blub outright: no machinery ever writes INTO a blub): the
+reborn row inherits blub, bver, and tbed unchanged, so the URL
+keeps its standing description, the archive holds a frozen copy,
+and a straggler's mid-archive draft lands as an ordinary edit on
+the continuous blub. N mints max+1 over the existing incarnations
 (never first-free: a hand-deleted middle round is not refilled),
 unbounded — no per-day cap, no choke refusal; lexical sort of
 archive names is not chronological, dreev-accepted ("not sure how
@@ -281,9 +284,7 @@ rebirth land in ONE atomic `Sheets.Spreadsheets.batchUpdate` via
 the storage layer's `batchWrite` (Google applies a batch
 all-or-nothing, so a crashed execution tears nothing — this
 replaced both the auid-indirection design and row-by-row rewriting,
-dreev-ratified after the torn-state analysis). `bver` CONTINUES
-across the rebirth (old + 1, the pointer counting as a save) so a
-straggler's pre-archive draft always bounces off the CAS. Grammar:
+dreev-ratified after the torn-state analysis). Grammar:
 dashes are legal in user-typed names now (`[a-z0-9-]`, oddballs
 like `-foo` ratified); the 20-char limit judges the BASE and the
 archive suffix rides exempt (`ARCHIVE_RE`, welded byte-identical
@@ -300,10 +301,29 @@ alone); existing archives are untouched by the guard, so their
 blubs stay editable. Archiving an archive refuses
 (plumbing ERROR1526; the client grays its Archive control instead —
 dreev: `-archive-...-archive-...` forks history). The raced
-double-archive refuses as gameRefusals' archiveUnclosed (the
-rival's rename made the slug fresh), and the client's Archive
-control wears the standard double-submit disable. An archive
-invalidates BOTH slugs' poll caches. `seenRevealed` assigns from
+double-archive refuses as archiveUnclosed (the rival's rename made the slug
+fresh; dreev's copy names the race and his ERROR2107 number
+classes it plumbing — the number IS the membership, per the
+weld), and the client's Archive control wears the standard
+double-submit disable. THE INCARNATION LINKS (dreev 2026-08-09,
+superseding the single way-home link): every state carries `arcs`
+— the family's existing archive numbers, ascending, computed by
+arcsOf (the same scan the archive mint uses) for slug-sans-suffix,
+so the field is family-wide with no page-kind branch server-side.
+The client's #evergreen span (the tombstone slot) renders ONE
+derived list: home (the base, when standing on an archive — base
+!== slug is the only membership test) then the previous
+incarnation (the greatest arcs entry below this page's own N,
+where a live page counts as N = infinity, so it links its NEWEST
+archive). Consequences dreev ratified by the uniform rule: the
+prev link SKIPS hand-made gaps (his literal spec said N-1-only),
+and live pages show the newest-archive link even while OPEN (the
+links are data-gated, not revealed-gated — the span is exactly as
+visible as its content, no display gate at all). Anchortext = full
+URL sans scheme via location.host; ?api= survives the hop. Family-
+wide cache nuance: archiving invalidates both ITS slugs' cached
+states, but sibling archives' cached `arcs` heal by the 4s TTL.
+An archive invalidates BOTH slugs' poll caches. `seenRevealed` assigns from
 every adopted snapshot now (no longer a one-way latch): the rebirth
 un-reveals the page in place and the hidden-tab title peek resumes
 for the new round. Known transients, chosen: devices.blug can
@@ -340,7 +360,7 @@ tab's `tauction-drafts` bid draft reappears in the reborn auction
   (discourse.org's, vendored FA6 SVG) scribbles: accent ink,
   write-wiggle, tooltip suffixed with dreev's
   currently-being-edited-by copy (seat snym, else someone-(anym));
-  two-plus editors use the plural copy (Latin TODO awaiting dreev's
+  two-plus editors use the plural copy (Latin TO DO awaiting dreev's
   words). SAVE and DISCARD send the stop, which clears only the
   device's own slot (a foreign clear is structurally impossible);
   a closed tab ages out; virgin auctions take presence and stay
@@ -363,11 +383,12 @@ tab's `tauction-drafts` bid draft reappears in the reborn auction
 - The Archive control (dreev 2026-08-09) rides the Closed stamp:
   one click on a closed auction renames it to its numbered archive
   slug and the page is reborn fresh IN PLACE — the response
-  snapshot adopts through the normal settle path, no reload — with
-  the blub a live markdown link to the archive. Anyone may press
-  it, one unconfirmed click (reveal's precedent). Grayed, never
-  gone, on an already-archived page (stringles' archivedTip
-  explains the gray). Label is dreev's "Archive", verbatim.
+  snapshot adopts through the normal settle path, no reload — the
+  standing blub riding along unchanged (the kill-the-pointer
+  ruling). Anyone may press it, one unconfirmed click (reveal's
+  precedent). Grayed, never gone, on an already-archived page
+  (stringles' archivedTip explains the gray). Label is dreev's
+  "Archive", verbatim.
 - The gavel freezes everything but the blub (2026-07-16, reversing
   everything-stays-editable): after reveal, bid/add/remove/rename/
   claim/release all refuse loudly, and bid log rows stamped after

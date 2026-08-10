@@ -209,8 +209,6 @@ const gameRefusals = {
   quotaChoke: () => 
     `Apparently we're too popular for Google Sheets to be a reasonable choice `
     + `as a database; but hang tight and this should resolve on its own`,
-  archiveUnclosed: () => `ERROR2107: Race condition? Maybe someone else hit `
-    + `Archive a split-second before you?`,
   archiveSquat: () => archiveSquatBanner,
 };
 
@@ -241,6 +239,11 @@ const plumbingRefusals = {
   // hand-rolled only: the client grays the Archive control on an
   // archive page (dreev: archiving an archive forks history).
   archiveArchive: () => `ERROR1526: You tried to archive an archived auction?`,
+  // the raced double-archive (dreev's copy names the race; his
+  // ERROR number placed it in this table — the number IS the
+  // membership, per the weld)
+  archiveUnclosed: () => `ERROR2107: Race condition? Maybe someone else hit `
+    + `Archive a split-second before you?`,
 };
 
 const refusalCopy = { ...gameRefusals, ...plumbingRefusals };

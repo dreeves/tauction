@@ -148,10 +148,19 @@
          Closed stamp (CSS off #status.revealed, the stamp's own
          convention) — one click renames this closed auction to its
          numbered archive slug and the page is reborn fresh in
-         place, its blub a pointer at the archive. Label stamped
-         from stringles; grayed (never gone) on an already-archived
+         place, the blub riding along unchanged. Label stamped from
+         stringles; grayed (never gone) on an already-archived
          page. -->
     <button id="archive" class="archivego" type="button"></button>
+    <!-- THE INCARNATION LINKS (dreev 2026-08-09): the tombstone
+         slot's family chain — home (the base slug, when standing
+         on an archive) and the previous incarnation (greatest
+         existing number below this page's own; a live page links
+         its newest archive). Populated by renderStatus from slug
+         shape + state.arcs alone; an empty family renders nothing,
+         so there is no display gate at all. Link text = the full
+         URL sans https://, no English. -->
+    <span id="evergreen" class="evergreen"></span>
     <!-- the star, footnoted (the ★ glyph everywhere is
          dreev-ratified) -->
     <div class="legend">★ = you</div>
@@ -160,7 +169,7 @@
   <footer>
     <a href="/sourcery.html">sourcery</a>
     <span class="sep">·</span>
-    <span class="version">v2026.08.09-a</span>
+    <span class="version">v2026.08.09-d</span>
   </footer>
 </main>
 

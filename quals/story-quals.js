@@ -2836,19 +2836,28 @@ async function bid(page, bidText) {
       return r.width === 0 && r.height === 0;
     }), 'an open auction shows no Archive control (CSS off'
        + " .revealed, the Closed stamp's own convention)");
+    ok(await flo.evaluate(() => document.getElementById('evergreen')
+         .getBoundingClientRect().width === 0),
+       'an archive-less page shows no chain links yet: the slot is'
+       + ' exactly as visible as its data');
     await shoot(flo, 'story-archive-closed');
     await flo.click('#archive');
     await flo.waitForFunction(() =>
       !document.getElementById('status').classList
-        .contains('revealed')
-      && document.querySelector('#descview a') !== null);
+        .contains('revealed'));
     await shoot(flo, 'story-archive-reborn');
-    ok(await flo.evaluate((arc) => {
-      const a = document.querySelector('#descview a');
-      return a.textContent === 'tauction.dreev.es/' + arc
-        && document.querySelectorAll('#tiles .tile').length === 0;
-    }, wkArc), 'one click: the page reborn empty in place, the blub'
-       + ' a live link to the archive');
+    ok(await flo.evaluate(() =>
+      document.querySelectorAll('#tiles .tile').length === 0), 
+       'one click: the page reborn empty in place, ready for the'
+       + ' next round');
+    await flo.waitForFunction(() =>
+      document.querySelector('#evergreen a') !== null);
+    ok(await flo.evaluate(() => {
+      const a = document.querySelector('#evergreen a');
+      return a.textContent.indexOf('/weekly-archive1') !== -1
+        && a.getBoundingClientRect().width > 0;
+    }), 'the reborn live page links its newest archive — visible'
+       + ' even while the new round is open');
     const past = await makePage(browser, DESKTOP);
     await past.goto(BASE + '/' + wkArc, { waitUntil: 'networkidle0' });
     await past.waitForFunction(() => document.getElementById('status')
@@ -2859,7 +2868,20 @@ async function bid(page, bidText) {
         .textContent.includes('first');
     }), "the archived round reads whole at its archive URL, its own"
        + ' Archive control grayed');
+    ok(await past.evaluate(() => {
+      const e = document.getElementById('evergreen');
+      return e.getBoundingClientRect().width > 0
+        && e.querySelector('a') !== null;
+    }), 'the way home is VISIBLE beside the grayed Archive control');
     await auditLayout(past, 'archived round at its archive URL');
+    await shoot(past, 'story-archive-wayhome');
+    await past.click('#evergreen a');
+    await past.waitForFunction(() =>
+      location.pathname === '/weekly'
+      && !document.getElementById('status').classList
+           .contains('revealed'));
+    ok(true, 'one click on the evergreen link and flo is home: the'
+       + ' live /weekly, open for the next round');
 
     ok(pageErrors.length === 0,
        'ZERO page errors across every story flow (the net catches'

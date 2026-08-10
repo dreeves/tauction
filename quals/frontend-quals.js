@@ -352,7 +352,7 @@ function ok(cond, label) {
 // spec): the old names — userid/uname/devid/rig/blurb/bluid/tblug
 // and the elder pid — must not survive in any runtime source,
 // comments included. JS string literals are exempt (copy is dreev's
-// to reword on his own schedule; TODOs in stringles mark the
+// to reword on his own schedule; TO DOs in stringles mark the
 // survivors), so .js/.gs sources are scanned with quotes stripped —
 // copy edits can never break the suite. index.html and style.css
 // scan raw: their quoted text is ids and classes, which ARE
@@ -3765,7 +3765,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
       === STR.descVerTip(0) + ' ' + STR.editingBy('quillb'));
     ok(true, "renaming the editor retitles the pencil's tip live");
     // TWO at the desk: per-device presence makes the crowd visible,
-    // in the plural copy (Latin TODO until dreev words it)
+    // in the plural copy (Latin TO DO until dreev words it)
     gas.handle({ action: 'editing', slug: 'quill',
                  dvid: 'anym-y', anym: 'y anym' });
     dVw.window.__intervals.find((i) => i.ms === 5000).fn();
@@ -6742,6 +6742,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        "the Archive control stands by the Closed stamp, in dreev's"
        + ' copy, live on an ordinary closed auction (and a button:'
        + ' a tab stop, like every control)');
+    ok(doc.getElementById('evergreen').childNodes.length === 0,
+       'an archive-less page carries no chain links: the slot is'
+       + ' exactly as visible as its data');
     btn.click();
     btn.click();  // the double press: the guard must swallow it
     ok(btn.disabled === true,
@@ -6760,16 +6763,23 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
             .contains('revealed'),
        'one click and the page IS the reborn auction: empty roster,'
        + ' open for the next round, no reload needed');
-    const a = doc.querySelector('#descview a');
-    ok(a !== null
-       && a.getAttribute('href')
-            === 'https://tauction.dreev.es/' + arcSlug
-       && a.textContent === 'tauction.dreev.es/' + arcSlug,
-       'the pointer blub renders as a real link to the archive:'
-       + ' anchortext is the URL sans https://, and mdRender already'
-       + ' speaks markdown links — zero new rendering code');
+    ok(doc.getElementById('descview').textContent
+         .indexOf('round one words') !== -1
+       && doc.querySelector('#descview a') === null,
+       'the BLUB RIDES the rebirth: the standing description'
+       + ' persists at the evergreen URL, no pointer, no overwrite'
+       + " (dreev's kill-the-pointer ruling)");
     ok(doc.getElementById('slug').value === 'evrgrn',
        'the URL and name never moved: the slug is evergreen');
+    await until(() =>
+      doc.querySelectorAll('#evergreen a').length === 1);
+    ok(doc.querySelector('#evergreen a').textContent
+         === 'tauction.dreev.es/evrgrn-archive1'
+       && doc.querySelector('#evergreen a').getAttribute('href')
+            === '/evrgrn-archive1?api=' + API_URL,
+       'the reborn LIVE page — still open — links its newest'
+       + ' archive from the tombstone slot: the chain shows'
+       + ' whenever the data supports it, no revealed gate');
 
     // the reborn page is LIVE again: the hidden-tab title peek
     // resumes (seenRevealed follows adopted truth, no longer a
@@ -6803,6 +6813,17 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        && btn2.getAttribute('data-tip') === STR.archivedTip,
        'an archive page wears its Archive control GRAYED, the tip'
        + ' explaining the gray (grayed, never suppressed)');
+    // THE INCARNATION LINKS: one derived rule — home (base, when
+    // standing on an archive) + previous incarnation (greatest
+    // existing N below this page's own)
+    await until(() =>
+      doc2.querySelectorAll('#evergreen a').length === 1);
+    const kin1 = [...doc2.querySelectorAll('#evergreen a')];
+    ok(kin1[0].textContent === 'tauction.dreev.es/evrgrn'
+       && kin1[0].getAttribute('href') === '/evrgrn?api=' + API_URL,
+       'the FIRST archive links only home — no previous exists'
+       + ' below 1; anchortext = full URL sans scheme, ?api='
+       + ' preserved');
 
     // a SHOUTED archive URL still lands: the matcher lowercases
     // the whole path first (derived from ARCHIVE_RE, so the weld
@@ -6862,6 +6883,47 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        && dom6.window.document.body.classList.contains('unnamed'),
        'a bare-suffix path adopts NO slug: the matcher mirrors the'
        + " server's verdict, arm for arm");
+
+    // round two: an archive with a predecessor links home FIRST,
+    // then its previous incarnation (dreev's order)
+    gas.handle({ action: 'bid', slug: 'evrgrn', snym: 'cyn',
+      usid: 'usid-evrgrn2-cyn', xbid: 'r2a' });
+    gas.handle({ action: 'bid', slug: 'evrgrn', snym: 'dov',
+      usid: 'usid-evrgrn2-dov', xbid: 'r2b' });
+    gas.handle({ action: 'reveal', slug: 'evrgrn' });
+    gas.handle({ action: 'archive', slug: 'evrgrn' });
+    const dom7 = await makePage('/evrgrn-archive2?api=' + API_URL);
+    const doc7 = dom7.window.document;
+    await until(() =>
+      doc7.querySelectorAll('#evergreen a').length === 2);
+    const kin2 = [...doc7.querySelectorAll('#evergreen a')];
+    ok(kin2[0].textContent === 'tauction.dreev.es/evrgrn'
+       && kin2[1].textContent
+            === 'tauction.dreev.es/evrgrn-archive1'
+       && kin2[1].getAttribute('href')
+            === '/evrgrn-archive1?api=' + API_URL,
+       'an archive with a predecessor links home FIRST, then the'
+       + ' previous incarnation');
+
+    // a hand-made hole in the family: the previous-incarnation
+    // link SKIPS to the greatest existing lower number (the
+    // uniform max-below rule, generalizing N-1-if-exists)
+    gas.__ss.sheets['auctions'].data.push(
+      ['ghost-archive1', '2026-01-01T00:00:00.000Z', '', '', '0',
+       '']);
+    gas.__ss.sheets['auctions'].data.push(
+      ['ghost-archive3', '2026-01-01T00:00:00.000Z', '', '', '0',
+       '']);
+    const dom8 = await makePage('/ghost-archive3?api=' + API_URL);
+    const doc8 = dom8.window.document;
+    await until(() =>
+      doc8.querySelectorAll('#evergreen a').length === 2);
+    ok([...doc8.querySelectorAll('#evergreen a')]
+         .map((a) => a.textContent).join('|')
+         === 'tauction.dreev.es/ghost|'
+           + 'tauction.dreev.es/ghost-archive1',
+       'the previous-incarnation link skips a hand-made gap to'
+       + ' the greatest existing lower number');
 
     // the two runtimes speak ONE archive grammar, welded at source
     const reOf = (src) => (src.match(

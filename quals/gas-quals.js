@@ -1416,12 +1416,14 @@ ok(st.wver === String(wv + 3),
    record — the auctions row, its seats, its bids log (slug key cells
    only, content untouched) — to slug-archiveN (N = max+1 over the
    existing incarnations, unbounded) and
-   rebirths the slug as a fresh auction whose blub is a markdown
-   pointer at the archive. The rename and the rebirth land in ONE
-   atomic Sheets batchUpdate (Google applies a batch all-or-nothing,
-   so a crashed execution can tear nothing), and bver CONTINUES
-   (old + 1) so a straggler's pre-archive draft always bounces off
-   the CAS instead of sometimes clobbering the pointer. Dashes became
+   rebirths the slug as a fresh auction. The BLUB RIDES (dreev's
+   kill-the-pointer ruling, later 2026-08-09: no machinery ever
+   writes into a blub): the reborn row inherits blub, bver, and
+   tbed unchanged — the URL keeps its standing description, the
+   archive holds a frozen copy, and a straggler's draft lands as an
+   ordinary edit on the continuous blub. The rename and the rebirth
+   land in ONE atomic Sheets batchUpdate (Google applies a batch
+   all-or-nothing, so a crashed execution can tear nothing). Dashes became
    legal in names with this change; the length rule (20) judges what
    humans TYPE — the server-minted suffix rides exempt. The suffix
    is dreev's 2026-08-09 LATER ruling: plain -archiveN (the Closed
@@ -1478,25 +1480,11 @@ ok(!st.error, 'archive accepted: ' + JSON.stringify(st.error));
 ok(st.slug === 'evergreen' && st.exists === true
    && st.revealed === false && st.seats.length === 0
    && st.bidders.length === 0 && st.tfin === '',
-   'the response IS the reborn slug: a fresh, open, empty auction');
-ok(st.bver === 2,
-   "bver CONTINUES (old 1 + the pointer's own save): a straggler's"
-   + ' pre-archive draft can never CAS-match the reborn blub');
-const BLUBFN = require('vm').runInContext('archiveBlub', ctx);
-ok(st.blub === BLUBFN(evTo),
-   'the reborn blub is what archiveBlub mints: '
-   + JSON.stringify(st.blub));
-// dreev's spec copy VERBATIM — pinned here like the cheater banner:
-// spec-frozen English never derives from the code under test
-ok(st.blub === 'Previous incarnation of this auction:\n'
-     + '[tauction.dreev.es/' + evTo + '](https://tauction.dreev.es/'
-     + evTo + ')',
-   "the pointer prose is dreev's exact copy, byte for byte: "
-   + JSON.stringify(st.blub));
-ok(st.blub.indexOf('[tauction.dreev.es/' + evTo + ']'
-     + '(https://tauction.dreev.es/' + evTo + ')') !== -1,
-   'the pointer is a markdown link, anchortext = the URL sans'
-   + " https:// (dreev's anchortext ruling)");
+   'the response IS the reborn slug: a fresh, open auction');
+ok(st.blub === 'the weekly veggie auction' && st.bver === 1,
+   'the BLUB RIDES the rebirth untouched, bver and all: the URL'
+   + ' keeps its standing description (no pointer, no overwrite —'
+   + " dreev's kill-the-pointer ruling)");
 // the archive: the whole record, intact at its new name
 st = call({ action: 'state', slug: evTo });
 ok(st.revealed === true && st.tfin === evTfin
@@ -1529,11 +1517,14 @@ ok(ss.sheets['seats'].data.filter((r) => r[0] === evTo)
         .slice(1).join('|') === evARow,
    'the archived auctions row and seats rows are re-keyed ONLY:'
    + ' every non-key cell byte-identical (tini/tmod/tbed included)');
-// the CAS armor that bver continuity buys
-ok(code(call({ action: 'describe', slug: 'evergreen', base: 1,
-               blub: 'straggler draft' })) === 'simulEdits',
-   "a straggler's save against the pre-archive bver bounces off the"
-   + ' CAS: the pointer can never be silently clobbered');
+// the blub is CONTINUOUS across incarnations (bver rode along),
+// so a straggler's pre-archive draft lands as an ordinary edit —
+// nothing to clobber, nothing to bounce
+st = call({ action: 'describe', slug: 'evergreen', base: 1,
+            blub: 'straggler draft' });
+ok(!st.error && st.blub === 'straggler draft' && st.bver === 2,
+   "a straggler's save lands on the reborn blub as an ordinary"
+   + ' edit: the CAS history is continuous across the rebirth');
 
 // archiving an archive: refused (dreev: foo-archive-...-archive-...
 // forks history, too gross; the client grays its control, so only
@@ -1542,8 +1533,8 @@ ok(code(call({ action: 'archive', slug: evTo })) === 'archiveArchive',
    'archiving an archive is refused');
 // nothing here to archive: virgin and still-open both refuse — and
 // this same code is what the LOSER of an archive race sees (the
-// rival's rename made the slug fresh), which is why it lives in
-// gameRefusals
+// rival's rename made the slug fresh; dreev's copy names the race
+// and his ERROR number classes it plumbing)
 ok(code(call({ action: 'archive', slug: 'neverwas' }))
      === 'archiveUnclosed',
    'archiving a nonexistent auction is refused');
@@ -1598,17 +1589,38 @@ call({ action: 'bid', slug: 'evergreen', snym: 'dev',
 st = call({ action: 'reveal', slug: 'evergreen' });
 const evTo2 = 'evergreen-archive2';
 st = call({ action: 'archive', slug: 'evergreen' });
-ok(!st.error && st.blub === BLUBFN(evTo2),
-   'the second archive takes the next number, and the fresh'
-   + ' pointer names IT: ' + JSON.stringify(st.blub));
+ok(!st.error && st.blub === 'straggler draft' && st.bver === 2,
+   'the second archive carries the blub through again — the'
+   + ' description is a fixture of the URL: '
+   + JSON.stringify(st.blub));
 st = call({ action: 'state', slug: evTo2 });
-ok(st.revealed === true && names(st) === 'cara,dev',
-   'round two archived whole at its own name');
+ok(st.revealed === true && names(st) === 'cara,dev'
+   && st.blub === 'straggler draft',
+   'round two archived whole at its own name, its blub the frozen'
+   + ' copy of the moment');
 st = call({ action: 'state', slug: evTo });
 ok(st.revealed === true && names(st) === 'alice,bob'
-   && st.bids[0].xbid === 'one louis',
+   && st.bids[0].xbid === 'one louis'
+   && st.blub === 'annotated after archiving',
    "round one is UNTOUCHED by round two's archive: archive slugs"
-   + ' never cascade (the chain gains links, never rewrites them)');
+   + " never cascade, and its own blub (edited in place by the"
+   + ' annotation qual above) never leaks into any rebirth');
+
+// THE ARCS (incarnation links, dreev 2026-08-09): every state
+// carries its FAMILY's existing archive numbers, ascending — one
+// scan (the same one the archive mint uses), family-wide, so the
+// client builds the chain links with zero extra reads and zero
+// page-kind branches
+st = call({ action: 'state', slug: 'evergreen' });
+ok(JSON.stringify(st.arcs) === '[1,2]',
+   "the live page's state carries the family arcs, ascending");
+st = call({ action: 'state', slug: evTo });
+ok(JSON.stringify(st.arcs) === '[1,2]',
+   "an archive member's state carries the SAME family arcs: the"
+   + ' field is family-wide, no page-kind branch server-side');
+ok(JSON.stringify(call({ action: 'state',
+                         slug: 'loner' }).arcs) === '[]',
+   'an archive-less family carries empty arcs');
 
 // the number is max+1 over the existing incarnations, NEVER
 // first-free: a hand-deleted middle round must not be refilled out
@@ -1629,10 +1641,15 @@ ss.sheets['auctions'].data.push(
   ['busy-archive10', st.tfin, '', '', '0', '']);
 resetTabMemo();
 st = call({ action: 'archive', slug: 'busy' });
-ok(!st.error && st.blub === BLUBFN('busy-archive11'),
+ok(!st.error && ss.sheets['auctions'].data.some(
+     (r) => r[0] === 'busy-archive11'),
    'the probe is NUMERIC max+1 over whatever exists: 10 beats 9'
    + ' (a lexical max would mint a duplicate) and the hand-made gap'
-   + ' at 2 is never refilled — ' + JSON.stringify(st.blub));
+   + ' at 2 is never refilled');
+ok(JSON.stringify(call({ action: 'state',
+                         slug: 'busy-archive9' }).arcs)
+     === '[1,3,9,10,11]',
+   'arcs report the true gapped family, hand-made holes included');
 
 // ...and a hand-edited N past 2^53 refuses loudly: maxN + 1 would
 // collide with maxN (float) or go exponential — either way an

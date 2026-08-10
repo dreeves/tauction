@@ -1074,6 +1074,20 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
   opacity: 0.5;
 }
 
+/* THE INCARNATION LINKS (dreev 2026-08-09): the tombstone slot's
+   family chain — home and previous incarnation, derived by the
+   client from slug shape + state.arcs. The span is exactly as
+   visible as its content: an empty family renders nothing, so no
+   display gate exists at all. */
+.evergreen {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.evergreen a { margin-left: 0.75rem; color: inherit; }
+
+.evergreen a:hover { color: var(--accent); }
+
 /* the star's footnote: whisper-quiet, tucked under the ledger — but
    its ★ wears the same gold as a lit one */
 .legend {
