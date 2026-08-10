@@ -1688,6 +1688,27 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
    at the commit moment, when the card reflows anyway. */
 main > .card:has(#slug:disabled) { padding-bottom: 0.35rem; }
 
+/* the tight header label rests hidden; the truly-skinny tier
+   below swaps it in */
+.th-tight { display: none; }
+
+/* THE TRULY-SKINNY TIER (dreev 2026-08-10, "i just want it to
+   look nicer"): at <= 22rem the name column and its header go
+   FIXED-EQUAL — nothing shrinks divergently, so the headers sit
+   exactly over their columns again (the roomy ruling's waived
+   axes, un-waived) — and the header wears dreev's PARTIC. to fit
+   the fixed column. Names clip harder here; roomy already
+   accepted that trade in kind. */
+@media (max-width: 22rem) {
+  .th-person, .rename {
+    flex: 0 0 5.2rem;
+    min-width: 0;
+  }
+  .addrow .at-wrap { width: 5.2rem; }
+  .th-full { display: none; }
+  .th-tight { display: inline; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .tile-name, .tile-bid, .bid-card.slot, .gavel .mallet,
   .gavel .bang, .gavel .block, #status.just-revealed,

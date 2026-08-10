@@ -94,15 +94,16 @@ Previously:
 
 6. Can we make this... brighter, cleaner, more video-game-ish? Or what about a 1980s Apple II aesthetic? Can you go down some rabbit holes and come up with something sock-off-knocking? Reread and digest AGENTS.md before starting. And maybe show me a screenshot for me to thumbs-up/down before revamping. Random idea: emulate Nicky Case?
 
-Next:
+7. Why don't markdown links like [anchor text](https://example.com "hover text") work? Let's try a smarter markdown renderer?
 
-1. Markdown: Both asterisks and underscores should do italics. Double asterisks for bold. Probably we should just do what github.com/dreeves/eat-the-richtext is doing.
-
-1. Why don't markdown links like [anchor text](https://example.com "hover text") work? Let's try a smarter markdown renderer?
-
-2. I don't love how you can submit a blurb (blub) and it acts like it worked and then a full second or so later it pops up the conflict dialog. I'd rather see the gavelspinner until there's confirmation that my changes went through. I know we're doing something fancy with "optimistic writes" or whatever but at least for editing the blurb, I don't like it.
+8. I don't love how you can submit a blurb (blub) and it acts like it worked and then a full second or so later it pops up the conflict dialog. I'd rather see the gavelspinner until there's confirmation that my changes went through. I know we're doing something fancy with "optimistic writes" or whatever but at least for editing the blurb, I don't like it.
 Actually, i'm realizing that we do have an indicator -- how the field stays shaded darker green until it's confirmed -- and that actually feels ok once i'm used to it.
 So the problem is it wasn't obvious enough or something.
 Can you spend a couple weeks researching web design principles and come up with a way to make it nice and obvious to the user what's going on and eliminate those moments of confusion for the user, like thinking an edit succeeded and then having something pop up to say it failed?
 
-3. Relatedly, should there be a gavelspinner or something while the Archive is happening?
+9. Relatedly, should there be a gavelspinner or something while the Archive is happening?
+
+Next:
+
+1. Markdown: Both asterisks and underscores should do italics. Double asterisks for bold. Probably we should just do what github.com/dreeves/eat-the-richtext is doing.
+

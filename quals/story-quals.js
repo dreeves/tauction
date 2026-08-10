@@ -915,16 +915,30 @@ async function bid(page, bidText) {
         bad.push('th-bid clipped ' + thBid.scrollWidth + ' > '
           + thBid.clientWidth);
       }
-      // ROOMY floor (dreev ruled from the A/B shots, 2026-08-10:
-      // "the roomy version looks better"): the yield now applies
-      // at narrow fine-pointer too, so the bid column must hold
-      // its 7rem-ish floor — and the axis/edge legs that the
-      // shrinking name column necessarily breaks were RETIRED
-      // under that same ruling (header-over-cell alignment is
-      // waived at narrow widths; his accepted cost)
+      // ROOMY + ALIGNED (dreev 2026-08-10, second ruling: "i just
+      // want it to look nicer"): at truly-skinny widths the name
+      // column and its header are FIXED-EQUAL and the header reads
+      // PARTIC. — so the bid column keeps its floor AND the axes
+      // hold again (the earlier waiver un-waived)
       if (box.width < 6 * parseFloat(getComputedStyle(
             document.documentElement).fontSize)) {
         bad.push('bid box starved at ' + box.width + 'px');
+      }
+      const tight = document.querySelector('.th-person .th-tight');
+      if (!tight || tight.getBoundingClientRect().width === 0) {
+        bad.push('tight header label not shown');
+      } else {
+        if (!near(textLeft(document.querySelector('.th-person')
+              .querySelector('.th-tight')), whoText)) {
+          bad.push('person axis (tight) vs ' + whoText);
+        }
+        if (!near(textLeft(thBid), bidText)) {
+          bad.push('bid axis ' + textLeft(thBid) + ' vs ' + bidText);
+        }
+        if (!near(add.left, name.left) || !near(add.right, name.right)) {
+          bad.push('add-row edges ' + [add.left, name.left, add.right,
+            name.right].join('/'));
+        }
       }
       return bad;
     });

@@ -6150,9 +6150,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const domI = await makePage('/idem?api=' + API_URL);
   claimRow(domI, 'pip');   // A -> B: pip becomes mine (editor appears)
   claimRow(domI, 'pip');   // B -> A: released again
-  await sleep(100);        // the claim/release ops land
+  await until(() => drained()  // wait the ops OUT — the fixed
+    // 100ms sleep here lost its race under deploy-load on dreev's
+    // machine (2026-08-10), the known fixed-sleep flake class
+    && !row(domI.window.document, 'pip').classList.contains('mine'));
   const domJ = await makePage('/idem?api=' + API_URL);
-  await sleep(20);
+  await until(() => row(domJ.window.document, 'pip') !== null);
   ok(strip(row(domI.window.document, 'pip').outerHTML)
      === strip(row(domJ.window.document, 'pip').outerHTML),
      'row updates are idempotent: A->B->A equals a fresh render of A');
