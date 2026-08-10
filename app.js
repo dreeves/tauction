@@ -302,7 +302,11 @@ async function showTip() {
   const host = hoverHost || focusHost;
   // a host that lost its data-tip while alive (the REVEAL button at
   // the gavel) has nothing to say: hidden, never an empty bubble
-  if (!host || !host.isConnected || !host.getAttribute('data-tip')
+  // (offsetParent null = a display:none'd host, e.g. the pencil
+  // the editing mode retires: Floating UI would park its tip at
+  // the page origin, ~150px from anything it describes)
+  if (!host || !host.isConnected || host.offsetParent === null
+      || !host.getAttribute('data-tip')
       || host.querySelector('input:focus, textarea:focus')) {
     tip.hidden = true;
     return;
@@ -310,7 +314,12 @@ async function showTip() {
   tip.textContent = host.getAttribute('data-tip');
   tip.hidden = false;
   const pos = await FloatingUIDOM.computePosition(host, tip, {
-    placement: 'bottom-start',
+    // disclosed if: ledger hosts tip RIGHTWARD — the rows' pitch
+    // leaves ~3px below a star's box, so a bottom tip sat in the
+    // NEXT row's lap reading as its caption (the critic's
+    // proximity complaint); everything else keeps bottom-start
+    placement: host.closest('.tiles') ? 'right-start'
+                                      : 'bottom-start',
     middleware: [FloatingUIDOM.offset(7), FloatingUIDOM.flip(),
                  FloatingUIDOM.shift({ padding: 8 })],
   });
@@ -1270,31 +1279,45 @@ function renderStatus() {
   // legacy branch is needed here)
   $('closed').textContent = state.revealed
     ? closedLine(closedStamp(state.tfin)) : '';
-  // THE INCARNATION LINKS (dreev 2026-08-09, the tombstone slot):
-  // every page links its family neighbors — home (the base, when
-  // standing on an archive) and the previous incarnation (the
-  // greatest existing N below this page's own; a live page counts
-  // as N = infinity, so it links the newest archive). ONE derived
-  // list from slug shape + state.arcs — no page-kind branches, no
-  // display gate: an empty list renders nothing. Anchortext = the
-  // full URL sans scheme (dreev's ruling); href keeps the search
-  // (the setPath convention, so an ?api= override survives the
-  // hop). The dataset.key guard is node stability (the descview
-  // pattern): links rebuild only when the list itself changes.
+  // THE INCARNATION DECK (dreev 2026-08-10, superseding the text
+  // links): wordless spotify-style transport on the tombstone
+  // line — \u2039 one incarnation older, \u203a one newer (the
+  // live page is the timeline's end), \u00bb jump to the live
+  // page. All derived from (arcs, own N): \u2039 = greatest N
+  // below mine, \u203a = least N above mine or the live page when
+  // none, \u00bb = the base. A family of ONE renders nothing (the
+  // empty-slot convention); within a family, an arrow with no
+  // target GRAYS, tip explaining — the nav keeps gray-don't-
+  // suppress (dreev's closed-page exception covers the record's
+  // controls, not navigation). Search rides every hop (setPath
+  // convention). The dataset.key guard is node stability (the
+  // descview pattern).
   const base = slug.replace(ARCHIVE_RE, '');
   const myN = base === slug ? Infinity
     : Number(slug.slice(base.length + '-archive'.length));
   const below = state.arcs.filter((n) => n < myN);
-  const kin = (base === slug ? [] : [base]).concat(
-    below.length === 0 ? []
-      : [base + '-archive' + below[below.length - 1]]);
-  const kinKey = JSON.stringify(kin);
-  if ($('evergreen').dataset.key !== kinKey) {
-    $('evergreen').dataset.key = kinKey;
-    $('evergreen').replaceChildren(...kin.map((k) => {
-      const a = el('a', null, location.host + '/' + k);
-      a.href = '/' + k + location.search;
-      return a;
+  const above = state.arcs.filter((n) => n > myN);
+  const deck = state.arcs.length === 0 ? [] : [
+    ['\u2039', below.length === 0 ? ''
+      : base + '-archive' + below[below.length - 1], arcPrevTip],
+    ['\u203a', myN === Infinity ? ''
+      : above.length === 0 ? base : base + '-archive' + above[0],
+     arcNextTip],
+    ['\u00bb', base === slug ? '' : base, arcJumpTip],
+  ];
+  const deckKey = JSON.stringify(deck);
+  if ($('evergreen').dataset.key !== deckKey) {
+    $('evergreen').dataset.key = deckKey;
+    $('evergreen').replaceChildren(...deck.map(([glyph, t, tip]) => {
+      const b = el('button', 'arc', glyph);
+      b.type = 'button';
+      b.disabled = t === '';
+      b.dataset.to = t;
+      setTip(b, tip);
+      b.addEventListener('click', () => {
+        location.href = '/' + b.dataset.to + location.search;
+      });
+      return b;
     }));
   }
   const known = knownBids();
@@ -1662,6 +1685,11 @@ function updateRow(t, seat, b, mine, known, locked) {
                 2 * i + 'px ' + 2 * i + 'px 0 0 var(--ok-fg)');
   }
   const stackShadow = sheets.concat('var(--lift)').join(', ');
+  // the sheets are INK the flex gap cannot see: hand the row back
+  // exactly the spread they eat, so the gutter below a stacked card
+  // stays the same 0.4rem however tall the pile grows (ZOI: the
+  // count is uncapped, so the compensation must scale with it)
+  const stackDrop = bcount > 1 ? 2 * (bcount - 1) + 'px' : '';
   if (kind === 'editor') {
     const editor = content.querySelector('textarea');
     // the gavel drop is a bright line: your bid stays readable in
@@ -1679,6 +1707,7 @@ function updateRow(t, seat, b, mine, known, locked) {
     // recomputed: a LIVE ring must survive a change-ful render
     editor.className = stamp === undefined ? 'bid-slot' : 'bid-card';
     editor.style.boxShadow = stamp === undefined ? '' : stackShadow;
+    editor.style.marginBottom = stamp === undefined ? '' : stackDrop;
     // never clobber what the user is typing: leave a focused or dirty
     // editor alone (a draft = live value differs from defaultValue)
     if (editor !== document.activeElement
@@ -1702,6 +1731,7 @@ function updateRow(t, seat, b, mine, known, locked) {
     const sealed = known[usid] === undefined;
     content.className = 'bid-card';
     content.style.boxShadow = stackShadow;
+    content.style.marginBottom = stackDrop;
     const text = content.firstElementChild;
     text.className = sealed ? 'bid-text masked' : 'bid-text';
     text.textContent = sealed ? MASK : known[usid];

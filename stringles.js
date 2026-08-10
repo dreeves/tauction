@@ -61,6 +61,10 @@ const archiveCopy = `Archive`;
 
 const archivedTip = `Can't archive an archive`;
 
+const arcPrevTip = `Previous incarnation of this auction`;
+const arcNextTip = `Next incarnation of this auction`;
+const arcJumpTip = `Current incarnation of this auction`;
+
 // The reserved-name objection, both homes (the nameTakenBanner
 // pattern): the typed-name gate refuses archive-shaped names
 // pre-wire, and the server's archiveSquat refusal — the backstop

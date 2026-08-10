@@ -1249,6 +1249,8 @@ async function bid(page, bidText) {
         r.selectNode(e.firstChild);
         return r.getBoundingClientRect().left;
       };
+      // (the 2026-08-10 gavel glyph came and went, dreev's call;
+      // the stamp TEXT owns the axis, at the tombstone row's rail)
       return Math.abs(textLeft(document.querySelector('.th-person'))
         - textLeft(document.querySelector('#status .closed'))) < 1;
     }), 'the Closed stamp starts on the participant-text axis');
@@ -1904,6 +1906,14 @@ async function bid(page, bidText) {
          isBelow && onRightFlank),
        'every commit button sits below its field, on its right flank: '
        + JSON.stringify(placements));
+    ok(await fine2.evaluate(() => {
+      const go = document.getElementById('roster-go');
+      const one = document.querySelector('.tile.mine .rebid .go')
+        .getBoundingClientRect().height;
+      return go.getBoundingClientRect().height <= one + 2;
+    }), 'ADD PARTICIPANT is ONE line, like every sibling pill: a'
+       + ' label never breaks inside its own button (it rendered'
+       + ' two-line beside 370px of empty card)');
     await shoot(fine2, 'story5c-buttons-below');
     const fresh = await makePage(browser, DESKTOP);
     await fresh.goto(BASE + '/', { waitUntil: 'networkidle0' });
@@ -2149,10 +2159,12 @@ async function bid(page, bidText) {
       probe.remove();
       return document.body.classList.contains('revealed')
         && getComputedStyle(document.body).backgroundColor !== paper
-        && parseFloat(getComputedStyle(
-             document.getElementById('closed')).marginTop) > 12;
+        // re-derived 2026-08-10: the 1.1rem breath lives on the
+        // tombstone ROW now (stamp, Archive, deck share it)
+        && parseFloat(getComputedStyle(document
+             .querySelector('#status .tombstone')).marginTop) > 12;
     }), 'a closed auction changes the weather: the body tints off the'
-       + ' resting paper and the Closed line gets its air');
+       + ' resting paper and the tombstone row gets its air');
 
     /* ====== the fresh-URL eager typist (dreev 2026-07-30) ============
        Replicata: arrive at a brand-new URL — no cached snapshot — on
@@ -2678,7 +2690,19 @@ async function bid(page, bidText) {
     const eric = await makePage(browser, DESKTOP);
     await eric.goto(BASE + '/quillst', { waitUntil: 'networkidle0' });
     await eric.waitForSelector('.tile[data-snym="dalia"]');
-    await dalia.click('#desctoggle');
+    // keyboard-open the editor (e.detail 0 keeps focus on the
+    // pencil): the mode flip display:none's the pencil while it
+    // still holds focus, and the parked tip must go SILENT — not
+    // park at the page origin (the hidden-host guard; the defect
+    // showed in two phone captures before the fix)
+    await dalia.focus('#desctoggle');
+    await dalia.keyboard.press('Enter');
+    await dalia.waitForFunction(() => !document.getElementById('desc')
+      .classList.contains('viewing'));
+    ok(await dalia.evaluate(() =>
+      document.getElementById('tip').hidden),
+       'a hidden host keeps its counsel: the retired pencil parks'
+       + ' no origin-tip');
     await eric.waitForFunction(() => document.getElementById('desc')
       .classList.contains('scribbling'));
     ok(await eric.$eval('#desctoggle', (e) => e.dataset.tip)
@@ -2824,9 +2848,11 @@ async function bid(page, bidText) {
         .getBoundingClientRect();
       const b = document.getElementById('archive')
         .getBoundingClientRect();
-      return Math.abs(b.top - c.top) < 3 && b.left >= c.right - 1;
+      const mid = (r) => (r.top + r.bottom) / 2;
+      return Math.abs(mid(b) - mid(c)) < 3 && b.left >= c.right - 1;
     }), 'the Archive link SHARES the Closed line, to its right'
-       + " (dreev's same-line ruling)");
+       + " (dreev's same-line ruling; centers, not tops — the"
+       + ' hit-box padding moves box tops, never ink centers)');
     const open = await makePage(browser, DESKTOP);
     await open.goto(BASE + '/stillon', { waitUntil: 'networkidle0' });
     await addName(open, 'hal');
@@ -2837,6 +2863,21 @@ async function bid(page, bidText) {
       return r.width === 0 && r.height === 0;
     }), 'an open auction shows no Archive control (CSS off'
        + " .revealed, the Closed stamp's own convention)");
+    // a ledger tip rides RIGHTWARD (the row pitch leaves no room
+    // below: a bottom tip sat in the next row's lap) — pinned on an
+    // OPEN page, the only place stars still render (the settled-
+    // record ruling took them off closed pages)
+    await open.hover('.tile .tu');
+    await open.waitForFunction(() =>
+      !document.getElementById('tip').hidden);
+    ok(await open.evaluate(() => {
+      const t = document.getElementById('tip').getBoundingClientRect();
+      const star = document.querySelector('.tile .tu')
+        .getBoundingClientRect();
+      return t.left >= star.right && t.top < star.bottom;
+    }), "a ledger tip rides its own row's band, to the right —"
+       + " never the next row's lap");
+    await open.mouse.move(5, 5);  // park the pointer off the ledger
     ok(await flo.evaluate(() => document.getElementById('evergreen')
          .getBoundingClientRect().width === 0),
        'an archive-less page shows no chain links yet: the slot is'
@@ -2852,13 +2893,24 @@ async function bid(page, bidText) {
        'one click: the page reborn empty in place, ready for the'
        + ' next round');
     await flo.waitForFunction(() =>
-      document.querySelector('#evergreen a') !== null);
+      document.querySelector('#evergreen .arc') !== null);
     ok(await flo.evaluate(() => {
-      const a = document.querySelector('#evergreen a');
-      return a.textContent.indexOf('/weekly-archive1') !== -1
-        && a.getBoundingClientRect().width > 0;
-    }), 'the reborn live page links its newest archive — visible'
-       + ' even while the new round is open');
+      const deck = [...document.querySelectorAll('#evergreen .arc')];
+      return deck.length === 3
+        && deck[0].dataset.to === 'weekly-archive1'
+        && !deck[0].disabled && deck[1].disabled && deck[2].disabled
+        && deck[0].getBoundingClientRect().width > 0;
+    }), 'the reborn live page wears the transport deck, \u2039'
+       + ' leading to its newest archive — visible even while open');
+    ok(await flo.evaluate(() => {
+      const r = document.getElementById('reveal')
+        .getBoundingClientRect();
+      const a = document.querySelector('#evergreen .arc')
+        .getBoundingClientRect();
+      return a.top - r.bottom >= 10;
+    }), 'the tombstone slot BREATHES below the reveal button'
+       + ' (dreev: "squished against the reveal button" — the'
+       + " stamp's own 1.1rem rides every occupant of the slot)");
     const past = await makePage(browser, DESKTOP);
     await past.goto(BASE + '/' + wkArc, { waitUntil: 'networkidle0' });
     await past.waitForFunction(() => document.getElementById('status')
@@ -2870,19 +2922,109 @@ async function bid(page, bidText) {
     }), "the archived round reads whole at its archive URL, its own"
        + ' Archive control grayed');
     ok(await past.evaluate(() => {
-      const e = document.getElementById('evergreen');
-      return e.getBoundingClientRect().width > 0
-        && e.querySelector('a') !== null;
-    }), 'the way home is VISIBLE beside the grayed Archive control');
+      // (#evergreen is display:contents — no box of its own; the
+      // buttons are the measurable truth)
+      const arcs = [...document.querySelectorAll('#evergreen .arc')];
+      return arcs.length === 3
+        && arcs.every((a) => a.getBoundingClientRect().width > 0);
+    }), 'the transport deck is VISIBLE beside the grayed Archive'
+       + ' control (re-derived: buttons, not text links)');
+    // the deck reads at a GLANCE and sits ON the line (dreev:
+    // "too small and not aligned properly" — pinned at birth
+    // henceforth, per his fastidiousness ruling)
+    ok(await past.evaluate(() => {
+      const arc = document.querySelector('#evergreen .arc');
+      return parseFloat(getComputedStyle(arc).fontSize) >= 22;
+    }), 'the deck glyphs are at least 1.4rem: legible transport,'
+       + ' not footnote punctuation');
+    ok(await past.evaluate(() => {
+      const mid = (e) => {
+        const r = e.getBoundingClientRect();
+        return (r.top + r.bottom) / 2;
+      };
+      const c = mid(document.querySelector('#status .closed'));
+      const a = mid(document.getElementById('archive'));
+      const d = mid(document.querySelector('#evergreen .arc'));
+      return Math.abs(d - c) < 2 && Math.abs(a - c) < 2;
+    }), 'stamp, Archive, and deck share ONE optical centerline'
+       + ' within 2px: the tombstone is a single aligned row');
+    // the deck holds ONE screen position across the family (dreev:
+    // "consistent place between archived and latest... important
+    // for clicking between versions"): right-anchored, so the
+    // stamp's variable-width date never moves it
+    const deckRightPast = await past.evaluate(() =>
+      [...document.querySelectorAll('#evergreen .arc')].pop()
+        .getBoundingClientRect().right);
+    const deckRightLive = await flo.evaluate(() =>
+      [...document.querySelectorAll('#evergreen .arc')].pop()
+        .getBoundingClientRect().right);
+    ok(Math.abs(deckRightPast - deckRightLive) < 2,
+       'the deck right-anchors at the SAME x on archived and live'
+       + ' pages: the pointer stays put while paging versions ('
+       + deckRightPast + ' vs ' + deckRightLive + ')');
+    // the committed-name card balances: the invisible input chrome
+    // below the name no longer bottom-weights the page's first card
+    ok(await past.evaluate(() => {
+      const card = document.querySelector('main > .card');
+      return parseFloat(getComputedStyle(card).paddingBottom)
+        < parseFloat(getComputedStyle(card).paddingTop);
+    }), "the named page's first card trims its bottom padding: the"
+       + ' dead input chrome stops bottom-weighting it');
     await auditLayout(past, 'archived round at its archive URL');
     await shoot(past, 'story-archive-wayhome');
-    await past.click('#evergreen a');
+    await past.click('#evergreen .arc[data-to="weekly"]:last-child');
     await past.waitForFunction(() =>
       location.pathname === '/weekly'
       && !document.getElementById('status').classList
            .contains('revealed'));
-    ok(true, 'one click on the evergreen link and flo is home: the'
-       + ' live /weekly, open for the next round');
+    ok(true, 'one press of \u00bb and flo is home: the live'
+       + ' /weekly, open for the next round — no words needed');
+
+    /* ===== THE SETTLED RECORD (dreev 2026-08-10: closed vs open
+       was too subtle; his ratified anti-magic exception — a closed
+       page's rows shed their controls outright) ===== */
+    const rec = await makePage(browser, DESKTOP);
+    await rec.goto(BASE + '/weekly-archive1',
+      { waitUntil: 'networkidle0' });
+    await rec.waitForFunction(() => document.getElementById('status')
+      .classList.contains('revealed'));
+    ok(await rec.evaluate(() => {
+      const stars = [...document.querySelectorAll('#tiles .tu')];
+      return stars.length > 0 && stars.every((e) =>
+          e.classList.contains('selected')
+            ? getComputedStyle(e).visibility === 'visible'
+            : getComputedStyle(e).visibility === 'hidden')
+        && [...document.querySelectorAll('#tiles .x')]
+             .every((e) => e.getBoundingClientRect().width === 0)
+        && document.querySelector('#status .legend')
+             .getBoundingClientRect().width > 0;
+    }), 'a closed page is a SETTLED RECORD: \u00d7s gone, unselected'
+       + ' stars invisible but HOLDING THEIR COLUMN (dreev\'s'
+       + ' amendment: "just unselected ones"), your star and the'
+       + ' footnote stay');
+    // the axis pin this page never had (the miss dreev caught):
+    // hidden-star rows must keep header text over cell text
+    ok(await rec.evaluate(() => {
+      const textLeft = (e) => {
+        const r = document.createRange();
+        r.selectNode(e.firstChild);
+        return r.getBoundingClientRect().left;
+      };
+      const cell = document.querySelector('#tiles .tile-name');
+      const cs = getComputedStyle(cell);
+      const cellText = cell.getBoundingClientRect().left
+        + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft);
+      return Math.abs(textLeft(document.querySelector('.th-person'))
+        - cellText) < 1;
+    }), 'the closed page keeps the header-over-cell text axis: the'
+       + ' hidden stars still hold their column');
+    const openBg = await flo.evaluate(() =>
+      getComputedStyle(document.body).backgroundColor);
+    const closedBg = await rec.evaluate(() =>
+      getComputedStyle(document.body).backgroundColor);
+    ok(openBg !== closedBg, 'the paper turns decisively at the'
+       + ' close: parchment weather, visible across the room ('
+       + openBg + ' vs ' + closedBg + ')');
 
     ok(pageErrors.length === 0,
        'ZERO page errors across every story flow (the net catches'

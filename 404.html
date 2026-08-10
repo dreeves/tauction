@@ -143,6 +143,11 @@
     <!-- once revealed, the + row retires and this stamp takes the
          button's place (text filled in by render; format is dreev's
          spec) -->
+    <!-- THE TOMBSTONE (one flex row since 2026-08-10, dreev's
+         fastidiousness ruling: its occupants — stamp, Archive,
+         transport deck — share one optical centerline by
+         construction, not by per-element margin arithmetic) -->
+    <div class="tombstone">
     <div id="closed" class="closed"></div>
     <!-- THE ARCHIVE control (dreev 2026-08-09): shows with the
          Closed stamp (CSS off #status.revealed, the stamp's own
@@ -161,6 +166,7 @@
          so there is no display gate at all. Link text = the full
          URL sans https://, no English. -->
     <span id="evergreen" class="evergreen"></span>
+    </div>
     <!-- the star, footnoted (the ★ glyph everywhere is
          dreev-ratified) -->
     <div class="legend">★ = you</div>
@@ -169,7 +175,7 @@
   <footer>
     <a href="/sourcery.html">sourcery</a>
     <span class="sep">·</span>
-    <span class="version">v2026.08.09-d</span>
+    <span class="version">v2026.08.10-a</span>
   </footer>
 </main>
 

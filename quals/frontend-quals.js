@@ -203,6 +203,13 @@ async function makePage(pathAndQuery, seed) {
   // jsdom has no matchMedia; the app (a browser program) rightly
   // assumes it — the harness fills its own gap
   dom.window.matchMedia = (q) => ({ matches: false, media: q });
+  // jsdom does no layout, so offsetParent is null on EVERYTHING —
+  // which would trip showTip's hidden-host guard for every host.
+  // The harness declares all hosts visible; the guard's real
+  // behavior (a display:none'd pencil keeps its counsel) is pinned
+  // in real Chrome by the story suite.
+  Object.defineProperty(dom.window.HTMLElement.prototype,
+    'offsetParent', { get() { return this.ownerDocument.body; } });
   // canvas-confetti (a vendor script in the real page) can't run in
   // jsdom (no canvas): the harness records each burst's parameters
   // instead, and the ceremony quals assert the calpuz-modeled physics
@@ -5829,8 +5836,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      're-submission tooltip matches the stringles template, got '
      + hoverBid(domA, 'ann'));
   ok(own[0].querySelector('.rebid textarea').style.boxShadow
-       .includes('2px 2px'),
-     're-bid stacks a sheet behind your card');
+       .includes('2px 2px')
+     && own[0].querySelector('.rebid textarea').style.marginBottom
+          === '2px',
+     're-bid stacks a sheet behind your card — and the card hands'
+     + ' the row gap back the 2px of ink the sheet eats');
   await until(() =>  // domB polls
     tiles(domB.window.document, '.updated').length > 0);
   const shim = tiles(domB.window.document, '.updated');
@@ -5850,9 +5860,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   }
   const annRow = tiles(domA.window.document, '.has-bid')[0];
   ok(annRow.querySelector('.bid-card').style.boxShadow
-       .includes('10px 10px'),
+       .includes('10px 10px')
+     && annRow.querySelector('.bid-card').style.marginBottom
+          === '10px',
      'six submissions = five sheets, uncapped: the pile IS the'
-     + ' disinducement');
+     + " disinducement — and the gutter below it stays the row's"
+     + ' own 0.4rem (the margin mirrors the spread)');
   // (subs superscript shelved 2026-07-15)
   // ok(annRow.querySelector('.tile-subs').textContent === '6',
   //    'counter keeps the exact count past the cap');
@@ -6819,14 +6832,17 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     ok(doc.getElementById('slug').value === 'evrgrn',
        'the URL and name never moved: the slug is evergreen');
     await until(() =>
-      doc.querySelectorAll('#evergreen a').length === 1);
-    ok(doc.querySelector('#evergreen a').textContent
-         === 'tauction.dreev.es/evrgrn-archive1'
-       && doc.querySelector('#evergreen a').getAttribute('href')
-            === '/evrgrn-archive1?api=' + API_URL,
-       'the reborn LIVE page — still open — links its newest'
-       + ' archive from the tombstone slot: the chain shows'
-       + ' whenever the data supports it, no revealed gate');
+      doc.querySelectorAll('#evergreen .arc').length === 3);
+    {
+      const deck = [...doc.querySelectorAll('#evergreen .arc')];
+      ok(deck[0].textContent === '\u2039'
+         && !deck[0].disabled
+         && deck[0].dataset.to === 'evrgrn-archive1'
+         && deck[1].disabled && deck[2].disabled,
+         'the reborn LIVE page wears the transport deck: \u2039 to'
+         + ' the newest archive, \u203a and \u00bb grayed (the'
+         + ' timeline ends here) — shown even while open');
+    }
 
     // the reborn page is LIVE again: the hidden-tab title peek
     // resumes (seenRevealed follows adopted truth, no longer a
@@ -6860,17 +6876,16 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        && btn2.getAttribute('data-tip') === STR.archivedTip,
        'an archive page wears its Archive control GRAYED, the tip'
        + ' explaining the gray (grayed, never suppressed)');
-    // THE INCARNATION LINKS: one derived rule — home (base, when
-    // standing on an archive) + previous incarnation (greatest
-    // existing N below this page's own)
+    // THE INCARNATION DECK: wordless transport, derived from
+    // (arcs, own N)
     await until(() =>
-      doc2.querySelectorAll('#evergreen a').length === 1);
-    const kin1 = [...doc2.querySelectorAll('#evergreen a')];
-    ok(kin1[0].textContent === 'tauction.dreev.es/evrgrn'
-       && kin1[0].getAttribute('href') === '/evrgrn?api=' + API_URL,
-       'the FIRST archive links only home — no previous exists'
-       + ' below 1; anchortext = full URL sans scheme, ?api='
-       + ' preserved');
+      doc2.querySelectorAll('#evergreen .arc').length === 3);
+    const deck1 = [...doc2.querySelectorAll('#evergreen .arc')];
+    ok(deck1[0].disabled
+       && !deck1[1].disabled && deck1[1].dataset.to === 'evrgrn'
+       && !deck1[2].disabled && deck1[2].dataset.to === 'evrgrn',
+       'the FIRST archive: \u2039 grayed (nothing older), \u203a'
+       + ' and \u00bb both lead to the live page');
 
     // a SHOUTED archive URL still lands: the matcher lowercases
     // the whole path first (derived from ARCHIVE_RE, so the weld
@@ -6942,15 +6957,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     const dom7 = await makePage('/evrgrn-archive2?api=' + API_URL);
     const doc7 = dom7.window.document;
     await until(() =>
-      doc7.querySelectorAll('#evergreen a').length === 2);
-    const kin2 = [...doc7.querySelectorAll('#evergreen a')];
-    ok(kin2[0].textContent === 'tauction.dreev.es/evrgrn'
-       && kin2[1].textContent
-            === 'tauction.dreev.es/evrgrn-archive1'
-       && kin2[1].getAttribute('href')
-            === '/evrgrn-archive1?api=' + API_URL,
-       'an archive with a predecessor links home FIRST, then the'
-       + ' previous incarnation');
+      doc7.querySelectorAll('#evergreen .arc').length === 3);
+    const deck2 = [...doc7.querySelectorAll('#evergreen .arc')];
+    ok(deck2[0].dataset.to === 'evrgrn-archive1'
+       && !deck2[0].disabled
+       && deck2[1].dataset.to === 'evrgrn' && !deck2[1].disabled
+       && deck2[2].dataset.to === 'evrgrn' && !deck2[2].disabled,
+       'a middle-of-timeline archive: \u2039 older, \u203a newer'
+       + ' (the live page — nothing above 2), \u00bb home');
 
     // a hand-made hole in the family: the previous-incarnation
     // link SKIPS to the greatest existing lower number (the
@@ -6964,13 +6978,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     const dom8 = await makePage('/ghost-archive3?api=' + API_URL);
     const doc8 = dom8.window.document;
     await until(() =>
-      doc8.querySelectorAll('#evergreen a').length === 2);
-    ok([...doc8.querySelectorAll('#evergreen a')]
-         .map((a) => a.textContent).join('|')
-         === 'tauction.dreev.es/ghost|'
-           + 'tauction.dreev.es/ghost-archive1',
-       'the previous-incarnation link skips a hand-made gap to'
-       + ' the greatest existing lower number');
+      doc8.querySelectorAll('#evergreen .arc').length === 3);
+    ok([...doc8.querySelectorAll('#evergreen .arc')]
+         .map((b) => b.dataset.to).join('|')
+         === 'ghost-archive1|ghost|ghost',
+       '\u2039 SKIPS a hand-made gap to the greatest existing'
+       + ' lower number; \u203a and \u00bb ride to the live page');
 
     // the two runtimes speak ONE archive grammar, welded at source
     const reOf = (src) => (src.match(

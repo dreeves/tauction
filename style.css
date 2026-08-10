@@ -91,7 +91,10 @@ body {
    subtle closed indicator; the cards keep their own paper, so they
    pop faintly against it) */
 body.revealed {
-  background-color: color-mix(in srgb, var(--bg) 92%, var(--star));
+  /* DECISIVELY, since 2026-08-10 (dreev: closed vs open was too
+     subtle) — the closed page's weather is unmistakable parchment,
+     not a hint of it */
+  background-color: color-mix(in srgb, var(--bg) 72%, var(--star));
 }
 
 main {
@@ -103,7 +106,9 @@ main {
   max-width: 38rem;
   /* the top is the corner chips' own strip: they sit wholly in
      the page margin, never straddling the first card's border */
-  padding: 3rem 0.9rem 3rem;
+  padding: 3.35rem 0.9rem 3rem;  /* the chips' 4px hard shadow needs
+                                    its own 8px of optical daylight
+                                    over the first card's border */
 }
 
 .card {
@@ -268,8 +273,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 
 /* no pencil while editing, so the preview sheds its rest-mode
-   pencil inset and runs the full card width, like the field */
-.desc:not(.viewing) .descview { padding-right: 0; }
+   pencil inset and runs the full card width, like the field —
+   and stands off the commit row (grid gaps never collapse), so
+   SAVE/DISCARD read as the FIELD's buttons, not the preview's */
+.desc:not(.viewing) .descview { padding-right: 0; margin-top: 0.75rem; }
 
 .descedit {  /* deltas from the shared field recipe above */
   font-size: 1rem;  /* the 16px reading floor, desktop included
@@ -363,6 +370,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    placeholder itself. */
 .desc.viewing .descview:empty ~ .desctoggle {
   position: static;
+  padding: 0;  /* shed the corner-mode inset: the hint sits on the
+                  same 1rem rail as the label and the prose */
   font-size: 1rem;
   color: var(--muted);
   opacity: 0.8;  /* placeholder ink, exactly */
@@ -418,8 +427,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   flex-basis: 100%;  /* in the flex wrappers: a full line of its own */
   flex-wrap: wrap;   /* a cramped cell stacks its buttons instead of
                         letter-mangling them */
+  /* ...and stacking is BETWEEN buttons only: a label never breaks
+     inside its own pill (ADD PARTICIPANT rendered as a two-line
+     pill beside 370px of empty card — the critic's top complaint) */
+  white-space: nowrap;
   justify-content: flex-end;
-  gap: 0.4rem;
+  gap: 0.5rem;  /* the standalone-button step (.war-btns' 8px) */
   margin-top: 0.3rem;  /* daylight above EVERY visible button row —
                           this rode .hot only, and the always-visible
                           landing Go sat flush on its field's border
@@ -1008,6 +1021,17 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
 
 .tiles { display: flex; flex-direction: column; gap: 0.4rem; }
 
+/* a hot row's SUBMIT sat nearer the NEXT person's row than its own
+   field (proximity inversion); scoped to .tiles so the + row's and
+   the blub's button rows keep their geometry */
+.tiles .gorow { margin-bottom: 0.3rem; }
+
+/* an empty flex container never self-collapses: on a virgin ledger
+   thead's and the + row's margins stacked ~13px, then snapped to
+   ~7px at the first add — the empty container renders nothing
+   (the tombstone slot's own convention) */
+#tiles:empty { display: none; }
+
 
 .tile {
   display: flex;
@@ -1027,23 +1051,48 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
   width: calc(15ch + 1.1rem);  /* = .tile-name: twin edges, one column */
 }
 
-/* the auction's tombstone: the + row retires at the reveal and this
-   quiet stamp of the closing moment takes its place */
+/* THE TOMBSTONE ROW (2026-08-10, dreev's fastidiousness ruling):
+   stamp, Archive control, and transport deck are ONE flex row —
+   align-items centers every occupant on one optical line by
+   construction, gap replaces the per-element margin dance, and the
+   1.1rem breath lives in ONE place (the row), shown exactly when
+   the row has something to show: a closed page, or an open page
+   whose family has archives (the :has arm — the deck renders only
+   then). */
+.tombstone {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-left: calc(2.55rem + 2px);  /* the participants rail */
+}
+
+#status.revealed .tombstone,
+.tombstone:has(.arc) { margin-top: 1.1rem; }
+
+/* the auction's tombstone stamp: the + row retires at the reveal
+   and this quiet mark of the closing moment takes its place */
 .closed { display: none; }
 
 #status.revealed .closed {
-  /* inline-block, so the Archive link shares its line (dreev's
-     same-line ruling) */
-  display: inline-block;
-  /* a full breath above it (dreev: it sat squished against the
-     ledger's last row) */
-  margin-top: 1.1rem;
-  padding-left: calc(2.55rem + 2px);
+  display: block;  /* a flex item now; the row centers it */
   font-size: 0.8rem;
   color: var(--muted);
 }
 
 #status.revealed .addrow { display: none; }
+
+/* THE SETTLED RECORD (dreev 2026-08-10, his ratified exception to
+   gray-don't-suppress; amended same day — "just unselected ones"):
+   a closed page sheds the ×s outright and hides every UNSELECTED
+   star — but visibility, not display, so the star column keeps its
+   box and the header-over-cell text axis holds. YOUR star stays
+   (the identity marker), and the ★ = you footnote stays with it.
+   (The bid editor on your own row stays too: it holds your frozen
+   draft, the dead-draft law.) */
+#status.revealed .tile .x { display: none; }
+#status.revealed .tu { visibility: hidden; }
+#status.revealed .tu.selected { visibility: visible; }
+
 
 /* THE ARCHIVE control (dreev 2026-08-09): a quiet link-flavored
    button ON the tombstone's line, to its right (dreev's same-line
@@ -1052,9 +1101,11 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
 .archivego { display: none; }
 
 #status.revealed .archivego {
-  display: inline-block;
-  margin-left: 0.75rem;
-  padding: 0;
+  display: block;  /* a flex item; the row centers it, gap spaces it */
+  /* hit inflation: padding grows the box (the bare ~13px link
+     failed the 24px floor); flex centering keeps the ink on the
+     row's one line, so no negative-margin hand-back is needed */
+  padding: 0.35rem 0;
   border: none;
   background: none;
   font: inherit;
@@ -1071,22 +1122,45 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
 #status.revealed .archivego:disabled {
   cursor: default;
   text-decoration: none;
-  opacity: 0.5;
+  /* house dimming rides color, never element opacity (the only
+     opacity-dimmed control in the file read at ~2:1 contrast) */
+  color: color-mix(in srgb, var(--muted) 55%, transparent);
 }
 
-/* THE INCARNATION LINKS (dreev 2026-08-09): the tombstone slot's
-   family chain — home and previous incarnation, derived by the
-   client from slug shape + state.arcs. The span is exactly as
-   visible as its content: an empty family renders nothing, so no
-   display gate exists at all. */
-.evergreen {
-  font-size: 0.8rem;
+/* THE INCARNATION DECK (dreev 2026-08-10, superseding the text
+   links): wordless transport in the tombstone row — ‹ › » —
+   derived by the client from slug shape + state.arcs. display:
+   contents, so the buttons are the row's own flex items (centered
+   and gapped like their siblings); a family of one renders
+   nothing. */
+.evergreen { display: contents; }
+
+.evergreen .arc {
+  padding: 0.1rem 0.5rem;  /* a real hit box around the glyph */
+  border: none;
+  background: none;
+  font: inherit;
+  /* GLANCE-SIZED (dreev: "too small"): transport, not footnote
+     punctuation — pinned >= 1.4rem by a story qual */
+  font-size: 1.5rem;
+  line-height: 1;
   color: var(--muted);
+  cursor: pointer;
 }
 
-.evergreen a { margin-left: 0.75rem; color: inherit; }
+/* the deck RIGHT-ANCHORS (dreev: "consistent place between
+   archived and latest... important for clicking between
+   versions"): pushed to the row's right edge, its x never moves
+   with the stamp's variable-width date or the Archive control */
+.evergreen .arc:first-child { margin-left: auto; }
 
-.evergreen a:hover { color: var(--accent); }
+.evergreen .arc:hover:not(:disabled) { color: var(--accent); }
+
+.evergreen .arc:disabled {
+  cursor: default;
+  /* house dimming: color alpha, never element opacity */
+  color: color-mix(in srgb, var(--muted) 45%, transparent);
+}
 
 /* the star's footnote: whisper-quiet, tucked under the ledger — but
    its ★ wears the same gold as a lit one */
@@ -1129,7 +1203,8 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
 
 .addrow .you-hint {
   position: absolute;
-  left: 1.05rem;
+  left: 0.8rem;  /* inside the 1.5rem marker column (1.05 escaped it
+                    and grazed the @-field's border) */
   top: 0.1rem;
   font-size: 0.7rem;
   line-height: 1;
@@ -1488,7 +1563,13 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
    stays flat.) */
 .tile { --lift: 0 0 0 0 transparent; }
 
-.tile.mine { --lift: var(--pop); }
+.tile.mine {
+  --lift: var(--pop);
+  /* the 4px pop shadow inks into the 6.4px tile gap: hand the row
+     back the daylight its shadow eats (the .card gutter's own
+     discount, style.css ~117) */
+  margin-bottom: 4px;
+}
 
 @keyframes breathe {
   0%, 100% { border-color: var(--border); background-color: var(--bg); }
@@ -1508,6 +1589,10 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
    own margin. */
 .tile.addrow { margin-top: 0.4rem; }
 
+/* the + row's pill overflows RIGHTWARD into the empty bid column
+   (flex-end would spill the now-unbreakable label over the star) */
+.addrow .gorow { justify-content: flex-start; }
+
 /* gap 0 keeps the input hugging the @; the wrap's own font is the
    ch BASIS of its width — the text inside reads at the floor */
 .addrow .at-wrap { flex: none; font-size: 0.85rem; gap: 0; }
@@ -1521,6 +1606,44 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
   padding: 0 0.3rem 0 0.1rem;  /* hug the @ like the row names do */
   font-size: 1rem;
 }
+
+/* (2026-08-10: an audit proposed widening this yield to narrow
+   FINE-pointer windows too — 320px desktop windows crush bids to
+   ~48px — but the yield's shrinking name column breaks the pinned
+   header-over-cell text-axis alignment the narrow qual patrols.
+   Crushed-but-aligned vs roomy-but-drifting is dreev's call;
+   status quo holds until he rules.) */
+@media (pointer: coarse) {
+  /* the BID column owns the row on a phone: it keeps a floor and
+     the name column YIELDS (shrinks below its basis) — a pinned name
+     column letter-stacked the bids at 320px. The basis is rem, not
+     ch: cells and header wear different font sizes and must share
+     one column edge. */
+  .th-person, .rename {
+    min-width: 0;
+    flex: 0 1 8.1rem;
+  }
+
+  /* a squeezed header clips its tail (320px) — clipped beats
+     colliding with BIDS; the label stays 0.85rem, it is not a
+     touch target */
+  .th-person { overflow: hidden; white-space: nowrap; }
+
+  .tile-bid { min-width: 7rem; }
+
+  /* the name input shrinks with its cell instead of holding 12ch
+     and wrapping under the @ */
+  .rename input { width: auto; flex: 1; min-width: 0; }
+
+  .addrow .at-wrap { width: 8.1rem; }
+}
+
+/* the committed name keeps the input's geometry (border-color
+   transparent, deliberate), which hangs 10px of invisible input
+   chrome below the ink — the page's first card read bottom-heavy
+   (18px above the label vs 31px below the name). State-scoped trim
+   at the commit moment, when the card reflows anyway. */
+main > .card:has(#slug:disabled) { padding-bottom: 0.35rem; }
 
 @media (prefers-reduced-motion: reduce) {
   .tile-name, .tile-bid, .bid-card.slot, .gavel .mallet,
@@ -1550,13 +1673,18 @@ footer {
 footer a {
   color: inherit;
   text-decoration: none;
+  /* the ~11px bare-text target grows a real hit box, handed back */
+  padding: 0.6rem 0.3rem;
+  margin: -0.6rem -0.3rem;
 }
 
 footer a:hover { color: var(--accent); text-decoration: underline; }
 
 footer .sep { opacity: 0.5; }
 
-footer .version { letter-spacing: 0.04em; opacity: 0.75; }
+footer .version { letter-spacing: 0.04em; }  /* full muted ink: the
+                       0.75 opacity double-dimmed sub-12px text (the
+                       whisper is the SIZE, the pinned law) */
 
 /* --------------------------- corner buttons ---------------------------- */
 
@@ -1565,7 +1693,7 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
   top: 0.7rem;
   right: 0.9rem;  /* matches main's side padding: flush with the cards */
   display: flex;
-  gap: 0.4rem;
+  gap: 0.5rem;  /* the standalone-button step (.war-btns' 8px) */
   z-index: 2;
 }
 
@@ -1614,9 +1742,12 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
 
 .dlg-x {
   position: absolute;
-  top: 0.5rem;
-  right: 0.7rem;
-  padding: 0;
+  /* the padding grows the hit box to ~28x34px (the ~11x19px glyph
+     alone sat under the 24px floor) while top/right shrink so the
+     INK stays where it was */
+  top: 0.1rem;
+  right: 0.25rem;
+  padding: 0.45rem 0.55rem;
   font-size: 1.2rem;
   line-height: 1;
   color: var(--muted);
@@ -1625,6 +1756,13 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
 }
 
 .dlg-x:hover { color: var(--fg); }
+
+/* the help dialog scrolls its BODY, not the dialog box: scrolling
+   the box carried the x off-screen and clipped the last line
+   against the border (war-dlg already scrolls internally via
+   .war-diff; share-dlg never overflows) */
+#help-dlg { overflow: hidden; }
+#help-dlg .help-body { overflow: auto; max-height: calc(85vh - 6rem); }
 
 #share-dlg {
   display: none;  /* dialogs only lay out when open */
@@ -1641,6 +1779,9 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
   border: 8px solid #fff;      /* the quiet zone must stay light in dark mode */
   border-radius: 2px;
   background: #fff;
+  /* the baked-in quiet zone + border read as ~35px of phantom gap
+     below; the compensation hangs on the element that owns it */
+  margin-bottom: -0.75rem;
 }
 
 .share-url {
@@ -1816,7 +1957,7 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
 }
 
 .help-body h2 {
-  font-size: 1.05rem;
+  font-size: 1.15rem;  /* 1.05 over 1rem body was an invisible tier */
   margin: 1.6rem 0 0.5rem;
   position: relative;
   padding-top: 0.9rem;
@@ -1854,7 +1995,21 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
 
   /* the corner chips grow to thumb size here (below), so their
      strip above the first card grows with them */
-  main { padding-top: 3.9rem; }
+  main { padding-top: 4.2rem; }
+
+  /* the dialogs' x joins the every-control thumb law (it was the
+     one control class the block skipped) — and the war title
+     stands clear of the grown box */
+  .dlg-x { font-size: 1.5rem; padding: 0.8rem 0.85rem; top: 0; right: 0; }
+  .war-title { margin-right: 2.2rem; }
+
+  /* the link families the block skipped join the ~44px law;
+     tombstone occupants are flex-centered, so their taller boxes
+     just grow the row — no margin hand-back needed there (footer
+     stays inline and keeps the full recipe) */
+  #status.revealed .archivego { padding-block: 0.9rem; }
+  .evergreen .arc { font-size: 1.7rem; padding: 0.6rem 0.7rem; }
+  footer a { padding-block: 0.9rem; margin-block: -0.9rem; }
 
   /* the sealed decoy stays small: it is blurred nonsense whose only
      job is holding a card shape, and at full size it overflows the
@@ -1917,26 +2072,4 @@ footer .version { letter-spacing: 0.04em; opacity: 0.75; }
   /* the name column keeps its desktop FOOTPRINT (12ch of 1rem is the
      old 15ch of 0.85rem): bigger glyphs must not starve the bid
      column, which owns the row on a phone */
-  /* the BID column owns the row on a phone: it keeps a floor and
-     the name column YIELDS (shrinks below its basis) — a pinned name
-     column letter-stacked the bids at 320px. The basis is rem, not
-     ch: cells and header wear different font sizes and must share
-     one column edge. */
-  .th-person, .rename {
-    min-width: 0;
-    flex: 0 1 8.1rem;
-  }
-
-  /* a squeezed header clips its tail (320px) — clipped beats
-     colliding with BIDS; the label stays 0.85rem, it is not a
-     touch target */
-  .th-person { overflow: hidden; white-space: nowrap; }
-
-  .tile-bid { min-width: 7rem; }
-
-  /* the name input shrinks with its cell instead of holding 12ch
-     and wrapping under the @ */
-  .rename input { width: auto; flex: 1; min-width: 0; }
-
-  .addrow .at-wrap { width: 8.1rem; }
 }
