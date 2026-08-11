@@ -106,6 +106,8 @@ class FakeSheet {
 
 module.exports = function makeGas() {
   const tally = { reads: 0, writes: 0, opens: 0 };  // service-call meter
+  tally.unflushedLockReleases = 0;
+  tally.flushes = 0;
   // CacheService, honest: persistent across executions (unlike the
   // per-execution memos RESET clears) with TTL expiry — but against
   // a FAKE clock this harness owns. Default schedule: the clock hops
@@ -120,7 +122,7 @@ module.exports = function makeGas() {
   // one-shot quota simulation: the next batchGet throws the
   // Google-shaped exception the real meter throws (2026-08-06's
   // production banner), then the meter breathes again
-  let quotaTripped = false;
+  let quotaTripAfter = Infinity;
   const ss = {
     sheets: {},
     getSheetByName(n) { return this.sheets[n] || null; },
@@ -129,9 +131,17 @@ module.exports = function makeGas() {
   const ctx = {
     SpreadsheetApp: {
       openById: () => { tally.opens++; return ss; },
-      flush: () => { tally.unflushed = false; },
+      flush: () => {
+        tally.flushes++;
+        tally.unflushed = false;
+      },
     },
-    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    LockService: { getScriptLock: () => ({
+      waitLock() {},
+      releaseLock() {
+        if (tally.unflushed) tally.unflushedLockReleases++;
+      },
+    }) },
     ContentService: {
       createTextOutput: (s) => ({ body: s, setMimeType() { return this; } }),
       MimeType: { JSON: 'json' },
@@ -142,8 +152,8 @@ module.exports = function makeGas() {
     // row, and a blank sheet's valueRange carries no values key.
     Sheets: { Spreadsheets: { Values: {
       batchGet: (id, opts) => {
-        if (quotaTripped) {
-          quotaTripped = false;
+        if (--quotaTripAfter === 0) {
+          quotaTripAfter = Infinity;
           throw new Error("GoogleJsonResponseException: API call to"
             + ' sheets.spreadsheets.values.batchGet failed with'
             + " error: Quota exceeded for quota metric 'Read"
@@ -263,6 +273,8 @@ module.exports = function makeGas() {
     thaw: () => { cacheFrozen = false; },
     advance: (ms) => { cacheNow += ms; },
   };
-  ctx.__quotaTrip = () => { quotaTripped = true; };
+  ctx.__quotaTrip = () => { quotaTripAfter = 1; };
+  ctx.__quotaTripAfter = (n) => { quotaTripAfter = n; };
+  ctx.__quotaClear = () => { quotaTripAfter = Infinity; };
   return ctx;
 };

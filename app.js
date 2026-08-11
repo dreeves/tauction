@@ -189,6 +189,7 @@ let settleSeq = 0;        // bumped when a write SETTLES: a read
                           // its response (the server may not have
                           // committed a write before then)
 let refreshing = false;
+let refreshQueued = false; // did a trigger arrive during the current read?
 // A VERDICT (reveal or archive — the two table-wide one-way ops)
 // wears its own class on #status, 'verdict', styled identically to
 // 'stale' (the CSS aliases them): the drumroll holds until the
@@ -541,8 +542,21 @@ function weather(coded) {
 async function refresh() {
   // (the !slug leg: an unnamed page has nothing to fetch — the user
   // has not picked an auction yet)
-  if (!configured || refreshing || !slug) return;
+  if (!configured || !slug) return;
+  refreshQueued = true;
+  if (refreshing) return;
   refreshing = true;
+  try {
+    while (refreshQueued && document.visibilityState === 'visible') {
+      refreshQueued = false;
+      await refreshOnce();
+    }
+  } finally {
+    refreshing = false;
+  }
+}
+
+async function refreshOnce() {
   const a = slug;  // the auction this request is for
   const seqAtRequest = settleSeq;
   // THE PULSE GATE (dreev-ratified 2026-08-06, after Google's
@@ -560,21 +574,22 @@ async function refresh() {
   // virgin seed carries '' and a cached snapshot from before the
   // pulse era carries nothing — both fall through to the API read,
   // which is the only thing that can upgrade them)
-  if (state.sheet && state.editors.length === 0) {
+  // Own presence ages no fact this page displays; only a RIVAL editor
+  // holds the gate open for clock-run disappearance.
+  if (state.sheet && rivalEditors().length === 0) {
     let wver = null;
     try {
       wver = await fetchPulse(state.sheet);
     } catch (e) {
       weather(e2159(e.message));
-      refreshing = false;
       return;
     }
+    if (document.visibilityState !== 'visible') return;
     if (wver === state.wver) {
       // the picture is CONFIRMED current: any weather-gray retires
       // without an API read (a verdict's drumroll is a different
       // class and belongs to its settle alone)
       $('status').classList.remove('stale');
-      refreshing = false;
       return;
     }
   }
@@ -594,7 +609,7 @@ async function refresh() {
     weather(e2152(e.message));
   }
   try {
-    if (res !== null) {
+    if (res !== null && document.visibilityState === 'visible') {
       if (res.error) banner(refusalText(res.error));
       // adopt only if no writes are pending and no write SETTLED while
       // this snapshot was in flight — anything less and it can lack a
@@ -617,8 +632,6 @@ async function refresh() {
     }
   } catch (e) {
     banner(e2152(e.message));
-  } finally {
-    refreshing = false;
   }
 }
 
@@ -637,11 +650,15 @@ async function refresh() {
 // refresh's).
 async function peekTitle() {
   if (!configured || !slug || seenRevealed) return;
+  // Object identity is the adoption sequence: ingest replaces state,
+  // so a peek overtaken by a snapshot yields even after a second hide.
+  const stateAtRequest = state;
   try {
     const res = await apiGet({ action: 'state', slug: slug });
     assertState(res);  // an {error} payload fails this shape check
+    if (document.visibilityState !== 'hidden'
+        || state !== stateAtRequest) return;
     seenRevealed = seenRevealed || res.revealed;
-    if (document.visibilityState !== 'hidden') return;
     document.title = tabTitle(
       titleGlyph(res.seats, res.bidders, res.revealed,
                  whoHere(res.seats, res)), slug);
@@ -822,6 +839,11 @@ function setBlubBase(v) {
   syncPencil();
 }
 
+function rivalEditors() {
+  return state.editors.filter((e) =>
+    !((e.usid !== '' && e.usid === myUsid()) || e.dvid === DVID));
+}
+
 // The pencil's ONE dresser: composes the version tooltip with the
 // editing-presence suffix when anyone ELSE is at the desk (each
 // named by their seat's snym — a rename-proof lookup — or
@@ -832,8 +854,7 @@ function setBlubBase(v) {
 // it refuses loudly at the seam, never a silently empty desk.)
 function syncPencil() {
   const v = Number($('descedit').dataset.base);
-  const rivals = state.editors.filter((e) =>
-    !((e.usid !== '' && e.usid === myUsid()) || e.dvid === DVID));
+  const rivals = rivalEditors();
   $('desc').classList.toggle('scribbling', rivals.length > 0);
   const names = rivals.map((e) => {
     const seat = seats.find((s) => s.usid === e.usid);
@@ -2955,7 +2976,7 @@ async function init() {
     await refresh();
   }
   setInterval(() => {
-    if (document.visibilityState === 'visible') refresh();
+    if (document.visibilityState === 'visible' && !refreshing) refresh();
   }, POLL_MS);
   // the hidden sibling: the minute-scale title peek (each cadence
   // self-gates on visibility, so each fires only in its own regime)

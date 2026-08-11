@@ -198,6 +198,9 @@ function pulseCheck() {
 // and the next poll must re-read rather than resurrect the
 // pre-write picture. A refused write threw before the bump and
 // invalidates nothing (it mutated nothing).
+// The AFTER-lock ordering above is retired: the commit barrier now
+// precedes cache invalidation and unlock, so a visible pulse can never
+// outpace its business cells.
 function mutate(req, fn) {
   const res = withLock(() => {
     const cur = pulseCheck();
@@ -208,10 +211,12 @@ function mutate(req, fn) {
       // field rather than re-derive the whole state (a re-derivation
       // would re-batchGet — the pulse memo just invalidated)
       out.wver = String(cur + 1);
+      SpreadsheetApp.flush();
     }
+    CacheService.getScriptCache().remove(
+      'state:' + cleanSlug(req.slug));
     return out;
   });
-  CacheService.getScriptCache().remove('state:' + cleanSlug(req.slug));
   return res;
 }
 
@@ -431,7 +436,21 @@ function load(kind) {
 // the fake's RESET clears it by name.
 let wroteAny = false;
 
-function wrote(kind) { wroteAny = true; delete rowsMemo[kind]; }
+// The memo-drop rule above is retired: every value-write chokepoint
+// now updates its record memo in the same operation. That makes the
+// response derivation a pure in-memory fold, with no fallible read
+// after the first committed cell.
+function wrote() { wroteAny = true; }
+
+// Turn a partial write object into the storage layer's complete,
+// all-string record shape before both the sheet and memo receive it.
+function rowRecord(kind, rec) {
+  const row = {};
+  TABS[kind].forEach(function (h) {
+    row[h] = String(rec[h] === undefined ? '' : rec[h]);
+  });
+  return row;
+}
 
 // Append a record inside the armor or refuse LOUDLY: a row born past
 // the plain-text armor gets silently reinterpreted by Sheets
@@ -445,10 +464,12 @@ function assertRoom(kind) {
 }
 
 function insert(kind, rec) {
-  const i = load(kind).length;
+  const rows = load(kind);
+  const i = rows.length;
   if (i + 2 > ARMOR_ROWS) throw armorFullCopy(kind);
-  tab(kind).appendRow(TABS[kind].map(
-    h => rec[h] === undefined ? '' : rec[h]));
+  const row = rowRecord(kind, rec);
+  rows.push(row);
+  tab(kind).appendRow(TABS[kind].map(h => row[h]));
   wrote(kind);
   return i;
 }
@@ -472,12 +493,17 @@ function patch(kind, i, changes) {
     slab.push(changes[head[c]] === undefined
       ? rec[head[c]] : changes[head[c]]);
   }
+  for (let c = lo; c <= hi; c++) {
+    rec[head[c]] = String(slab[c - lo]);
+  }
   tab(kind).getRange(i + 2, lo + 1, 1, slab.length).setValues([slab]);
   wrote(kind);
 }
 
 // Delete record i outright
 function erase(kind, i) {
+  const rows = load(kind);
+  rows.splice(i, 1);
   tab(kind).deleteRow(i + 2);
   wrote(kind);
 }
@@ -499,11 +525,16 @@ function batchWrite(patches, inserts) {
   SpreadsheetApp.flush();
   const nextAt = {};  // per-tab insert cursor, this batch only
   const touched = {};
+  const patchRecords = [];
+  const insertRows = [];
   const cell = (v) => ({ userEnteredValue: {
     stringValue: String(v === undefined ? '' : v) } });
   const requests = [];
   patches.forEach(function (p) {
     const head = TABS[p.kind];
+    const rec = load(p.kind)[p.i];
+    if (rec === undefined) throw patchGhostCopy(p.kind);
+    patchRecords.push(rec);
     Object.keys(p.changes).forEach(function (f) {
       const c = head.indexOf(f);
       if (c === -1) throw 'batchWrite: field not in ' + p.kind;
@@ -517,8 +548,9 @@ function batchWrite(patches, inserts) {
   });
   inserts.forEach(function (ins) {
     const head = TABS[ins.kind];
+    const rows = load(ins.kind);
     const at = nextAt[ins.kind] === undefined
-      ? load(ins.kind).length : nextAt[ins.kind];
+      ? rows.length : nextAt[ins.kind];
     nextAt[ins.kind] = at + 1;
     if (at + 2 > ARMOR_ROWS) throw armorFullCopy(ins.kind);
     requests.push({ updateCells: {
@@ -529,6 +561,16 @@ function batchWrite(patches, inserts) {
       }) }],
       fields: 'userEnteredValue' } });
     touched[ins.kind] = true;
+    insertRows.push(rows);
+  });
+  patches.forEach(function (p, i) {
+    const rec = patchRecords[i];
+    Object.keys(p.changes).forEach(function (f) {
+      rec[f] = String(p.changes[f] === undefined ? '' : p.changes[f]);
+    });
+  });
+  inserts.forEach(function (ins, i) {
+    insertRows[i].push(rowRecord(ins.kind, ins.rec));
   });
   Sheets.Spreadsheets.batchUpdate({ requests: requests }, SHEET_ID);
   Object.keys(touched).forEach(wrote);
@@ -924,6 +966,7 @@ function noteEditing(req) {
   const dvid = cleanDvid(req.dvid);
   if (!dvid) throw { code: 'editingNeedsDevice' };
   const anym = cleanAnym(req.anym);
+  getState(slug);
   const now = new Date().toISOString();
   const i = touchDevice(dvid, anym);  // devices first
   if (req.stop) {

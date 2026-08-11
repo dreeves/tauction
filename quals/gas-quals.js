@@ -904,13 +904,15 @@ const budget = (req, reads, writes, label) => {
 // The batch era (dreev 2026-08-02): loadAll fetches every tab in ONE
 // batchGet, headers checked from the same payload — so a read costs
 // 1, and a write-then-read action costs 2 (the post-write refresh)
+// The post-write-refresh budget above is retired: write-through
+// record memos make action responses cost no second batchGet.
 budget({ action: 'state', slug: 'thrift' }, 1, 0, 'a state read');
 budget({ action: 'add', slug: 'thrift', snym: 'cee',
-         usid: usid('thrift', 'cee') }, 2, 2,
+         usid: usid('thrift', 'cee') }, 1, 2,
   'seating a participant');
 budget({ action: 'bid', slug: 'thrift', snym: 'ann',
          usid: usid('thrift', 'ann'), xbid: 'a4',
-         dvid: 'dev-thrift' }, 2, 5,
+         dvid: 'dev-thrift' }, 1, 5,
   're-bidding (the hot path, a pile of three behind it)');
 
 // 15. THE ARMOR (gridScience, 2026-07-18: rows born when appendRow
@@ -1411,6 +1413,155 @@ ok(st.wver === String(wv + 3),
   ctx.__ss.sheets.pulse.data[1][0] = '3';
 }
 
+// 18t. POST-WRITE READ FAILURE.
+// Replicata: cache an Ada-only auction, then seat Ben while the
+// action's second batchGet hits Google's read quota after Ben's row
+// has landed. Expectata: the action needs no fallible read after its
+// first write; Ben, the pulse, the response, and cache invalidation
+// all commit as one story. Resultata pre-fix: Ben landed, quotaChoke
+// came back, the pulse stayed put, and the Ada-only cache survived.
+{
+  const gas = require('./fake-gas')();
+  gas.__cacheCtl.freeze();
+  gas.handle({ action: 'add', slug: 'afterwrite', snym: 'ada',
+               usid: usid('afterwrite', 'ada') });
+  gas.handle({ action: 'state', slug: 'afterwrite' });
+  const pulseBefore = gas.__ss.sheets.pulse.data[1][0];
+  gas.__quotaTripAfter(2);
+  const added = gas.handle({ action: 'add', slug: 'afterwrite',
+    snym: 'ben', usid: usid('afterwrite', 'ben') });
+  gas.__quotaClear();
+  const after = gas.handle({ action: 'state', slug: 'afterwrite' });
+  ok(!added.error && names(added) === 'ada,ben'
+     && Number(gas.__ss.sheets.pulse.data[1][0])
+          === Number(pulseBefore) + 1
+     && names(after) === 'ada,ben',
+     'a committed business write cannot report a post-write read'
+       + ' failure or leave its pulse/cache behind');
+}
+
+// 18u. THE LOCKED COMMIT BARRIER.
+// Replicata: perform a write through a fake that records whether
+// SpreadsheetApp still has buffered cells when the script lock is
+// released. Expectata: business cells and pulse are flushed before
+// unlock. Resultata pre-fix: the pulse remained buffered at release,
+// so a second writer could read the old count and mint the same +1.
+{
+  const gas = require('./fake-gas')();
+  const badReleases = gas.__tally.unflushedLockReleases;
+  gas.handle({ action: 'add', slug: 'barrier', snym: 'ada',
+               usid: usid('barrier', 'ada') });
+  ok(gas.__tally.unflushedLockReleases === badReleases,
+     'the pulse write is flushed before the mutation releases its lock');
+}
+
+// 18v. A NO-OP MUST NOT BLESS A STALE CACHE.
+// Replicata: cache Ada, hand-rename her row to Eve, then send the
+// now-idempotent rename-to-Eve mutation. Expectata: its fresh Eve
+// response invalidates the older cache even though no API write or
+// pulse bump was needed. Resultata pre-fix: the action answered Eve,
+// then the next state call regressed to the cached Ada snapshot.
+{
+  const gas = require('./fake-gas')();
+  gas.__cacheCtl.freeze();
+  const id = usid('noopcache', 'ada');
+  gas.handle({ action: 'add', slug: 'noopcache', snym: 'ada', usid: id });
+  gas.handle({ action: 'state', slug: 'noopcache' });
+  gas.__ss.sheets.seats.data.find(
+    (r) => r[0] === 'noopcache' && r[1] === id)[2] = 'eve';
+  const pulse = gas.__ss.sheets.pulse.data[1][0];
+  const writes = gas.__tally.writes;
+  const reads = gas.__tally.reads;
+  const renamed = gas.handle({ action: 'rename', slug: 'noopcache',
+                               usid: id, to: 'eve' });
+  const after = gas.handle({ action: 'state', slug: 'noopcache' });
+  ok(names(renamed) === 'eve' && names(after) === 'eve'
+     && gas.__tally.writes === writes
+     && gas.__ss.sheets.pulse.data[1][0] === pulse
+     && gas.__tally.reads === reads + 2,
+     'a fresh no-op response cannot be followed by an older cached state');
+}
+
+// 18w. ONE-READ EDITING HEARTBEAT.
+// Replicata: send an ordinary repeat beat for an existing device.
+// Expectata: one database read validates and patches it while the
+// existing full response derives from the write-through memo.
+// Resultata pre-fix: getState re-read the whole database after the
+// patch.
+{
+  const gas = require('./fake-gas')();
+  const beat = { action: 'editing', slug: 'heartbeat', dvid: 'dev-beat',
+                 anym: 'Mac Chrome' };
+  gas.handle(beat);
+  const reads = gas.__tally.reads;
+  const ack = gas.handle(beat);
+  ok(!ack.error && gas.__tally.reads === reads + 1
+     && ack.editors.length === 1,
+     'an ordinary heartbeat spends one read and keeps its full response');
+}
+
+// 18w2. EDITING PREFLIGHTS THE STATE.
+// Replicata: cache a valid auction, hand-corrupt its bver, then send
+// a new device's editing heartbeat. Expectata: the corrupt-state
+// refusal happens before any device value lands; pulse, cache, and
+// lock cleanliness all stay put, and the verdict costs one read.
+// Resultata pre-fix: touchDevice inserted and noteEditing patched the
+// device before getState found the corrupt bver, leaving committed
+// device values with no pulse and an unflushed lock release.
+{
+  const gas = require('./fake-gas')();
+  gas.__cacheCtl.freeze();
+  gas.handle({ action: 'describe', slug: 'rotbeat', base: 0,
+               blub: 'valid' });
+  gas.handle({ action: 'state', slug: 'rotbeat' });
+  gas.__ss.sheets.auctions.data.find(
+    (r) => r[0] === 'rotbeat')[4] = 'MMXXVI';
+  const values = JSON.stringify(Object.keys(gas.__ss.sheets).map(
+    (kind) => gas.__ss.sheets[kind].data));
+  const pulse = gas.__ss.sheets.pulse.data[1][0];
+  const writes = gas.__tally.writes;
+  const reads = gas.__tally.reads;
+  const badReleases = gas.__tally.unflushedLockReleases;
+  const refused = gas.handle({ action: 'editing', slug: 'rotbeat',
+    dvid: 'dev-rotbeat', anym: 'Mac Chrome' });
+  const readsAfterRefusal = gas.__tally.reads;
+  const cached = gas.handle({ action: 'state', slug: 'rotbeat' });
+  ok(String(refused.error).indexOf('bver corrupt') !== -1
+     && JSON.stringify(Object.keys(gas.__ss.sheets).map(
+          (kind) => gas.__ss.sheets[kind].data)) === values
+     && gas.__ss.sheets.pulse.data[1][0] === pulse
+     && gas.__tally.writes === writes
+     && readsAfterRefusal === reads + 1
+     && gas.__tally.reads === readsAfterRefusal
+     && cached.bver === 1
+     && gas.__tally.unflushedLockReleases === badReleases,
+     'editing refuses a corrupt auction before device values land,'
+       + ' preserving pulse, cache, lock cleanliness, and one-read budget');
+}
+
+// 18x. ONE COMMIT BARRIER.
+// Replicata: seat Ada, then repeat the same idempotent add while the
+// fake counts every SpreadsheetApp.flush call. Expectata: the real
+// write spends one read barrier plus one commit barrier; the no-op
+// spends only its read barrier. Resultata pre-fix: withLock flushed
+// again in finally, so the two requests spent three and two.
+{
+  const gas = require('./fake-gas')();
+  const req = { action: 'add', slug: 'flushcount', snym: 'ada',
+                usid: usid('flushcount', 'ada') };
+  let before = gas.__tally.flushes;
+  const added = gas.handle(req);
+  const writeFlushes = gas.__tally.flushes - before;
+  before = gas.__tally.flushes;
+  const repeated = gas.handle(req);
+  const noOpFlushes = gas.__tally.flushes - before;
+  ok(!added.error && !repeated.error
+     && writeFlushes === 2 && noOpFlushes === 1,
+     'a write has one read and one commit barrier; a no-op has only'
+       + ' its read barrier (got ' + writeFlushes + ' and '
+       + noOpFlushes + ')');
+}
+
 /* --- 22. THE ARCHIVE (dreev-ratified 2026-08-09) ----------------------
    A closed auction's slug is evergreen: 'archive' renames the whole
    record — the auctions row, its seats, its bids log (slug key cells
@@ -1757,12 +1908,13 @@ ctx.__cacheCtl.thaw();
 // the budget: two metered reads (the verdict's getState, the
 // response's) and two writes (ONE batchUpdate for the whole
 // rename + rebirth, plus the pulse bump)
+// The response read above is retired by write-through record memos.
 call({ action: 'bid', slug: 'thrifty', snym: 'ann',
        usid: usid('thrifty', 'ann'), xbid: 'a' });
 call({ action: 'bid', slug: 'thrifty', snym: 'ben',
        usid: usid('thrifty', 'ben'), xbid: 'b' });
 call({ action: 'reveal', slug: 'thrifty' });
-budget({ action: 'archive', slug: 'thrifty' }, 2, 2,
+budget({ action: 'archive', slug: 'thrifty' }, 1, 2,
   'archiving (the rename + rebirth is ONE atomic batchUpdate)');
 
 // the storage layer's atomic sibling: a MIXED batch — one valid
@@ -1784,6 +1936,24 @@ budget({ action: 'archive', slug: 'thrifty' }, 2, 2,
      && ss.sheets['auctions'].data[1].join('|') === a0.join('|'),
      'a mixed batch refuses whole: the valid patch ahead of the bad'
      + ' field never landed');
+}
+
+// Replicata: batchWrite is handed a patch for a record index that a
+// hand edit removed. Expectata: the patch-ghost assertion fires before
+// the atomic write call. Resultata without the preflight: the sheet
+// write landed first and memo reconciliation crashed afterward.
+{
+  const writes = ctx.__tally.writes;
+  let threw = '';
+  try {
+    require('vm').runInContext(
+      'batchWrite([{ kind: "auctions", i: 100,'
+      + ' changes: { tini: "POISON" } }], [])', ctx);
+  } catch (e) { threw = String(e); }
+  seenAssertWords.add(threw);
+  ok(threw.indexOf('no "auctions" row to write') !== -1
+     && ctx.__tally.writes === writes,
+     'batchWrite refuses a missing record before anything lands');
 }
 
 // 19. REFUSAL COVERAGE, closed by construction: every code Code.gs
@@ -1814,12 +1984,14 @@ budget({ action: 'archive', slug: 'thrifty' }, 2, 2,
   const sites = [...CODE_GS.matchAll(/\bthrow (?!\{ code:)/g)].length;
   const unprovoked = ASSERT_WORDS.filter((w) =>
     ![...seenAssertWords].some((s) => s.includes(w)));
-  ok(sites === ASSERT_WORDS.length + 3 && unprovoked.length === 0,
+  // patchGhost has two storage chokepoints: patch and batchWrite.
+  ok(sites === ASSERT_WORDS.length + 4 && unprovoked.length === 0,
      'every assert-family diagnostic is registered and provoked ('
      + sites + ' non-code throw sites; armorFull throws from three'
      + ' (assertRoom, insert, batchWrite),'
      + " and loadAll's quota catch re-throws non-quota platform"
-     + ' errors verbatim); unprovoked: ['
+     + ' errors verbatim; patchGhost throws from patch and batchWrite);'
+     + ' unprovoked: ['
      + unprovoked.join(' | ') + ']');
 }
 

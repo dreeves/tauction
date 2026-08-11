@@ -72,6 +72,7 @@ let fetchDown = false;
 let dropWriteResponse = null;
 let pulseHits = 0;    // gviz CSV pulse fetches (the visitor-quota poll)
 let pulseDown = false;  // pulse-only weather, for the gate's quals
+let pulseWait = Promise.resolve();  // deferred by mid-pulse race quals
 
 function mockFetch(url, opts) {
   url = String(url);
@@ -90,7 +91,8 @@ function mockFetch(url, opts) {
     }
     const rows = gas.__ss.sheets.pulse ? gas.__ss.sheets.pulse.data : [];
     const line = rows[1] ? '\n"' + rows[1][0] + '"' : '';
-    return Promise.resolve({ text: () => Promise.resolve('"wver"' + line) });
+    const res = { text: () => Promise.resolve('"wver"' + line) };
+    return pulseWait.then(() => res);
   }
   if (!url.startsWith(API_URL)) return Promise.reject(new Error('unexpected URL ' + url));
   if (fetchDown) return Promise.reject(new TypeError('Failed to fetch'));
@@ -2461,6 +2463,49 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(stateCount() === statesBefore + 1,
      'a moved pulse pays exactly ONE state read, and the news is on'
      + ' the ledger');
+  /* OWN-ONLY PRESENCE AND THE PULSE GATE.
+     Replicata: open this page's own blub editor, let its start beat
+     enter the next snapshot, then alternate ordinary poll ticks with
+     another heartbeat. Expectata: the start and renewal pulses each
+     cause one state read, while the tick after each one asks only the
+     public pulse; own presence cannot age any UI this page displays.
+     Resultata pre-fix: once the snapshot contained this device's own
+     editor, every tick bypassed the pulse and spent an API state read. */
+  const ownPoll = dGate.window.__intervals.find((i) => i.ms === 5000);
+  const ownBeats = () => apiCalls.filter((c) =>
+    c.action === 'editing' && c.slug === 'pulsy' && !c.stop).length;
+  gateDoc.getElementById('desctoggle').click();
+  await until(() => ownBeats() > 0);
+  const ownBeat = dGate.window.__intervals.find((i) => i.ms === 10000);
+  statesBefore = stateCount();
+  ownPoll.fn();
+  await until(() => stateCount() === statesBefore + 1);
+  const startStates = stateCount();
+  pulsesBefore = pulseHits;
+  ownPoll.fn();
+  await until(() => pulseHits > pulsesBefore);
+  await sleep(60);
+  const calmAfterStart = stateCount() === startStates;
+  const beatsBefore = ownBeats();
+  ownBeat.fn();
+  await until(() => ownBeats() === beatsBefore + 1);
+  statesBefore = stateCount();
+  ownPoll.fn();
+  await until(() => stateCount() === statesBefore + 1);
+  const renewalStates = stateCount();
+  pulsesBefore = pulseHits;
+  ownPoll.fn();
+  await until(() => pulseHits > pulsesBefore);
+  await sleep(60);
+  ok(calmAfterStart && stateCount() === renewalStates,
+     'own-only presence alternates beat-caused state reads with'
+       + ' pulse-only ticks, halving the API polling spend');
+  const ownStops = apiCalls.filter((c) =>
+    c.action === 'editing' && c.slug === 'pulsy' && c.stop).length;
+  gateDoc.getElementById('descdiscard').click();
+  await until(() => apiCalls.filter((c) =>
+    c.action === 'editing' && c.slug === 'pulsy' && c.stop).length
+      === ownStops + 1);
   // presence holds the gate open: an editor aging OUT writes
   // nothing, so only a real state read can ever calm the pencil
   gas.handle({ action: 'editing', slug: 'pulsy',
@@ -2482,12 +2527,15 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   gas.__ss.sheets.devices.data.forEach((r) => {
     if (r[0] === 'dev-rival-pulse') r[6] = '2020-01-01T00:00:00.000Z';
   });
+  const expiryStates = stateCount();
   setVisibility(dGate, 'hidden');
   setVisibility(dGate, 'visible');
   await until(() => !gateDoc.getElementById('desc')
     .classList.contains('scribbling'));
   ok(true, 'the pencil calms though nothing bumped the pulse: the'
      + ' presence condition carried the aging-out home');
+  ok(stateCount() === expiryStates + 1,
+     'a rival aging out still forces the state read that calms the pencil');
   // pulse weather: gray + console + NO fallback api read (a silent
   // fallback would re-spend the quota the pulse exists to guard)
   pulseDown = true;
@@ -2503,6 +2551,191 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'pulse weather: the ledger grays, the console holds the detail'
      + ' (ERROR2159), no banner, and NO silent fallback api read');
   pulseDown = false;
+
+  /* --- 1c3c0. hiding during the pulse starts no state API call ----------
+     Replicata: news bumps the public pulse; a visible poll asks for that
+     pulse, then the tab hides before the delayed CSV response arrives.
+     Expectata: the changed pulse starts no state API call while
+     hidden; returning visible performs and adopts exactly one state API call.
+     Resultata pre-fix: the changed pulse fell through to a hidden state
+     GET whose response was discarded, then visible return spent another. */
+  gas.handle({ action: 'add', slug: 'midpulsehide', snym: 'ann',
+    usid: 'usid-midpulsehide-ann' });
+  const dMidPulse = await makePage('/midpulsehide?api=' + API_URL);
+  const midDoc = dMidPulse.window.document;
+  const midPoll = dMidPulse.window.__intervals.find((i) => i.ms === 5000);
+  const midStates = () => apiCalls.filter((c) =>
+    c.action === 'state' && c.slug === 'midpulsehide').length;
+  gas.handle({ action: 'add', slug: 'midpulsehide', snym: 'bo',
+    usid: 'usid-midpulsehide-bo' });
+  let releasePulse;
+  pulseWait = new Promise((resolve) => { releasePulse = resolve; });
+  const midBefore = midStates();
+  const midPulses = pulseHits;
+  midPoll.fn();
+  ok(pulseHits === midPulses + 1,
+     'the mid-pulse fixture holds this page inside its public CSV fetch');
+  setVisibility(dMidPulse, 'hidden');
+  pulseWait = Promise.resolve();
+  releasePulse();
+  await sleep(60);
+  const hiddenMidPulseReadNothing = midStates() === midBefore
+    && row(midDoc, 'bo') === null;
+  setVisibility(dMidPulse, 'visible');
+  await until(() => row(midDoc, 'bo') !== null);
+  ok(hiddenMidPulseReadNothing && midStates() === midBefore + 1,
+     'a changed pulse landing hidden starts no state API call; visible'
+       + ' return starts and adopts exactly one');
+  dMidPulse.window.close();
+
+  /* --- 1c3c1. the cadence never feeds its own trailing loop --------------
+     Replicata: an ordinary five-second tick starts a slow N+1 read; N+2
+     lands after that read snapshots, and the next timer tick arrives while
+     it is still in flight. Expectata: the overlapping cadence tick is
+     dropped, exactly as before refresh coalescing; N+2 waits for the next
+     ordinary cadence instead of feeding an unbounded back-to-back loop.
+     Resultata pre-fix: every slow read queued another, so latency at or over
+     the cadence could keep the API loop running without a resting beat. */
+  gas.handle({ action: 'add', slug: 'timerdrop', snym: 'ann',
+    usid: 'usid-timerdrop-ann' });
+  const dTimerDrop = await makePage('/timerdrop?api=' + API_URL);
+  const timerDoc = dTimerDrop.window.document;
+  const timerPoll = dTimerDrop.window.__intervals.find((i) => i.ms === 5000);
+  const timerStates = () => apiCalls.filter((c) =>
+    c.action === 'state' && c.slug === 'timerdrop').length;
+  gas.handle({ action: 'add', slug: 'timerdrop', snym: 'bo',
+    usid: 'usid-timerdrop-bo' });
+  mockDelay = 100;
+  const timerBefore = timerStates();
+  timerPoll.fn();
+  await until(() => timerStates() === timerBefore + 1);
+  gas.handle({ action: 'add', slug: 'timerdrop', snym: 'cy',
+    usid: 'usid-timerdrop-cy' });
+  timerPoll.fn();
+  await sleep(160);
+  ok(timerStates() === timerBefore + 1 && row(timerDoc, 'cy') === null,
+     'a timer tick overlapping a slow refresh is dropped; it cannot feed'
+       + ' a perpetual trailing loop');
+  mockDelay = 0;
+  timerPoll.fn();
+  await until(() => row(timerDoc, 'cy') !== null);
+  ok(timerStates() === timerBefore + 2,
+     'the next ordinary cadence reads and adopts news that landed during'
+       + ' the earlier in-flight refresh');
+  dTimerDrop.window.close();
+
+  /* --- 1c3c2. queued work waits out a second hide ------------------------
+     Replicata: a visible-return refresh is queued behind a slow read, then
+     the page hides again before that first response lands. Expectata: the
+     first hidden landing is ignored and its queued follower stays queued;
+     no new read starts hidden, and the next visible return spends exactly
+     one fresh read. Resultata pre-fix: the drain loop launched its follower
+     while hidden and discarded that response too. */
+  gas.handle({ action: 'add', slug: 'rehidequeue', snym: 'ann',
+    usid: 'usid-rehidequeue-ann' });
+  const dRehide = await makePage('/rehidequeue?api=' + API_URL);
+  const rehideDoc = dRehide.window.document;
+  const rehideStates = () => apiCalls.filter((c) =>
+    c.action === 'state' && c.slug === 'rehidequeue').length;
+  gas.handle({ action: 'add', slug: 'rehidequeue', snym: 'bo',
+    usid: 'usid-rehidequeue-bo' });
+  mockDelay = 100;
+  const rehideBefore = rehideStates();
+  setVisibility(dRehide, 'hidden');
+  setVisibility(dRehide, 'visible');
+  await until(() => rehideStates() === rehideBefore + 1);
+  gas.handle({ action: 'add', slug: 'rehidequeue', snym: 'cy',
+    usid: 'usid-rehidequeue-cy' });
+  setVisibility(dRehide, 'hidden');
+  setVisibility(dRehide, 'visible');
+  setVisibility(dRehide, 'hidden');
+  await sleep(160);
+  ok(rehideStates() === rehideBefore + 1
+       && row(rehideDoc, 'bo') === null && row(rehideDoc, 'cy') === null,
+     'queued refresh work starts no read while the page is hidden');
+  mockDelay = 0;
+  setVisibility(dRehide, 'visible');
+  await until(() => row(rehideDoc, 'cy') !== null);
+  ok(rehideStates() === rehideBefore + 2,
+     'the next visible return spends exactly one fresh read for the queued'
+       + ' work and adopts its newest snapshot');
+  dRehide.window.close();
+
+  /* --- 1c3d. one refresh waits behind the refresh in flight ------------
+     Replicata: a slow poll snapshots version N+1; while it travels, N+2
+     lands and returning to the tab requests another refresh. Expectata:
+     all overlapping requests coalesce into one trailing refresh, which
+     adopts N+2 before the ordinary five-second tick. Resultata pre-fix:
+     the return refresh was dropped and N+1 stood for another cadence. */
+  gas.handle({ action: 'add', slug: 'refreshtail', snym: 'ann',
+    usid: 'usid-refreshtail-ann' });
+  const dRefreshTail = await makePage('/refreshtail?api=' + API_URL);
+  const tailStates = () => apiCalls.filter((c) =>
+    c.action === 'state' && c.slug === 'refreshtail').length;
+  gas.handle({ action: 'add', slug: 'refreshtail', snym: 'bo',
+    usid: 'usid-refreshtail-bo' });
+  mockDelay = 100;
+  const tailBefore = tailStates();
+  setVisibility(dRefreshTail, 'hidden');
+  setVisibility(dRefreshTail, 'visible');
+  await until(() => tailStates() > tailBefore);
+  gas.handle({ action: 'add', slug: 'refreshtail', snym: 'cy',
+    usid: 'usid-refreshtail-cy' });
+  setVisibility(dRefreshTail, 'hidden');
+  setVisibility(dRefreshTail, 'visible');
+  await sleep(300);
+  const trailingRefreshLanded =
+    row(dRefreshTail.window.document, 'cy') !== null
+    && tailStates() === tailBefore + 2;
+  mockDelay = 0;
+  dRefreshTail.window.close();
+
+  /* --- 1c3e. a visible read that lands hidden stays unwitnessed --------
+     Replicata: a visible refresh fetches the reveal, then the tab hides
+     before its response lands. Expectata: hidden time adopts nothing and
+     consumes no ceremony; returning performs the queued/fresh read and
+     witnesses the reveal. Resultata pre-fix: the hidden response rendered
+     the reveal and spent the one-shot ceremony into the void. */
+  gas.handle({ action: 'add', slug: 'landhidden', snym: 'ann',
+    usid: 'usid-landhidden-ann' });
+  gas.handle({ action: 'add', slug: 'landhidden', snym: 'bo',
+    usid: 'usid-landhidden-bo' });
+  gas.handle({ action: 'bid', slug: 'landhidden', snym: 'ann',
+    usid: 'usid-landhidden-ann', xbid: 'a' });
+  gas.handle({ action: 'bid', slug: 'landhidden', snym: 'bo',
+    usid: 'usid-landhidden-bo', xbid: 'b' });
+  const dLandHidden = await makePage('/landhidden?api=' + API_URL);
+  const hiddenStates = () => apiCalls.filter((c) =>
+    c.action === 'state' && c.slug === 'landhidden').length;
+  gas.handle({ action: 'reveal', slug: 'landhidden' });
+  mockDelay = 100;
+  const hiddenBefore = hiddenStates();
+  setVisibility(dLandHidden, 'hidden');
+  setVisibility(dLandHidden, 'visible');
+  await until(() => hiddenStates() > hiddenBefore);
+  setVisibility(dLandHidden, 'hidden');
+  await sleep(160);
+  const hiddenLandingSlept =
+    !dLandHidden.window.document.getElementById('status')
+      .classList.contains('revealed')
+    && !dLandHidden.window.document.getElementById('status')
+      .classList.contains('ceremony');
+  setVisibility(dLandHidden, 'visible');
+  await sleep(160);
+  const visibleLandingWitnessed =
+    dLandHidden.window.document.getElementById('status')
+      .classList.contains('revealed')
+    && dLandHidden.window.document.getElementById('status')
+      .classList.contains('ceremony');
+  mockDelay = 0;
+  dLandHidden.window.close();
+
+  ok(hiddenLandingSlept && visibleLandingWitnessed,
+     'a visible refresh landing hidden adopts nothing; the return'
+     + ' refresh witnesses the reveal and owns its ceremony');
+  ok(trailingRefreshLanded,
+     'an in-flight refresh coalesces later requests into exactly one'
+     + ' trailing refresh before the ordinary poll cadence');
 
   /* --- 1c4. THE CHRONICLE: the console narrates the ledger's story -----
      Replicata: debug any hallway session by opening the console.
@@ -2840,6 +3073,50 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(dPeek.window.__confettiCalls.length >= 1,
      "...and the strike's money flies for the returned viewer");
 
+  /* --- 1f2b. a stale hidden peek cannot relatch a reborn page -----------
+     Replicata: a hidden title peek snapshots a revealed round; while that
+     response travels, the round is archived and the visible return refresh
+     adopts its fresh unrevealed rebirth before the old peek lands.
+     Expectata: the old peek yields after a newer snapshot is adopted, even
+     if the page hides again before it lands, so the reborn page still
+     peeks. Resultata pre-fix: the stale peek relatched seenRevealed and
+     silenced the new round's hidden title forever. */
+  gas.handle({ action: 'add', slug: 'peekrebirth', snym: 'ann',
+    usid: 'usid-peekrebirth-ann' });
+  gas.handle({ action: 'add', slug: 'peekrebirth', snym: 'bo',
+    usid: 'usid-peekrebirth-bo' });
+  gas.handle({ action: 'bid', slug: 'peekrebirth', snym: 'ann',
+    usid: 'usid-peekrebirth-ann', xbid: 'a' });
+  gas.handle({ action: 'bid', slug: 'peekrebirth', snym: 'bo',
+    usid: 'usid-peekrebirth-bo', xbid: 'b' });
+  const dPeekRebirth = await makePage('/peekrebirth?api=' + API_URL);
+  const peekRebirthDoc = dPeekRebirth.window.document;
+  const peekRebirth = dPeekRebirth.window.__intervals.find(
+    (i) => i.ms === 60000);
+  const peekRebirthCalls = () => apiCalls.filter((c) =>
+    c.action === 'state' && c.slug === 'peekrebirth').length;
+  setVisibility(dPeekRebirth, 'hidden');
+  gas.handle({ action: 'reveal', slug: 'peekrebirth' });
+  mockDelay = 300;
+  peekRebirth.fn();
+  await until(() => peekRebirthCalls() === 2);
+  gas.handle({ action: 'archive', slug: 'peekrebirth' });
+  mockDelay = 50;
+  setVisibility(dPeekRebirth, 'visible');
+  await until(() => row(peekRebirthDoc, 'ann') === null);
+  setVisibility(dPeekRebirth, 'hidden');
+  await sleep(320);
+  mockDelay = 0;
+  const rebornPeekBefore = peekRebirthCalls();
+  peekRebirth.fn();
+  await sleep(60);
+  ok(peekRebirthCalls() === rebornPeekBefore + 1
+       && peekRebirthDoc.title
+         === STR.tabTitle(STR.waitingGlyph, 'peekrebirth'),
+     'an overtaken stale peek cannot relatch the archived round; the'
+       + ' reborn page keeps its hidden title peek');
+  dPeekRebirth.window.close();
+
   /* --- 1f3. returning to a tab refreshes AT ONCE -----------------------
      Replicata: background a tab inside its first poll interval, then
      return to it. Expectata: the glance meets a fresh fetch
@@ -2857,11 +3134,26 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await sleep(150);
   ok(retCalls() === 1,
      'a visible tab never peeks: the minute cadence is hidden-only');
+  // Earlier scenes deliberately leave live editors drumming. Align this
+  // page to their sheet-wide pulse before asserting the no-news return.
+  const retState = () => JSON.parse(dRet.window.localStorage
+    .getItem('tauction-state:retvisit'));
+  const retAligned = () => retState().wver
+    === gas.handle({ action: 'state', slug: 'retvisit' }).wver;
+  await until(() => {
+    const aligned = retAligned();
+    if (!aligned) {
+      setVisibility(dRet, 'hidden');
+      setVisibility(dRet, 'visible');
+    }
+    return aligned;
+  });
+  const retStates = retCalls();
   const retPulses = pulseHits;
   setVisibility(dRet, 'hidden');
   setVisibility(dRet, 'visible');
   await sleep(300);
-  ok(pulseHits > retPulses && retCalls() === 1,
+  ok(pulseHits > retPulses && retCalls() === retStates,
      'becoming visible confirms at once — the pulse leg answers the'
      + ' glance immediately (and owes no api read while the world'
      + ' stood still), no waiting out the poll');
