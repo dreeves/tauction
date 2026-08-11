@@ -310,11 +310,11 @@ const TABS = { auctions: AUCTIONS_HEAD, bids: BIDS_HEAD,
 const TAB_WARNINGS =
   { bids: "IT'S CHEATING TO LOOK HERE DURING AN AUCTION" };
 
-// Rows born WITH their tab (painted at creation like the warning
-// above, never marked as news): the pulse row exists from tab
-// birth, so no reader or writer ever re-litigates its absence —
-// an empty pulse tab is hand-vandalism and refuses as corruption
-const TAB_SEEDS = { pulse: [['0']] };
+// A tab's first cell, painted at creation like the warning above
+// (never marked as news): the pulse row exists from tab birth, so
+// no reader or writer ever re-litigates its absence — an empty
+// pulse tab is hand-vandalism and refuses as corruption
+const TAB_SEEDS = { pulse: '0' };
 
 // Per-execution memos (globals reset each Apps Script execution).
 // Every Sheets service call costs ~50-150ms and the script lock is
@@ -356,8 +356,7 @@ function tab(kind) {
         .setFontSize(24).setFontWeight('bold').setFontColor('#b3261e');
     }
     if (TAB_SEEDS[kind]) {
-      sh.getRange(2, 1, TAB_SEEDS[kind].length,
-        TAB_SEEDS[kind][0].length).setValues(TAB_SEEDS[kind]);
+      sh.getRange(2, 1).setValue(TAB_SEEDS[kind]);
     }
   }
   sheetMemo[kind] = sh;
