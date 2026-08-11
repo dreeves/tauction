@@ -19,7 +19,7 @@ const SHEET_ID = '1hclphAZ3zQIq14Nip1ZxTDSoE9ygXqAv27RwP1hiMA8';
 // starts DEPENDING on new server behavior; adding an action
 // without a bump fails the ledger qual by name. Forgetting a bump
 // merely falls back to today's loudness — the gate only ever adds.
-const SVER = 1;
+const SVER = 2;  // 2: bidders[].dvid, the forensic column
 
 // Column vocabulary (dreev's): tini = time-initial (created), tmod =
 // time-modified, tfin = time-final (the reveal moment), tbid = a
@@ -182,11 +182,12 @@ function cachedState(slug) {
 // precedent: no partial writes) — a mangled cell refuses before the
 // op touches anything. Returns the current count.
 function pulseCheck() {
+  // seeded at tab birth (TAB_SEEDS), so absence = hand-vandalism
+  // and reads as corruption, same refusal
   const prow = load('pulse')[0];
-  if (prow === undefined) return 0;
-  const cur = Number(prow.wver === '' ? NaN : prow.wver);
+  const cur = Number(!prow || prow.wver === '' ? NaN : prow.wver);
   if (!Number.isInteger(cur) || cur < 0) {
-    throw 'pulse.wver corrupt: ' + JSON.stringify(prow.wver);
+    throw 'pulse.wver corrupt: ' + JSON.stringify(prow && prow.wver);
   }
   return cur;
 }
@@ -202,8 +203,7 @@ function mutate(req, fn) {
     const cur = pulseCheck();
     const out = fn();
     if (wroteAny) {  // real news only: no-ops don't wake the crowd
-      if (load('pulse').length === 0) insert('pulse', { wver: '1' });
-      else patch('pulse', 0, { wver: String(cur + 1) });
+      patch('pulse', 0, { wver: String(cur + 1) });
       // the op built its response BEFORE the bump; restamp the one
       // field rather than re-derive the whole state (a re-derivation
       // would re-batchGet — the pulse memo just invalidated)
@@ -310,6 +310,12 @@ const TABS = { auctions: AUCTIONS_HEAD, bids: BIDS_HEAD,
 const TAB_WARNINGS =
   { bids: "IT'S CHEATING TO LOOK HERE DURING AN AUCTION" };
 
+// Rows born WITH their tab (painted at creation like the warning
+// above, never marked as news): the pulse row exists from tab
+// birth, so no reader or writer ever re-litigates its absence —
+// an empty pulse tab is hand-vandalism and refuses as corruption
+const TAB_SEEDS = { pulse: [['0']] };
+
 // Per-execution memos (globals reset each Apps Script execution).
 // Every Sheets service call costs ~50-150ms and the script lock is
 // held for the whole parade, so the call count IS the latency: one
@@ -348,6 +354,10 @@ function tab(kind) {
     if (TAB_WARNINGS[kind]) {
       sh.getRange(1, headers.length + 1).setValue(TAB_WARNINGS[kind])
         .setFontSize(24).setFontWeight('bold').setFontColor('#b3261e');
+    }
+    if (TAB_SEEDS[kind]) {
+      sh.getRange(2, 1, TAB_SEEDS[kind].length,
+        TAB_SEEDS[kind][0].length).setValues(TAB_SEEDS[kind]);
     }
   }
   sheetMemo[kind] = sh;
@@ -457,7 +467,7 @@ function patch(kind, i, changes) {
   if (cols.some(c => c === -1)) throw 'patch: field not in ' + kind;
   const lo = Math.min(...cols);
   const hi = Math.max(...cols);
-  const rec = hi > lo ? load(kind)[i] : null;
+  const rec = load(kind)[i];  // rowsMemo is warm: a free array index
   const slab = [];
   for (let c = lo; c <= hi; c++) {
     slab.push(changes[head[c]] === undefined
@@ -568,7 +578,11 @@ function armThePit() {
 /* ------------------------------ actions ------------------------------- */
 
 function getState(slug) {
-  const arow = load('auctions').find(r => r.slug === slug);
+  // A virgin auction is a VALUE, not a scattering of existence
+  // checks: absence defaults to the virgin record and every field
+  // below reads unconditionally (exists alone remembers the find)
+  const found = load('auctions').find(r => r.slug === slug);
+  const arow = found || { tfin: '', blub: '', bver: '0' };
 
   // The SEATS are the users rows (in insertion order): usid + display
   // label. The claims map rides along: usid -> dvid for seats
@@ -594,18 +608,17 @@ function getState(slug) {
   // Reveal is a human act (the 'reveal' action) and a one-way latch: it
   // never happens automatically, and once bids have been seen, nothing can
   // reseal them. A complete roster merely makes the reveal button pressable.
-  const tfin = arow ? arow.tfin : '';  // the reveal moment, ISO
+  const tfin = arow.tfin;  // the reveal moment, ISO
   const revealed = tfin !== '';
-  const blub = arow ? arow.blub : '';    // freeform markdown
+  const blub = arow.blub;  // freeform markdown
   // the blub's version counter (CAS token AND the pencil tooltip's
   // number): 0 = never described, +1 per committed save. Sheets may
   // hand the cell back as a string; a cell that isn't a whole number
   // is corruption and refuses loudly.
-  const bver = arow
-    ? Number(arow.bver === '' ? NaN : arow.bver) : 0;
+  const bver = Number(arow.bver === '' ? NaN : arow.bver);
   if (!Number.isInteger(bver) || bver < 0) {
     throw 'auctions.bver corrupt for ' + slug + ': '
-      + JSON.stringify(arow && arow.bver);
+      + JSON.stringify(arow.bver);
   }
   // the desk crowd: every device whose editing slot points here and
   // whose last heartbeat is fresh (both stamps are this server's
@@ -643,10 +656,18 @@ function getState(slug) {
     a.bcount++;
     a.tmod = r.tbid;
     a.xbid = r.xbid;
+    a.dvid = r.dvid;  // the fold's last write = the standing row's
   });
   const people = Object.keys(agg).map(p => agg[p]);
+  // Each entry's dvid is the STANDING bid's submitting browser — the
+  // log's forensic column (see the bids schema), surfaced so the
+  // revealed page can derive is-you from the immutable record: the
+  // claim column can be vacated after a bid and before the gavel (a
+  // rival claim plus the radio law), and the archive rename orphans
+  // the client's slug-keyed memory (dreev's star bug, 2026-08-10).
   const bidders = people.map(a =>
-    ({ usid: a.usid, bcount: a.bcount, tini: a.tini, tmod: a.tmod }));
+    ({ usid: a.usid, bcount: a.bcount, tini: a.tini, tmod: a.tmod,
+       dvid: a.dvid }));
 
   // the closed-state covenant, asserted on every read: a revealed
   // auction has two-plus (uncut) roster seats, every one of them with
@@ -658,13 +679,8 @@ function getState(slug) {
       + bidders.map(b => b.usid).join(', ') + ']');
   }
 
-  // the pulse pair: which sheet to poll for the wver cell (so ?api=
-  // test deployments pulse against their own sheet, never a baked
-  // constant) and the count this picture was drawn at
-  const prow = load('pulse')[0];
-
   return {
-    slug: slug, exists: arow !== undefined,
+    slug: slug, exists: found !== undefined,
     seats: seats, bidders: bidders, revealed: revealed,
     tfin: tfin, blub: blub, bver: bver, editors: editors,
     claims: claims, anyms: anyms,
@@ -673,7 +689,11 @@ function getState(slug) {
     // this one family-wide field
     arcs: arcsOf(slug.replace(ARCHIVE_RE, '')),
     sver: SVER,  // the generation handshake (see the constant)
-    sheet: SHEET_ID, wver: prow === undefined ? '0' : prow.wver,
+    // the pulse pair: which sheet to poll for the wver cell (so
+    // ?api= test deployments pulse against their own sheet, never a
+    // baked constant) and the count this picture was drawn at —
+    // read through pulseCheck, the one guarded owner of the row
+    sheet: SHEET_ID, wver: String(pulseCheck()),
     bids: revealed ? people.map(a => ({ usid: a.usid, xbid: a.xbid }))
                    : null,
   };
@@ -833,7 +853,14 @@ function ensureAuction(slug) {
 
 // Make sure a seat exists for this usid+label; adding is idempotent
 // (labels change only via rename, so an existing usid's seat is left
-// exactly as found)
+// exactly as found). INVARIANT: a seats row's slug always has its
+// auctions row — every caller runs ensureAuction first, and the
+// archive re-keys seats and auctions in one atomic batchWrite — so
+// seat-requiring ops (rename/remove/claim/release) never re-check
+// it. A hand-gutted sheet (auctions row deleted, seats surviving)
+// serves exists:false alongside its seats rather than being
+// silently healed with a forged tini (anti-postel: patchGhost is
+// the disclosed policy for hand-gutted sheets).
 function ensureSeat(slug, usid, snym) {
   const now = new Date().toISOString();
   if (seatIndex(slug, usid) !== -1) return;
@@ -951,7 +978,6 @@ function renameParticipant(req) {
   const twin = seatByName(slug, to);
   if (twin && twin.usid !== usid) throw { code: 'nameTaken' };
   patch('seats', i, { snym: to, tmod: new Date().toISOString() });
-  ensureAuction(slug);
   return getState(slug);
 }
 
@@ -971,7 +997,6 @@ function removeParticipant(req) {
   if (load('bids').some(r => r.slug === slug && r.usid === usid)) {
     throw { code: 'removeBidder' };
   }
-  ensureAuction(slug);
   erase('seats', i);
   return getState(slug);
 }
@@ -995,7 +1020,6 @@ function saveClaim(req) {
   const anym = cleanAnym(req.anym);
   if (seatIndex(slug, usid) === -1) throw { code: 'noSuchOne', usid: usid };
   touchDevice(dvid, anym);  // devices first, always
-  ensureAuction(slug);
   setDvid(slug, usid, dvid);
   return getState(slug);
 }
@@ -1015,7 +1039,6 @@ function releaseClaim(req) {
   // only an ACTUAL release writes: refused and no-op requests mutate
   // nothing, not even tmod
   if (held) {
-    ensureAuction(slug);
     setDvid(slug, usid, '');
   }
   return getState(slug);

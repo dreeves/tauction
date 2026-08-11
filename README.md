@@ -82,28 +82,12 @@ We refer to the auction description internally as the blurb or blub.
 
 Previously:
 
-1. I don't like how an unsubmitted bid gets completely lost if you claim another participant as you.
+1. Can you do deep research on web design with the goal of predicting the first complaint a professional web designer would have about this app?
 
-2. Can you do deep research on web design with the goal of predicting the first complaint a professional web designer would have about this app?
+2. Remove all the path dependence / historical documenation from the code comments. If a bug or whatever is fixed, we don't need the history.
 
-3. Remove all the path dependence / historical documenation from the code comments. If a bug or whatever is fixed, we don't need the history.
-
-4. I think github.com/dreeves/molecall is doing something smarter for device blurbs. Let's copy that here.
-
-5. When not on wifi it seems everyone's phone claims to be in San Jose or Sacramento or Seattle (in reality we were all in Portland). Why is that and is there anything in the device data that can tell us not to trust the location?
-
-6. Can we make this... brighter, cleaner, more video-game-ish? Or what about a 1980s Apple II aesthetic? Can you go down some rabbit holes and come up with something sock-off-knocking? Reread and digest AGENTS.md before starting. And maybe show me a screenshot for me to thumbs-up/down before revamping. Random idea: emulate Nicky Case?
-
-7. Why don't markdown links like [anchor text](https://example.com "hover text") work? Let's try a smarter markdown renderer?
-
-8. I don't love how you can submit a blurb (blub) and it acts like it worked and then a full second or so later it pops up the conflict dialog. I'd rather see the gavelspinner until there's confirmation that my changes went through. I know we're doing something fancy with "optimistic writes" or whatever but at least for editing the blurb, I don't like it.
-Actually, i'm realizing that we do have an indicator -- how the field stays shaded darker green until it's confirmed -- and that actually feels ok once i'm used to it.
-So the problem is it wasn't obvious enough or something.
-Can you spend a couple weeks researching web design principles and come up with a way to make it nice and obvious to the user what's going on and eliminate those moments of confusion for the user, like thinking an edit succeeded and then having something pop up to say it failed?
-
-9. Relatedly, should there be a gavelspinner or something while the Archive is happening?
+3. Can we make this... brighter, cleaner, more video-game-ish? Or what about a 1980s Apple II aesthetic? Can you go down some rabbit holes and come up with something sock-off-knocking? Reread and digest AGENTS.md before starting. And maybe show me a screenshot for me to thumbs-up/down before revamping. Random idea: emulate Nicky Case? [Maybe I should use Claude Design for this kind of thing.]
 
 Next:
 
-1. Markdown: Both asterisks and underscores should do italics. Double asterisks for bold. Probably we should just do what github.com/dreeves/eat-the-richtext is doing.
-
+1. For better device blurbs, what if the website just asks the user for permission to see their exact location?

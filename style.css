@@ -630,7 +630,10 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
   transition: opacity 0.15s;
 }
 
-#status.stale::before { opacity: 1; transition-delay: 0.3s; }
+/* the verdict drumroll (reveal/archive round trip) wears its own
+   class, styled identically: two meanings, two classes (app.js) */
+#status.stale::before,
+#status.verdict::before { opacity: 1; transition-delay: 0.3s; }
 
 /* The padlock LAMP beside BIDS: a passive state light, drawn inline
    in currentColor (shackle, body, keyhole) — line vocabulary shared
@@ -801,7 +804,8 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
           drop-shadow(0 3px 0 color-mix(in srgb, var(--fg) 45%, transparent));
 }
 
-#status.stale .gavel { opacity: 1; transition-delay: 0.3s; }
+#status.stale .gavel,
+#status.verdict .gavel { opacity: 1; transition-delay: 0.3s; }
 
 .gavel .mallet {
   position: absolute;
@@ -904,11 +908,14 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
 
 .gavel .bang::after { transform: rotate(-8deg); }
 
-#status.stale .gavel .mallet { animation: gavel 1.15s infinite; }
+#status.stale .gavel .mallet,
+#status.verdict .gavel .mallet { animation: gavel 1.15s infinite; }
 
-#status.stale .gavel .bang { animation: gavel-bang 1.15s infinite; }
+#status.stale .gavel .bang,
+#status.verdict .gavel .bang { animation: gavel-bang 1.15s infinite; }
 
-#status.stale .gavel .block { animation: gavel-thud 1.15s infinite; }
+#status.stale .gavel .block,
+#status.verdict .gavel .block { animation: gavel-thud 1.15s infinite; }
 
 /* wind up, STRIKE the block, bounce — then follow through all the way
    around, which is what makes it read as a spinner too */

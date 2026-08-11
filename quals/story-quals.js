@@ -3077,9 +3077,13 @@ async function bid(page, bidText) {
             : getComputedStyle(e).visibility === 'hidden')
         && [...document.querySelectorAll('#tiles .x')]
              .every((e) => e.getBoundingClientRect().width === 0)
+        && document.querySelector('#status .addrow')
+             .getBoundingClientRect().width === 0
         && document.querySelector('#status .legend')
              .getBoundingClientRect().width > 0;
-    }), 'a closed page is a SETTLED RECORD: \u00d7s gone, unselected'
+    }), 'a closed page is a SETTLED RECORD: \u00d7s gone, + row gone'
+       + ' (CSS alone retires it — the jsdom suite pins the source),'
+       + ' unselected'
        + ' stars invisible but HOLDING THEIR COLUMN (dreev\'s'
        + ' amendment: "just unselected ones"), your star and the'
        + ' footnote stay');
@@ -3106,6 +3110,83 @@ async function bid(page, bidText) {
     ok(openBg !== closedBg, 'the paper turns decisively at the'
        + ' close: parchment weather, visible across the room ('
        + openBg + ' vs ' + closedBg + ')');
+
+    /* ===== THE RECORD'S STAR, END TO END (dreev's bug report +
+       amendment, 2026-08-10): one browser types a bid as its
+       first-latched seat, star-clicks the other seat — the
+       unsubmitted draft rides along — submits THERE, a rival
+       closes the round and then TAKES the browser's seat (the
+       radio law leaves the browser's dvid on no claim at all),
+       the browser archives and rides the deck back: the archived
+       record still stars the seat it bid as, from the bids log's
+       forensic column, no claim and no ledger entry needed. */
+    const two = await makePage(browser, DESKTOP);
+    await two.goto(BASE + '/tworound', { waitUntil: 'networkidle0' });
+    await addName(two, 'ann');
+    await two.waitForSelector('.tile.mine .rebid textarea');
+    await addName(two, 'ben');
+    await two.waitForFunction(() =>
+      document.querySelectorAll('#tiles .tile').length === 2);
+    await two.type('.tile.mine .rebid textarea', 'half a thought');
+    await claimRow(two, 'ben');
+    await two.waitForFunction(() => {
+      const t = document.querySelector('.tile[data-snym="ben"]');
+      return t !== null && t.classList.contains('mine');
+    });
+    ok(await two.evaluate(() => {
+      const ed = document.querySelector(
+        '.tile[data-snym="ben"] .rebid textarea');
+      return ed !== null && ed.value === 'half a thought'
+        && ed.getBoundingClientRect().width > 0
+        && document.querySelector(
+             '.tile[data-snym="ann"] .rebid') === null;
+    }), "dreev's amendment in real ink: the unsubmitted draft rides"
+       + " the star-switch into the new seat's editor, and the old"
+       + ' seat sheds its editor');
+    await two.focus('.tile.mine .rebid textarea');
+    await two.keyboard.press('Enter');
+    await two.waitForFunction(() =>
+      document.querySelector('.tile.mine.has-bid') !== null);
+    {
+      const st = gas.handle({ action: 'state', slug: 'tworound' });
+      const annUsid = st.seats.find((s) => s.snym === 'ann').usid;
+      const benUsid = st.seats.find((s) => s.snym === 'ben').usid;
+      gas.handle({ action: 'bid', slug: 'tworound', snym: 'ann',
+        usid: annUsid, xbid: 'rival close', dvid: 'dev-two-rival' });
+      gas.handle({ action: 'claim', slug: 'tworound', usid: benUsid,
+        dvid: 'dev-two-rival', anym: 'the rival' });
+    }
+    await two.waitForFunction(() =>
+      !document.getElementById('reveal').disabled, { timeout: 20000 });
+    await two.click('#reveal');
+    await two.waitForFunction(() => document.getElementById('status')
+      .classList.contains('revealed'));
+    await two.click('#archive');
+    await two.waitForFunction(() =>
+      !document.getElementById('status').classList.contains('revealed')
+      && document.querySelectorAll('#tiles .tile').length === 0);
+    await two.waitForFunction(() =>
+      document.querySelector('#evergreen .arc') !== null);
+    await Promise.all([
+      two.waitForNavigation({ waitUntil: 'networkidle0' }),
+      two.click('#evergreen .arc'),
+    ]);
+    await two.waitForFunction(() => document.getElementById('status')
+      .classList.contains('revealed'));
+    ok(await two.evaluate(() =>
+      location.pathname === '/tworound-archive1'), 'the deck’s'
+       + ' ‹ rides from the reborn page into the archive');
+    ok(await two.evaluate(() => {
+      const tu = (n) => document.querySelector(
+        '.tile[data-snym="' + n + '"] .tu');
+      return tu('ben').classList.contains('selected')
+        && getComputedStyle(tu('ben')).visibility === 'visible'
+        && !tu('ann').classList.contains('selected')
+        && getComputedStyle(tu('ann')).visibility === 'hidden';
+    }), 'the archived record stars the seat this browser BID AS —'
+       + " ben, by the log's forensic column — through the rival's"
+       + ' seat theft and with no ledger entry for the archive slug');
+    await shoot(two, 'story-record-star');
 
     ok(pageErrors.length === 0,
        'ZERO page errors across every story flow (the net catches'

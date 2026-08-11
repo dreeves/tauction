@@ -21,7 +21,7 @@ const POLL_MS = 5000;
 // of leaving dead buttons. Equal to Code.gs's SVER in-repo (a
 // qual welds them); the deployed pair diverges only inside that
 // window, which is the point.
-const SVERMIN = 1;
+const SVERMIN = 2;  // 2: bidders[].dvid, the forensic column
 
 // A hidden tab's entire traffic: one title-only peek a minute — an
 // explicit coarse cadence (dreev's ruling), never
@@ -157,7 +157,11 @@ function settleCommit(node) {
 /* ------------------------------- state -------------------------------- */
 
 let slug = '';
-let state = null;         // latest server snapshot of the current auction
+// Latest snapshot of the current auction. NEVER null: born as the
+// virgin of the (possibly '') boot slug, re-seeded per page by
+// paintCached, upgraded by every adopted snapshot — one regime,
+// no null guards anywhere downstream
+let state = virginState('');
 let seats = [];           // local working copy of the seats: one
                           // {usid, snym} per person, insertion order
                           // — the usid is the IDENTITY (dreev's
@@ -185,14 +189,13 @@ let settleSeq = 0;        // bumped when a write SETTLES: a read
                           // its response (the server may not have
                           // committed a write before then)
 let refreshing = false;
-let verdictInFlight = false;  // a VERDICT's round trip (reveal or
-                          // archive — the two table-wide one-way
-                          // ops): the writes whose gray+gavel (the
-                          // drumroll) must hold until their own
-                          // settle — every other write leaves the
-                          // busy sign to the arrival/transport
-                          // machinery (see the discarded-snapshot
-                          // unpin in refresh)
+// A VERDICT (reveal or archive — the two table-wide one-way ops)
+// wears its own class on #status, 'verdict', styled identically to
+// 'stale' (the CSS aliases them): the drumroll holds until the
+// verdict's own settle removes its class, and the arrival/transport
+// machinery clears 'stale' unconditionally — two meanings, two
+// classes, no flag mediating them (the DOM is the truth, the
+// .viewing precedent)
 let seenRevealed = false; // does this page believe the CURRENT
                           // auction is revealed? Adopted snapshots
                           // ASSIGN it — an archive rebirth
@@ -375,7 +378,8 @@ function assertState(res) {
       (s) => typeof s.usid === 'string' && typeof s.snym === 'string')
     && Array.isArray(res.bidders) && res.bidders.every(
       (b) => typeof b.usid === 'string' && STAMP_RE.test(b.tini)
-          && STAMP_RE.test(b.tmod) && typeof b.bcount === 'number')
+          && STAMP_RE.test(b.tmod) && typeof b.bcount === 'number'
+          && typeof b.dvid === 'string')
     && typeof res.revealed === 'boolean'
     && typeof res.tfin === 'string'
     && (res.tfin === '' || STAMP_RE.test(res.tfin))
@@ -387,6 +391,9 @@ function assertState(res) {
     && res.anyms !== null && typeof res.anyms === 'object'
     && !Array.isArray(res.anyms)
     && Object.values(res.anyms).every((v) => typeof v === 'string')
+    && Array.isArray(res.editors) && res.editors.every(
+      (e) => typeof e.usid === 'string' && typeof e.dvid === 'string'
+          && typeof e.anym === 'string')
     && Array.isArray(res.arcs)
     && res.arcs.every((n, i) => Number.isInteger(n) && n >= 1
          && (i === 0 || res.arcs[i - 1] < n))
@@ -470,6 +477,14 @@ function narrate(prev, next) {
 // next page load can paint instantly instead of flashing a blank roster
 function ingest(res) {
   assertState(res);
+  // THE SLUG IS WRITE-ONCE ('' -> name, at most once, with no
+  // request in flight across the transition) and the server echoes
+  // it verbatim (cleanSlug validates, never rewrites) — so every
+  // snapshot reaching this seam describes this page. Asserted once
+  // here instead of re-checked at every consumer; a canonicalizing
+  // server or an in-page slug change would crash loudly by name.
+  assert(res.slug === slug, 'snapshot for "' + res.slug
+    + '" reached the "' + slug + '" page — the slug is write-once');
   res.claims = umap(res.claims);
   res.anyms = umap(res.anyms);
   // the chronicle's arrival edge is ADOPTED, not state-null: a page
@@ -486,9 +501,7 @@ function ingest(res) {
   // usids never change, so following the claim home is the whole job.)
   const claimed = Object.keys(res.claims)
     .find((p) => res.claims[p] === DVID);
-  if (claimed !== undefined && claimed !== myUsidStored()) {
-    storeMyPid(claimed);
-  }
+  if (claimed !== undefined) storeMyPid(claimed);  // idempotent
 }
 
 // The sheet's public CSV face: the pulse tab as gviz emits it.
@@ -547,8 +560,7 @@ async function refresh() {
   // virgin seed carries '' and a cached snapshot from before the
   // pulse era carries nothing — both fall through to the API read,
   // which is the only thing that can upgrade them)
-  if (state !== null && state.slug === a && state.sheet
-      && state.editors.length === 0) {
+  if (state.sheet && state.editors.length === 0) {
     let wver = null;
     try {
       wver = await fetchPulse(state.sheet);
@@ -559,10 +571,9 @@ async function refresh() {
     }
     if (wver === state.wver) {
       // the picture is CONFIRMED current: any weather-gray retires
-      // without an API read — except the reveal's drumroll, which
-      // belongs to its settle alone (the adoption path's same
-      // disclosed exception)
-      if (!verdictInFlight) $('status').classList.remove('stale');
+      // without an API read (a verdict's drumroll is a different
+      // class and belongs to its settle alone)
+      $('status').classList.remove('stale');
       refreshing = false;
       return;
     }
@@ -589,7 +600,7 @@ async function refresh() {
       // this snapshot was in flight — anything less and it can lack a
       // name you just added or a bid you just placed (the server
       // commits a write somewhere between our send and its response)
-      else if (res.slug === slug && writesPending === 0
+      else if (writesPending === 0
                && settleSeq === seqAtRequest) { ingest(res); render(); }
       // The server ANSWERED for this page but adoption must wait out
       // an in-flight or just-settled write (the snapshot can lack
@@ -600,12 +611,9 @@ async function refresh() {
       // write queued during the arrival gray pinned the gavel until
       // its own settle, which on a lock-contended live server ran
       // dreev's "spins, stops, spins more" for tens of seconds
-      // (2026-07-30, two browsers adding simultaneously). Disclosed
-      // exception: the reveal's drumroll belongs to the verdict and
-      // only its settle may lift it.
-      else if (res.slug === slug && !verdictInFlight) {
-        $('status').classList.remove('stale');
-      }
+      // (2026-07-30, two browsers adding simultaneously). (A
+      // verdict's drumroll is the 'verdict' class, untouched here.)
+      else $('status').classList.remove('stale');
     }
   } catch (e) {
     banner(e2152(e.message));
@@ -636,14 +644,14 @@ async function peekTitle() {
     if (document.visibilityState !== 'hidden') return;
     document.title = tabTitle(
       titleGlyph(res.seats, res.bidders, res.revealed,
-                 usidAmong(res.seats, umap(res.claims))), slug);
+                 whoHere(res.seats, res)), slug);
   } catch (e) { console.warn(e2152(e.message)); }
 }
 
 /* ------------------------------ rendering ----------------------------- */
 
 function render() {
-  if (!state) return;
+
   // adopt the server's seats: every adopted snapshot is gated on being
   // newer than this client's newest write, so it contains every local
   // edit — no shielding needed (cloned: local edits mutate labels)
@@ -785,7 +793,6 @@ function renderDesc() {
     view.dataset.md = state.blub;
     view.innerHTML = mdRender(state.blub);
   }
-  edit.disabled = false;  // only the unnamed idle page keeps it off
   // A recovery snapshot can prove that an apparently failed SAVE
   // actually landed: identical words settle and take their accepted
   // CAS token even while the editor is focused.
@@ -821,13 +828,11 @@ function setBlubBase(v) {
 // someone-(anym) for a walk-in), and toggles the scribbling class
 // (accent ink + write-wiggle). Own presence — this device, or this
 // usid heartbeating from another anym — never scribbles at itself.
-// (state.editors is absent only across the deploy gap to an older
-// server; treated as an empty desk.)
+// (editors is assertState-required, like arcs: a snapshot without
+// it refuses loudly at the seam, never a silently empty desk.)
 function syncPencil() {
   const v = Number($('descedit').dataset.base);
-  const eds = state === null || state.editors === undefined
-    ? [] : state.editors;
-  const rivals = eds.filter((e) =>
+  const rivals = state.editors.filter((e) =>
     !((e.usid !== '' && e.usid === myUsid()) || e.dvid === DVID));
   $('desc').classList.toggle('scribbling', rivals.length > 0);
   const names = rivals.map((e) => {
@@ -1012,7 +1017,7 @@ function paintWar() {
   const edit = $('descedit');
   const slot = $('war-diff');
   if (String(state.bver) === edit.dataset.base) {
-    if ($('status').classList.contains('stale')) {
+    if ($('status').matches('.stale, .verdict')) {
       slot.textContent = warWords;
     } else if (!slot.querySelector('.gavel')) {
       slot.replaceChildren(slotGavel());
@@ -1161,19 +1166,36 @@ function storeMyPid(p) {
 // is this device's. Unclaimed-on-the-server plus remembered locally
 // counts as yours (the optimistic moment before your claim lands); a
 // rival device's registered claim unseats you.
-// The rule itself lives in usidAmong, over ANY (seats, claims) pair:
-// myUsid answers for the adopted state; the hidden title peek asks
-// the same question of a raw snapshot it never adopts.
 function usidAmong(ss, claims) {
   const p = myUsidStored();
   if (!p || !ss.some((s) => s.usid === p)) return '';
   const holder = claims[p];
   return holder === undefined || holder === DVID ? p : '';
 }
+// ...but only until the gavel. Post-reveal you are part of the frozen
+// RECORD: the seat whose STANDING bid this browser placed (each
+// bidders entry carries its standing bid's dvid — SVER 2). The live
+// rule's two legs both rot once your bidding is done: a rival's claim
+// plus the radio law can leave this browser's dvid on no claim at
+// all, and the archive's rename orphans the ledger's slug key (which
+// the reborn round then recycles) — dreev's star bug, 2026-08-10.
+// The record consults neither. Last match wins in the hand-rolled
+// corner where one dvid stands on two seats (the UI's radio lock
+// after your bid makes that unreachable honestly).
+function usidOfRecord(bidders) {
+  const hits = bidders.filter((b) => b.dvid === DVID);
+  return hits.length === 0 ? '' : hits[hits.length - 1].usid;
+}
+// The fork, over ANY snapshot (adopted or raw-peeked) and whichever
+// seats accompany it: the record's rule after the gavel, the claim
+// rule before. myUsid answers for the adopted state; the hidden
+// title peek asks the same question of a snapshot it never adopts.
+function whoHere(ss, st) {
+  return st.revealed ? usidOfRecord(st.bidders)
+                     : usidAmong(ss, umap(st.claims));
+}
 function myUsid() {
-  // no snapshot yet = no claims are known: optimistically yours (the
-  // same optimistic moment as an unclaimed-on-the-server seat)
-  return usidAmong(seats, state === null ? umap() : state.claims);
+  return whoHere(seats, state);
 }
 
 // Every bid this browser has placed on this auction, keyed by usid —
@@ -1262,14 +1284,12 @@ function renderStatus() {
     : roll.slice(0, -1).join(', ') + ', and ' + roll[roll.length - 1];
   const ready = !state.revealed && seats.length >= 2
     && missing.length === 0;
-  // the reveal is idempotent server-side, so a stray press is
-  // harmless either way; once revealed the button yields its slot to
-  // the Closed stamp (CSS, off #status.revealed) and the visible
-  // stamp is the screen reader's truth too
-  $('reveal').disabled = !ready && !state.revealed;
-  $('reveal').classList.toggle('ready', ready);
-  // the roster is CLOSED once revealed (the server refuses adds too)
-  $('roster-input').disabled = state.revealed;
+  // pressable exactly when ready — the armed dress keys off
+  // :not(:disabled), one derivation the stylesheet owns; once
+  // revealed the button yields its slot to the Closed stamp (CSS,
+  // off #status.revealed) and the visible stamp is the screen
+  // reader's truth too
+  $('reveal').disabled = !ready;
   // the tip explains the GRAY, nothing else: an armed button's
   // REVEAL! is its own offer (dreev killed the redundant 'Reveal
   // bids') and the Closed stamp its own receipt — and the visible
@@ -1758,8 +1778,9 @@ function updateRow(t, seat, b, mine, known, locked) {
   }
   // a bid protects its seat: the × grays the moment a bid is in
   // (and the server refuses the removal outright if a race slips
-  // one past), and the whole record freezes at the gavel
-  const frozen = stamp !== undefined || state.revealed;
+  // one past); the gavel's retirement of every × is wholly CSS's
+  // (#status.revealed), not a second condition here
+  const frozen = stamp !== undefined;
   const x = t.querySelector('.x');
   x.disabled = frozen;
   setTip(x, frozen ? tooLateRemoveTip(seat.snym)
@@ -1770,9 +1791,11 @@ function updateRow(t, seat, b, mine, known, locked) {
 // raw text is entity-escaped before any markup applies, so nothing an
 // author writes can smuggle live HTML in — only OUR transforms emit
 // tags, and link hrefs must be http(s), so javascript: links never
-// become links at all. Covers # through ###### headings, **bold**,
-// *italic*, `code`, [text](url), - and 1. lists, > quotes, ---
-// rules, and blank-line paragraphs (single newlines are <br>s).
+// become links at all. Covers # through ###### headings, **bold**
+// and __bold__, *italic* and _italic_ (underscores never intraword
+// — the eat-the-richtext dialect, dreev 2026-08-10), `code`,
+// [text](url "title"), - and 1. lists, > quotes, --- rules, and
+// blank-line paragraphs (single newlines are <br>s).
 // LINE-wise (dreev 2026-08-01, replacing blank-line-block atomicity
 // that read normally-typed markdown — a heading right atop its list
 // — as one literal paragraph): each line is classified once,
@@ -1783,22 +1806,39 @@ function mdRender(md) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   // Code spans are LITERAL, so they're stashed behind placeholders
   // while the other transforms run (`*x*` must not italicize) and
-  // restored after — which also lets a code span label a link. The
-  // placeholder is unforgeable: the escape pass left no raw '<' in
-  // the text, and emitted tags never put two in a row.
+  // restored after — which also lets a code span label a link.
+  // LINKS stash too (since the underscore dialect, 2026-08-10):
+  // URLs are full of underscores, so anchors must be built and
+  // sheltered before the emphasis arms run. Known trade: emphasis
+  // markers inside link TEXT stay literal. The placeholder is
+  // unforgeable: the escape pass left no raw '<' in the text, and
+  // emitted tags never put two in a row.
+  // Emphasis speaks BOTH dialects (dreev, matching his
+  // eat-the-richtext editor, whose Turndown emits _underscores_):
+  // **x**/__x__ embolden, *x*/_x_ italicize — but underscores
+  // never intraword (snake_case stays literal), per CommonMark.
   const inline = (s) => {
     const stash = [];
+    // a stashed construct may CONTAIN an earlier placeholder (a
+    // code span labeling a link), and the final unstash pass never
+    // re-scans its own replacements — so nesting resolves at push
+    const unstash = (t) => t.replace(/<<(\d+)>>/g, (_, i) => stash[i]);
     return s
       .replace(/`([^`]+)`/g, (_, c) =>
         '<<' + (stash.push('<code>' + c + '</code>') - 1) + '>>')
-      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*([^*]+)\*/g, '<em>$1</em>')
       .replace(
         /\[([^\]]+)\]\((https?:\/\/[^\s)]+)(?: &quot;([^&]*)&quot;)?\)/g,
-        (m, txt, url, title) => '<a href="' + url
+        (m, txt, url, title) => '<<' + (stash.push('<a href="' + url
           + '" target="_blank" rel="noopener"'
-          + (title === undefined ? '' : ' title="' + title + '"')
-          + '>' + txt + '</a>')
+          + (title === undefined ? '' : ' title="' + unstash(title)
+            + '"')
+          + '>' + unstash(txt) + '</a>') - 1) + '>>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(?<![A-Za-z0-9_])__([^_]+)__(?![A-Za-z0-9_])/g,
+        '<strong>$1</strong>')
+      .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+      .replace(/(?<![A-Za-z0-9_])_([^_]+)_(?![A-Za-z0-9_])/g,
+        '<em>$1</em>')
       .replace(/<<(\d+)>>/g, (_, i) => stash[i]);
   };
   // The grammar's dispatch: one kind per construct. Blank lines are
@@ -1817,8 +1857,9 @@ function mdRender(md) {
   let run = null;
   esc.split('\n').forEach((l) => {
     const k = kind(l);
-    // headings and rules are one-LINE constructs: never merged
-    if (run !== null && run.kind === k && k !== 'h' && k !== 'hr') {
+    // every kind groups — the one-line constructs (h, hr) emit per
+    // line below, so grouping is byte-neutral for them
+    if (run !== null && run.kind === k) {
       run.lines.push(l);
       return;
     }
@@ -1830,12 +1871,12 @@ function mdRender(md) {
     + '</' + tag + '>';
   const emit = {
     blank: () => '',
-    hr: () => '<hr>',
-    h: (ls) => {
-      const m = ls[0].match(/^(#{1,6}) (.*)$/);
+    hr: (ls) => '<hr>'.repeat(ls.length),
+    h: (ls) => ls.map((l) => {
+      const m = l.match(/^(#{1,6}) (.*)$/);
       return '<h' + m[1].length + '>' + inline(m[2])
         + '</h' + m[1].length + '>';
-    },
+    }).join(''),
     ul: (ls) => items(ls, /^\s*[-*] /, 'ul'),
     ol: (ls) => items(ls, /^\s*\d+[.)] /, 'ol'),
     quote: (ls) => '<blockquote>' + inline(ls.map((l) =>
@@ -1972,26 +2013,24 @@ function commitRename(usid, raw, field) {
   // see): the draft comes back DIRTY — your text, red, the committed
   // label as baseline, SAVE standing — while the recovery snapshot
   // restores the row's label itself (the blub bounce's recipe)
+  // the settles close over `field` itself: keyed reuse means a
+  // living usid's field node never changes, so flash and settle
+  // pair on the same node by construction (a fresh lookup could
+  // mispair with a rebuilt row on the ×-then-raced-bid path — a
+  // settle on a detached node is a harmless no-op instead)
   queueOp({ action: 'rename', slug: slug, usid: usid, to: to },
           () => {
-            const node = rowNodes[usid];
-            if (node) {
-              const f = node.querySelector('.rename input');
-              settleCommit(f);  // the ride is over, either way
-              // an OLD refusal must never repaint a newer name: only
-              // if THIS commit still owns the baseline does the
-              // refusal get to move it. Newer typing stays in place;
-              // a newer commit owns a different baseline altogether.
-              if (f.defaultValue !== to) return;
-              f.defaultValue = from;
-              f.classList.toggle('error', f.value === to);
-              syncHot(f);
-            }
+            settleCommit(field);  // the ride is over, either way
+            // an OLD refusal must never repaint a newer name: only
+            // if THIS commit still owns the baseline does the
+            // refusal get to move it. Newer typing stays in place;
+            // a newer commit owns a different baseline altogether.
+            if (field.defaultValue !== to) return;
+            field.defaultValue = from;
+            field.classList.toggle('error', field.value === to);
+            syncHot(field);
           },
-          () => {
-            const node = rowNodes[usid];
-            if (node) settleCommit(node.querySelector('.rename input'));
-          });
+          () => { settleCommit(field); });
 }
 
 // Claim a row as yourself, or release it if it's already yours
@@ -2040,8 +2079,8 @@ function bidView() {
 }
 
 async function placeBid(usid, form) {
-  const a = slug;  // pin the auction this bid belongs to; the user might
-                    // switch auctions while the POST is in flight
+  const a = slug;  // closure hygiene: the request names its auction
+                    // (the slug is write-once, so they never differ)
   const editor = form.querySelector('textarea');
   const bid = editor.value.trim();
   assert(usid, 'placeBid without an identity');
@@ -2316,7 +2355,7 @@ function settleWrite(res, at, onRefusal) {
   // snapshot must never replay bad news.
   const snap = res || (refusal && refusal.slug ? refusal : null);
   if (snap) delete snap.error;
-  if (snap && snap.slug === slug && at === writeSeq) {
+  if (snap && at === writeSeq) {
     ingest(snap);
     render();
   } else {
@@ -2341,13 +2380,12 @@ function pressArchive() {
   // Next item 3): the gavel hammers over the grayed ledger until
   // the archive's own settle — a table-wide one-way op deserves
   // its wait sign
-  $('status').classList.add('stale');
-  verdictInFlight = true;
+  $('status').classList.add('verdict');
   queueOp({ action: 'archive', slug: slug },
           () => { $('archive').disabled = false;
-                  verdictInFlight = false; },
+                  $('status').classList.remove('verdict'); },
           () => { $('archive').disabled = false;
-                  verdictInFlight = false; });
+                  $('status').classList.remove('verdict'); });
 }
 
 function pressReveal() {
@@ -2358,12 +2396,10 @@ function pressReveal() {
   // of their reveal. At the settle the button yields to the Closed
   // stamp; focus falls with it, its job done.)
   // the reveal is the most table-wide op there is: the big gavel
-  // hammers over the grayed ledger while it round-trips (the settle's
-  // render lifts the stale)
-  $('status').classList.add('stale');
-  verdictInFlight = true;  // ...and that stale is the VERDICT's: a
-                          // poll answer landing mid-flight must not
-                          // cut the drumroll (refresh's unpin)
+  // hammers over the grayed ledger while it round-trips — in the
+  // verdict's own class, so a poll answer landing mid-flight
+  // cannot cut the drumroll
+  $('status').classList.add('verdict');
   const at = startWrite();
   // the reveal rides the op chain like every other write: it must
   // never overtake your own still-flying revision on the wire (your
@@ -2377,7 +2413,8 @@ function pressReveal() {
     }
     // the drumroll must fall even if the settle's ingest crashes
     // (chainOp banners it): a pinned gavel would read as poll death
-    try { settleWrite(res, at); } finally { verdictInFlight = false; }
+    try { settleWrite(res, at); }
+    finally { $('status').classList.remove('verdict'); }
   });
 }
 
@@ -2462,6 +2499,13 @@ function addName() {  // returns the added seat's usid ('' if refused)
 // the live fetch confirms — a page must never flash what looks like a
 // confirmed-empty roster while loading
 function paintCached() {
+  // The page holds this slug's VIRGIN state before the cache gets a
+  // say, so the optimistic paint works from the first keystroke
+  // instead of waiting out the arrival GET (seconds, on live Apps
+  // Script). Seeded, not ingested: no narration, no cache write,
+  // and the arrival edge (adopted) stays unconsumed for the first
+  // real snapshot.
+  state = virginState(slug);
   const key = 'tauction-state:' + slug;
   try {
     const cached = JSON.parse(localStorage.getItem(key) || 'null');
@@ -2469,13 +2513,6 @@ function paintCached() {
   } catch (e) {
     localStorage.removeItem(key);  // cache from an old schema: purge
   }
-  // No cache: the page is born holding the VIRGIN state instead
-  // of null, so the optimistic paint works from the first keystroke
-  // instead of waiting out the arrival GET (seconds, on live Apps
-  // Script). Seeded, not ingested: no narration, no cache write,
-  // and the arrival edge (adopted) stays unconsumed for the first
-  // real snapshot.
-  if (state === null) state = virginState(slug);
   $('status').classList.add('stale');
 }
 
@@ -2496,12 +2533,34 @@ function virginState(a) {
            claims: umap(), anyms: umap(), bids: null };
 }
 
+// THE ONE OWNER of the unnamed-page freeze: five controls derive
+// from slug === '', stamped at the page's only two slug moments
+// (boot, and the typed name's commit) — renders never re-assert
+// boot state. The pencil is DISABLED outright (the house gray
+// pattern, like the stars and ×s): an editor for an auction that
+// doesn't exist must be unrepresentable, keyboard included. The
+// + row's post-reveal retirement is wholly CSS's
+// (#status.revealed .addrow), both directions — the archive
+// rebirth un-reveals it back into view with no JS hand on it.
+function syncNamed() {
+  const idle = slug === '';
+  document.body.classList.toggle('unnamed', idle);
+  $('desctoggle').disabled = idle;
+  $('roster-input').disabled = idle;
+  $('descedit').disabled = idle;
+  $('share').disabled = idle;
+}
+
 // Typed names CREATE auctions; joining an existing one is by URL or
 // link only (every caller of this is the typed path — URL arrivals go
 // through init). So a typed name that already has data is refused,
 // and nobody stumbles into a stranger's auction by picking "pizza".
 async function switchAuction(a) {
-  if (!a || a === slug) return;
+  // typed-path invariants, asserted not tolerated: commitAname
+  // sends nonempty names only, and the field is disabled the moment
+  // the page is named (slug is write-once)
+  assert(a !== '', 'switchAuction: empty name');
+  assert(slug === '', 'switchAuction: page already named "' + slug + '"');
   flashCommit($('slug'));  // yours is away: the tint rides the
                             // create probe, cleared in the finally
   $('status').classList.add('stale');  // busy while we look the name up
@@ -2530,12 +2589,9 @@ async function switchAuction(a) {
     // copy (no new tooltip: dreev's anti-clutter call)
     document.querySelector('label[for="slug"]')
       .setAttribute('data-tip', nameStoneTip);
-    $('share').disabled = false;  // the page is somewhere now
-    $('desctoggle').disabled = false;  // the pencil wakes with it
-    document.body.classList.remove('unnamed');  // ...and wakes whole
+    syncNamed();  // the page is somewhere now: everything wakes
     $('banner').hidden = true;  // landing somewhere real clears any
                                 // dead-end sign still standing
-    state = null;
     seats = [];
     seen = umap();
     wasRevealed = false;
@@ -2865,12 +2921,7 @@ async function init() {
   }
   $('slug').value = slug;
   $('slug').defaultValue = slug;  // the baseline Escape reverts to
-  // the one-action-page state, explicit (its CSS gray rides this).
-  // The pencil is DISABLED outright with it (the house gray pattern,
-  // like the stars and ×s): an editor for an auction that doesn't
-  // exist must be unrepresentable, keyboard included
-  document.body.classList.toggle('unnamed', slug === '');
-  $('desctoggle').disabled = slug === '';
+  syncNamed();  // the unnamed freeze, stamped by its one owner
   // an archive page's Archive control rests GRAYED, its tip
   // explaining (archiving an archive forks history — dreev: too
   // gross); the slug is fixed for the page's whole life, so once
@@ -2894,9 +2945,6 @@ async function init() {
   // more claims and bids carry it in their anym
   locate();
   if (!slug) {
-    $('roster-input').disabled = true;
-    $('descedit').disabled = true;  // nothing to describe yet
-    $('share').disabled = true;  // a link to nowhere until named
     $('slug').focus();
   } else {
     setPath(slug);

@@ -54,6 +54,9 @@ let stripTini = false;
 let stripArcs = false;
 // ...and the sver-era variant: the old server states no generation
 let stripSver = false;
+// ...and the editors-presence variant (assertState requires the
+// field, arcs' precedent — no silent empty-desk tolerance)
+let stripEditors = false;
 
 // Simulate a sheet whose stamp cells lost their plain-text armor: set
 // to a string and every served stamp becomes it — bidder tini/tmod on
@@ -118,6 +121,7 @@ function mockFetch(url, opts) {
     }
     if (stripArcs) delete res.arcs;
     if (stripSver) delete res.sver;
+    if (stripEditors) delete res.editors;
     if (stampSwap !== null && res.bidders) {
       if (res.revealed) res.tfin = stampSwap;
       else res.bidders.forEach((b) => { b.tini = b.tmod = stampSwap; });
@@ -688,11 +692,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     xbid: 'bob bid', dvid: 'bob-device', anym: 'Bob anym' });
   const dLocalReady = await makePage('/localready?api=' + API_URL);
   const localSeal = dLocalReady.window.document.getElementById('reveal');
-  ok(!localSeal.disabled && localSeal.classList.contains('ready'),
-     'the two complete server seats begin reveal-ready');
+  ok(!localSeal.disabled,
+     'the two complete server seats begin reveal-ready (armed ='
+     + ' :not(:disabled), the one derivation CSS owns)');
   mockDelay = 300;
   addName(dLocalReady, 'carol');
-  ok(localSeal.disabled && !localSeal.classList.contains('ready')
+  ok(localSeal.disabled
      && localSeal.getAttribute('data-tip')
           === STR.waitingTip('carol' + STR.youTag),
      'an optimistic local seat immediately blocks reveal and its tip'
@@ -3029,8 +3034,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(row(doc, 'alice').querySelector('.x').parentElement
        === row(doc, 'alice'),
      'the × belongs to the whole row, not the bid cell');
-  ok(doc.getElementById('reveal').disabled
-     && !doc.getElementById('reveal').classList.contains('ready'),
+  ok(doc.getElementById('reveal').disabled,
      'padlock locked while bob is outstanding');
   ok(doc.getElementById('reveal').getAttribute('data-tip')
        === STR.waitingTip('bob'),
@@ -5540,7 +5544,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && !doc2.getElementById('status').textContent.includes('three tacos'),
      'roster complete: still sealed until someone presses reveal');
   const seal2 = doc2.getElementById('reveal');
-  ok(!seal2.disabled && seal2.classList.contains('ready'),
+  ok(!seal2.disabled,
      'the REVEAL button arms when the roster is complete');
   ok(!seal2.hasAttribute('data-tip') && !seal2.hasAttribute('aria-label'),
      'everyone in: the armed button needs no tip — REVEAL! is its'
@@ -5548,7 +5552,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const preRevealTau = gas.handle({ action: 'state', slug: 'tau' });
   mockDelay = 150;
   seal2.click();
-  ok(doc2.getElementById('status').classList.contains('stale'),
+  ok(doc2.getElementById('status').classList.contains('verdict'),
      'pressing REVEAL shows busy AT ONCE: the gavel hammers while'
      + ' the reveal round-trips (dreev: "nothing seems to happen")');
   await until(() =>
@@ -5575,8 +5579,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     .contains('prestrike'));
   ok(true, 'the beat drops at STRIKE_MS: prestrike retires, the flip'
      + ' and the slam land together');
-  ok(doc2.getElementById('roster-input').disabled,
-     'the roster is closed once revealed: the + row is off');
+  // the + row's post-reveal retirement is wholly CSS's (jsdom does
+  // no layout, so the SOURCE is pinned here and the computed truth
+  // — zero-width addrow on a revealed page — in the story suite)
+  ok(/#status\.revealed \.addrow \{ display: none; \}/.test(
+       fs.readFileSync(path.join(REPO, 'style.css'), 'utf8')),
+     'the roster is closed once revealed: CSS retires the + row');
   ok(/^Closed \d{4}-\d{2}-\d{2} \d{2}:\d{2} (Sun|Mon|Tue|Wed|Thu|Fri|Sat)$/
        .test(doc2.querySelector('#status .closed').textContent),
      "the Closed line stamps the moment, dreev's exact format: "
@@ -6527,8 +6535,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   mockDelay = 800;   // the verdict's round trip
   ddoc.getElementById('reveal').dispatchEvent(
     new domDrum.window.MouseEvent('click', { bubbles: true }));
-  ok(ddoc.getElementById('status').classList.contains('stale'),
-     'the reveal raises its drumroll gray');
+  ok(ddoc.getElementById('status').classList.contains('verdict'),
+     "the reveal raises its drumroll gray (the verdict's own class,"
+     + ' styled as stale is)');
   await sleep(0);    // flush microtasks: the reveal rides the op
                      // chain, and its fetch must CAPTURE the 800
                      // before the knob turns (mockFetch reads the
@@ -6536,12 +6545,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   mockDelay = 50;    // a fast poll answer, landing mid-verdict
   domDrum.window.__intervals.find((i) => i.ms === 5000).fn();
   await sleep(150);  // the poll's answer has landed (and been discarded)
-  ok(ddoc.getElementById('status').classList.contains('stale'),
+  ok(ddoc.getElementById('status').classList.contains('verdict'),
      "a poll answer mid-verdict does NOT cut the drumroll: the"
-     + " reveal's stale belongs to its settle alone");
+     + " verdict's class belongs to its settle alone");
   await until(() => ddoc.getElementById('status').classList
     .contains('revealed'));
-  ok(!ddoc.getElementById('status').classList.contains('stale'),
+  ok(!ddoc.getElementById('status').matches('.stale, .verdict'),
      'the verdict settles, the drumroll ends');
   mockDelay = 0;
 
@@ -6596,7 +6605,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     const domBig = await makePage('/bigswitch?api=' + API_URL);
     const bdoc = domBig.window.document;
     await until(() => !bdoc.getElementById('reveal').disabled);
-    ok(bdoc.getElementById('reveal').classList.contains('ready')
+    ok(!bdoc.getElementById('reveal').disabled
        && !bdoc.getElementById('reveal').hasAttribute('data-tip'),
        'all bids in: the button arms and SHEDS its tooltip — REVEAL!'
        + ' says everything (dreev killed the redundant tip)');
@@ -6843,10 +6852,35 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
          'no tag smuggles through the hover text (escape-first'
          + ' posture holds)');
     }
+    // README Next: the eat-the-richtext dialect (Turndown's
+    // emissions): _underscores_ italicize, __doubles__ embolden —
+    // but never intraword (snake_case survives), and never inside
+    // a URL
+    gas.handle({ action: 'describe', slug: 'dialect', base: 0,
+      blub: '_wispy_ and __mighty__ and snake_case_word and'
+        + ' [plain](https://e.com/a_b_c)' });
+    const domD = await makePage('/dialect?api=' + API_URL);
+    await until(() => domD.window.document
+      .querySelector('#descview em') !== null);
+    {
+      const v = domD.window.document.getElementById('descview');
+      ok(v.querySelector('em') !== null
+         && v.querySelector('em').textContent === 'wispy'
+         && v.querySelector('strong') !== null
+         && v.querySelector('strong').textContent === 'mighty',
+         '_underscores_ italicize and __doubles__ embolden (the'
+         + ' eat-the-richtext dialect)');
+      ok(v.textContent.indexOf('snake_case_word') !== -1,
+         'intraword underscores stay literal: snake_case survives');
+      ok(v.querySelector('a').getAttribute('href')
+           === 'https://e.com/a_b_c',
+         'underscores inside a URL survive whole (links are'
+         + ' stashed before the emphasis arms run)');
+    }
     mockDelay = 150;  // the archive takes a beat: the drumroll shows
     btn.click();
     btn.click();  // the double press: the guard must swallow it
-    ok(doc.getElementById('status').classList.contains('stale'),
+    ok(doc.getElementById('status').classList.contains('verdict'),
        "the archive wears the reveal's drumroll: gavel over the"
        + ' grayed ledger until the verdict settles (README Next'
        + ' item 3)');
@@ -6862,7 +6896,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        'one press, one wire archive, no refusal banner: the double'
        + ' click died at the disabled button');
     mockDelay = 0;
-    ok(!doc.getElementById('status').classList.contains('stale'),
+    ok(!doc.getElementById('status').matches('.stale, .verdict'),
        "the drumroll lifted with the settle: the reborn page is"
        + ' trusted truth');
     ok(tiles(doc).length === 0
@@ -7032,6 +7066,131 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        '\u2039 SKIPS a hand-made gap to the greatest existing'
        + ' lower number; \u203a and \u00bb ride to the live page');
 
+    /* ===== THE RECORD'S STAR (dreev's bug report, 2026-08-10) =====
+       Replicata (distilled from dreev's two-round chrome session):
+       this browser bids as a seat; before the reveal a rival device
+       claims that seat (and the radio law blanks the rival's OLD
+       seat, so this browser's dvid survives on NO claim); the
+       closed auction is archived; the browser arrives at the
+       archive URL with no ledger entry for the archive slug — the
+       rename orphaned the old key and the reborn round recycled it.
+       Expectata: the is-you star marks who this browser BID AS.
+       Resultata (pre-fix): no star on any row — is-you rode the
+       mutable claim column and the orphaned slug-keyed ledger.
+       Post-reveal is-you is FORENSIC: the seat whose standing bid
+       this browser placed (bidders[].dvid, SVER 2). */
+    {
+      const DV = 'dvid-record-chrome';
+      gas.handle({ action: 'bid', slug: 'recstar', snym: 'ann',
+        usid: 'usid-recstar-ann', xbid: 'mine truly', dvid: DV });
+      gas.handle({ action: 'bid', slug: 'recstar', snym: 'ben',
+        usid: 'usid-recstar-ben', xbid: 'foreign',
+        dvid: 'dvid-record-rival' });
+      gas.handle({ action: 'claim', slug: 'recstar',
+        usid: 'usid-recstar-ann', dvid: 'dvid-record-rival',
+        anym: 'the rival' });
+      gas.handle({ action: 'reveal', slug: 'recstar' });
+      gas.handle({ action: 'archive', slug: 'recstar' });
+      const domR = await makePage('/recstar-archive1?api=' + API_URL,
+        (w) => {
+          w.localStorage.setItem('tauction-dvid', DV);
+          // the ledger as dreev's session left it: the base slug's
+          // entry re-minted by round two, nothing for the archive
+          w.localStorage.setItem('tauction-usids',
+            '{"recstar":"usid-recstar-elsewhere"}');
+        });
+      const docR = domR.window.document;
+      await until(() => docR.getElementById('status')
+        .classList.contains('revealed'));
+      ok(row(docR, 'ann').querySelector('.tu')
+           .classList.contains('selected')
+         && !row(docR, 'ben').querySelector('.tu')
+           .classList.contains('selected'),
+         "the archived star is FORENSIC: ann's standing bid came"
+         + ' from this browser, so her row wears the is-you star —'
+         + ' claim theft and the orphaned ledger notwithstanding');
+      // the converse: a stale claim in this browser's favor stars
+      // nothing when the record says another device placed the bid
+      gas.handle({ action: 'bid', slug: 'recstale', snym: 'cyn',
+        usid: 'usid-recstale-cyn', xbid: 'not yours',
+        dvid: 'dvid-record-rival' });
+      gas.handle({ action: 'bid', slug: 'recstale', snym: 'dov',
+        usid: 'usid-recstale-dov', xbid: 'also not',
+        dvid: 'dvid-record-other' });
+      gas.handle({ action: 'claim', slug: 'recstale',
+        usid: 'usid-recstale-cyn', dvid: DV, anym: 'me, late' });
+      gas.handle({ action: 'reveal', slug: 'recstale' });
+      const domS = await makePage('/recstale?api=' + API_URL, (w) => {
+        w.localStorage.setItem('tauction-dvid', DV);
+        w.localStorage.setItem('tauction-usids',
+          '{"recstale":"usid-recstale-cyn"}');
+      });
+      const docS = domS.window.document;
+      await until(() => docS.getElementById('status')
+        .classList.contains('revealed'));
+      ok(docS.querySelector('#tiles .tu.selected') === null,
+         'a remembered-and-claimed seat whose standing bid another'
+         + ' device placed wears NO star post-reveal: the record'
+         + ' outranks the claim');
+    }
+
+    /* ===== THE DRAFT RIDES THE SWITCH (dreev's amendment to the
+       star-bug report, 2026-08-10): typing a bid, then claiming a
+       DIFFERENT seat, carries the unsubmitted draft to the new
+       row — the draft slot is per-auction, not per-seat, and only
+       your row wears an editor. Pinned here as chosen, then walked
+       on into the archive to pin the star it ends at. */
+    {
+      const domJ = await makePage('/draftjump?api=' + API_URL, (w) => {
+        w.localStorage.setItem('tauction-dvid', 'dvid-draftjump');
+      });
+      const docJ = domJ.window.document;
+      await until(() => docJ.getElementById('roster-input') !== null);
+      addName(domJ, 'ann');
+      await until(() => row(docJ, 'ann') !== null
+        && row(docJ, 'ann').classList.contains('mine'));
+      addName(domJ, 'ben');
+      await until(() => row(docJ, 'ben') !== null && drained(domJ));
+      typeBid(domJ, 'a half-typed thought');
+      docJ.querySelector('#tiles .rebid textarea').dispatchEvent(
+        new domJ.window.Event('input', { bubbles: true }));
+      claimRow(domJ, 'ben');
+      await until(() => row(docJ, 'ben').classList.contains('mine')
+        && drained(domJ));
+      ok(row(docJ, 'ben').querySelector('.rebid textarea') !== null
+         && row(docJ, 'ben').querySelector('.rebid textarea').value
+           === 'a half-typed thought'
+         && row(docJ, 'ann').querySelector('.rebid') === null,
+         'an unsubmitted draft RIDES a seat switch: the new row'
+         + " wears the editor with the old row's typing, the old"
+         + ' row sheds its editor');
+      // ...and on through dreev's full gesture: submit as the
+      // switched seat, close, archive — the archived star marks the
+      // seat actually BID AS, arrived at via the draft-jump path
+      submitBid(domJ);
+      await settled(domJ);
+      gas.handle({ action: 'bid', slug: 'draftjump', snym: 'ann',
+        usid: usidOf(gas.handle({ action: 'state', slug: 'draftjump' }),
+          'ann'), xbid: 'foreign close', dvid: 'dvid-elsewhere' });
+      gas.handle({ action: 'reveal', slug: 'draftjump' });
+      gas.handle({ action: 'archive', slug: 'draftjump' });
+      const domK = await makePage('/draftjump-archive1?api=' + API_URL,
+        (w) => {
+          // same browser, but the archive slug has no ledger entry
+          // (the rename gap) — the star must not need one
+          w.localStorage.setItem('tauction-dvid', 'dvid-draftjump');
+        });
+      const docK = domK.window.document;
+      await until(() => docK.getElementById('status')
+        .classList.contains('revealed'));
+      ok(row(docK, 'ben').querySelector('.tu')
+           .classList.contains('selected')
+         && !row(docK, 'ann').querySelector('.tu')
+           .classList.contains('selected'),
+         'the archived star lands on the seat bid-as via the'
+         + ' draft-jump path: ben, not the first-latched ann');
+    }
+
     // the two runtimes speak ONE archive grammar, welded at source
     const reOf = (src) => (src.match(
       /ARCHIVE_RE = (\/[^\n;]+\/)/) || [])[1];
@@ -7056,6 +7215,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     const SVER_LEDGER = {
       1: 'add,archive,bid,claim,describe,editing,release,remove,'
         + 'rename,reveal,state',
+      // 2 grew the STATE PAYLOAD (bidders[].dvid, the forensic
+      // column the record's star rides), not the action surface
+      2: 'add,archive,bid,claim,describe,editing,release,remove,'
+        + 'rename,reveal,state',
     };
     const surface = [...CODE_GS.matchAll(/case '(\w+)':/g)]
       .map((m) => m[1]).sort().join(',');
@@ -7079,6 +7242,18 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        + ' carries the marching orders and the picture stays'
        + ' untrusted');
     stripSver = false;
+
+    // ...and editors joined arcs' convention (the audit's find,
+    // 2026-08-10): a snapshot without the field refuses at the
+    // shape assert — never a silently empty desk
+    stripEditors = true;
+    const domE = await makePage('/skewe?api=' + API_URL);
+    await until(() =>
+      !domE.window.document.getElementById('banner').hidden);
+    ok(domE.window.document.getElementById('banner-msg').textContent
+         .indexOf('bad state shape') !== -1,
+       'an editors-less snapshot refuses loudly at the seam');
+    stripEditors = false;
   }
 
   console.log('frontend-quals: all ' + passed + ' assertions passed');

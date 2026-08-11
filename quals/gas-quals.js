@@ -1526,6 +1526,49 @@ ok(!st.error && st.blub === 'straggler draft' && st.bver === 2,
    "a straggler's save lands on the reborn blub as an ordinary"
    + ' edit: the CAS history is continuous across the rebirth');
 
+// THE FORENSIC COLUMN (dreev's star-bug report, 2026-08-10): every
+// bidders entry carries its STANDING bid's dvid — the log's immortal
+// word on which browser bid as whom. The claim column can be vacated
+// AFTER a bid and BEFORE the gavel (a rival's claim takes the seat,
+// and the radio law blanks the rival's OLD seat — leaving the honest
+// browser's dvid on no claim at all), so the revealed page derives
+// is-you from this field, never from claims.
+call({ action: 'bid', slug: 'starrec', snym: 'ann',
+       usid: usid('starrec', 'ann'), xbid: 'a florin',
+       dvid: 'dev-star-chrome' });
+call({ action: 'bid', slug: 'starrec', snym: 'ben',
+       usid: usid('starrec', 'ben'), xbid: 'a groat',
+       dvid: 'dev-star-rival' });
+call({ action: 'claim', slug: 'starrec', usid: usid('starrec', 'ann'),
+       dvid: 'dev-star-rival', anym: 'the rival' });
+st = call({ action: 'state', slug: 'starrec' });
+ok(st.bidders.find((b) => b.usid === usid('starrec', 'ann')).dvid
+     === 'dev-star-chrome'
+   && st.bidders.find((b) => b.usid === usid('starrec', 'ben')).dvid
+     === 'dev-star-rival',
+   "bidders carry each standing bid's dvid — the forensic record,"
+   + ' untouched by the later claim theft');
+ok(st.claims[usid('starrec', 'ann')] === 'dev-star-rival'
+   && st.claims[usid('starrec', 'ben')] === undefined,
+   'while the claim column tells only the theft: ann taken, the'
+   + " rival's old seat blanked by the radio law — the star bug's"
+   + ' hiding state');
+// the rival, now holding ann's seat, re-bids it: STANDING means the
+// latest counted row, so the record re-attributes
+call({ action: 'bid', slug: 'starrec', snym: 'ann',
+       usid: usid('starrec', 'ann'), xbid: 'a doubloon',
+       dvid: 'dev-star-rival' });
+call({ action: 'reveal', slug: 'starrec' });
+st = call({ action: 'archive', slug: 'starrec' });
+ok(!st.error, 'the forensic scenario archives clean');
+st = call({ action: 'state', slug: 'starrec-archive1' });
+ok(st.bidders.find((b) => b.usid === usid('starrec', 'ann')).dvid
+     === 'dev-star-rival'
+   && st.bidders.find((b) => b.usid === usid('starrec', 'ben')).dvid
+     === 'dev-star-rival',
+   "a re-bid re-attributes: the STANDING row's dvid, and the whole"
+   + ' forensic column rides the archive rename intact');
+
 // archiving an archive: refused (dreev: foo-archive-...-archive-...
 // forks history, too gross; the client grays its control, so only
 // hand-rolled requests can even ask)

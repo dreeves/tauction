@@ -232,7 +232,9 @@ The bids tab is an append-only LOG (2026-07-17): every submission is
 its own row, nothing is overwritten, and a person's standing bid is
 their latest row at or before `tfin` (`<=`). The API payload still
 carries `tini`/`tmod`/`bcount` per bidder — derived at read time
-(first tbid, latest tbid, row count).
+(first tbid, latest tbid, row count) — plus `dvid` (the standing
+row's; the forensic column the record's star rides — see Behavior;
+SVER 2).
 
 Column vocabulary: `tini` = time-initial (created), `tmod` = last
 write to the row (seats/devices only; auctions has NO tmod — nothing
@@ -398,6 +400,17 @@ tab's `tauction-drafts` bid draft reappears in the reborn auction
   `tfin` don't count. Honor system throughout.
 - Who-has-bid is public, with a per-bidder (re)submission counter; only bid
   contents are sealed (you always see the bids your own browser placed).
+- The is-you star answers two different questions (dreev's star bug,
+  2026-08-10). Live: the claim model — the seats' dvid column plus
+  the browser's slug-keyed usid ledger, optimistic, last-write-wins.
+  Post-reveal: FORENSIC — the seat whose STANDING bid this browser
+  placed, read from `bidders[].dvid` (the bids log's forensics
+  column, surfaced at SVER 2). The live rule's legs rot once your
+  bidding is done (a rival's claim plus the radio law can vacate the
+  claim column; the archive rename orphans the ledger's slug key),
+  so the record consults neither. `whoHere` in app.js owns the fork;
+  every mineness consumer (star, bid tips, title peek, editing
+  beat) flows through it.
 - Sealing is honor-system: the sheet itself is link-visible.
 
 ## Appendix: making any Google Sheet writable from a static site
