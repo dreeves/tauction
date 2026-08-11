@@ -678,6 +678,32 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' the inline-SVG gavel), favicon and full-size source both'
      + ' on disk');
 
+  /* --- an uncached hidden boot defers its owner read -------------------
+     Replicata: open a named auction in a background tab with no local
+     snapshot, then bring it forward. Expectata (dreev 2026-08-11): hidden
+     time spends no state API call; visibility starts exactly one call and
+     renders the auction. The rejected eager variant spent that call while
+     the page content was hidden. */
+  gas.handle({ action: 'add', slug: 'deferboot', snym: 'ann',
+    usid: 'usid-deferboot-ann' });
+  const hiddenBootCalls = () => apiCalls.filter((c) =>
+    c.action === 'state' && c.slug === 'deferboot').length;
+  const hiddenBootBefore = hiddenBootCalls();
+  const dHiddenBoot = await makePage('/deferboot?api=' + API_URL, (w) => {
+    Object.defineProperty(w.document, 'visibilityState',
+      { value: 'hidden', configurable: true });
+  });
+  const hiddenBootDoc = dHiddenBoot.window.document;
+  ok(hiddenBootCalls() === hiddenBootBefore
+     && row(hiddenBootDoc, 'ann') === null,
+     'an uncached hidden boot spends no state API call and renders no'
+       + ' unobserved snapshot');
+  setVisibility(dHiddenBoot, 'visible');
+  await until(() => row(hiddenBootDoc, 'ann') !== null);
+  ok(hiddenBootCalls() === hiddenBootBefore + 1,
+     'first visibility spends exactly one state API call and renders the auction');
+  dHiddenBoot.window.close();
+
   /* Replicata: ann and bob have both bid, then carol is added while
      that write is still optimistic. Expectata: carol immediately
      blocks reveal and the tip names her. Resultata pre-fix: reveal
