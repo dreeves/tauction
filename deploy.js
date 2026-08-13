@@ -109,11 +109,9 @@ function main() {
     console.error('deploy refused — ' + orders);
     process.exit(1);
   }
-  // Deploying is a BUILD, so derived artifacts are re-derived first;
-  // the quals then audit the result. (The qual command itself must
-  // never run sync-404 — an auditor doesn't rewrite what it inspects;
-  // serve-quals pins that.)
-  run('npm', ['run', 'sync-404']);
+  // (The sync-404 step retired 2026-08-12: Pages derives its own 404
+  // file from index.html at publish time, so there is no mirror left
+  // for a deploy to re-derive — or for anyone to forget.)
   run('npm', ['run', 'quals']);  // never deploy on red
   run('npx', ['clasp', 'push', '--force']);
   run('npx', ['clasp', 'deploy', '-i', DEPLOYMENT_ID, '-d', 'redeploy']);

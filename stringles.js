@@ -35,9 +35,11 @@ const needOneMoreTip = `Need at least one more bidder`;
 const waitingTip = (roll) => `Waiting for ${roll} to bid...`;
 const youTag = ' (you)';
 
-// The bid cell's tooltips: nothing yet, submitted once (yours/theirs),
-// and resubmitted
-const awaitingTip = `Awaiting bid...`;
+// The bid cell's tooltips: submitted once (yours/theirs), and
+// resubmitted. A bidless cell wears no tooltip at all (2026-08-11):
+// the empty card says it, and on a phone the summoned tip parked
+// under the thumb.
+// const awaitingTip = `Awaiting bid...`;
 const submittedTip = (whose, ago) => `${whose} submitted ${ago} ago`;
 const yourBidWord = 'your bid';
 const bidWord = 'bid';

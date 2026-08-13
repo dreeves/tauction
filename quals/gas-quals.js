@@ -976,16 +976,65 @@ resetTabMemo();
 //     a one-section rewrite instead of an archaeology dig.
 const FENCE = 'END OF THE SHEETS LAYER';
 const fenceAt = CODE_GS.indexOf(FENCE);
-const business = CODE_GS.slice(fenceAt);
 const SHEETY = ['SpreadsheetApp', 'openById', 'getSheetByName',
   'insertSheet', 'deleteSheet', 'getRange', 'getDataRange',
   'appendRow', 'deleteRow', 'insertRows', 'deleteRows', 'getMaxRows',
   'setValue', 'setNumberFormat', 'setFont', 'setBackground',
   'setFrozenRows', 'ssMemo', 'sheetMemo', 'rowsMemo',
   'batchUpdate', 'getSheetId'];
-ok(fenceAt !== -1 && SHEETY.every((w) => !business.includes(w)),
-   'no Sheets vocabulary below the storage fence; leaked: '
-     + SHEETY.filter((w) => business.includes(w)).join(', '));
+// The Sheets NOUNS are only half of it: Apps Script's own services
+// are just as unportable, and the fence used to let them through
+// (2026-08-12, dreev's migration ask). Both sides of the fence are
+// judged on the same vocabulary now. Comments are stripped first —
+// prose ABOUT the platform is exactly where these names belong, and
+// Code.gs holds no URLs, so the naive stripper is safe here.
+const PLATFORM = SHEETY.concat(['CacheService', 'LockService',
+  'ContentService', 'Sheets.Spreadsheets', 'Utilities.', 'Session.']);
+// (the fence line itself lives INSIDE a banner comment, so the source
+// is cut at the fence FIRST and decommented after — decommenting the
+// whole file would delete the very marker being sought, and the check
+// would pass by finding nothing at all)
+const nocomment = (s) => s.replace(/\/\*[\s\S]*?\*\//g, ' ')
+                          .replace(/\/\/[^\n]*/g, ' ');
+const decommented = nocomment(CODE_GS);
+const business = nocomment(CODE_GS.slice(fenceAt));
+ok(fenceAt !== -1 && PLATFORM.every((w) => !business.includes(w)),
+   'no platform vocabulary below the storage fence; leaked: '
+     + PLATFORM.filter((w) => business.includes(w)).join(', '));
+
+// 16b. ...AND THE PLATFORM SIBLINGS ARE NAMED (2026-08-12, dreev's
+//      migration ask). The fence policed only what lay BELOW it, and
+//      only Sheets nouns — so Apps Script's own services (the cache,
+//      the lock, the transport) could spread through the pre-fence
+//      plumbing unwatched, and CacheService had already reached the
+//      business logic where nothing was looking. Platform vocabulary
+//      is legal in exactly two places: inside the storage section,
+//      and inside these named siblings. A move to a real database is
+//      then one section plus this short enumerated list — every one
+//      of which a database answers in its own terms (a transaction, a
+//      cache, a response), no archaeology.
+const layerAt = decommented.indexOf('const TABS');
+const preFence = decommented.slice(0, layerAt);
+// the roster, smallest honest set: the web-app transport, the
+// platform's mutual exclusion, and the poll collapser's cache
+const SIBLINGS = ['respond', 'withLock', 'cachedState', 'forgetState',
+                  'mutate'];
+const hostOf = (src, at) => {
+  const seen = [...src.slice(0, at).matchAll(/\bfunction (\w+)/g)].pop();
+  return seen ? seen[1] : '(top level)';
+};
+const strays = [];
+PLATFORM.forEach((w) => {
+  for (let at = preFence.indexOf(w); at !== -1;
+       at = preFence.indexOf(w, at + 1)) {
+    const host = hostOf(preFence, at);
+    if (!SIBLINGS.includes(host)) strays.push(w + ' in ' + host + '()');
+  }
+});
+ok(strays.length === 0,
+   'platform vocabulary above the fence lives only in its named'
+   + ' siblings (' + SIBLINGS.join(', ') + '); strays: '
+   + strays.join(', '));
 
 // 17. length limits refuse with the specific words, never clamp
 //     (names 20 per dreev 2026-07-27, blub 2000) — exact boundaries
@@ -1385,8 +1434,8 @@ call({ action: 'editing', slug: 'pulse1', usid: usid('pulse1', 'ada'),
        dvid: 'dev-p1' });
 st = call({ action: 'state', slug: 'pulse1' });
 ok(st.wver === String(wv + 3),
-   'every write kind bumps — bids and presence heartbeats included'
-   + " (a virgin auction's heartbeat still pulses: the counter is"
+   'every write kind bumps — bids and an editor ARRIVING included'
+   + " (a virgin auction's arrival still pulses: the counter is"
    + ' GLOBAL, so the virgin-stays-virgin law is untouched)');
 st = call({ action: 'state', slug: 'pulse1' });
 ok(st.wver === String(wv + 3), 'reads never bump the pulse');
@@ -1397,6 +1446,38 @@ ok(st.wver === String(wv + 3),
    'a semantic NO-OP never bumps: the no-op-mutates-nothing law'
    + ' (not even tmod, not even the pulse) — clients sleep through'
    + ' non-news');
+/* THE HEARTBEAT IS NOT NEWS (dreev-ratified 2026-08-12).
+   Replicata: open a blub editor anywhere and let it beat. Expectata:
+   silence — the beat re-stamps blip, which no state payload carries,
+   so nothing any page displays changed. Resultata pre-fix: +1 every
+   10 seconds, forever, on the ONE GLOBAL counter every client polls,
+   so one person typing a description made every client of EVERY
+   auction spend a full /exec state read six times a minute — the
+   exact 60-reads/min saturation the pulse exists to prevent. The bug
+   was equating "touched a cell" with "news". */
+for (const beat of [1, 2, 3]) {
+  call({ action: 'editing', slug: 'pulse1',
+         usid: usid('pulse1', 'ada'), dvid: 'dev-p1' });
+  st = call({ action: 'state', slug: 'pulse1' });
+  ok(st.wver === String(wv + 3),
+     'steady beat #' + beat + ' wakes nobody: the desk did not move,'
+     + ' only the liveness stamp under it');
+}
+ok(st.editors.length === 1,
+   '...while presence itself is untouched: the beat still writes, it'
+   + ' just stops shouting');
+// ...and LEAVING is news again, so rival pencils rest at once
+call({ action: 'editing', slug: 'pulse1', usid: usid('pulse1', 'ada'),
+       dvid: 'dev-p1', stop: true });
+st = call({ action: 'state', slug: 'pulse1' });
+ok(st.wver === String(wv + 4) && st.editors.length === 0,
+   'the stop IS news: leaving clears blug, which editors DOES carry,'
+   + ' so rivals stop scribbling without waiting out a poll');
+// ...as is carrying the desk to another auction
+call({ action: 'editing', slug: 'pulse2', usid: '', dvid: 'dev-p1' });
+st = call({ action: 'state', slug: 'pulse1' });
+ok(st.wver === String(wv + 5),
+   'and arriving somewhere else is news too: blug moved');
 // the write-side sanity assert (the bver-corrupt pattern), asked UP
 // FRONT so a mangled pulse refuses before any partial write lands
 {

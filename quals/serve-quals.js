@@ -23,11 +23,19 @@ function ok(cond, label) {
 }
 
 (async () => {
+  // (The old index/404 parity rule retired 2026-08-12 with the tracked
+  // mirror itself: there is no sync-404 script to keep out of the qual
+  // command, because there is nothing left to sync. Pages derives its
+  // 404 file at publish time; serve.py answers misses from index.html
+  // directly. What used to be a thing to remember is now unreachable.)
   const pkg = JSON.parse(
     fs.readFileSync(path.join(REPO, 'package.json'), 'utf8'));
-  ok(!pkg.scripts.quals.includes('sync-404'),
-     'the qual command audits index/404 parity without rewriting the'
-     + ' artifact it is meant to inspect');
+  ok(pkg.scripts['sync-404'] === undefined,
+     'no sync-404 script survives: the mirror it maintained is gone,'
+     + ' so the step cannot be forgotten');
+  ok(!fs.existsSync(path.join(REPO, '404.html')),
+     'and no tracked 404.html either — a derived artifact does not'
+     + ' live in the repo waiting to drift');
 
   /* THE ERA GUARD (dreev-ratified 2026-08-06). Replicata: npm run
      deploy with the schema refactor committed but never pushed —
@@ -123,8 +131,9 @@ function ok(cond, label) {
 
     r = await fetch(BASE + '/tau');
     ok(r.status === 404, 'GET /tau is 404 (same status as GitHub Pages)');
-    ok((await r.text()) === fs.readFileSync(path.join(REPO, '404.html'), 'utf8'),
-       'GET /tau serves 404.html verbatim');
+    ok((await r.text()) === fs.readFileSync(path.join(REPO, 'index.html'), 'utf8'),
+       'GET /tau serves index.html verbatim — the miss IS the app, with'
+       + ' no mirror in between to fall out of date');
 
     r = await fetch(BASE + '/no/such/file.png');
     ok(r.status === 404 && (await r.text()).includes('id="slug"'),

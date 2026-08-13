@@ -67,6 +67,36 @@ let stampSwap = null;
 // Simulate transport death (the wifi blink, the wake race): every API
 // fetch rejects the way Chrome does, before any response exists
 let fetchDown = false;
+// Simulate Google's flaky relay: the /exec redirect lands on
+// script.googleusercontent.com, which intermittently serves an HTML
+// "Page Not Found" instead of the script's JSON (dreev hit this live,
+// 2026-08-11; reproduced against the real endpoint as 302 -> 404
+// text/html). A RESPONSE exists — the wire is fine — it just isn't
+// the script's.
+let relay404 = false;
+const RELAY_404_BODY = '<!DOCTYPE html><html lang="en"><head>'
+  + '<title>Error 404 (Not Found)!!1</title>';
+const relay404Response = () => ({
+  ok: false,
+  status: 404,
+  headers: { get: () => 'text/html; charset=UTF-8' },
+  text: () => Promise.resolve(RELAY_404_BODY),
+  // what a blind r.json() made of it, verbatim from dreev's console:
+  // the PARSER's confusion, naming neither the status nor the layer
+  json: () => Promise.reject(new SyntaxError(
+    "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON")),
+});
+
+// The API leg answers like a real Response: apiGet/apiPost judge
+// status and content-type BEFORE parsing, so a bare { json } stub no
+// longer resembles the wire.
+const apiResponse = (res) => ({
+  ok: true,
+  status: 200,
+  headers: { get: () => 'application/json; charset=UTF-8' },
+  text: () => Promise.resolve(JSON.stringify(res)),
+  json: () => Promise.resolve(res),
+});
 // Simulate the ambiguous transport case: the server commits a write,
 // but its response dies on the way back to the browser.
 let dropWriteResponse = null;
@@ -96,6 +126,9 @@ function mockFetch(url, opts) {
   }
   if (!url.startsWith(API_URL)) return Promise.reject(new Error('unexpected URL ' + url));
   if (fetchDown) return Promise.reject(new TypeError('Failed to fetch'));
+  // the relay bounced this one: the script never ran, so nothing
+  // commits — the browser just holds a page of Google's HTML
+  if (relay404) return Promise.resolve(relay404Response());
   let req;
   if (opts && opts.method === 'POST') req = JSON.parse(opts.body);
   else req = Object.fromEntries(new URL(url).searchParams);
@@ -128,7 +161,7 @@ function mockFetch(url, opts) {
       if (res.revealed) res.tfin = stampSwap;
       else res.bidders.forEach((b) => { b.tini = b.tmod = stampSwap; });
     }
-    resolve({ json: () => Promise.resolve(JSON.parse(JSON.stringify(res))) });
+    resolve(apiResponse(JSON.parse(JSON.stringify(res))));
   }, mockDelay));
 }
 
@@ -146,7 +179,7 @@ const CODE_GS =
 // in the right state, not what the string says
 const STR = new Function(STRINGLES
   + '; return { needTwoTip, needOneMoreTip, waitingTip, youTag,'
-  + ' awaitingTip, auctionExistsBanner, stampCopy,'
+  + ' auctionExistsBanner, stampCopy,'
   + ' consensusStamp,'
   + ' claimedByTip, claimTip, mysteryDevice, nameTakenBanner,'
   + ' bidTooLongBanner,'
@@ -423,6 +456,35 @@ for (const [name, src] of [
   ok(ghosts.length === 0, 'no pre-rename vocabulary haunts ' + name
      + ' — found: ' + [...new Set(ghosts)].join(', '));
 }
+
+// THE CLIENT'S STORAGE FENCE (2026-08-12, dreev's migration ask; the
+// sibling of gas qual 16's, which fences Code.gs). The frontend knows
+// exactly two Google-Sheets facts — the gviz URL's shape and the CSV
+// the pulse tab comes back as — and both are cornered in the two
+// adjacent functions that own them. Everywhere else `sheet` is an
+// OPAQUE HANDLE the server hands over and the client hands back, so a
+// real database moves this door by rewriting one pair of functions.
+// Scanned with comments stripped: prose about gviz is exactly where
+// the word belongs.
+const SHEETY_CLIENT = /docs\.google|gviz|spreadsheets\/d|out:csv/g;
+// (the lookbehind is load-bearing: app.js holds real URLs, and a
+// naive //-stripper eats "https://..." as a comment — which silently
+// blinded this very check, since a leaked URL is exactly the shape
+// being hunted)
+const APP_NOCOMMENT = APP_JS.replace(/\/\*[\s\S]*?\*\//g, ' ')
+                            .replace(/(?<!:)\/\/[^\n]*/g, ' ');
+// the two owners, cut out by name: what remains must know nothing
+const PULSE_DOOR =
+  /function pulseUrl[\s\S]*?\n}\n[\s\S]*?function fetchPulse[\s\S]*?\n}\n/;
+ok(PULSE_DOOR.test(APP_NOCOMMENT),
+   'the pulse door is still one adjacent pulseUrl/fetchPulse pair —'
+   + ' the shape this fence is drawn around');
+const outside = APP_NOCOMMENT.replace(PULSE_DOOR, ' ');
+const clientLeaks = outside.match(SHEETY_CLIENT) || [];
+ok(clientLeaks.length === 0,
+   'no Google-Sheets vocabulary in app.js outside pulseUrl/fetchPulse:'
+   + ' state.sheet is an opaque handle everywhere else — leaked: '
+   + [...new Set(clientLeaks)].join(', '));
 
 // The z-LADDER is a registry, not folklore (dreev: "still sounds
 // whack-a-moley" — the tips-behind-banner bug was a latent ordering
@@ -1835,7 +1897,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     new dDead.window.Event('mouseover', { bubbles: true }));
   ok(!row(deadDoc, 'ann').classList.contains('has-bid')
      && row(deadDoc, 'ann').querySelector('.tile-bid')
-          .getAttribute('data-tip') === STR.awaitingTip
+          .getAttribute('data-tip') === ''  // bidless says nothing
      && deadDoc.getElementById('reveal').disabled
      && myEditor(deadDoc).value === 'doomed words'
      && !deadDoc.querySelector('#tiles .rebid').classList
@@ -2009,8 +2071,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const dProbeError = await makePage('/?api=' + API_URL);
   const ordinaryFetch = dProbeError.window.fetch;
   dProbeError.window.fetch = (url, opts) => String(url).startsWith(API_URL)
-    ? Promise.resolve({ json: () => Promise.resolve(
-      { error: { code: 'nameTaken' } }) })
+    ? Promise.resolve(apiResponse({ error: { code: 'nameTaken' } }))
     : ordinaryFetch(url, opts);
   type(dProbeError, 'slug', 'probeerror');
   commitName(dProbeError);
@@ -2033,7 +2094,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const dMalformed = await makePage('/?api=' + API_URL);
   const malformedFetch = dMalformed.window.fetch;
   dMalformed.window.fetch = (url, opts) => String(url).startsWith(API_URL)
-    ? Promise.resolve({ json: () => Promise.resolve(malformedState) })
+    ? Promise.resolve(apiResponse(malformedState))
     : malformedFetch(url, opts);
   type(dMalformed, 'slug', 'malformedprobe');
   commitName(dMalformed);
@@ -2454,6 +2515,61 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'the first landed poll re-brightens the ledger — self-healing by'
      + ' construction, still bannerless in both directions');
 
+  /* --- 1c3a. THE RELAY'S HTML 404 diagnoses ITSELF --------------------
+     Replicata (dreev, live, 2026-08-11): load a real auction page while
+     Google's relay is having a moment — the /exec 302 lands on
+     script.googleusercontent.com and it serves an HTML "Page Not
+     Found". The gavel hammers for minutes, then the page loads fine.
+     Expectata: transport weather, as ever (gray + gavel, no banner),
+     and a console line naming what actually failed, so whoever is
+     debugging can tell Google's relay apart from Code.gs emitting
+     garbage. Resultata pre-fix: "ERROR2152: Unexpected token '<',
+     "<!DOCTYPE "... is not valid JSON" — a blind r.json() reporting
+     the PARSER's confusion, which names neither the 404 nor the layer
+     that produced it. The status was there to read all along. */
+  gas.handle({ action: 'add', slug: 'bounce',
+    snym: 'ann', usid: 'usid-bounce-ann' });
+  relay404 = true;
+  const dBounce = await makePage('/bounce?api=' + API_URL);
+  const bounceDoc = dBounce.window.document;
+  await until(() =>
+    bounceDoc.getElementById('status').classList.contains('stale'));
+  const bounceWarns = dBounce.window.__warns;
+  ok(bounceDoc.getElementById('banner').hidden
+     && bounceDoc.getElementById('status').classList.contains('stale'),
+     'a bounced poll is WEATHER like any other: gray under the gavel,'
+     + ' no banner (nothing the user did was lost)');
+  ok(bounceWarns.some((w) => w.includes('ERROR2152')
+       && w.includes('404') && w.includes('text/html')),
+     "the console names the layer that failed: the relay's HTTP 404"
+     + " and the HTML it served instead of the script's JSON");
+  ok(!bounceWarns.some((w) => w.includes('Unexpected token')),
+     'and never the parser\'s confusion: "Unexpected token \'<\'" is'
+     + ' the symptom of reading a 404 as JSON, not the diagnosis');
+  ok(bounceWarns.some((w) => w.includes('state')),
+     'the bounced request names ITSELF, so a poll and a lost write'
+     + ' read apart in the console');
+  /* ...and the same honesty on the write leg, where a bounce IS news:
+     the user's deed was lost, so it banners — with the status, not
+     the parser's confusion. */
+  addName(dBounce, 'bob');
+  await until(() => !bounceDoc.getElementById('banner').hidden);
+  ok(bounceDoc.getElementById('banner-msg').textContent.includes('404')
+     && !bounceDoc.getElementById('banner-msg').textContent
+           .includes('Unexpected token'),
+     'a bounced WRITE banners the honest failure (ERROR2154 carrying'
+     + ' the 404), never the parser\'s confusion');
+  /* ...and the weather passes, exactly as the wifi blink does. */
+  relay404 = false;
+  setVisibility(dBounce, 'hidden');
+  setVisibility(dBounce, 'visible');
+  await until(() =>
+    !bounceDoc.getElementById('status').classList.contains('stale'));
+  ok(row(bounceDoc, 'ann') !== null
+     && !bounceDoc.getElementById('status').classList.contains('stale'),
+     'the first unbounced poll brightens the ledger: the relay\'s'
+     + ' moment heals itself, no reload');
+
   /* --- 1c3b. THE PULSE GATE (dreev-ratified 2026-08-06): before
      spending an API read (the owner's shared 60/min quota), the poll
      asks the sheet's public CSV face — the visitor's own quota —
@@ -2491,12 +2607,15 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' the ledger');
   /* OWN-ONLY PRESENCE AND THE PULSE GATE.
      Replicata: open this page's own blub editor, let its start beat
-     enter the next snapshot, then alternate ordinary poll ticks with
-     another heartbeat. Expectata: the start and renewal pulses each
-     cause one state read, while the tick after each one asks only the
-     public pulse; own presence cannot age any UI this page displays.
-     Resultata pre-fix: once the snapshot contained this device's own
-     editor, every tick bypassed the pulse and spent an API state read. */
+     land, then keep beating. Expectata: ARRIVING at the desk is news
+     and costs exactly one state read; every renewal after it is FREE,
+     the ticks asking only the public pulse. Own presence cannot age
+     any UI this page displays.
+     Resultata, two pre-fixes both retired here: first, once the
+     snapshot held this device's own editor, every tick bypassed the
+     pulse and spent an API read; then, until 2026-08-12, every
+     renewal beat bumped the GLOBAL pulse, so the ticks went on paying
+     forever — and so did every other client of every other auction. */
   const ownPoll = dGate.window.__intervals.find((i) => i.ms === 5000);
   const ownBeats = () => apiCalls.filter((c) =>
     c.action === 'editing' && c.slug === 'pulsy' && !c.stop).length;
@@ -2512,20 +2631,21 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await until(() => pulseHits > pulsesBefore);
   await sleep(60);
   const calmAfterStart = stateCount() === startStates;
-  const beatsBefore = ownBeats();
-  ownBeat.fn();
-  await until(() => ownBeats() === beatsBefore + 1);
-  statesBefore = stateCount();
-  ownPoll.fn();
-  await until(() => stateCount() === statesBefore + 1);
-  const renewalStates = stateCount();
-  pulsesBefore = pulseHits;
-  ownPoll.fn();
-  await until(() => pulseHits > pulsesBefore);
-  await sleep(60);
-  ok(calmAfterStart && stateCount() === renewalStates,
-     'own-only presence alternates beat-caused state reads with'
-       + ' pulse-only ticks, halving the API polling spend');
+  // ...and now beat, and beat again: a heartbeat is not news, so the
+  // ticks between them never leave the public pulse
+  for (const beat of [1, 2]) {
+    const beatsBefore = ownBeats();
+    ownBeat.fn();
+    await until(() => ownBeats() === beatsBefore + 1);
+    pulsesBefore = pulseHits;
+    ownPoll.fn();
+    await until(() => pulseHits > pulsesBefore);
+    await sleep(60);
+  }
+  ok(calmAfterStart && stateCount() === startStates,
+     'arriving at the desk costs ONE state read; every renewal beat'
+       + ' after it is free — steady-state editing spends nothing on'
+       + " the owner's quota, here or in any other auction");
   const ownStops = apiCalls.filter((c) =>
     c.action === 'editing' && c.slug === 'pulsy' && c.stop).length;
   gateDoc.getElementById('descdiscard').click();
@@ -3226,8 +3346,18 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // commented code in app.js/style.css)
   // ok(tiles(doc)[0].querySelector('.tile-subs').textContent === '0',
   //    'submission counter reads 0 before bidding');
-  ok(hoverBid(dom, 'bob') === STR.awaitingTip,
-     'bidless cell tooltip: awaiting the bid');
+  /* THE BIDLESS CELL SAYS NOTHING (dreev's mobile report, 2026-08-11).
+     Replicata: on a phone, tap any empty bid cell. Expectata: nothing
+     summoned — the empty card already holds the space where the bid
+     will land, and the padlock's tip names every straggler by name.
+     Resultata pre-fix: "Awaiting bid..." parked under the finger until
+     the next tap, because a tap makes compatibility hover events and
+     the tip system — correctly — keeps a summoned tip readable. The
+     lifetime was never the bug; being a tooltip host with nothing to
+     say was. Pinned here for the pointer, and by story 5 for the thumb. */
+  ok(hoverBid(dom, 'bob') === '',
+     'a bidless cell is not a tooltip host: the empty card speaks for'
+     + ' itself, so hovering it summons nothing');
   ok(doc.querySelector('#status .closed').textContent === '',
      'no Closed line while the auction lives');
   ok(doc.getElementById('seal'), 'seal-state badge present');
@@ -3663,6 +3793,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   mockDelay = 0;
   await settled(domKc);
   myEditor(docK).blur();
+  // the gate earns its keep now (a quiet pulse costs no state read at
+  // all), so this scene has to make real NEWS for any poll to happen
+  gas.handle({ action: 'describe', slug: 'caret', blub: 'poke',
+    base: gas.handle({ action: 'state', slug: 'caret' }).bver });
   const pollsK = apiCalls.filter((c) => c.action === 'state'
     && c.slug === 'caret').length;
   await until(() => apiCalls.filter((c) => c.action === 'state'
@@ -4072,6 +4206,38 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        + ' presence never lies about a live draft');
     Object.defineProperty(dEd.window.document, 'hidden',
       { value: false, configurable: true });
+    /* --- A BOUNCED BEAT IS WEATHER, NOT NEWS ------------------------
+       Replicata (dreev, live, 2026-08-11): keep a blub editor open
+       while Google's relay is bouncing — measured at a third of
+       requests — and the beat fires every 10s into it. Expectata: the
+       transport-death law applies unchanged; the beat is a TIMER's
+       ping, not a person's deed, and the next one 10s later
+       re-establishes presence, so nothing was lost and nothing
+       banners — gray under the gavel, detail to the console.
+       Resultata pre-fix: a red ERROR2158 banner over the user's own
+       open draft, roughly every 30 seconds at the measured bounce
+       rate, saying nothing they could act on. */
+    edDoc.getElementById('descedit').value = 'words mid-draft';
+    edDoc.getElementById('descedit').dispatchEvent(
+      new dEd.window.Event('input', { bubbles: true }));
+    edDoc.getElementById('banner').hidden = true;
+    edDoc.getElementById('status').classList.remove('stale');
+    const beatWarns = dEd.window.__warns.length;
+    relay404 = true;
+    dEd.window.__intervals.find((i) => i.ms === 10000).fn();
+    await until(() => dEd.window.__warns.length > beatWarns);
+    relay404 = false;
+    ok(edDoc.getElementById('banner').hidden,
+       'a bounced presence beat banners NOTHING: a timer pinged and'
+       + ' lost, no deed of the user\'s went with it');
+    ok(edDoc.getElementById('status').classList.contains('stale'),
+       'it dies into the ONE weather ritual instead — the same gray'
+       + ' the poll and the pulse use, not a third quiet path');
+    ok(dEd.window.__warns.slice(beatWarns).some((w) =>
+         w.includes('ERROR2158') && w.includes('404')),
+       'the detail still lands on the console, greppable by its code');
+    ok(edDoc.getElementById('descedit').value === 'words mid-draft',
+       'and the draft is untouched: a lost beat never costs words');
     // DISCARD sends the stop; the viewer's next poll rests the pencil
     edDoc.getElementById('descdiscard').click();
     await until(() => apiCalls.some((c) => c.action === 'editing'
@@ -6177,6 +6343,10 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const shim = tiles(domB.window.document, '.updated');
   ok(shim.length === 1 && shim[0].dataset.snym === 'ann',
      "ann's row shimmers in another window after her re-bid");
+  // a quiet pulse now costs zero state reads, so the "next poll" has
+  // to be given something to come for
+  gas.handle({ action: 'describe', slug: 'wobble', blub: 'poke',
+    base: gas.handle({ action: 'state', slug: 'wobble' }).bver });
   await until(() =>  // the next poll retires it
     !tiles(domB.window.document, '.updated').length);
   ok(!tiles(domB.window.document, '.updated').length, 'shimmer is one-shot');
@@ -6323,6 +6493,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   // wait for a poll to actually go out (a fixed sleep can miss a late
   // one, making "survives the poll" pass vacuously), then let its
   // response land and render
+  // A quiet pulse buys no state read now, so the rebuild under test
+  // has to be provoked — and the provocation must come AFTER this
+  // page's own add/claim have settled, or their response lands last
+  // and leaves the page already current (which is exactly how this
+  // scene first went silent).
+  await until(() => drained());
+  gas.handle({ action: 'describe', slug: 'draft', blub: 'poke',
+    base: gas.handle({ action: 'state', slug: 'draft' }).bver });
   const polls0 = apiCalls.filter((c) => c.action === 'state'
     && c.slug === 'draft').length;
   await until(() => apiCalls.filter((c) => c.action === 'state'
@@ -6620,14 +6798,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(!row(doc4, 'rando').classList.contains('cut'),
      "bidding joined @rando to the roster: not crossed out");
 
-  /* --- 6. no 404 dead-ends: 404.html IS the app -------------------------
-     (404.html is a derived artifact; quals inspect rather than rewriting
-     it, so forgetting the explicit sync-404 step fails loudly.)
+  /* --- 6. no 404 dead-ends: the miss IS the app -------------------------
      Replicata: navigate straight to /tau, or reload there. GitHub Pages
      answers unknown paths with 404.html. Expectata: that IS the app, booted
-     at /tau — no bounce, no flash, nothing to dead-end. */
-  ok(fs.readFileSync(path.join(REPO, '404.html'), 'utf8') === INDEX_HTML,
-     '404.html is an exact copy of index.html (fix: npm run sync-404)');
+     at /tau — no bounce, no flash, nothing to dead-end.
+     (The parity assertion that stood here retired 2026-08-12 with the
+     tracked mirror: Pages derives its 404 file from index.html at
+     publish time, so there is no second copy to be an exact copy OF.
+     serve-quals pins that the mirror and its sync script are gone.) */
   const domBack = await makePage('/tau?api=' + API_URL);
   ok(domBack.window.document.getElementById('slug').value === 'tau',
      'direct navigation lands on the auction');
@@ -7559,6 +7737,19 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        'a pre-handshake server is refused at LOAD: the banner'
        + ' carries the marching orders and the picture stays'
        + ' untrusted');
+    /* ...carrying the EVIDENCE, not just the verdict.
+       Replicata (dreev, live, 2026-08-11): these marching orders
+       appeared on a deployment whose Code.gs was current and at
+       sver 2 — because every sver-less payload reads as an old
+       generation, whatever it really was. Expectata: the refusal
+       shows what actually arrived, so the reader can tell an old
+       server from a reply that was never a state at all. Resultata
+       pre-fix: "generation undefined", evidence discarded, and an
+       operator sent to redeploy code that was already deployed. */
+    ok(/got: \{.*"slug"/.test(domV.window.document
+         .getElementById('banner-msg').textContent),
+       'the handshake refusal quotes the payload it rejected: the'
+       + ' next sighting names its own cause');
     stripSver = false;
 
     // ...and editors joined arcs' convention (the audit's find,

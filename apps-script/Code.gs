@@ -178,6 +178,16 @@ function cachedState(slug) {
   return res;
 }
 
+// The collapser's other half, and the ONE place a slug's cached
+// answer dies. Named because the business logic below the fence has
+// a real reason to say it — the archive kills the target slug's
+// answer too — and it must be able to say it without naming Google's
+// cache (2026-08-12, dreev's migration ask: a real database answers
+// this in its own terms, or not at all).
+function forgetState(slug) {
+  CacheService.getScriptCache().remove('state:' + slug);
+}
+
 // The pulse cell's read-and-validate, asked UP FRONT (the armor
 // precedent: no partial writes) — a mangled cell refuses before the
 // op touches anything. Returns the current count.
@@ -213,8 +223,7 @@ function mutate(req, fn) {
       out.wver = String(cur + 1);
       SpreadsheetApp.flush();
     }
-    CacheService.getScriptCache().remove(
-      'state:' + cleanSlug(req.slug));
+    forgetState(cleanSlug(req.slug));
     return out;
   });
   return res;
@@ -311,6 +320,20 @@ function cleanAnym(s) {
 const TABS = { auctions: AUCTIONS_HEAD, bids: BIDS_HEAD,
                seats: SEATS_HEAD, devices: DEVICES_HEAD,
                pulse: PULSE_HEAD };
+
+// EPHEMERA (dreev-ratified 2026-08-12): columns no state payload ever
+// carries, so writing them is a WRITE but never NEWS. The editing
+// beat re-stamps devices.blip every 10s to prove its tab is alive;
+// getState reads blip to judge freshness but never sends it (editors
+// carry usid/dvid/anym), so a beat changes nothing any page can see.
+// Before this, "touched a cell" meant news, and one open blub editor
+// bumped the ONE GLOBAL pulse six times a minute — waking every
+// client of every auction into a full /exec read apiece, the exact
+// saturation the pulse exists to prevent. Arrival and departure are
+// still news: both move blug, which editors DOES carry.
+const EPHEMERA = { devices: ['tmod', 'blip'] };
+const ephemeral = (kind, col) =>
+  (EPHEMERA[kind] || []).indexOf(col) !== -1;
 // the bids tab is where peeking would spoil the sealing; warn there only
 const TAB_WARNINGS =
   { bids: "IT'S CHEATING TO LOOK HERE DURING AN AUCTION" };
@@ -493,11 +516,19 @@ function patch(kind, i, changes) {
     slab.push(changes[head[c]] === undefined
       ? rec[head[c]] : changes[head[c]]);
   }
+  // THE NEWS TEST, asked BEFORE the record is overwritten: did a cell
+  // that pages can SEE actually change value? The no-op-mutates-
+  // nothing law used to be hand-kept at each call site (releaseClaim
+  // and friends returning early); it lives at the chokepoint now, so
+  // a write that changes nothing observable — most of all the editing
+  // beat's liveness stamp — cannot wake the crowd by accident.
+  const news = slab.some((v, k) => !ephemeral(kind, head[lo + k])
+    && rec[head[lo + k]] !== String(v));
   for (let c = lo; c <= hi; c++) {
     rec[head[c]] = String(slab[c - lo]);
   }
   tab(kind).getRange(i + 2, lo + 1, 1, slab.length).setValues([slab]);
-  wrote(kind);
+  if (news) wrote(kind);
 }
 
 // Delete record i outright
@@ -867,7 +898,7 @@ function archive(req) {
   // mutate invalidates this op's own slug after the lock; the
   // TARGET may hold a cached virgin answer from a probed URL —
   // dead now too
-  CacheService.getScriptCache().remove('state:' + to);
+  forgetState(to);
   return getState(slug);
 }
 
@@ -970,8 +1001,11 @@ function noteEditing(req) {
   const now = new Date().toISOString();
   const i = touchDevice(dvid, anym);  // devices first
   if (req.stop) {
+    // clearing BLUG is what makes leaving news: blip is ephemeral
+    // now, so a stop that only wiped the liveness stamp would let
+    // rival pencils scribble until the next unrelated write
     if (load('devices')[i].blug === slug) {
-      patch('devices', i, { tmod: now, blip: '' });
+      patch('devices', i, { tmod: now, blug: '', blid: '', blip: '' });
     }
   } else {
     patch('devices', i, { tmod: now, blug: slug, blid: usid,

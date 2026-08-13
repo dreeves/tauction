@@ -35,6 +35,13 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
+      # Pages answers every unknown path — i.e. every /slug — with
+      # 404.html, so it has to BE index.html. Deriving it here instead
+      # of trusting a human to run `npm run sync-404` removes the
+      # failure mode rather than guarding it: a forgotten sync used to
+      # publish new app.js against old markup on exactly the URLs that
+      # carry the traffic, while `/` (the one you'd check) looked fine.
+      - run: cp index.html 404.html
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:

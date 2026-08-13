@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Dev server that mimics GitHub Pages: any path that doesn't match a file is
-answered with 404.html (status 404), which stashes the path and bounces back
+answered with index.html (status 404), which stashes the path and bounces back
 through /. The stock `python3 -m http.server` lacks this, so reloading after
 app.js rewrites / to /<slug> dead-ends in a bare 404.
+
+Pages itself serves 404.html for a miss, and that file is derived from
+index.html by the pages workflow at publish time -- so serving index.html
+here is the same bytes, minus a mirror that could fall out of date.
 
 Usage: python3 serve.py [port]     (default 8000)
 """
@@ -27,7 +31,7 @@ class PagesHandler(http.server.SimpleHTTPRequestHandler):
     def send_error(self, code, message=None, explain=None):
         if code != 404:  # only 404s get the GitHub Pages treatment
             return super().send_error(code, message, explain)
-        body = (ROOT / '404.html').read_bytes()
+        body = (ROOT / 'index.html').read_bytes()
         self.send_response(404)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))
@@ -39,5 +43,5 @@ class PagesHandler(http.server.SimpleHTTPRequestHandler):
 port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
 handler = functools.partial(PagesHandler, directory=str(ROOT))
 print(f'serving {ROOT} at http://localhost:{port}/ '
-      '(with GitHub-Pages-style 404.html fallback)')
+      '(with GitHub-Pages-style index.html fallback on misses)')
 http.server.ThreadingHTTPServer(('', port), handler).serve_forever()

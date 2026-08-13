@@ -76,9 +76,30 @@ const umap = (src = {}) => Object.assign(Object.create(null), src);
 // A umap parsed out of localStorage (absent key = empty map)
 const jmap = (key) => umap(JSON.parse(localStorage.getItem(key) || '{}'));
 
+// Google's relay bounces sometimes: the /exec 302 lands on
+// script.googleusercontent.com, which intermittently serves an HTML
+// "Page Not Found" instead of the script's JSON (dreev, live,
+// 2026-08-11; reproduced as 302 -> 404 text/html). A blind r.json()
+// then reports the PARSER's confusion — "Unexpected token '<'" —
+// which names neither the status nor the layer that failed, and reads
+// like Code.gs emitting garbage when the script never ran at all. So
+// a response is JUDGED before it is parsed, in fetchPulse's idiom:
+// assert the shape, quote what came instead. The throw lands in the
+// very catch a dead wire's already does, so no user-facing behavior
+// moves — a bounced poll is still weather, a bounced write still
+// news; only the words on the console change.
+async function jsonOrDie(r, action) {
+  const kind = r.headers.get('content-type') || '(no content type)';
+  const body = await r.text();
+  assert(r.ok && kind.includes('json'),
+         action + ' HTTP ' + r.status + ' ' + kind.split(';')[0] + ': '
+         + JSON.stringify(body.slice(0, 80)));
+  return JSON.parse(body);
+}
+
 async function apiGet(params) {
   const r = await fetch(api + '?' + new URLSearchParams(params));
-  return r.json();
+  return jsonOrDie(r, params.action);
 }
 
 // Body as a plain string => "simple" CORS request, no preflight (Apps Script
@@ -92,7 +113,7 @@ async function apiPost(body) {
     + ') → ' + body.action + (body.snym ? ' @' + body.snym : '')
     + (body.to ? ' → @' + body.to : ''));
   const r = await fetch(api, { method: 'POST', body: JSON.stringify(body) });
-  return r.json();
+  return jsonOrDie(r, body.action);
 }
 
 // The server refuses in CODES ({ code, ...args }; stringles'
@@ -367,11 +388,21 @@ function assertState(res) {
   // exactly one cause and one fix, and the banner should say so
   // (an old server sends no sver at all, which reads as undefined
   // and fails the same way)
+  // ...and that one-cause claim was falsified in the field
+  // (2026-08-11): dreev met these marching orders on a CURRENT
+  // deployment, because ANY payload lacking a sver reads as an old
+  // generation — an unversioned reply, a foreign ?api= target, a
+  // relay's idea of a response. The verdict stands (a sver-less
+  // payload is unusable either way) but it no longer throws away the
+  // evidence: what actually arrived rides along, jsonOrDie's
+  // discipline, so the next sighting names its own cause instead of
+  // sending an innocent operator to redeploy.
   assert(res !== null && typeof res === 'object'
       && Number.isInteger(res.sver) && res.sver >= SVERMIN,
     'deployed Code.gs generation ' + (res && res.sver)
     + ' predates this page (needs ' + SVERMIN
-    + ') — npm run deploy');
+    + ') — npm run deploy; got: '
+    + String(JSON.stringify(res)).slice(0, 120));
   assert(res !== null && typeof res === 'object'
     && typeof res.slug === 'string'
     && typeof res.exists === 'boolean'
@@ -883,9 +914,17 @@ function sendEditBeat(stop) {
   const body = { action: 'editing', slug: slug, usid: myUsid(),
                  dvid: DVID, anym: ANYM };
   if (stop) body.stop = true;
+  // A SPOKEN refusal still banners (the server answered and said no).
+  // Transport death does not: the beat is a timer's ping, not a
+  // person's deed — nothing of the user's rode on it and the next
+  // beat re-establishes presence — so it dies into the ONE weather
+  // ritual like the poll's two legs. Pre-fix this bannered, which on
+  // Google's measured bounce rate (a third of requests, 2026-08-11)
+  // put a red plumbing code over the user's own open draft every few
+  // beats, saying nothing they could act on.
   apiPost(body).then((res) => {
     if (res.error) banner(refusalText(res.error));
-  }).catch((e) => { banner(e2158(e.message)); });
+  }).catch((e) => { weather(e2158(e.message)); });
 }
 
 // ONE reconciling owner for the beat timer, called after every
@@ -1931,12 +1970,21 @@ function ago(iso) {
   return Math.floor(s / 86400) + 'd';
 }
 
-// The bid cell's tooltip: whether a bid is in, and when. Three cases:
-// no bid yet; submitted once ("your" on your own row); resubmitted
-// (first vs latest submission times, same wording for every row).
+// The bid cell's tooltip: WHEN a bid came in. Two cases: submitted
+// once ("your" on your own row) and resubmitted (first vs latest
+// submission times, same wording for every row) — plus the bidless
+// cell, which says nothing at all (dreev's mobile report, 2026-08-11:
+// "Awaiting bid..." parked under every thumb that touched an empty
+// cell). A tip is HELD readable until the next tap on purpose — the
+// star's tap-tip depends on it — so the lifetime was never the bug;
+// hosting a tip with nothing to say was. The empty card already holds
+// the space where the bid will land and the padlock's tip names every
+// straggler, so the cell keeps its counsel: '' takes showTip's
+// existing nothing-to-say leg, the one the REVEAL button walks at the
+// gavel.
 function bidTip(usid) {
   const b = bidView().find((x) => x.usid === usid);
-  if (b === undefined) return awaitingTip;
+  if (b === undefined) return '';
   if (b.bcount === 1) {
     return submittedTip(usid === myUsid() ? yourBidWord : bidWord,
                         ago(b.tini));

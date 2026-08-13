@@ -1,0 +1,63 @@
+# Ship Code.gs whenever main gets a server change (2026-08-12), so the
+# Apps Script half stops being a thing to remember after a push. The
+# frontend half needs nothing here: Pages already publishes on push
+# (pages.yml), which is why this only fires on apps-script/**.
+#
+# It runs the SAME `npm run deploy` a human would, rather than
+# re-spelling its steps in YAML — one deploy path, not two that can
+# drift. Two of that script's guards get satisfied here by
+# construction rather than by discipline:
+#
+#   * THE ERA GUARD refuses to ship a tree git hasn't blessed (clasp
+#     ships the working tree while Pages serves origin/main). A CI
+#     checkout IS origin/main with a clean tree, so the skew it
+#     defends against is unrepresentable — hence fetch-depth: 0, which
+#     is what gives the guard an origin/main ref to check against.
+#   * THE DEPLOY STAMP short-circuits an unchanged server. It is
+#     gitignored, so a runner never has one and always ships; the
+#     paths filter below is what keeps that from meaning "on every
+#     push".
+#
+# The quals run first, in the deploy script, and never deploy on red —
+# including the story suite, which needs a real Chrome (preinstalled on
+# ubuntu-latest; story-quals refuses loudly by name if it ever isn't).
+#
+# One-time setup, already done: the CLASPRC_JSON repo secret holds the
+# contents of ~/.clasprc.json (a Google OAuth refresh token — treat
+# anyone who can push a workflow here as holding it too).
+name: apps-script
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps-script/**'
+      - '.github/workflows/apps-script.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# never two deploys at the same /exec URL at once; a newer push wins
+concurrency:
+  group: apps-script
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # the era guard needs origin/main to exist
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Authenticate clasp
+        # written, never echoed; the redirect keeps it off the log
+        run: printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+      - run: npm run deploy

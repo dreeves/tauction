@@ -15,6 +15,21 @@ Programmatic writes require oAuth.
 
 There's a bunch of setup info and deploy instructions currently in a black hole of AI-generated text at the bottom of [AGENTS.md](AGENTS.md).
 
+### Deploy Intructions (by Claude)
+
+Push to main. That's the whole workflow; the two halves take care of themselves.
+
+* **Frontend** (index.html, app.js, style.css, stringles.js, vendor/, manifest.json) — GitHub Pages publishes on push, about a minute. Nothing to remember: Pages answers every unknown path (ie every /slug) with 404.html, and the workflow derives that from index.html at publish time.
+* **Server** (anything in apps-script/) — the [apps-script workflow](.github/workflows/apps-script.yml) runs on push, but only when apps-script/ actually changed. It runs the same `npm run deploy` a human would: quals, `clasp push`, redeploy of the same /exec URL, then a live smoke test against the real API. Never deploys on red.
+
+Deploying by hand still works and is the escape hatch when the runner is unhappy: `npm run deploy`. It refuses to ship a tree git hasn't blessed, so push first either way.
+
+Authentication for the automated deploy is the `CLASPRC_JSON` repo secret, holding the contents of `~/.clasprc.json`. It is a Google OAuth refresh token, so anyone who can push a workflow to this repo effectively holds it. To rotate: `npx clasp login`, then
+
+    gh secret set CLASPRC_JSON --repo dreeves/tauction < ~/.clasprc.json
+
+One wrinkle that isn't automatic: changing a tab's columns. The live smoke will refuse, naming the tabs to delete; delete them in the sheet (the script rebuilds them empty) and re-run. Brand-new tabs are free.
+
 ### Database Schema
 
 AUCTIONS
@@ -91,3 +106,7 @@ Previously:
 Next:
 
 1. For better device blurbs, what if the website just asks the user for permission to see their exact location?
+
+2. Or if that's too heavy-handed, what about this idea: Any time you name your own seat in an auction, that name is remembered in localstorage and we append to the blub, "; previously bidding as alice" or whatever participant name. If there's a technical reason that doesn't work, please explain.
+
+3. Rename to sealreveal or looseseal or sealedeel or reeveel or something.

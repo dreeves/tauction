@@ -1598,6 +1598,30 @@ async function bid(page, bidText) {
     await thumb.waitForFunction(() =>
       !document.querySelector('.tile[data-snym="oops"]'));
     ok(true, 'tapping a × removes the row');
+    /* Replicata (dreev, phone, 2026-08-11): "users on mobile are
+       confused because they see the persistent tooltip 'awaiting
+       bid'". Tap any empty bid cell; "Awaiting bid..." parks under the
+       finger until the next tap. Expectata: nothing summoned — the
+       empty card already holds the space where the bid will land, and
+       the padlock's own tip names the stragglers. Resultata pre-fix:
+       the tip showed and stuck, because a tap makes compatibility
+       hover events and a summoned tip is DELIBERATELY held readable
+       until the next tap (the star's sticky-tap tip, pinned above,
+       needs exactly that). The lifetime was never the bug; the
+       bidless cell being a tooltip host with nothing to say was.
+       The padlock tap is the control: it proves a tap really does
+       summon a tip here, so the empty cell's silence is the cell's. */
+    await thumb.tap('#reveal');  // disabled: nothing happens but the tip
+    ok(await thumb.evaluate(() =>
+         !document.getElementById('tip').hidden
+         && document.getElementById('tip').textContent.length > 0),
+       'control: a tap on the grayed padlock DOES summon its tip'
+       + ' (the sticky-hover leg touch relies on)');
+    await thumb.tap('.tile[data-snym="bob"] .tile-bid');
+    ok(await thumb.evaluate(() =>
+         document.getElementById('tip').hidden),
+       "no tooltip on a bidless cell under a thumb: the tap clears the"
+       + ' padlock\'s tip and the empty card summons nothing of its own');
     const thumb2 = await makePage(browser, mobileViewport);
     await thumb2.goto(BASE + '/thumbs', { waitUntil: 'networkidle0' });
     await thumb2.tap('.tile[data-snym="bob"] .tu');
