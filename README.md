@@ -1,6 +1,5 @@
-Table Auction.
+# Sealed-bid Auctions
 
-Initially: sealed-bid auctions.
 Web version of the
 [sealed bidding bot](http://doc.dreev.es/sealedbids).
 
@@ -15,22 +14,29 @@ Programmatic writes require oAuth.
 
 There's a bunch of setup info and deploy instructions currently in a black hole of AI-generated text at the bottom of [AGENTS.md](AGENTS.md).
 
-### Deploy Intructions (by Claude)
+## Dev Instructions
 
-Push to main. That's the whole workflow; the two halves take care of themselves.
+Deploys happen automatically via GitHub Actions when you push to main.
 
-* **Frontend** (index.html, app.js, style.css, stringles.js, vendor/, manifest.json) — GitHub Pages publishes on push, about a minute. Nothing to remember: Pages answers every unknown path (ie every /slug) with 404.html, and the workflow derives that from index.html at publish time.
-* **Server** (anything in apps-script/) — the [apps-script workflow](.github/workflows/apps-script.yml) runs on push, but only when apps-script/ actually changed. It runs the same `npm run deploy` a human would: quals, `clasp push`, redeploy of the same /exec URL, then a live smoke test against the real API. Never deploys on red.
+Weird thing that happens behind the scenes as a workaround for GitHub Pages not supporting wildcard paths:
+As part of deploying we copy index.html to 404.html and the latter is what GitHub Pages serves for any unknown path.
 
-Deploying by hand still works and is the escape hatch when the runner is unhappy: `npm run deploy`. It refuses to ship a tree git hasn't blessed, so push first either way.
+Also if anything changed in the Google Apps Script code, deploying copies that to the the apps script for the backend Google Sheet.
 
-Authentication for the automated deploy is the `CLASPRC_JSON` repo secret, holding the contents of `~/.clasprc.json`. It is a Google OAuth refresh token, so anyone who can push a workflow to this repo effectively holds it. To rotate: `npx clasp login`, then
+You can also do `npm run deploy` locally but it won't work unless you've already pushed. 
+And if you have, it should've run automatically, so presumably it never makes sense to run the deploy locally.
 
-    gh secret set CLASPRC_JSON --repo dreeves/tauction < ~/.clasprc.json
+For the GitHub Actions deploy to work, it has to have `CLASPRC_JSON` as a repo secret which should match the contents of `~/.clasprc.json`.
+That's a Google OAuth refresh token which you can acquire or rotate like so:
 
-One wrinkle that isn't automatic: changing a tab's columns. The live smoke will refuse, naming the tabs to delete; delete them in the sheet (the script rebuilds them empty) and re-run. Brand-new tabs are free.
+1. `npx clasp login`
+2. `gh secret set CLASPRC_JSON --repo dreeves/tauction < ~/.clasprc.json`
 
-### Database Schema
+For database migrations (changing the table or column names in the Google Sheet) a human has to manually delete or rename the Sheet tabs. 
+They'll then be automatically recreated and you can copy data back into them as desired.
+Creating additional tabs this app doesn't know about is fine.
+
+## Database Schema
 
 AUCTIONS
 * slug -- the name of the auction, and primary key
@@ -109,4 +115,223 @@ Next:
 
 2. Or if that's too heavy-handed, what about this idea: Any time you name your own seat in an auction, that name is remembered in localstorage and we append to the blub, "; previously bidding as alice" or whatever participant name. If there's a technical reason that doesn't work, please explain.
 
-3. Rename to sealreveal or looseseal or sealedeel or reeveel or something.
+3. Bug: Not sure how to replicate but by intentionally having two pretend users in two different browsers try to step on each others toes by submitting different bids under the same participant name, I created a state that shouldn't be possible to reach. In browser 1 I have the is-you star selected and yellow showing user alice and a visible bid of "b1". So far so good. In browser 2 I have user alice shown with a gray filled-in star indicating the seat is claimed by someone else (and the tooltip correctly says the device that claimed it, browser 1). But on browser 2, I see a visible bid of "b2", the bid I previously placed as alice on browser 2. Obviously we need to find replicata and create quals and then fix this bug.
+
+4. Rename to sealreveal or looseseal or sealedeel or reeveel or something.
+
+
+
+# Claude Opus's Idiotically Wordy Migration Plan for the rename from tauction to sealreveal
+
+Renaming the product from **tauction** to **sealreveal** and rehoming it from
+`tauction.dreev.es` to `seal.yootl.es`, with old links still working. dreev's
+ruling: a full purge — the word "tauction" survives nowhere in runtime source,
+localStorage keys included — with a migration for existing browsers if it can be
+done cleanly. Prefix and branding are both `sealreveal-`.
+
+The auction data is never at risk. `SHEET_ID` is unchanged, the tab names are
+generic (auctions/bids/seats/devices/pulse), and the `/exec` URL is a Google
+domain unrelated to where the frontend is served. Every auction, seat, and bid
+survives the move untouched. What does not survive is per-origin localStorage —
+see The Carry.
+
+#### Two findings that change the shape of this
+
+**CNAME is dead weight.** Since the site publishes from a custom Actions
+workflow, GitHub ignores the file: "If you are publishing from a custom GitHub
+Actions workflow, no CNAME file is created, and any existing CNAME file is
+ignored and is not required."
+([docs](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site))
+The authoritative setting is Settings → Pages → Custom domain. Editing
+[CNAME](CNAME) moves nothing, and AGENTS.md's claim that it does is wrong.
+
+**A real 301 and the identity handoff are mutually exclusive.** A Cloudflare or
+Netlify redirect emits a genuine 301 with path and query preserved — but no JS
+runs on the old origin, so nothing can read the old localStorage. Only a JS page
+served *at* tauction.dreev.es can hand identity across. That tradeoff is the one
+open decision.
+
+#### 1. The rename
+
+Note the key rename is a free rider: the origin change orphans localStorage no
+matter what the keys are called, so renaming the prefix costs nothing beyond
+what the domain move already costs.
+
+Red quals first. New ones:
+
+* **The tauction purge** — same shape as the 2026-08-05 vocabulary purge in
+  frontend-quals, with one difference: scan raw, not `stripStrings`-ed. The name
+  lived *inside* string literals (keys, titles, the console banner), which is
+  exactly what has to die. `/tauction/i` matches nothing in app.js,
+  stringles.js, Code.gs, index.html, style.css, manifest.json, package.json,
+  pages.yml. Red today at 145 hits.
+* **The storage-prefix weld** — every localStorage key literal in app.js begins
+  `sealreveal-`. Structural at the chokepoint, so a future key can't slip the
+  prefix. The nine live keys: dvid, geo, geo-at, geo-try, snym, usids,
+  state:*slug*, drafts:*slug*, mybids:*slug*.
+* **Head, manifest, banner** — update the existing assertions on the manifest
+  name, the og title/image/url trio, the console banner, the bare `<title>`, and
+  the jsdom base URL every frontend qual page is built on.
+
+Then the edits:
+
+| file | change |
+|---|---|
+| app.js | 26 `tauction-*` key literals; the `?api=` comment; four prose comments; the console banner |
+| stringles.js | `tabTitle` → `· sealreveal`, and the comment above it |
+| index.html | `<title>`, `og:title`, `og:image`/`og:url` → `https://seal.yootl.es/...`, version stamp (dreev hand-bumps) |
+| manifest.json | name and short_name |
+| package.json | name; the lockfile follows via `npm install` |
+| apps-script/Code.gs | header comment and the liveness string. Fires the apps-script lane — no schema change, so no tab deletion |
+| .github/workflows/pages.yml | repo slug in a comment |
+| CNAME | → `seal.yootl.es`. Belt-and-suspenders only; keep it truthful rather than delete it, so a future revert to branch-publishing isn't a trap |
+| README.md | the hosting URL, the `--repo` slug, and delete the now-done rename TODO |
+| AGENTS.md | the hosting/DNS lines, and correct the CNAME claim |
+
+Deliberately untouched: `sourcery.html` (transcript archive — history, not
+source); the `doc.dreev.es/sealedbids` link; the og:description (dreev's help
+copy, verbatim); and the words "auction"/`auctions` in the data model and UI —
+renaming the product is not renaming the domain vocabulary, and a tab rename
+would be a schema change requiring tab deletion.
+
+One judgment call: AGENTS.md's historical spec sections name `tauction-pids` and
+`tauction-uname`, keys that no longer exist, and AGENTS.md's own convention is
+that "the historical specs below keep their era's names." Proposal — those
+sections keep their text and gain a one-line era note; everything describing the
+*live* system changes. The purge qual scans runtime sources only, so this
+doesn't weaken it.
+
+Also worth fixing while in the head: index.html's GITHUB PAGES 404 HACK comment
+still instructs `npm run sync-404` and claims a qual enforces an index/404
+mirror. Both died 2026-08-12 and serve-quals now pins their absence, so the
+comment is actively false.
+
+#### 2. The domain move
+
+Purely a settings and DNS operation, per the CNAME finding. Same repo, renamed.
+See Human Steps.
+
+#### 3. The carry
+
+localStorage is per-origin and does not travel. Without a handoff every
+returning bidder arrives a stranger: new dvid, no seat claim, and no ability to
+see their own sealed bid — `mybids:`*slug* is the only thing that makes your own
+bid visible before the gavel.
+
+Why the design stays clean:
+
+* **The contract is prefix-free.** The redirector strips its origin's prefix and
+  packs `{dvid, snym, usids, "mybids:chores", "drafts:chores", ...}`; the new
+  origin adds its own. Neither side ever names the other's prefix, so this repo
+  gets a total purge and the only code left in the world that still knows the
+  word "tauction" lives in a separate repo with a natural death date.
+* **It rides an existing branch, adding no code path.** app.js already reads "if
+  this browser has no dvid, mint one." The carry makes that "…adopt the carried
+  identity, else mint one." Same predicate, same place. A browser that already
+  knows itself here ignores the fragment, so an ancient old link clicked next
+  month can't clobber a fresh identity.
+* **Mechanics.** Payload in the URL fragment, which is never sent to any server;
+  `encodeURIComponent(JSON.stringify(...))`; stripped via `history.replaceState`
+  immediately so a reload can't re-import. Carried: dvid, snym, usids, mybids:*,
+  drafts:*. Not carried: state:* and geo* — regenerable caches, and state:* is
+  the only key big enough to threaten a URL length limit.
+
+Quals, as bug reports:
+
+1. *Replicata:* fresh jsdom page at `https://seal.yootl.es/chores#carry=`*payload*
+   with empty localStorage. *Expectata:* keys land under `sealreveal-`, DVID
+   equals the carried one, fragment gone from the URL. *Resultata pre-fix:*
+   nothing imported, a fresh uuid minted, fragment still in the bar.
+2. Same but `sealreveal-dvid` already present → carry ignored, existing identity
+   survives, fragment still stripped.
+3. Malformed payload → loud throw, not a silent skip.
+
+The redirector repo (say `dreeves/tauction-redirect`) uses Pages source *Deploy
+from a branch*, so unlike this repo its CNAME file **is** honored. Four files:
+CNAME, `.nojekyll`, index.html, and a 404.html that is byte-identical — Pages
+answers every /slug with 404.html, so the script has to live in both. Derive it
+with a one-line workflow rather than trusting a human to copy it, same law this
+repo already lives under. The redirect is `location.replace` with `pathname +
+search + hash`, preserving the slug, any `?api=` override, and any fragment. No
+`<meta http-equiv="refresh">`: its URL is a literal, so it would silently
+downgrade /chores to / for whoever's browser processed it first. The no-JS
+fallback is a plain link, honest about losing the path, and its copy is new
+user-visible microcopy, so it's born in Latin with a TO-DO comment.
+
+#### 4. The redirect mechanism (open — dreev's call)
+
+| option | status on /slug | carries identity | cost |
+|---|---|---|---|
+| JS redirector on Pages | 404 (browsers fine, crawlers and unfurlers see a 404) | **yes** | one tiny repo, no new infra |
+| Cloudflare Redirect Rule | real 301 | no | move dreev.es nameservers to Cloudflare |
+| Netlify `_redirects` | real 301 | no | free site, auto-TLS, no nameserver move |
+| Namecheap URL Redirect | — | no | not viable: no TLS, so every `https://` link in the wild hits a cert warning |
+
+Recommendation: JS redirector now, swap to a 301 later if ever. It's the only
+option that carries identity, it needs no infrastructure decision while the DNS
+consolidation is still messy, and it can be replaced by a Cloudflare rule the day
+dreev.es lands there — by which time the handoff will have done its work.
+"Later" can be never at little cost: this is a small tool shared by link among a
+known group, so a stale unfurl on an old chat message is a minor loss, and every
+new link already uses the new domain.
+
+Steps 1 and 2 don't depend on this choice. Only step 3 does.
+
+#### Human steps
+
+Sequencing matters: a domain must be released by one Pages site before another
+can claim it, because "the domain name must be unique across all GitHub Pages
+sites."
+
+1. Decide the redirect mechanism.
+2. Rename the repo: Settings → General → tauction → sealreveal. Git remotes
+   auto-redirect; Pages *project-site* URLs don't, which doesn't matter here
+   because the site uses a custom domain.
+3. `git remote set-url origin https://github.com/dreeves/sealreveal.git`.
+   Optionally `mv ~/lab/tauction ~/lab/sealreveal` — nothing in-repo references
+   the directory name.
+4. DNS at Linode, in the yootl.es zone: add `CNAME seal → dreeves.github.io.` —
+   the account default, without the repo name. No A/AAAA needed, those are
+   apex-only. The existing apex `yootl.es → 209.20.75.170` is a different origin
+   and is untouched.
+5. Settings → Pages → Custom domain = `seal.yootl.es`, Save. This also releases
+   tauction.dreev.es, which is what makes step 7 possible. Wait for the Let's
+   Encrypt cert, then tick Enforce HTTPS — the docs say that can take up to 24
+   hours to become available. Until it's on, an `http://` visitor gets a broken
+   app: `crypto.randomUUID` and the clipboard API are secure-context-only.
+6. Leave Namecheap's `CNAME tauction → dreeves.github.io` exactly as is — the
+   redirector is still GitHub Pages, so only GitHub's internal domain-to-repo
+   mapping moves. That changes only if the redirect goes to Cloudflare or
+   Netlify instead.
+7. Create the redirector repo, Pages source Deploy from a branch → main/root,
+   custom domain tauction.dreev.es.
+8. Prose calls: the README's opening etymology line, the AGENTS.md
+   historical-spec judgment call, the stale 404-hack comment in index.html, and
+   the version stamp bump.
+9. Commit and push. Frontend changes ship on push; the Code.gs edit fires the
+   apps-script lane by itself.
+10. Time it between rounds. A live in-flight auction would strand bidders
+    mid-round, unable to see their own sealed bids until the reveal.
+11. Anyone who installed the PWA has a start_url of `/` on the *old* origin, so
+    it'll open the redirector and bounce. They should reinstall from the new
+    domain.
+
+#### Verification
+
+1. `npm run quals` — all four suites green.
+2. `python3 serve.py`, then create an auction, bid, reveal. The tab title should
+   read `🔒 `*slug*` · sealreveal` and the console banner `sealreveal v...`.
+3. After push: `curl -sI https://seal.yootl.es/` (200, valid cert) and
+   `curl -s https://seal.yootl.es/somenewslug` (404 status, app HTML — the
+   designed behavior).
+4. `node quals/live-quals.js` after the apps-script lane lands, since the
+   liveness string changed.
+5. The carry, in a real browser — dreev's own is the best subject since it
+   already holds the old keys. Open `https://tauction.dreev.es/`*a real slug* and
+   confirm it lands on `https://seal.yootl.es/`*same slug*, the fragment is gone
+   from the URL bar, the is-you star is on the right seat, and the sealed bid is
+   still visible. Repeat with `?api=` appended to confirm the query survives the
+   hop.
+6. Walk click, Enter, and Escape on the bid and blub fields post-move. The
+   storage rename touches drafts, so every gesture path needs a real check, not
+   a screenshot.
