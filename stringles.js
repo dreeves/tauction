@@ -221,35 +221,37 @@ const gameRefusals = {
 // These ERRORXXXX errors are things we don't expect an end user to ever be able
 // to see. But various race conditions could trigger them maybe. Or in theory
 // someone tampering with their client? Or bugs of our own, of course.
+const bugblurb = `(You seeing this is a bug; if you could let me (dreev) know you saw this, I'll be grateful.)`;
 const plumbingRefusals = {
-  badJson: () => `ERROR1509: request body not valid JSON`,
-  unknownAction: (e) => `ERROR1510: unknown action: ${e.action}`,
-  badSlug: () => `ERROR1511: auction name must be alphanumeric/dashes`,
+  badJson: () => `ERROR1509: Request body not valid JSON. ${bugblurb}`,
+  unknownAction: (e) => `ERROR1510: unknown action: ${e.action}. ${bugblurb}`,
+  badSlug: () => `ERROR1511: Auction name must be alphanumeric/dashes and the UI was supposed to enforce that. ${bugblurb}`,
   badSnym: () =>
-            `ERROR1512: seat name must be alphanumeric and start with a letter`,
-  badDvid: () => `ERROR1513: bad devid`,
-  badUsid: () => `ERROR1514: bad userid`,
-  badAnym: () => `ERROR1515: bad signalment`,
-  notReady: () => `ERROR1516: not ready to reveal: everyone on the roster`
-    + ` (at least two people) must bid first`,
-  rosterClosed: () => `ERROR1517: Auction complete — no new participants`,
-  auctionClosed: () => `ERROR1518: Auction closed, no editing`,
-  noSuchOne: (e) => `ERROR1519: No such participant: ${e.usid}`,
-  claimNeedsDevice: () => `ERROR1520: claim requires a device ID`,
-  releaseNeedsDevice: () => `ERROR1521: release requires a device ID`,
-  editingNeedsDevice: () => `ERROR1525: editing requires a device ID`,
-  notYourSeat: () => `ERROR1522: Disclaiming yourself as a participant failed`,
-  emptyBid: () => `ERROR1523: Bid is empty`,
+            `ERROR1512: Participant name must be alphanumeric and start with a letter and the UI was supposed to enforce that. ${bugblurb}`,
+  badDvid: () => `ERROR1513: Bad device ID. ${bugblurb}`,
+  badUsid: () => `ERROR1514: Bad user/seat ID. ${bugblurb}`,
+  badAnym: () => `ERROR1515: Bad signalment aka device blurb. ${bugblurb}`,
+  notReady: () => `ERROR1516: Not ready to reveal: everyone on the roster`
+    + ` (at least two people) must bid first. The UI shouldn't have let you try to reveal till then. ${bugblurb}`,
+  rosterClosed: () => `ERROR1517: Auction complete — no new participants. The UI should enforce this. ${bugblurb}`,
+  auctionClosed: () => `ERROR1518: Auction closed, no editing. ${bugblurb}`,
+  noSuchOne: (e) => `ERROR1519: No such participant: ${e.usid}. ${bugblurb}`,
+  claimNeedsDevice: () => `ERROR1520: Claim requires a device ID. ${bugblurb}`,
+  releaseNeedsDevice: () => `ERROR1521: Release requires a device ID. ${bugblurb}`,
+  editingNeedsDevice: () => `ERROR1525: Editing requires a device ID. ${bugblurb}`,
+  notYourSeat: () => `ERROR1522: Disclaiming yourself as a participant failed. ${bugblurb}`,
+  emptyBid: () => `ERROR1523: Bid is empty. UI shouldn't let it be. ${bugblurb}`,
   // UI prevents removing someone who already bid, but race conditions?
-  removeBidder: () => `ERROR1524: Too late to remove, bid sealed`,
+  removeBidder: () => `ERROR1524: Too late to remove, bid sealed. ${bugblurb}`,
   // hand-rolled only: the client grays the Archive control on an
   // archive page (dreev: archiving an archive forks history).
-  archiveArchive: () => `ERROR1526: You tried to archive an archived auction?`,
+  archiveArchive: () => `ERROR1526: You tried to archive an archived auction? ${bugblurb}`,
+  bidderBound: () => `ERROR1527: Did you try to change who you're bidding as after already placing a bid? The UI should prevent this but maybe you managed it with multiple tabs of the same browser? ${bugblurb}`,
   // the raced double-archive (dreev's copy names the race; his
   // ERROR number placed it in this table — the number IS the
   // membership, per the weld)
   archiveUnclosed: () => `ERROR2107: Race condition? Maybe someone else hit `
-    + `Archive a split-second before you?`,
+    + `Archive a split-second before you? ${bugblurb}`,
 };
 
 const refusalCopy = { ...gameRefusals, ...plumbingRefusals };

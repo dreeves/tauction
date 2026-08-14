@@ -870,9 +870,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
           .getItem('tauction-drafts:follow') || '{}')),
      'SUBMIT commits as BOB, alice untouched, the draft slot pruned');
 
-  /* ...the carried draft can land on a seat that already HOLDS a
-     committed xbid: it rides above the baseline as an ordinary dirty
-     draft, and Escape reverts to that seat's own committed words */
+  /* ...a bid-bearing seat can no longer HOST a carried draft: the
+     bond (dreev 2026-08-14) deadened its star, so the words stay
+     where you are. (Pre-bond this scene pinned the carried draft
+     riding into a taken-over bid-bearing seat above an empty
+     baseline — that gesture is unreachable now: only bea's own
+     device may stand on her seat.) */
   gas.handle({ action: 'add', slug: 'followbid',
     snym: 'ann', usid: 'usid-followbid-ann' });
   gas.handle({ action: 'add', slug: 'followbid',
@@ -880,34 +883,19 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   gas.handle({ action: 'bid', slug: 'followbid',
     usid: 'usid-followbid-bea', snym: 'bea', xbid: 'beas standing bid',
     dvid: 'bea-anym', anym: 'bea anym' });
-  gas.handle({ action: 'release', slug: 'followbid',
-    usid: 'usid-followbid-bea', dvid: 'bea-anym' });  // seat open
   const dFB = await makePage('/followbid?api=' + API_URL);
   claimRow(dFB, 'ann');
   await until(() => myEditor(dFB.window.document) !== null && drained());
   myEditor(dFB.window.document).value = 'carried words';
   myEditor(dFB.window.document).dispatchEvent(
     new dFB.window.Event('input', { bubbles: true }));
-  claimRow(dFB, 'bea');  // deliberate takeover of a bid-bearing seat
-  await until(() => row(dFB.window.document, 'bea')
-    .classList.contains('mine') && drained());
-  const fbEd = myEditor(dFB.window.document);
-  ok(fbEd.value === 'carried words'
-     && fbEd.defaultValue === ''
-     && row(dFB.window.document, 'bea').classList.contains('has-bid'),
-     'the carried draft rides into the taken-over seat — above an'
-     + " EMPTY baseline, because the predecessor's bid stays sealed"
-     + ' even from the new claimant; the row still counts as bid-in');
-  fbEd.focus();
-  fbEd.dispatchEvent(new dFB.window.KeyboardEvent('keydown',
-    { key: 'Escape', bubbles: true, cancelable: true }));
-  await sleep(50);
-  ok(fbEd.value === ''
-     && !('bid' in JSON.parse(dFB.window.localStorage
-          .getItem('tauction-drafts:followbid') || '{}')),
-     "Escape discards the carried words to the sealed seat's empty"
-     + ' baseline (no browser can unseal what it never knew) and'
-     + ' prunes the slot');
+  claimRow(dFB, 'bea');  // the dead star swallows the tap
+  await sleep(100);
+  ok(row(dFB.window.document, 'bea').querySelector('.tu').disabled
+     && row(dFB.window.document, 'ann').classList.contains('mine')
+     && myEditor(dFB.window.document).value === 'carried words',
+     "a bound seat can't host a carried draft: the dead star"
+     + ' swallows the tap and the words stay put on ann');
 
   /* ...a LEGACY per-usid slot (the pre-2026-07-28 shape) is inert:
      never restored, never crashing, per the retired-slot precedent */
@@ -5083,6 +5071,166 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'machine 1 converges to the new truth: taken star, no editor,'
      + ' no banner');
 
+  /* --- 2l2. THE BOND: dreev's 08-13 report made unrepresentable ---------
+     Replicata was: machine 2 bids b2 as alice; machine 1 usurps the
+     seat and bids b1; machine 2 renders its own dead b2 beside the
+     gray star. Post-bond (dreev's ruling, 2026-08-14, retiring
+     post-bid usurpation) the middle step refuses: a bid binds its
+     seat to the device that placed it, so the takeover tap is dead
+     ON the client (gray star, DISABLED) and refused UNDER it
+     (server), and a superseded standing bid cannot exist. */
+  gas.handle({ action: 'add', slug: 'supers', snym: 'alice',
+    usid: 'usid-supers-alice' });
+  gas.handle({ action: 'add', slug: 'supers', snym: 'bea',
+    usid: 'usid-supers-bea' });
+  const sup2 = await makePage('/supers?api=' + API_URL);
+  const sup1 = await makePage('/supers?api=' + API_URL);
+  claimRow(sup2, 'alice');
+  typeBid(sup2, 'b2');
+  submitBid(sup2);
+  await settled(sup2);
+  await until(() =>
+    row(sup1.window.document, 'alice').classList.contains('has-bid'));
+  const aliceStar1 = row(sup1.window.document, 'alice')
+    .querySelector('.tu');
+  ok(aliceStar1.classList.contains('taken') && aliceStar1.disabled,
+     "alice's star on machine 1: filled AND DEAD — a bound seat"
+     + ' cannot be usurped, so the b1-over-b2 state is unreachable'
+     + ' by any tap');
+  aliceStar1.click();  // a disabled button swallows the click
+  await sleep(100);
+  ok(!sup1.window.document.querySelector('#tiles .rebid')
+     && gas.handle({ action: 'state', slug: 'supers' })
+          .claims['usid-supers-alice']
+          === sup2.window.localStorage.getItem('tauction-dvid'),
+     'the dead star claims nothing: machine 2 keeps the seat');
+  // the hand-rolled paths refuse at the server (the exact requests a
+  // hacked client would send; the codes are pinned in gas-quals too)
+  const theft = gas.handle({ action: 'claim', slug: 'supers',
+    usid: 'usid-supers-alice', dvid: 'dev-supers-thief',
+    anym: 'the thief' });
+  const hijack = gas.handle({ action: 'bid', slug: 'supers',
+    snym: 'alice', usid: 'usid-supers-alice', xbid: 'b1',
+    dvid: 'dev-supers-thief' });
+  ok(theft.error && theft.error.code === 'bidSeatHeld'
+     && hijack.error && hijack.error.code === 'bidSeatHeld',
+     'the hand-rolled usurp and hijack both refuse at the bond');
+  ok(myEditor(sup2.window.document).value === 'b2',
+     "machine 2's b2 stands, readable in its own editor, exactly as"
+     + ' submitted');
+  // ...and bidless dibs stay LIVE (the 07-21 takeover ruling now
+  // governs exactly the bidless): bea claimed elsewhere, no bid —
+  // sup1 still sees a pressable star
+  gas.handle({ action: 'claim', slug: 'supers', usid: 'usid-supers-bea',
+    dvid: 'dev-supers-elsewhere', anym: 'a passerby' });
+  await until(() => row(sup1.window.document, 'bea')
+    .querySelector('.tu').classList.contains('taken'));
+  ok(!row(sup1.window.document, 'bea').querySelector('.tu').disabled,
+     'a bidless taken star stays LIVE: dibs inform, they lock only'
+     + ' at the bond');
+
+  /* --- 2l3. the bond race: the stale tap loses LOUDLY --------------------
+     Replicata (dreev's simultaneity question, 2026-08-14): rA and rB
+     both see alice open; rA claims and bids first; rB — no poll
+     yet — taps alice's still-open star, types, submits. Expectata:
+     rB's claim and bid refuse at the bond (banner in the stringles
+     words, naming the winner), rB converges to the dead gray star,
+     and rB's typed words survive as the BROWSER's draft — claiming
+     bea brings them home (the draft-follows-you law). */
+  gas.handle({ action: 'add', slug: 'bondrace', snym: 'alice',
+    usid: 'usid-bondrace-alice' });
+  gas.handle({ action: 'add', slug: 'bondrace', snym: 'bea',
+    usid: 'usid-bondrace-bea' });
+  const rA = await makePage('/bondrace?api=' + API_URL);
+  const rB = await makePage('/bondrace?api=' + API_URL);
+  claimRow(rA, 'alice');
+  typeBid(rA, 'first words');
+  submitBid(rA);
+  await settled(rA);
+  ok(!row(rB.window.document, 'alice').querySelector('.tu').disabled,
+     "rB hasn't polled yet: its stale screen still offers alice");
+  claimRow(rB, 'alice');       // the stale tap: optimistic editor
+  typeBid(rB, 'late words');
+  submitBid(rB);
+  await until(() =>
+    !rB.window.document.getElementById('banner').hidden);
+  const winnerAnym = STR.mysteryDevice + ' '
+    + rA.window.navigator.language + ' in Portland, OR'
+    + STR.orByTimezone + TZCITY;
+  ok(rB.window.document.getElementById('banner').textContent
+       .includes(STR.refusalCopy.bidSeatHeld(
+            { anym: winnerAnym, snym: 'alice' })),
+     'the loser banners in the stringles words, naming the winning'
+     + " device: dreev's race, decided inside the write lock");
+  await until(() => {
+    const s = row(rB.window.document, 'alice').querySelector('.tu');
+    return s.classList.contains('taken') && s.disabled;
+  });
+  ok(!rB.window.document.querySelector('#tiles .rebid')
+     && !row(rB.window.document, 'alice').classList.contains('mine'),
+     'rB converges: dead gray star, no editor, not alice');
+  const raceSt = gas.handle({ action: 'state', slug: 'bondrace' });
+  ok(bidderNamed(raceSt, 'alice').bcount === 1
+     && (raceSt.bids === null)
+     && raceSt.claims['usid-bondrace-alice']
+          === rA.window.localStorage.getItem('tauction-dvid'),
+     "one bid row, rA's: the refused volley left no trace on the log");
+  claimRow(rB, 'bea');
+  await until(() => myEditor(rB.window.document));
+  ok(myEditor(rB.window.document).value === 'late words',
+     "rB's typed words followed the browser to its next seat: the"
+     + ' draft came home');
+
+  /* --- 2l4. poisoned pre-bond memory dies LOUDLY -------------------------
+     Replicata: legacy data — this browser's mybids remembers bidding
+     a seat whose standing bid the log attributes to another device
+     (dreev's 08-13 toe-stepping experiments minted exactly this).
+     Post-bond that state is unmintable, so the client ASSERTS
+     instead of quietly re-masking: the poll banners the assert,
+     naming the seat, the foreign device, and the localStorage key
+     to clear. (Revealed pages are exempt — archives of the pre-bond
+     era still render; the record overrides the memory there.) */
+  gas.handle({ action: 'add', slug: 'prebond', snym: 'alice',
+    usid: 'usid-prebond-alice' });
+  gas.handle({ action: 'add', slug: 'prebond', snym: 'bea',
+    usid: 'usid-prebond-bea' });
+  gas.handle({ action: 'bid', slug: 'prebond', snym: 'alice',
+    usid: 'usid-prebond-alice', xbid: 'b1',
+    dvid: 'dev-prebond-rival' });
+  const dLegacy = await makePage('/prebond?api=' + API_URL, (w) => {
+    w.localStorage.setItem('tauction-dvid', 'dev-prebond-me');
+    w.localStorage.setItem('tauction-mybids:prebond',
+      '{"usid-prebond-alice":"b2"}');
+  });
+  await until(() =>
+    !dLegacy.window.document.getElementById('banner').hidden);
+  const legacyCry = dLegacy.window.document.getElementById('banner')
+    .textContent;
+  ok(legacyCry.includes('bond broken')
+     && legacyCry.includes('usid-prebond-alice')
+     && legacyCry.includes('dev-prebond-rival')
+     && legacyCry.includes('tauction-mybids:prebond'),
+     'pre-bond poisoned memory refuses to render: the banner carries'
+     + ' the seat, the foreign device, and the key to clear');
+  // the same memory on a REVEALED page renders quietly: the record
+  // speaks and the archives of the pre-bond era stay readable
+  gas.handle({ action: 'bid', slug: 'prebond', snym: 'bea',
+    usid: 'usid-prebond-bea', xbid: 'beabid',
+    dvid: 'dev-prebond-other' });
+  gas.handle({ action: 'reveal', slug: 'prebond' });
+  const dLegacyR = await makePage('/prebond?api=' + API_URL, (w) => {
+    w.localStorage.setItem('tauction-dvid', 'dev-prebond-me');
+    w.localStorage.setItem('tauction-mybids:prebond',
+      '{"usid-prebond-alice":"b2"}');
+  });
+  await until(() => dLegacyR.window.document.getElementById('status')
+    .classList.contains('revealed'));
+  ok(dLegacyR.window.document.getElementById('banner').hidden
+     && row(dLegacyR.window.document, 'alice').textContent
+          .includes('b1'),
+     'revealed, the same memory renders quietly: the record speaks,'
+     + ' b1 shows, no assert');
+
   /* --- 2m. the radio locks at SUBMIT, not at the server's ack ------------
      Replicata (dreev: "claim a participant, submit a bid, then see a
      blank field — possibly switching identities?"): claim alice,
@@ -5148,16 +5296,16 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(names(gas.handle({ action: 'state', slug: 'burst' }))
      === 'aa,bb,cc,dd,ee', 'and they all reached the server');
 
-  /* --- 2f. two machines both wanting alice: dibs, not locks --------------
+  /* --- 2f. two machines both wanting alice: the bid decides --------------
      Replicata (dreev's bug report): machine 1 adds alice (self-claim,
      2j); machine 2 opens the auction and clicks alice's star too; both
      machines bid as alice. Resultata pre-fix: both believed they were
      alice and silently overwrote each other's bid. Expectata: the
      self-claim is SOFT (registered on the server only by a bid or an
      explicit claim), so machine 2 sees alice claimable at first — but
-     the moment machine 1 bids, every other machine shows dibs: the
-     filled star and its anym-naming tip. (Post-takeover-ruling the
-     star stays LIVE — dibs inform, they don't lock.) */
+     the moment machine 1 bids, every other machine shows the BOND:
+     the filled star, DEAD, with its anym-naming tip (dreev's ruling
+     2026-08-14 — a bid binds its seat; bidless dibs stay live). */
   const m1 = await makePage('/twoalices?api=' + API_URL);
   addName(m1, 'alice');
   await sleep(800);  // roster push lands on the server
@@ -5174,12 +5322,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await until(() =>  // machine 2's next poll delivers the dibs
     row(m2.window.document, 'alice').querySelector('.tu').classList
       .contains('taken'));
-  ok(!row(m2.window.document, 'alice').querySelector('.tu').disabled
+  ok(row(m2.window.document, 'alice').querySelector('.tu').disabled
      && !row(m2.window.document, 'alice').classList.contains('mine')
      && !m2.window.document.querySelector('#tiles .rebid'),
-     "machine 1's bid registered the claim: alice dibsed on machine 2"
-     + ' — no editor there, though the star stays live (dibs inform,'
-     + " they don't lock)");
+     "machine 1's bid BOUND the seat: alice dead-starred on machine 2"
+     + ' — no editor there, no tap to usurp with');
   ok(row(m2.window.document, 'alice').querySelector('.tu').classList
        .contains('taken')
      && row(m2.window.document, 'alice').querySelector('.tu')
@@ -6014,9 +6161,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
           .includes('three tacos'),
      'sealed bid rendered as a masked decoy, not the real text');
   ok(row(doc2, 'alice').querySelector('.tu').classList.contains('taken')
-     && !row(doc2, 'alice').querySelector('.tu').disabled,
-     "alice's bid dibses her row — filled star, still live: usurping"
-     + ' is possible (honor system) but never accidental');
+     && row(doc2, 'alice').querySelector('.tu').disabled,
+     "alice's bid BINDS her row — filled star, dead: no usurping a"
+     + ' bid-bearing seat (the bond, 2026-08-14)');
   ok(/^bid submitted \d+[sm] ago$/.test(hoverBid(dom2, 'alice')),
      "someone else's single-submission tooltip drops the 'your', got "
      + hoverBid(dom2, 'alice'));
@@ -7563,18 +7710,17 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        + ' lower number; \u203a and \u00bb ride to the live page');
 
     /* ===== THE RECORD'S STAR (dreev's bug report, 2026-08-10) =====
-       Replicata (distilled from dreev's two-round chrome session):
-       this browser bids as a seat; before the reveal a rival device
-       claims that seat (and the radio law blanks the rival's OLD
-       seat, so this browser's dvid survives on NO claim); the
-       closed auction is archived; the browser arrives at the
-       archive URL with no ledger entry for the archive slug — the
-       rename orphaned the old key and the reborn round recycled it.
-       Expectata: the is-you star marks who this browser BID AS.
-       Resultata (pre-fix): no star on any row — is-you rode the
-       mutable claim column and the orphaned slug-keyed ledger.
-       Post-reveal is-you is FORENSIC: the seat whose standing bid
-       this browser placed (bidders[].dvid, SVER 2). */
+       Replicata (distilled from dreev's two-round chrome session,
+       bond-era edit 2026-08-14: the rival-claim leg of the original
+       rot is unmintable now, but the ARCHIVE leg remains): this
+       browser bids as a seat; the closed auction is archived; the
+       browser arrives at the archive URL with no ledger entry for
+       the archive slug — the rename orphaned the old key and the
+       reborn round recycled it. Expectata: the is-you star marks
+       who this browser BID AS. Resultata (pre-fix): no star on any
+       row — is-you rode the orphaned slug-keyed ledger. Post-reveal
+       is-you is FORENSIC: the seat whose standing bid this browser
+       placed (bidders[].dvid, SVER 2). */
     {
       const DV = 'dvid-record-chrome';
       gas.handle({ action: 'bid', slug: 'recstar', snym: 'ann',
@@ -7582,9 +7728,6 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
       gas.handle({ action: 'bid', slug: 'recstar', snym: 'ben',
         usid: 'usid-recstar-ben', xbid: 'foreign',
         dvid: 'dvid-record-rival' });
-      gas.handle({ action: 'claim', slug: 'recstar',
-        usid: 'usid-recstar-ann', dvid: 'dvid-record-rival',
-        anym: 'the rival' });
       gas.handle({ action: 'reveal', slug: 'recstar' });
       gas.handle({ action: 'archive', slug: 'recstar' });
       const domR = await makePage('/recstar-archive1?api=' + API_URL,
@@ -7604,17 +7747,16 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
            .classList.contains('selected'),
          "the archived star is FORENSIC: ann's standing bid came"
          + ' from this browser, so her row wears the is-you star —'
-         + ' claim theft and the orphaned ledger notwithstanding');
-      // the converse: a stale claim in this browser's favor stars
-      // nothing when the record says another device placed the bid
+         + ' the orphaned ledger notwithstanding');
+      // the converse: a remembered seat in this browser's ledger
+      // stars nothing when the record says another device placed
+      // the standing bid
       gas.handle({ action: 'bid', slug: 'recstale', snym: 'cyn',
         usid: 'usid-recstale-cyn', xbid: 'not yours',
         dvid: 'dvid-record-rival' });
       gas.handle({ action: 'bid', slug: 'recstale', snym: 'dov',
         usid: 'usid-recstale-dov', xbid: 'also not',
         dvid: 'dvid-record-other' });
-      gas.handle({ action: 'claim', slug: 'recstale',
-        usid: 'usid-recstale-cyn', dvid: DV, anym: 'me, late' });
       gas.handle({ action: 'reveal', slug: 'recstale' });
       const domS = await makePage('/recstale?api=' + API_URL, (w) => {
         w.localStorage.setItem('tauction-dvid', DV);
@@ -7625,9 +7767,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
       await until(() => docS.getElementById('status')
         .classList.contains('revealed'));
       ok(docS.querySelector('#tiles .tu.selected') === null,
-         'a remembered-and-claimed seat whose standing bid another'
-         + ' device placed wears NO star post-reveal: the record'
-         + ' outranks the claim');
+         'a remembered seat whose standing bid another device'
+         + ' placed wears NO star post-reveal: the record outranks'
+         + ' the ledger');
     }
 
     /* ===== THE DRAFT RIDES THE SWITCH (dreev's amendment to the

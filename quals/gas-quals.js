@@ -348,9 +348,11 @@ ok(st.revealed === false, 'still sealed: ben is outstanding');
 
 // 6c. rows with a blank bcount: an existing bid row implies at
 //     least one submission — never 0 (green row + 0 is a contradiction)
+// (the row is an old CLIENT's: blank tbid, blank dvid — a dvid-less
+// bid binds nothing under the bond, so the re-bid below still lands;
+// the trailing extra column stays legal, appended past the schema)
 ss.sheets['bids'].appendRow(['relic', usid('relic', 'oldtimer'),
-  'ancient bid', '', '2026-01-01T00:00:00.000Z',
-  '2026-01-01T00:00:00.000Z']);
+  'ancient bid', '', '', '2026-01-01T00:00:00.000Z']);
 st = call({ action: 'state', slug: 'relic' });
 ok(st.bidders[0].bcount === 1, 'legacy bid row counts as 1, never 0');
 const t1 = Date.now(); while (Date.now() - t1 < 3);
@@ -1760,10 +1762,10 @@ ok(!st.error && st.blub === 'straggler draft' && st.bver === 2,
 
 // THE FORENSIC COLUMN (dreev's star-bug report, 2026-08-10): every
 // bidders entry carries its STANDING bid's dvid — the log's immortal
-// word on which browser bid as whom. The claim column can be vacated
-// AFTER a bid and BEFORE the gavel (a rival's claim takes the seat,
-// and the radio law blanks the rival's OLD seat — leaving the honest
-// browser's dvid on no claim at all), so the revealed page derives
+// word on which browser bid as whom. Under the bond (2026-08-14) a
+// pre-gavel theft can no longer vacate it, but the record still
+// earns its keep post-reveal: the archive rename orphans the
+// client's slug-keyed identity ledger, so the revealed page derives
 // is-you from this field, never from claims.
 call({ action: 'bid', slug: 'starrec', snym: 'ann',
        usid: usid('starrec', 'ann'), xbid: 'a florin',
@@ -1771,35 +1773,130 @@ call({ action: 'bid', slug: 'starrec', snym: 'ann',
 call({ action: 'bid', slug: 'starrec', snym: 'ben',
        usid: usid('starrec', 'ben'), xbid: 'a groat',
        dvid: 'dev-star-rival' });
-call({ action: 'claim', slug: 'starrec', usid: usid('starrec', 'ann'),
+st = call({ action: 'claim', slug: 'starrec', usid: usid('starrec', 'ann'),
        dvid: 'dev-star-rival', anym: 'the rival' });
+ok(code(st) === 'bidSeatHeld',
+   "the 08-10 star bug's hiding state is unmintable now: the theft"
+   + ' that vacated the claim column refuses at the bond');
+// ann revises from her own device: STANDING means the latest row,
+// same device throughout
+const tS = Date.now(); while (Date.now() - tS < 3);
+call({ action: 'bid', slug: 'starrec', snym: 'ann',
+       usid: usid('starrec', 'ann'), xbid: 'a doubloon',
+       dvid: 'dev-star-chrome' });
 st = call({ action: 'state', slug: 'starrec' });
 ok(st.bidders.find((b) => b.usid === usid('starrec', 'ann')).dvid
      === 'dev-star-chrome'
    && st.bidders.find((b) => b.usid === usid('starrec', 'ben')).dvid
      === 'dev-star-rival',
-   "bidders carry each standing bid's dvid — the forensic record,"
-   + ' untouched by the later claim theft');
-ok(st.claims[usid('starrec', 'ann')] === 'dev-star-rival'
-   && st.claims[usid('starrec', 'ben')] === undefined,
-   'while the claim column tells only the theft: ann taken, the'
-   + " rival's old seat blanked by the radio law — the star bug's"
-   + ' hiding state');
-// the rival, now holding ann's seat, re-bids it: STANDING means the
-// latest counted row, so the record re-attributes
-call({ action: 'bid', slug: 'starrec', snym: 'ann',
-       usid: usid('starrec', 'ann'), xbid: 'a doubloon',
-       dvid: 'dev-star-rival' });
+   "bidders carry each standing bid's dvid — the forensic record");
 call({ action: 'reveal', slug: 'starrec' });
 st = call({ action: 'archive', slug: 'starrec' });
 ok(!st.error, 'the forensic scenario archives clean');
 st = call({ action: 'state', slug: 'starrec-archive1' });
 ok(st.bidders.find((b) => b.usid === usid('starrec', 'ann')).dvid
-     === 'dev-star-rival'
+     === 'dev-star-chrome'
    && st.bidders.find((b) => b.usid === usid('starrec', 'ben')).dvid
      === 'dev-star-rival',
-   "a re-bid re-attributes: the STANDING row's dvid, and the whole"
-   + ' forensic column rides the archive rename intact');
+   'the whole forensic column rides the archive rename intact — the'
+   + " record's is-you outlives the ledger the rename orphans");
+
+// THE BOND (dreev's ruling, 2026-08-14, retiring post-bid
+// usurpation — the postmortem finding: the 07-21 takeover ruling
+// governed CLAIMS, and its extension to bid-bearing seats rode into
+// commit d7fa76a unratified): the first bid to land binds its seat
+// to the submitting device, permanently. Pre-bid, claims stay
+// last-write-wins (faire's recovery); post-bid, rival claims and
+// rival bids refuse loudly, and the bond holds its OWN device too —
+// no releasing, no claiming elsewhere, no second seat. The state
+// dreev reached on 08-13 (a superseded bid rendered as standing)
+// becomes unrepresentable.
+call({ action: 'add', slug: 'bond', snym: 'ann',
+       usid: usid('bond', 'ann') });
+call({ action: 'add', slug: 'bond', snym: 'ben',
+       usid: usid('bond', 'ben') });
+// pre-bid: the takeover ruling stands — last write wins on claims
+call({ action: 'claim', slug: 'bond', usid: usid('bond', 'ann'),
+       dvid: 'dev-bond-1', anym: 'first anym' });
+st = call({ action: 'claim', slug: 'bond', usid: usid('bond', 'ann'),
+            dvid: 'dev-bond-2', anym: 'second anym' });
+ok(!st.error && st.claims[usid('bond', 'ann')] === 'dev-bond-2',
+   'pre-bid, a claim on a held seat still TAKES it (the 07-21'
+   + ' takeover ruling governs bidless seats)');
+st = call({ action: 'bid', slug: 'bond', snym: 'ann',
+            usid: usid('bond', 'ann'), xbid: 'sealed words',
+            dvid: 'dev-bond-2', anym: 'second anym' });
+ok(!st.error, 'the holder bids; the seat is now bound');
+const bondSheets = () => JSON.stringify(
+  ['auctions', 'seats', 'bids'].map((n) => ss.sheets[n].data));
+const preTheft = bondSheets();
+st = call({ action: 'claim', slug: 'bond', usid: usid('bond', 'ann'),
+            dvid: 'dev-bond-3', anym: 'thief anym' });
+ok(code(st) === 'bidSeatHeld' && st.error.anym === 'second anym'
+   && st.error.snym === 'ann' && bondSheets() === preTheft,
+   'a claim on a BOUND seat refuses, naming the bond holder, and'
+   + ' mutates nothing: no usurping once a bid is in');
+st = call({ action: 'bid', slug: 'bond', snym: 'ann',
+            usid: usid('bond', 'ann'), xbid: 'hijack',
+            dvid: 'dev-bond-3' });
+ok(code(st) === 'bidSeatHeld' && bondSheets() === preTheft,
+   "a rival's bid on a bound seat refuses too — dreev's simultaneity"
+   + ' race: the first bid to enter the lock wins the seat, the'
+   + ' second refuses');
+st = call({ action: 'claim', slug: 'bond', usid: usid('bond', 'ann'),
+            dvid: 'dev-bond-2', anym: 'second anym' });
+ok(!st.error && st.claims[usid('bond', 'ann')] === 'dev-bond-2',
+   'the bond holder re-claims its own seat freely (the re-latch: a'
+   + ' device whose ledger rotted finds its way home)');
+st = call({ action: 'bid', slug: 'bond', snym: 'ann',
+            usid: usid('bond', 'ann'), xbid: 'revised words',
+            dvid: 'dev-bond-2' });
+ok(!st.error, 'the bond holder re-bids its own seat freely');
+st = call({ action: 'release', slug: 'bond', usid: usid('bond', 'ann'),
+            dvid: 'dev-bond-2' });
+ok(code(st) === 'bidderBound',
+   'the bond holds its own device: no releasing a seat your bid is on');
+st = call({ action: 'claim', slug: 'bond', usid: usid('bond', 'ben'),
+            dvid: 'dev-bond-2' });
+ok(code(st) === 'bidderBound'
+   && call({ action: 'state', slug: 'bond' })
+        .claims[usid('bond', 'ben')] === undefined,
+   'a bonded device cannot claim another seat (only a stale second'
+   + ' tab can honestly ask; the server refuses)');
+st = call({ action: 'bid', slug: 'bond', snym: 'ben',
+            usid: usid('bond', 'ben'), xbid: 'second seat',
+            dvid: 'dev-bond-2' });
+ok(code(st) === 'bidderBound',
+   'a bonded device cannot bid a second seat: one device one deed —'
+   + ' the one-dvid-two-seats forensic corner is now unmintable');
+st = call({ action: 'release', slug: 'bond', usid: usid('bond', 'ann'),
+            dvid: 'dev-bond-9' });
+ok(code(st) === 'notYourSeat',
+   "a stranger's release of a bound seat refuses as ever");
+// the claims map SPEAKS THE BOND: the standing bid's dvid outranks
+// the claim column (the log is the authority; a legacy or
+// hand-edited cell heals in the payload, and the write side keeps
+// the column in step going forward)
+ss.sheets['seats'].data.forEach((r) => {
+  if (r[0] === 'bond' && r[1] === usid('bond', 'ann')) r[3] = 'dev-evil';
+});
+st = call({ action: 'state', slug: 'bond' });
+ok(st.claims[usid('bond', 'ann')] === 'dev-bond-2'
+   && st.anyms[usid('bond', 'ann')] === 'second anym',
+   'claims and anyms derive from the BOND, not the column: the log'
+   + ' outranks a diverged claim cell');
+ss.sheets['seats'].data.forEach((r) => {  // scene hygiene: qual 21
+  if (r[0] === 'bond' && r[1] === usid('bond', 'ann')) r[3] = 'dev-bond-2';
+});
+// old clients ('' dvid) bind nothing
+st = call({ action: 'bid', slug: 'bond', snym: 'ben',
+            usid: usid('bond', 'ben'), xbid: 'legacy' });
+ok(!st.error, 'a device-less bid still lands on an open seat...');
+st = call({ action: 'claim', slug: 'bond', usid: usid('bond', 'ben'),
+            dvid: 'dev-bond-7', anym: 'late anym' });
+ok(!st.error && st.claims[usid('bond', 'ben')] === 'dev-bond-7',
+   "...and binds nobody: a '' dvid is no bond, the seat stays"
+   + ' claimable');
 
 // archiving an archive: refused (dreev: foo-archive-...-archive-...
 // forks history, too gross; the client grays its control, so only

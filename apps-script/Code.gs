@@ -656,27 +656,6 @@ function getState(slug) {
   const found = load('auctions').find(r => r.slug === slug);
   const arow = found || { tfin: '', blub: '', bver: '0' };
 
-  // The SEATS are the users rows (in insertion order): usid + display
-  // label. The claims map rides along: usid -> dvid for seats
-  // someone holds. Every seat is live — removal deletes, and bidders
-  // cannot be removed — so the seats ARE the roster that gates the
-  // reveal.
-  // the devices join: dvid -> its one self-description row
-  const anymOf = Object.create(null);
-  load('devices').forEach(r => {
-    if (r.anym) anymOf[r.dvid] = r.anym;
-  });
-  const seats = [];
-  const claims = Object.create(null);
-  const anyms = Object.create(null);  // usid -> the holder's anym
-  load('seats').forEach(r => {
-    if (r.slug !== slug) return;
-    seats.push({ usid: r.usid, snym: r.snym });
-    if (r.dvid) claims[r.usid] = r.dvid;
-    if (r.dvid && anymOf[r.dvid]) anyms[r.usid] = anymOf[r.dvid];
-  });
-  const roster = seats;
-
   // Reveal is a human act (the 'reveal' action) and a one-way latch: it
   // never happens automatically, and once bids have been seen, nothing can
   // reseal them. A complete roster merely makes the reveal button pressable.
@@ -731,6 +710,32 @@ function getState(slug) {
     a.dvid = r.dvid;  // the fold's last write = the standing row's
   });
   const people = Object.keys(agg).map(p => agg[p]);
+
+  // The SEATS are the users rows (in insertion order): usid + display
+  // label. The claims map rides along: usid -> dvid for seats
+  // someone holds. Every seat is live — removal deletes, and bidders
+  // cannot be removed — so the seats ARE the roster that gates the
+  // reveal.
+  // the devices join: dvid -> its one self-description row
+  const anymOf = Object.create(null);
+  load('devices').forEach(r => {
+    if (r.anym) anymOf[r.dvid] = r.anym;
+  });
+  const seats = [];
+  const claims = Object.create(null);
+  const anyms = Object.create(null);  // usid -> the holder's anym
+  load('seats').forEach(r => {
+    if (r.slug !== slug) return;
+    seats.push({ usid: r.usid, snym: r.snym });
+    // THE BOND (dreev 2026-08-14): a bid-bearing seat's holder IS
+    // its standing bid's device — the log outranks the claim column
+    // (which the write side keeps in step; a legacy or hand-edited
+    // cell heals right here). Bidless seats read the column as ever.
+    const holder = (agg[r.usid] ? agg[r.usid].dvid : '') || r.dvid;
+    if (holder) claims[r.usid] = holder;
+    if (holder && anymOf[holder]) anyms[r.usid] = anymOf[holder];
+  });
+  const roster = seats;
   // Each entry's dvid is the STANDING bid's submitting browser — the
   // log's forensic column (see the bids schema), surfaced so the
   // revealed page can derive is-you from the immutable record: the
@@ -1077,14 +1082,15 @@ function removeParticipant(req) {
   return getState(slug);
 }
 
-// Stake a claim on a seat — LAST WRITE WINS (dreev's ruling:
+// Stake a claim on a BIDLESS seat — LAST WRITE WINS (dreev's ruling:
 // Safari re-minted her device uuid and her own seat refused her).
 // A claim is a consistency marker, not auth: it TAKES the seat, the
 // previous holder's page converges at its next poll, and genuine
 // seat fights fall to the honor system like every other op.
 // Re-claiming your own seat is the idempotent subcase. One name per
 // device: claiming a new seat releases any other seat this device
-// held, radio-style.
+// held, radio-style. A BOUND seat (see bondsOf) refuses: the bid
+// decided the seat, permanently.
 function saveClaim(req) {
   const slug = cleanSlug(req.slug);
   const usid = cleanUsid(req.usid);
@@ -1095,6 +1101,21 @@ function saveClaim(req) {
   if (getState(slug).revealed) throw { code: 'auctionClosed' };
   const anym = cleanAnym(req.anym);
   if (seatIndex(slug, usid) === -1) throw { code: 'noSuchOne', usid: usid };
+  // THE BOND: a bid-bearing seat belongs to the device that placed
+  // its standing bid. Reachable honestly via a stale screen — the
+  // star was open when drawn — so the refusal names who beat you
+  // (dreev's existing bidSeatHeld words already say exactly this).
+  const bond = bondsOf(slug);
+  if (bond[usid] && bond[usid] !== dvid) {
+    throw { code: 'bidSeatHeld', anym: deviceAnym(bond[usid]),
+            snym: load('seats')[seatIndex(slug, usid)].snym };
+  }
+  // ...and the bond holds its OWN device: your bid locks your radio
+  // (the client grays it; only a stale second tab can ask)
+  const mine = bondSeatOf(bond, dvid);
+  if (mine !== undefined && mine !== usid) {
+    throw { code: 'bidderBound' };
+  }
   touchDevice(dvid, anym);  // devices first, always
   setDvid(slug, usid, dvid);
   return getState(slug);
@@ -1108,6 +1129,11 @@ function releaseClaim(req) {
   const dvid = cleanDvid(req.dvid);
   if (!dvid) throw { code: 'releaseNeedsDevice' };
   if (getState(slug).revealed) throw { code: 'auctionClosed' };  // frozen too
+  // THE BOND: a bound seat releases for nobody — its own holder is
+  // locked in (bidderBound), a stranger gets the old refusal
+  const bond = bondsOf(slug)[usid] || '';
+  if (bond === dvid) throw { code: 'bidderBound' };
+  if (bond) throw { code: 'notYourSeat' };
   const held = deviceOf(slug, usid);
   if (held && held !== dvid) {
     throw { code: 'notYourSeat' };
@@ -1124,6 +1150,33 @@ function releaseClaim(req) {
 function deviceOf(slug, usid) {
   const i = seatIndex(slug, usid);
   return i === -1 ? '' : load('seats')[i].dvid;
+}
+
+// THE BOND (dreev's ruling, 2026-08-14): the first bid to land binds
+// its seat to the submitting device, permanently — no usurping a
+// bid-bearing seat, no switching or releasing once your own bid is
+// in. Pre-bid, claims stay last-write-wins (faire's recovery, the
+// 07-21 takeover ruling, now governing bidless seats only).
+// bondsOf: usid -> the standing bid's dvid, for every usid with bid
+// rows on this slug (an old client's '' dvid is no bond). Rows are
+// in submission order — tbid minting makes that trustworthy — so the
+// last row per usid stands. (getState's fold rewalks the log with
+// its tfin cutoff and derived stats; the actions need the uncut
+// answer, and the reveal freezes them out via auctionClosed/
+// gavelFell before any bond question is asked.)
+function bondsOf(slug) {
+  const bond = Object.create(null);
+  load('bids').forEach(r => {
+    if (r.slug === slug) bond[r.usid] = r.dvid;
+  });
+  return bond;
+}
+
+// The seat a device's bid has bound it to, if any (undefined when
+// this dvid stands on no bid here; '' dvids bind nothing)
+function bondSeatOf(bond, dvid) {
+  return dvid === '' ? undefined
+    : Object.keys(bond).find(u => bond[u] === dvid);
 }
 
 function setDvid(slug, usid, dvid) {
@@ -1159,12 +1212,11 @@ function touchDevice(dvid, anym) {
   return i;
 }
 
-// The holder's anym, RAW from its devices row ('' when the device
-// never described itself; the client's mystery-device fallback
-// decorates it), for the seat-taken refusal that names who beat you
-function holderAnym(slug, usid) {
-  const dev = load('devices')
-    .find(r => r.dvid === deviceOf(slug, usid));
+// A device's anym, RAW from its devices row ('' when it never
+// described itself; the client's mystery-device fallback decorates
+// it), for the refusals that name who beat you
+function deviceAnym(dvid) {
+  const dev = load('devices').find(r => r.dvid === dvid);
   return dev === undefined ? '' : dev.anym;
 }
 
@@ -1191,12 +1243,27 @@ function placeBid(req) {
   // it). A WALK-ON bid (no seat for this usid yet) whose label is
   // already seated under someone else's usid is a doppelganger,
   // refused.
+  // THE BOND outranks the claim column: a bid-bearing seat takes
+  // bids only from the device whose standing bid it is — this is
+  // dreev's simultaneity race, decided inside the write lock: the
+  // first bid binds the seat, the second refuses, naming the winner.
+  const bond = bondsOf(slug);
+  if (bond[usid] && bond[usid] !== dvid) {
+    throw { code: 'bidSeatHeld', anym: deviceAnym(bond[usid]),
+            snym: snym };
+  }
+  // ...and a bonded device bids nowhere else: one device, one deed
+  // (the client's locked radio makes an honest ask a stale tab's)
+  const bondSeat = bondSeatOf(bond, dvid);
+  if (bondSeat !== undefined && bondSeat !== usid) {
+    throw { code: 'bidderBound' };
+  }
   // Bidding as someone is claiming to be them, and claims are first
-  // come, first served: a bid may not touch a seat someone else holds.
-  // Old clients carry no dvid and count as nobody — fine on an
-  // open seat, refused on a held one.
+  // come, first served: a bid may not touch a BIDLESS seat someone
+  // else holds either. Old clients carry no dvid and count as
+  // nobody — fine on an open seat, refused on a held one.
   if (held && held !== dvid) {
-    throw { code: 'bidSeatHeld', anym: holderAnym(slug, usid),
+    throw { code: 'bidSeatHeld', anym: deviceAnym(held),
             snym: snym };
   }
   const twin = seatByName(slug, snym);

@@ -554,16 +554,62 @@ plain.)
   claim/release all refuse loudly, and bid log rows stamped after
   `tfin` don't count. Honor system throughout.
 - Who-has-bid is public, with a per-bidder (re)submission counter; only bid
-  contents are sealed (you always see the bids your own browser placed).
+  contents are sealed (you always see the bids your own browser placed
+  — which the bond guarantees are the standing ones).
+- THE BOND (dreev's ruling, 2026-08-14, retiring post-bid
+  usurpation — the fix for his 08-13 superseded-bid report): the
+  first bid to LAND binds its seat to the device that placed it,
+  permanently. Pre-bid, claims stay last-write-wins (the 07-21
+  faire ruling, now governing exactly the bidless). Server: a rival
+  claim or bid on a bound seat refuses as bidSeatHeld (dreev's
+  existing copy already read "already placed a bid as X!"); the
+  bond holds its OWN device too — release, claim-elsewhere, and
+  second-seat bids refuse as bidderBound (ERROR1527, Latin TO DO),
+  honestly reachable only by a stale second tab. The claims map
+  DERIVES from the bond (the standing bid's dvid outranks the
+  seats.dvid column; bidless seats read the column as ever), so the
+  client's rival/anym rendering needed no new wiring. Client: a
+  rival's bound star is DEAD (disabled), not merely filled — the
+  one new disclosed if (rival && has-bid); bidless taken stars stay
+  live, tips unchanged (claimedByTip names the holder; the no-anym
+  arm falls to tooLateTip, which now reads literally). Dreev's
+  simultaneity race resolves inside the write lock: the first bid
+  binds, the loser's claim and bid banner in bidSeatHeld words, and
+  its typed words survive as the browser's draft (the
+  draft-follows-you law, unchanged, pinned in qual 2l3). knownBids
+  ASSERTS the bond instead of re-masking (anti-postel): a
+  remembered seat whose standing bid is a rival's is pre-bond data
+  or a broken server — the poll banners the assert with the seat,
+  the foreign device, and the mybids key to clear; revealed pages
+  are exempt so the pre-bond era's archives still render.
+  Consequences: the 08-10 star bug's hiding state and the
+  one-dvid-two-seats forensic corner are unmintable; the forensic
+  column (bidders[].dvid, SVER 2) STAYS — the archive rename still
+  orphans the ledger, so post-reveal is-you still reads the record.
+  The ratified cost: cross-device bid REVISION died with the
+  takeover (phone bids, laptop can't revise; dvid rot means your
+  bid stands as-submitted) — but the auction can always still
+  reveal, since a bound seat carries a countable bid by
+  construction.
+  THE POSTMORTEM (2026-08-14, how takeover got overextended):
+  faire's 07-21 lockout was a BIDLESS claim; the same commit
+  (d7fa76a) silently generalized star-liveness to bid-bearing seats
+  and pinned it with invented rationale ("usurping is possible"),
+  quals-are-sacred laundered the pin into spec, and two
+  rendering-layer fixes (SVER 2's forensic column, the 08-13 seal
+  subtraction) entrenched the reachable state instead of
+  questioning it. Lesson: a protection ruling ("a bid protects its
+  seat" — from removal) must force re-derivation of the whole
+  table; takeover would have fallen out of it in July.
 - The is-you star answers two different questions (dreev's star bug,
-  2026-08-10). Live: the claim model — the seats' dvid column plus
-  the browser's slug-keyed usid ledger, optimistic, last-write-wins.
-  Post-reveal: FORENSIC — the seat whose STANDING bid this browser
-  placed, read from `bidders[].dvid` (the bids log's forensics
-  column, surfaced at SVER 2). The live rule's legs rot once your
-  bidding is done (a rival's claim plus the radio law can vacate the
-  claim column; the archive rename orphans the ledger's slug key),
-  so the record consults neither. `whoHere` in app.js owns the fork;
+  2026-08-10). Live: the claim model — the bond-aware claims map plus
+  the browser's slug-keyed usid ledger, optimistic, last-write-wins
+  while bidless. Post-reveal: FORENSIC — the seat whose STANDING bid
+  this browser placed, read from `bidders[].dvid` (the bids log's
+  forensics column, surfaced at SVER 2). The live rule's one
+  remaining rot leg (the rival-claim leg died at the bond,
+  2026-08-14): the archive rename orphans the ledger's slug key, so
+  the record consults no ledger. `whoHere` in app.js owns the fork;
   every mineness consumer (star, bid tips, title peek, editing
   beat) flows through it.
 - Sealing is honor-system: the sheet itself is link-visible.

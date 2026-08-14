@@ -1235,13 +1235,12 @@ function usidAmong(ss, claims) {
 // ...but only until the gavel. Post-reveal you are part of the frozen
 // RECORD: the seat whose STANDING bid this browser placed (each
 // bidders entry carries its standing bid's dvid — SVER 2). The live
-// rule's two legs both rot once your bidding is done: a rival's claim
-// plus the radio law can leave this browser's dvid on no claim at
-// all, and the archive's rename orphans the ledger's slug key (which
-// the reborn round then recycles) — dreev's star bug, 2026-08-10.
-// The record consults neither. Last match wins in the hand-rolled
-// corner where one dvid stands on two seats (the UI's radio lock
-// after your bid makes that unreachable honestly).
+// rule's one remaining rot leg (dreev's star bug, 2026-08-10; the
+// rival-claim leg died at the bond, 2026-08-14): the archive's
+// rename orphans the ledger's slug key, which the reborn round then
+// recycles. The record consults no ledger. Last match wins in the
+// one-dvid-two-seats corner, unmintable post-bond (bidderBound) but
+// alive in pre-bond logs.
 function usidOfRecord(bidders) {
   const hits = bidders.filter((b) => b.dvid === DVID);
   return hits.length === 0 ? '' : hits[hits.length - 1].usid;
@@ -1264,11 +1263,29 @@ function myBids() {
   return jmap('tauction-mybids:' + slug);
 }
 
-// Bids whose text this client knows: the ones it placed, plus everyone's
-// once revealed. Rows render whatever is known and mask the rest — the
-// same rule makes your bids visible to you and sealed for everyone else.
+// Bids whose text this client knows: the ones it placed, plus
+// everyone's once revealed. Rows render whatever is known and mask
+// the rest — the same rule makes your bids visible to you and sealed
+// for everyone else. THE BOND (dreev's ruling, 2026-08-14, the fix
+// for his 08-13 superseded-bid report) guarantees the memory can't
+// lie: a seat this browser bid is bound to this browser — the server
+// refuses rival claims and rival bids alike — so a standing bid from
+// a rival device on a remembered seat is unmintable. Pre-bond data
+// (or a broken server) is the only way to see one, and anti-postel
+// says that impossibility is ASSERTED, evidence and marching orders
+// included, never quietly re-masked. (Revealed pages are exempt: the
+// record overrides the memory below either way, and the pre-bond
+// era's archives should still render their history.)
 function knownBids() {
   const known = myBids();
+  bidView().forEach((b) => {
+    assert(state.revealed || b.dvid === DVID
+           || known[b.usid] === undefined,
+      'bond broken: seat ' + b.usid + "'s standing bid is "
+      + b.dvid + "'s but this browser (" + DVID + ') remembers'
+      + " bidding it — pre-bond data? clear 'tauction-mybids:"
+      + slug + "' to disown it");
+  });
   (state.bids || []).forEach((b) => { known[b.usid] = b.xbid; });
   return known;
 }
@@ -1701,23 +1718,30 @@ function updateRow(t, seat, b, mine, known, locked) {
   // (dataset.snym rides along for humans reading the DOM and quals)
   t.dataset.snym = seat.snym;
   // Every row leads with its star, a radio for who-you-are: hollow =
-  // open, filled = claimed by a rival device, gold fill = you — and
-  // the filled star stays LIVE (a device that loses its uuid — it
-  // happens — must be able to retake its own seat). A claim is a
-  // consistency marker, not
-  // auth: a tap on a taken star TAKES the seat, last write wins,
-  // honor system. Clicking your own lit star releases you to nobody.
-  // Once YOUR bid is in, the whole radio locks.
+  // open, filled = claimed by a rival device, gold fill = you. A
+  // BIDLESS filled star stays LIVE (a device that loses its uuid —
+  // it happens — must be able to retake its own seat): a claim is a
+  // consistency marker, not auth — a tap TAKES the seat, last write
+  // wins, honor system. THE BOND (dreev's ruling, 2026-08-14): the
+  // first bid to land binds its seat to the device that placed it,
+  // so a rival's bound star is DEAD, not merely filled — and the
+  // server refuses what a stale tap still asks. Clicking your own
+  // lit star releases you to nobody. Once YOUR bid is in, the whole
+  // radio locks.
   const holder = state.claims[usid];
   const star = t.querySelector('.tu');
-  // revealed: identity is part of the frozen record, like the names
-  star.disabled = locked || state.revealed;
-  star.setAttribute('aria-label', '@' + seat.snym);
-  star.setAttribute('aria-pressed', String(usid === mine));
-  star.classList.toggle('selected', usid === mine);
   // a rival's REGISTERED claim fills the star in (hollow = open,
   // filled = claimed by someone else, gold = you)...
   const rival = holder !== undefined && holder !== DVID;
+  // revealed: identity is part of the frozen record, like the names;
+  // bound to a rival: the bond's client face (the claims map is
+  // bond-aware — the server derives it from the standing bid's dvid
+  // — so rival-with-a-bid IS bound-to-a-rival)
+  star.disabled = locked || state.revealed
+    || (rival && stamp !== undefined);
+  star.setAttribute('aria-label', '@' + seat.snym);
+  star.setAttribute('aria-pressed', String(usid === mine));
+  star.classList.toggle('selected', usid === mine);
   star.classList.toggle('taken', rival);
   // ...and its tip names the claimant's anym when they reported one
   // (dreev's ask — the one cause-flavored branch in the tip logic);
@@ -2198,7 +2222,10 @@ async function placeBid(usid, form) {
   aloft = { usid: usid,
             tini: base ? base.tini : new Date().toISOString(),
             tmod: new Date().toISOString(),
-            bcount: (base ? base.bcount : 0) + 1 };
+            bcount: (base ? base.bcount : 0) + 1,
+            dvid: DVID };  // a real bidder's every field, this one
+                           // included: the flying bid IS this
+                           // browser's, and knownBids asks
   renderStatus();
   syncHot(editor);  // the effective baseline just moved to the wire:
                     // the row closes (hot rides that same baseline)

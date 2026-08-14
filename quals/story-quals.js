@@ -1108,9 +1108,10 @@ async function bid(page, bidText) {
       };
       const taken = document.querySelector('.tile[data-snym="alice"] .tu');
       const plain = document.querySelector('.tile[data-snym="bob"] .tu');
-      // (post-takeover-ruling the taken star is enabled: dibs inform,
-      // they don't lock — the fill and tip carry the message)
-      return !taken.disabled && !plain.disabled
+      // (the bond, dreev 2026-08-14: alice has BID, so her star is
+      // dead for everyone else — the fill and tip carry the message;
+      // bob's bidless star stays live)
+      return taken.disabled && !plain.disabled
         && getComputedStyle(taken).opacity === '1'
         && alpha(getComputedStyle(taken).color) > 0.5
         && alpha(getComputedStyle(plain).color) === 0
