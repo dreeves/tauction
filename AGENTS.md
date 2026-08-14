@@ -417,6 +417,39 @@ plain.)
   virgin (the slot never touches the auctions tab). One slot per
   DEVICE: the same browser editing two auctions shows only its
   latest — the chosen two-tabs trade. Honor system throughout.
+- THE TAP COUNTS NOW (dreev's item 4, 2026-08-14): taking a
+  bidless seat someone else holds was the app's one gesture that
+  painted NOTHING at the click — usidAmong let the rival's
+  REGISTERED claim outrank the ledger this browser had just
+  written, so the star lit up a full round trip later (seconds, at
+  the /exec tax) and the click read as a no-op. `staked` in app.js
+  is the flying claim (the `aloft` precedent, same shape): the
+  seat this browser just staked outranks the rival's claim until
+  the op settles, and BOTH settle paths clear it — success and
+  refusal alike, guarded on the staked usid so a second tap
+  mid-flight keeps its own stake. A refused stake (the stale
+  screen that asks for a bonded seat) walks the picture back at
+  the settle, beside the refusal that says why.
+- THE VANISHING DRAFT SPEAKS (dreev's item 5, 2026-08-14): losing
+  your seat while unsent words sit in the bid field used to take
+  the editor away silently, reading as "my typing was thrown out".
+  Nothing is ever lost — the draft slot is the BROWSER's, not the
+  seat's, so the words come home at the next seat (the
+  draft-follows-you law) — and the app now says so: stringles'
+  unseatedBanner, fired from the one render that sees the flip
+  (wasSeated, wasRevealed's precedent). Two conditions keep it
+  from being noise: there must be words at stake (a bare unseating
+  stays quiet — the filled star already tells that story), and the
+  banner slot must be empty, so a raced stake's own refusal —
+  which names the winner — is never clobbered by these vaguer
+  words.
+- TENTATIVE VS BOUND, IN THE TIP (dreev's item 6 and his copy,
+  2026-08-14): a rival's claim comes in two strengths and the
+  words say which. Bidless, it reads "Tentatively claimed by
+  someone (anym)" — still one tap from anyone. Once their bid
+  bound it, the plain "Claimed by someone (anym)" serves, on the
+  dead star. Same predicate as the bond's star-disabling, so the
+  words and the pressability can never disagree.
 - Every control is a tab stop (2026-07-27, reversing the 07-16
   tab law: keyboard users must be able to claim/remove/reveal).
   Pointer clicks blur buttons (tooltip hygiene); keyboard clicks

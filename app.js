@@ -1221,16 +1221,29 @@ function storeMyPid(p) {
   localStorage.setItem('tauction-usids', JSON.stringify(m));
 }
 
+// THE FLYING CLAIM (dreev's item 4, 2026-08-14; the aloft
+// precedent): the seat this browser has just staked, until its claim
+// settles. Taking a seat someone else holds is the one gesture that
+// used to paint NOTHING at the tap — the rival's registered claim
+// outranked the ledger this browser had just written, so the star lit
+// up a full round trip later (seconds, at the /exec tax). The tap
+// now counts immediately, exactly as a bid or a roster add does, and
+// a refusal walks the picture back at the settle.
+let staked = null;
+
 // You are whoever this browser holds the usid of — but only while that
 // usid has a rendered seat here AND the server's claim for it (if any)
 // is this device's. Unclaimed-on-the-server plus remembered locally
 // counts as yours (the optimistic moment before your claim lands); a
-// rival device's registered claim unseats you.
+// rival device's registered claim unseats you — unless this browser's
+// own stake for that seat is still in flight, which outranks the
+// picture the stake is about to change.
 function usidAmong(ss, claims) {
   const p = myUsidStored();
   if (!p || !ss.some((s) => s.usid === p)) return '';
   const holder = claims[p];
-  return holder === undefined || holder === DVID ? p : '';
+  return holder === undefined || holder === DVID || p === staked
+    ? p : '';
 }
 // ...but only until the gavel. Post-reveal you are part of the frozen
 // RECORD: the seat whose STANDING bid this browser placed (each
@@ -1325,6 +1338,9 @@ let lastPrint = '';  // fingerprint of the last-rendered rows
 let rowNodes = umap();   // usid -> its living row node (keyed reuse;
                          // the usid never changes, so a rename never
                          // re-keys a living node)
+let wasSeated = '';      // who this browser rendered as last time
+                         // (wasRevealed's precedent: the one-shot
+                         // effects need the previous picture)
 
 function renderStatus() {
   // Skip no-op rebuilds: replacing the nodes destroys any button mid-
@@ -1351,6 +1367,26 @@ function renderStatus() {
   wasRevealed = state.revealed;
 
   const mine = myUsid();
+  // UNSEATED WITH WORDS IN HAND (dreev's item 5, 2026-08-14): a
+  // rival took the seat you were rendering as, and your unsent bid
+  // is sitting in the field. Nothing is lost — the draft slot is the
+  // BROWSER's, not the seat's, so the words come home at your next
+  // seat — but the editor vanishing under them read as "my typing
+  // was thrown away", so the app says it. The predicate names the
+  // moment exactly: you still remember being someone here
+  // (myUsidStored), the picture no longer agrees (mine === ''), you
+  // were seated in the last picture, and there are words at stake.
+  // A bare unseating stays silent: the filled star already says it.
+  // ...and so does an unseating the server ALREADY explained: losing
+  // a raced stake banners its own refusal (which names the winner),
+  // and these vaguer words must not clobber it — the banner is one
+  // slot, and the more specific news was already put in it.
+  if (wasSeated !== '' && mine === '' && myUsidStored() === wasSeated
+      && jmap('tauction-drafts:' + slug)['bid']
+      && $('banner').hidden) {
+    banner(unseatedBanner);
+  }
+  wasSeated = mine;
 
   // The padlock is the reveal button: pressable (and pulsing) only
   // once everyone on the roster — at least two people — has bid.
@@ -1750,12 +1786,17 @@ function updateRow(t, seat, b, mine, known, locked) {
   star.classList.toggle('taken', rival);
   // ...and its tip names the claimant's anym when they reported one
   // (dreev's ask — the one cause-flavored branch in the tip logic);
-  // everything else stays a pure function of (pressable, whose)
+  // everything else stays a pure function of (pressable, whose).
+  // A rival's claim comes in two strengths, and the words say which
+  // (dreev's item 6, 2026-08-14): TENTATIVE while bidless — one tap
+  // still takes the seat — and plain claimed-by once their bid
+  // bound it, which is the same condition that killed the star.
   star.setAttribute('data-tip',
     usid === mine
       ? (star.disabled ? lockedTip : disclaimTip)
       : rival && state.anyms[usid]
-      ? claimedByTip(state.anyms[usid])
+      ? (stamp === undefined ? tentativeTip(state.anyms[usid])
+                             : claimedByTip(state.anyms[usid]))
       : (star.disabled ? tooLateTip : claimTip));
 
   t.classList.toggle('has-bid', stamp !== undefined);
@@ -2143,9 +2184,15 @@ function toggleTu(usid) {
     if (seat !== undefined) {  // remember the label as the name HINT
       localStorage.setItem('tauction-snym', seat.snym);
     }
+    staked = usid;  // the tap counts NOW (see the flying claim); the
+                    // settle below clears it, either way
     queueOp({ action: 'claim', slug: slug, usid: usid,
               dvid: DVID,     // stake it: rival pages show dibs
-              anym: ANYM }); // ...and who by, humanely
+              anym: ANYM },  // ...and who by, humanely
+             // ...and only THIS stake's settle retires it: a second
+             // tap mid-flight has already staked its own seat
+             () => { if (staked === usid) staked = null; },
+             () => { if (staked === usid) staked = null; });
   }
   const editor = $('tiles').querySelector('.rebid textarea');
   if (editor) editor.focus();

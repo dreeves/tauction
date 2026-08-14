@@ -20,6 +20,12 @@ const lockedTip = `Locked in as you`;
 const tooLateTip = `Too late to claim as you`;
 const claimTip = `Claim as you`;
 const claimedByTip = (blub) => `Claimed by someone (${blub})`;
+// ...and its BIDLESS sibling (dreev's copy, 2026-08-14): a claim
+// with no bid behind it is still usurpable — one tap takes the seat
+// — so the tip says the claim is only tentative. Once their bid
+// lands, the bond makes it permanent and the plain words above
+// serve.
+const tentativeTip = (blub) => `Tentatively claimed by someone (${blub})`;
 
 // The ×'s tooltips: live and grayed
 const removeTip = (snym) => `Remove @${snym}`;
@@ -171,6 +177,15 @@ const bidTooLongBanner = `bid too long (160 characters max)`;
 const slugTooLongBanner = `Auction name too long (max 20 characters)`;
 const snymTooLongBanner = `Name too long (max 20 characters)`;
 const blubTooLongBanner = `Description too long (max 2000 characters)`;
+
+// TODO: someone took the seat you were holding while you had an
+// unsent bid in the field (dreev's item 5, 2026-08-14). The words
+// are the BROWSER's draft, not the seat's, so nothing was lost —
+// they come home at your next seat — but the editor vanishing under
+// them must not read as "my typing was thrown away". Only spoken
+// when there are words at stake; a bare unseating stays quiet.
+const unseatedBanner =
+  `Sedem tuam alius cepit; verba tua nondum missa servata sunt`;
 
 // Someone saved the description while you were editing yours (also
 // how the server's compare-and-swap refusal renders — the refusalCopy

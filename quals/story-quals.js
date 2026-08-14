@@ -2132,8 +2132,10 @@ async function bid(page, bidText) {
            .disabled
       && document.querySelector('.tile[data-snym="alice"] .tu')
            .getAttribute('data-tip')
-           // the tip up to the anym, whatever the copy says
-           .startsWith(claimedByTip('').slice(0, -1))),
+           // the tip up to the anym, whatever the copy says — and
+           // TENTATIVE here (dreev's item 6): phone 2 has claimed
+           // but not bid, so the seat is still one tap from anyone
+           .startsWith(tentativeTip('').slice(0, -1))),
        'phone 1 is unseated QUIETLY: no red banner — the star fills'
        + ' in, stays live, and its tooltip says whose thumb took it');
     await p1.tap('.tile[data-snym="bea"] .tu');

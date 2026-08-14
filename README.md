@@ -111,6 +111,12 @@ Previously:
 
 4. Bug: Not sure how to replicate but by intentionally having two pretend users in two different browsers try to step on each others toes by submitting different bids under the same participant name, I created a state that shouldn't be possible to reach. In browser 1 I have the is-you star selected and yellow showing user alice and a visible bid of "b1". So far so good. In browser 2 I have user alice shown with a gray filled-in star indicating the seat is claimed by someone else (and the tooltip correctly says the device that claimed it, browser 1). But on browser 2, I see a visible bid of "b2", the bid I previously placed as alice on browser 2. Obviously we need to find replicata and create quals and then fix this bug.
 
+5. The following should never happen anywhere: You click on a UI element and for a second or so it appears to be a no-op. Then, belatedly, the result of the click is visually indicated. I believe this is currently the case when you click the is-you star to usurp a seat for which someone else had previously clicked the is-you star.
+
+6. Maybe relatedly, I don't like how if you type a bid but don't submit it and then someone usurps your seat, your unsubmitted bid just disapears without warning.
+
+7. The tooltip that starts "Claimed by..." should read "Tentatively claimed by..." for the case that the claimant hasn't submitted a bid and thus is still usurpable.
+
 Next:
 
 1. For better device blurbs, what if the website just asks the user for permission to see their exact location?
@@ -119,13 +125,7 @@ Next:
 
 3. Looks like the submit button for bids is awkwardly squished against the bid field.
 
-4. The following should never happen anywhere: You click on a UI element and for a second or so it appears to be a no-op. Then, belatedly, the result of the click is visually indicated. I believe this is currently the case when you click the is-you star to usurp a seat for which someone else had previously clicked the is-you star.
-
-5. Maybe relatedly, I don't like how if you type a bid but don't submit it and then someone usurps your seat, your unsubmitted bid just disapears without warning.
-
-6. The tooltip that starts "Claimed by..." should read "Tentatively claimed by..." for the case that the claimant hasn't submitted a bid and thus is still usurpable.
-
-7. Rename to sealreveal or looseseal or sealedeel or reeveel or something.
+4. Rename to sealreveal or looseseal or sealedeel or reeveel or something.
 
 
 

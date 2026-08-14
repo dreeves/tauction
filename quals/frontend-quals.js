@@ -181,7 +181,8 @@ const STR = new Function(STRINGLES
   + '; return { needTwoTip, needOneMoreTip, waitingTip, youTag,'
   + ' auctionExistsBanner, stampCopy,'
   + ' consensusStamp,'
-  + ' claimedByTip, claimTip, mysteryDevice, nameTakenBanner,'
+  + ' claimedByTip, tentativeTip, unseatedBanner,'
+  + ' claimTip, mysteryDevice, nameTakenBanner,'
   + ' bidTooLongBanner,'
   + ' moneyGlyphs, needNameTip, removeTip,'
   + ' tooLateRemoveTip, resubmittedTip, nameStoneTip,'
@@ -5034,6 +5035,148 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + ' machine never forgot who they wanted to be — gold star, no'
      + ' click, no noise');
 
+  /* --- 2k3. the takeover paints AT THE TAP, never a beat later ----------
+     Replicata (dreev's item 4, 2026-08-14): machine 2 sees alice
+     dibsed by machine 1 (registered claim, no bid). Machine 2 taps
+     the star. Expectata: the seat is machine 2's ON THE TAP —
+     gold star, editor ready — with the wire catching up behind, the
+     way every other optimistic write in this app paints. Resultata
+     pre-fix: nothing happened for a full round trip (seconds, on
+     live Apps Script) and the seat lit up belatedly, because
+     usidAmong let the rival's REGISTERED claim outrank the ledger
+     this browser had just written — dreev's "appears to be a no-op"
+     class of bug. */
+  gas.handle({ action: 'add', slug: 'tapnow', snym: 'alice',
+    usid: 'usid-tapnow-alice' });
+  gas.handle({ action: 'claim', slug: 'tapnow', usid: 'usid-tapnow-alice',
+    dvid: 'dev-tapnow-rival', anym: 'the rival' });
+  const dTap = await makePage('/tapnow?api=' + API_URL);
+  await until(() => row(dTap.window.document, 'alice')
+    .querySelector('.tu').classList.contains('taken'));
+  mockDelay = 400;             // the wire is slow; the paint must not wait
+  claimRow(dTap, 'alice');
+  ok(row(dTap.window.document, 'alice').classList.contains('mine')
+     && row(dTap.window.document, 'alice').querySelector('.tu')
+          .classList.contains('selected')
+     && dTap.window.document.querySelector('#tiles .rebid textarea'),
+     'the tap paints NOW: gold star and a ready editor, while the'
+     + ' claim is still on the wire');
+  await until(() => gas.handle({ action: 'state', slug: 'tapnow' })
+    .claims['usid-tapnow-alice']
+      === dTap.window.localStorage.getItem('tauction-dvid'));
+  mockDelay = 0;
+  ok(row(dTap.window.document, 'alice').classList.contains('mine')
+     && dTap.window.document.getElementById('banner').hidden,
+     'and the settle confirms it: still mine, no banner');
+  // ...and a REFUSED stake walks back truthfully (the aloft
+  // precedent). The honest way to ask for a bound seat is a STALE
+  // SCREEN: bea is merely claimed in this page's picture — live
+  // star — while the holder's bid has already bonded her on the
+  // server. The pulse is held mid-fetch so the picture can't heal
+  // before the tap.
+  gas.handle({ action: 'add', slug: 'tapback', snym: 'bea',
+    usid: 'usid-tapback-bea' });
+  gas.handle({ action: 'claim', slug: 'tapback', usid: 'usid-tapback-bea',
+    dvid: 'dev-tapback-holder', anym: 'the holder' });
+  const dBack = await makePage('/tapback?api=' + API_URL);
+  await until(() => row(dBack.window.document, 'bea')
+    .querySelector('.tu').classList.contains('taken') && drained());
+  let holdPulse;
+  pulseWait = new Promise((resolve) => { holdPulse = resolve; });
+  gas.handle({ action: 'bid', slug: 'tapback', snym: 'bea',
+    usid: 'usid-tapback-bea', xbid: 'bound words',
+    dvid: 'dev-tapback-holder', anym: 'the holder' });
+  ok(!row(dBack.window.document, 'bea').querySelector('.tu').disabled,
+     "the stale screen still offers bea: this page hasn't heard"
+     + ' about the bond');
+  claimRow(dBack, 'bea');
+  ok(row(dBack.window.document, 'bea').classList.contains('mine'),
+     'the optimistic stake paints even when the server will refuse');
+  pulseWait = Promise.resolve();
+  holdPulse();
+  await until(() =>
+    !dBack.window.document.getElementById('banner').hidden);
+  await until(() =>
+    !row(dBack.window.document, 'bea').classList.contains('mine'));
+  ok(row(dBack.window.document, 'bea').querySelector('.tu')
+       .classList.contains('taken')
+     && row(dBack.window.document, 'bea').querySelector('.tu').disabled,
+     'the refusal walks the picture back: the seat returns to its'
+     + ' bond holder — dead star now — beside the banner saying why');
+
+  /* --- 2k4. unseated with words in hand: the draft is SAID, not lost -----
+     Replicata (dreev's item 5): type a bid without submitting, then
+     have someone else take your (bidless) seat. Expectata: the
+     words are safe — they are the browser's draft, not the seat's —
+     and the app SAYS so instead of letting the editor vanish
+     silently. Resultata pre-fix: the editor disappeared with no
+     banner, reading as "my typing was thrown away". */
+  gas.handle({ action: 'add', slug: 'unseat', snym: 'ann',
+    usid: 'usid-unseat-ann' });
+  gas.handle({ action: 'add', slug: 'unseat', snym: 'bob',
+    usid: 'usid-unseat-bob' });
+  const dUnseat = await makePage('/unseat?api=' + API_URL);
+  claimRow(dUnseat, 'ann');
+  await until(() => myEditor(dUnseat.window.document) && drained());
+  myEditor(dUnseat.window.document).value = 'my unsent words';
+  myEditor(dUnseat.window.document).dispatchEvent(
+    new dUnseat.window.Event('input', { bubbles: true }));
+  gas.handle({ action: 'claim', slug: 'unseat', usid: 'usid-unseat-ann',
+    dvid: 'dev-unseat-rival', anym: 'the usurper' });
+  await until(() =>
+    !dUnseat.window.document.getElementById('banner').hidden);
+  ok(dUnseat.window.document.getElementById('banner').textContent
+       .includes(STR.unseatedBanner)
+     && !row(dUnseat.window.document, 'ann').classList.contains('mine'),
+     'losing your seat with unsent words BANNERS: the disappearance'
+     + ' is spoken, not silent');
+  ok(JSON.parse(dUnseat.window.localStorage
+       .getItem('tauction-drafts:unseat')).bid === 'my unsent words',
+     '...and the words are still in the draft store, untouched');
+  claimRow(dUnseat, 'bob');
+  await until(() => myEditor(dUnseat.window.document));
+  ok(myEditor(dUnseat.window.document).value === 'my unsent words',
+     '...so they come home at the next seat, as the draft law says');
+  // the quiet case stays quiet: unseated with NOTHING typed says
+  // nothing — the filled star already tells that story
+  const dQuiet = await makePage('/unseat?api=' + API_URL);
+  claimRow(dQuiet, 'bob');
+  await until(() => myEditor(dQuiet.window.document) && drained());
+  gas.handle({ action: 'claim', slug: 'unseat', usid: 'usid-unseat-bob',
+    dvid: 'dev-unseat-rival2', anym: 'another usurper' });
+  await until(() =>
+    !row(dQuiet.window.document, 'bob').classList.contains('mine'));
+  ok(dQuiet.window.document.getElementById('banner').hidden,
+     'unseated with nothing typed: no banner — nothing was at stake');
+
+  /* --- 2k5. tentative vs bound: the tip says which ------------------------
+     Replicata (dreev's item 6): a claimed-but-bidless seat and a
+     bound one look the same in the tip. Expectata: the bidless
+     claim reads "Tentatively claimed by..." (dreev's copy — it is
+     still usurpable), the bound one keeps the plain "Claimed
+     by...". */
+  gas.handle({ action: 'add', slug: 'tenta', snym: 'ann',
+    usid: 'usid-tenta-ann' });
+  gas.handle({ action: 'add', slug: 'tenta', snym: 'bob',
+    usid: 'usid-tenta-bob' });
+  gas.handle({ action: 'claim', slug: 'tenta', usid: 'usid-tenta-ann',
+    dvid: 'dev-tenta-soft', anym: 'soft device' });
+  gas.handle({ action: 'bid', slug: 'tenta', snym: 'bob',
+    usid: 'usid-tenta-bob', xbid: 'bound', dvid: 'dev-tenta-hard',
+    anym: 'hard device' });
+  const dTent = await makePage('/tenta?api=' + API_URL);
+  await until(() => row(dTent.window.document, 'bob')
+    .querySelector('.tu').classList.contains('taken'));
+  ok(row(dTent.window.document, 'ann').querySelector('.tu')
+       .getAttribute('data-tip') === STR.tentativeTip('soft device')
+     && !row(dTent.window.document, 'ann').querySelector('.tu').disabled,
+     "a bidless claim is TENTATIVE: dreev's copy says so, and the"
+     + ' star stays live to prove it');
+  ok(row(dTent.window.document, 'bob').querySelector('.tu')
+       .getAttribute('data-tip') === STR.claimedByTip('hard device')
+     && row(dTent.window.document, 'bob').querySelector('.tu').disabled,
+     'a bound seat keeps the plain claimed-by words, on a dead star');
+
   /* --- 2l. the takeover xbid: claim + bid while the ops fly ---------------
      Replicata: same stale-screen setup, but machine 2 clicks alice's
      star and IMMEDIATELY types a bid while its claim op is still in
@@ -5777,9 +5920,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   type(dTip2, 'roster-input', 'zed');
   submitName(dTip2);
   await until(() => dTip2.window.document.getElementById('tip').textContent
-    === STR.claimedByTip('rival anym'));
+    === STR.tentativeTip('rival anym'));
   ok(dTip2.window.document.getElementById('tip').textContent
-       === STR.claimedByTip('rival anym'),
+       === STR.tentativeTip('rival anym'),
      "the render retitles the open tip in place: it follows the truth"
      + ' without waiting for the pointer');
   // ann's row vanishes entirely; the tip must not haunt a dead host
