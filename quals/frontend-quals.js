@@ -5188,8 +5188,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      Post-bond that state is unmintable, so the client ASSERTS
      instead of quietly re-masking: the poll banners the assert,
      naming the seat, the foreign device, and the localStorage key
-     to clear. (Revealed pages are exempt — archives of the pre-bond
-     era still render; the record overrides the memory there.) */
+     to clear. Revealed pages get NO leniency (dreev's stricter
+     ruling, later 2026-08-14: pre-bond history is cleaned by hand-
+     editing the database, not by exemption arms in the code). */
   gas.handle({ action: 'add', slug: 'prebond', snym: 'alice',
     usid: 'usid-prebond-alice' });
   gas.handle({ action: 'add', slug: 'prebond', snym: 'bea',
@@ -5212,8 +5213,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && legacyCry.includes('tauction-mybids:prebond'),
      'pre-bond poisoned memory refuses to render: the banner carries'
      + ' the seat, the foreign device, and the key to clear');
-  // the same memory on a REVEALED page renders quietly: the record
-  // speaks and the archives of the pre-bond era stay readable
+  // ...and a REVEALED page gets the same cry — no exemption arm for
+  // history (dreev: "i can always edit the database to clean things
+  // up")
   gas.handle({ action: 'bid', slug: 'prebond', snym: 'bea',
     usid: 'usid-prebond-bea', xbid: 'beabid',
     dvid: 'dev-prebond-other' });
@@ -5223,13 +5225,85 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     w.localStorage.setItem('tauction-mybids:prebond',
       '{"usid-prebond-alice":"b2"}');
   });
-  await until(() => dLegacyR.window.document.getElementById('status')
-    .classList.contains('revealed'));
-  ok(dLegacyR.window.document.getElementById('banner').hidden
-     && row(dLegacyR.window.document, 'alice').textContent
-          .includes('b1'),
-     'revealed, the same memory renders quietly: the record speaks,'
-     + ' b1 shows, no assert');
+  await until(() =>
+    !dLegacyR.window.document.getElementById('banner').hidden);
+  ok(dLegacyR.window.document.getElementById('banner').textContent
+       .includes('bond broken')
+     && dLegacyR.window.document.getElementById('banner').textContent
+          .includes('tauction-mybids:prebond'),
+     'revealed pages get NO leniency: the same poisoned memory dies'
+     + ' just as loudly — history is cleaned in the database, not'
+     + ' excused in the code');
+
+  /* --- 2l6. one device on two seats: the record refuses to pick ----------
+     Replicata: a pre-bond (or hand-forged) log where one dvid placed
+     the standing bid on TWO seats — bidderBound makes this unmintable
+     through the API, so the rows are forged directly. The old code
+     shrugged ("last match wins"); dreev's stricter ruling says a
+     state the bond forbids must die loudly, naming both seats and
+     the marching orders (edit the bids tab). */
+  gas.handle({ action: 'add', slug: 'twoseat', snym: 'ann',
+    usid: 'usid-twoseat-ann' });
+  gas.handle({ action: 'add', slug: 'twoseat', snym: 'ben',
+    usid: 'usid-twoseat-ben' });
+  gas.handle({ action: 'bid', slug: 'twoseat', snym: 'ann',
+    usid: 'usid-twoseat-ann', xbid: 'first seat',
+    dvid: 'dev-two-x' });
+  gas.handle({ action: 'bid', slug: 'twoseat', snym: 'ben',
+    usid: 'usid-twoseat-ben', xbid: 'second seat',
+    dvid: 'dev-two-y' });
+  gas.handle({ action: 'reveal', slug: 'twoseat' });
+  gas.__ss.sheets['bids'].data.forEach((r) => {  // the forgery
+    if (r[0] === 'twoseat' && r[1] === 'usid-twoseat-ben') {
+      r[4] = 'dev-two-x';
+    }
+  });
+  const dTwo = await makePage('/twoseat?api=' + API_URL, (w) => {
+    w.localStorage.setItem('tauction-dvid', 'dev-two-x');
+  });
+  await until(() =>
+    !dTwo.window.document.getElementById('banner').hidden);
+  ok(dTwo.window.document.getElementById('banner').textContent
+       .includes('usid-twoseat-ann')
+     && dTwo.window.document.getElementById('banner').textContent
+          .includes('usid-twoseat-ben')
+     && dTwo.window.document.getElementById('banner').textContent
+          .includes('bond broken'),
+     'a device standing on two seats dies loudly, naming both seats:'
+     + ' the record refuses to pick a favorite');
+
+  /* --- 2l5. the stale second tab: bidderBound has a face -----------------
+     Replicata (the hypothesis in dreev's own ERROR1527 copy, and the
+     known two-tabs blind spot): one browser, two tabs, same dvid.
+     Tab 1 claims alice and bids — the bond. Tab 2, open since before
+     the bid and not yet polled, taps bea's star: the same DEVICE
+     asking to claim a second seat while its bid binds it to alice.
+     Expectata: the server refuses bidderBound, the banner speaks
+     dreev's ERROR1527 words, and bea stays unclaimed. */
+  gas.handle({ action: 'add', slug: 'twotab', snym: 'alice',
+    usid: 'usid-twotab-alice' });
+  gas.handle({ action: 'add', slug: 'twotab', snym: 'bea',
+    usid: 'usid-twotab-bea' });
+  const seedTab = (w) => {
+    w.localStorage.setItem('tauction-dvid', 'dev-twotab');
+  };
+  const tab1 = await makePage('/twotab?api=' + API_URL, seedTab);
+  const tab2 = await makePage('/twotab?api=' + API_URL, seedTab);
+  claimRow(tab1, 'alice');
+  typeBid(tab1, 'the one deed');
+  submitBid(tab1);
+  await settled(tab1);
+  ok(!row(tab2.window.document, 'bea').querySelector('.tu').disabled,
+     "tab 2 hasn't polled: bea's star still offers itself");
+  claimRow(tab2, 'bea');  // the stale second tab's ask
+  await until(() =>
+    !tab2.window.document.getElementById('banner').hidden);
+  ok(tab2.window.document.getElementById('banner').textContent
+       .includes(STR.refusalCopy.bidderBound({}))
+     && gas.handle({ action: 'state', slug: 'twotab' })
+          .claims['usid-twotab-bea'] === undefined,
+     "the bonded device's second tab is refused in dreev's ERROR1527"
+     + ' words, and bea stays unclaimed');
 
   /* --- 2m. the radio locks at SUBMIT, not at the server's ack ------------
      Replicata (dreev: "claim a participant, submit a bid, then see a

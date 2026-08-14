@@ -1258,10 +1258,12 @@ function placeBid(req) {
   if (bondSeat !== undefined && bondSeat !== usid) {
     throw { code: 'bidderBound' };
   }
-  // Bidding as someone is claiming to be them, and claims are first
-  // come, first served: a bid may not touch a BIDLESS seat someone
-  // else holds either. Old clients carry no dvid and count as
-  // nobody — fine on an open seat, refused on a held one.
+  // Bidding as someone is claiming to be them, so a bare bid may not
+  // touch a BIDLESS seat someone else holds either (the UI claims
+  // first — its takeover tap moves the column — so only hand-rolled
+  // and old-client requests land here). Old clients carry no dvid
+  // and count as nobody — fine on an open seat, refused on a held
+  // one.
   if (held && held !== dvid) {
     throw { code: 'bidSeatHeld', anym: deviceAnym(held),
             snym: snym };

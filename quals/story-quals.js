@@ -1111,12 +1111,25 @@ async function bid(page, bidText) {
       // (the bond, dreev 2026-08-14: alice has BID, so her star is
       // dead for everyone else — the fill and tip carry the message;
       // bob's bidless star stays live)
+      // The anym's OS word is DERIVED, not hardcoded: dreev runs this
+      // suite on a Mac and CI runs it on Ubuntu, so a literal "Mac"
+      // made the whole apps-script workflow red on every push
+      // (found 2026-08-14, after the failure predated the bond work
+      // by a commit). Derived INDEPENDENTLY of app.js's own table,
+      // the TZCITY precedent: a regression in the sniff must not
+      // hide by infecting both sides. The browser word stays pinned
+      // — this suite launches Chrome by construction.
+      const ua = navigator.userAgent;
+      const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad'
+        : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac'
+        : /Windows/.test(ua) ? 'Windows PC'
+        : /Linux/.test(ua) ? 'Linux box' : mysteryDevice;
       return taken.disabled && !plain.disabled
         && getComputedStyle(taken).opacity === '1'
         && alpha(getComputedStyle(taken).color) > 0.5
         && alpha(getComputedStyle(plain).color) === 0
         && taken.getAttribute('data-tip')
-             === claimedByTip('Mac Chrome ' + navigator.language
+             === claimedByTip(os + ' Chrome ' + navigator.language
                               + ' in Portland, OR' + orByTimezone
                               + tzcity(Intl.DateTimeFormat()
                                   .resolvedOptions().timeZone));

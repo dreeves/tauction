@@ -1375,8 +1375,9 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
   overflow: hidden;
 }
 
-/* the star radio for who-you-are: ☆ = claimable, dimmed ☆ = dibsed by
-   someone else's bid, glowing ★ = you (click it again to release) */
+/* the star radio for who-you-are: ☆ = claimable, dimmed ☆ = claimed
+   by someone else (still takeable while bidless; DEAD once their bid
+   binds the seat — the bond), glowing ★ = you (click to release) */
 /* The stars are radio buttons: one solid glyph everywhere, drawn as
    a hollow OUTLINE (transparent fill + text-stroke) until .selected
    fills it glowing gold. Dimming rides the outline's alpha, never

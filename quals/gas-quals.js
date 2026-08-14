@@ -496,14 +496,16 @@ ok(!st.error && names(st) === 'b,a'
    're-adding a removed name mints a fresh seat under the new usid');
 
 // 8b. claims: who-is-who is server truth, so two machines can't both
-//     be alice. FIRST COME, FIRST SERVED (2026-07-16; the old
-//     last-write-wins let a stale click silently steal a seat, anyone
-//     release anyone, and a bid hijack a held seat — the two pinned
-//     behaviors changed here were flagged to dreev): claiming
-//     registers your device id; a held seat refuses rivals loudly;
-//     only the holder may release; one device holds at most one seat
-//     per auction (claiming anew releases your old one, radio-style);
-//     bidding registers the claim iff the seat is yours or open.
+//     be alice. Three regimes' fossil record, current law last:
+//     first-come-first-served (2026-07-16) locked faire out of her
+//     own seat; last-write-wins (2026-07-21) let dreev's 08-13
+//     superseded-bid state exist; THE BOND (2026-08-14) splits them
+//     — bidless claims are last-write-wins, the first landed bid
+//     locks the seat to its device. Constants here: claiming
+//     registers your device id; only the holder may release; one
+//     device holds at most one seat per auction (claiming anew
+//     releases your old one, radio-style); bidding an open seat
+//     registers the claim.
 const annP = usid('higgs', 'ann');
 const benP = usid('higgs', 'ben');
 const ceeP = usid('higgs', 'cee');
@@ -1827,8 +1829,12 @@ st = call({ action: 'bid', slug: 'bond', snym: 'ann',
             usid: usid('bond', 'ann'), xbid: 'sealed words',
             dvid: 'dev-bond-2', anym: 'second anym' });
 ok(!st.error, 'the holder bids; the seat is now bound');
+// ALL five tabs, pulse included: a refused claim/bid must not spend
+// a wver bump (every client of every auction would pay an /exec
+// read for news that never happened) nor mint a devices row
 const bondSheets = () => JSON.stringify(
-  ['auctions', 'seats', 'bids'].map((n) => ss.sheets[n].data));
+  ['auctions', 'seats', 'bids', 'devices', 'pulse']
+    .map((n) => ss.sheets[n].data));
 const preTheft = bondSheets();
 st = call({ action: 'claim', slug: 'bond', usid: usid('bond', 'ann'),
             dvid: 'dev-bond-3', anym: 'thief anym' });

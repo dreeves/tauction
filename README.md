@@ -109,15 +109,23 @@ Previously:
 
 3. Can we make this... brighter, cleaner, more video-game-ish? Or what about a 1980s Apple II aesthetic? Can you go down some rabbit holes and come up with something sock-off-knocking? Reread and digest AGENTS.md before starting. And maybe show me a screenshot for me to thumbs-up/down before revamping. Random idea: emulate Nicky Case? [Maybe I should use Claude Design for this kind of thing.]
 
+4. Bug: Not sure how to replicate but by intentionally having two pretend users in two different browsers try to step on each others toes by submitting different bids under the same participant name, I created a state that shouldn't be possible to reach. In browser 1 I have the is-you star selected and yellow showing user alice and a visible bid of "b1". So far so good. In browser 2 I have user alice shown with a gray filled-in star indicating the seat is claimed by someone else (and the tooltip correctly says the device that claimed it, browser 1). But on browser 2, I see a visible bid of "b2", the bid I previously placed as alice on browser 2. Obviously we need to find replicata and create quals and then fix this bug.
+
 Next:
 
 1. For better device blurbs, what if the website just asks the user for permission to see their exact location?
 
 2. Or if that's too heavy-handed, what about this idea: Any time you name your own seat in an auction, that name is remembered in localstorage and we append to the blub, "; previously bidding as alice" or whatever participant name. If there's a technical reason that doesn't work, please explain.
 
-3. Bug: Not sure how to replicate but by intentionally having two pretend users in two different browsers try to step on each others toes by submitting different bids under the same participant name, I created a state that shouldn't be possible to reach. In browser 1 I have the is-you star selected and yellow showing user alice and a visible bid of "b1". So far so good. In browser 2 I have user alice shown with a gray filled-in star indicating the seat is claimed by someone else (and the tooltip correctly says the device that claimed it, browser 1). But on browser 2, I see a visible bid of "b2", the bid I previously placed as alice on browser 2. Obviously we need to find replicata and create quals and then fix this bug.
+3. Looks like the submit button for bids is awkwardly squished against the bid field.
 
-4. Rename to sealreveal or looseseal or sealedeel or reeveel or something.
+4. The following should never happen anywhere: You click on a UI element and for a second or so it appears to be a no-op. Then, belatedly, the result of the click is visually indicated. I believe this is currently the case when you click the is-you star to usurp a seat for which someone else had previously clicked the is-you star.
+
+5. Maybe relatedly, I don't like how if you type a bid but don't submit it and then someone usurps your seat, your unsubmitted bid just disapears without warning.
+
+6. The tooltip that starts "Claimed by..." should read "Tentatively claimed by..." for the case that the claimant hasn't submitted a bid and thus is still usurpable.
+
+7. Rename to sealreveal or looseseal or sealedeel or reeveel or something.
 
 
 

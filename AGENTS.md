@@ -580,12 +580,17 @@ plain.)
   ASSERTS the bond instead of re-masking (anti-postel): a
   remembered seat whose standing bid is a rival's is pre-bond data
   or a broken server — the poll banners the assert with the seat,
-  the foreign device, and the mybids key to clear; revealed pages
-  are exempt so the pre-bond era's archives still render.
-  Consequences: the 08-10 star bug's hiding state and the
-  one-dvid-two-seats forensic corner are unmintable; the forensic
-  column (bidders[].dvid, SVER 2) STAYS — the archive rename still
-  orphans the ledger, so post-reveal is-you still reads the record.
+  the foreign device, and the mybids key to clear. NO leniency arms
+  for history (dreev's stricter ruling, later 2026-08-14, replacing
+  the first draft's revealed-page exemption and usidOfRecord's
+  last-match shrug: he cleans pre-bond rows by editing the database,
+  the code excuses nothing): the bond asserts run on revealed pages
+  too, and one dvid standing on two seats asserts instead of
+  picking a favorite. Consequences: the 08-10 star bug's hiding
+  state and the one-dvid-two-seats forensic corner are unmintable;
+  the forensic column (bidders[].dvid, SVER 2) STAYS — the archive
+  rename still orphans the ledger, so post-reveal is-you still
+  reads the record.
   The ratified cost: cross-device bid REVISION died with the
   takeover (phone bids, laptop can't revise; dvid rot means your
   bid stands as-submitted) — but the auction can always still
@@ -611,7 +616,10 @@ plain.)
   2026-08-14): the archive rename orphans the ledger's slug key, so
   the record consults no ledger. `whoHere` in app.js owns the fork;
   every mineness consumer (star, bid tips, title peek, editing
-  beat) flows through it.
+  beat) flows through it. Pre-bond sheet rows that violate the bond
+  (superseded standing bids, one dvid on two seats) make their
+  pages assert until the rows are hand-cleaned — chosen (dreev: "i
+  can always edit the database to clean things up").
 - Sealing is honor-system: the sheet itself is link-visible.
 
 ## Appendix: making any Google Sheet writable from a static site

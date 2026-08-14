@@ -1238,12 +1238,18 @@ function usidAmong(ss, claims) {
 // rule's one remaining rot leg (dreev's star bug, 2026-08-10; the
 // rival-claim leg died at the bond, 2026-08-14): the archive's
 // rename orphans the ledger's slug key, which the reborn round then
-// recycles. The record consults no ledger. Last match wins in the
-// one-dvid-two-seats corner, unmintable post-bond (bidderBound) but
-// alive in pre-bond logs.
+// recycles. The record consults no ledger. One dvid on two seats is
+// unmintable post-bond (bidderBound), and pre-bond logs get no
+// leniency (dreev's stricter ruling: history is cleaned by editing
+// the database, not excused in the code) — so it asserts.
 function usidOfRecord(bidders) {
   const hits = bidders.filter((b) => b.dvid === DVID);
-  return hits.length === 0 ? '' : hits[hits.length - 1].usid;
+  assert(hits.length <= 1, 'bond broken: device ' + DVID
+    + ' stands on ' + hits.length + ' seats ['
+    + hits.map((b) => b.usid).join(', ')
+    + "] — pre-bond log? edit the bids tab's dvid cells to disown"
+    + ' the extras');
+  return hits.length === 0 ? '' : hits[0].usid;
 }
 // The fork, over ANY snapshot (adopted or raw-peeked) and whichever
 // seats accompany it: the record's rule after the gavel, the claim
@@ -1273,14 +1279,13 @@ function myBids() {
 // a rival device on a remembered seat is unmintable. Pre-bond data
 // (or a broken server) is the only way to see one, and anti-postel
 // says that impossibility is ASSERTED, evidence and marching orders
-// included, never quietly re-masked. (Revealed pages are exempt: the
-// record overrides the memory below either way, and the pre-bond
-// era's archives should still render their history.)
+// included, never quietly re-masked — revealed pages included
+// (dreev's stricter ruling, 2026-08-14: pre-bond history is cleaned
+// by editing the database, not excused in the code).
 function knownBids() {
   const known = myBids();
   bidView().forEach((b) => {
-    assert(state.revealed || b.dvid === DVID
-           || known[b.usid] === undefined,
+    assert(b.dvid === DVID || known[b.usid] === undefined,
       'bond broken: seat ' + b.usid + "'s standing bid is "
       + b.dvid + "'s but this browser (" + DVID + ') remembers'
       + " bidding it — pre-bond data? clear 'tauction-mybids:"
@@ -2542,7 +2547,8 @@ function addName() {  // returns the added seat's usid ('' if refused)
       return '';
     }
     // (.taken keeps the + row's pre-takeover reach: typing a HELD
-    // name objects rather than usurps — takeover is star-only)
+    // name objects rather than usurps — takeover of a bidless seat
+    // is star-only, and a BOUND seat's star is dead too)
     if (trow && !trow.querySelector('.tu').disabled
         && !trow.querySelector('.tu').classList.contains('taken')) {
       $('roster-input').value = '';
