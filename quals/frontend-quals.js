@@ -57,6 +57,7 @@ let stripSver = false;
 // ...and the editors-presence variant (assertState requires the
 // field, arcs' precedent — no silent empty-desk tolerance)
 let stripEditors = false;
+let stripAkas = false;
 
 // Simulate a sheet whose stamp cells lost their plain-text armor: set
 // to a string and every served stamp becomes it — bidder tini/tmod on
@@ -157,6 +158,7 @@ function mockFetch(url, opts) {
     if (stripArcs) delete res.arcs;
     if (stripSver) delete res.sver;
     if (stripEditors) delete res.editors;
+    if (stripAkas) delete res.akas;
     if (stampSwap !== null && res.bidders) {
       if (res.revealed) res.tfin = stampSwap;
       else res.bidders.forEach((b) => { b.tini = b.tmod = stampSwap; });
@@ -193,7 +195,8 @@ const STR = new Function(STRINGLES
   + ' slugTooLongBanner, snymTooLongBanner, blubTooLongBanner,'
   + ' revealCopy, descVerTip, editingBy, editingByMany, someoneOn,'
   + ' simulEditsBanner, refusalCopy,'
-  + ' gameRefusals, plumbingRefusals, orByTimezone,'
+  + ' gameRefusals, plumbingRefusals, orByTimezone, withAkas,'
+  + ' previouslyAs,'
   + ' archiveCopy, archivedTip };')();
 const STAMP = STR.stampCopy;
 
@@ -4135,7 +4138,8 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     // so reclassifying a refusal means moving it between tables, on
     // purpose. Every entry must also RENDER from a stub error: a
     // copy fn that crashes or returns nothing is a dead banner.
-    const stub = { usid: 'p-0', action: 'x', blub: '', snym: 'u' };
+    const stub = { usid: 'p-0', action: 'x', blub: '', snym: 'u',
+                   akas: [] };
     const numbered = (t) => Object.keys(t).filter((c) =>
       /^ERROR\d{4}: /.test(t[c](stub)));
     ok(Object.values(STR.refusalCopy).every((f) =>
@@ -5265,6 +5269,163 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      && row(dTent.window.document, 'bob').querySelector('.tu').disabled,
      'a bound seat keeps the plain claimed-by words, on a dead star');
 
+  /* --- 2k6. THE AKAS: a rival's blub says who they've been -------------
+     Replicata (dreev 2026-08-15, choosing server-side derivation
+     over a localStorage list): the same device bids as alice in one
+     auction and shows up in another. Expectata: everywhere a rival's
+     anym renders — the star tips, the pencil's someone-(anym), the
+     bidSeatHeld/seatTaken banners — the names it has bid under
+     ELSEWHERE ride behind it (dreev's copy: "; previously bidding
+     as alice"), newest first, current labels; a device with no
+     bids elsewhere reads exactly as before; and your OWN tips keep
+     the bare ANYM. Resultata pre-fix: the anym alone. */
+  ok(STR.withAkas('bare anym', []) === 'bare anym',
+     'no akas, no tail: an akas-less device reads exactly as before');
+  ok(STR.withAkas('x', ['zed']) === 'x' + STR.previouslyAs + 'zed'
+     && STR.withAkas('x', ['zed', 'quux']).startsWith('x' + STR.previouslyAs)
+     && STR.withAkas('x', ['zed', 'quux']).includes('zed')
+     && STR.withAkas('x', ['zed', 'quux']).includes('quux')
+     && STR.withAkas('x', ['zed', 'quux']).indexOf('zed')
+          < STR.withAkas('x', ['zed', 'quux']).indexOf('quux'),
+     "the tail follows the anym — dreev's phrase, then every aka in"
+     + ' order');
+  gas.handle({ action: 'add', slug: 'akaelse', snym: 'alice',
+    usid: 'usid-akaelse-alice' });
+  gas.handle({ action: 'bid', slug: 'akaelse', snym: 'alice',
+    usid: 'usid-akaelse-alice', xbid: 'elsewhere', dvid: 'dev-aka-soft',
+    anym: 'soft aka' });
+  gas.handle({ action: 'add', slug: 'akaelse2', snym: 'robert',
+    usid: 'usid-akaelse2-robert' });
+  gas.handle({ action: 'bid', slug: 'akaelse2', snym: 'robert',
+    usid: 'usid-akaelse2-robert', xbid: 'elsewhere too',
+    dvid: 'dev-aka-hard', anym: 'hard aka' });
+  gas.handle({ action: 'add', slug: 'akapage', snym: 'ann',
+    usid: 'usid-akapage-ann' });
+  gas.handle({ action: 'add', slug: 'akapage', snym: 'bob',
+    usid: 'usid-akapage-bob' });
+  gas.handle({ action: 'add', slug: 'akapage', snym: 'cid',
+    usid: 'usid-akapage-cid' });
+  gas.handle({ action: 'claim', slug: 'akapage', usid: 'usid-akapage-ann',
+    dvid: 'dev-aka-soft', anym: 'soft aka' });
+  // (tbid is minted strictly increasing PER AUCTION; two bids by one
+  // device in different slugs inside one wall-clock ms tie, and a tie
+  // falls to row order — so every ordering-sensitive cross-slug bid
+  // here waits out the millisecond, gas 18e's idiom)
+  { const t = Date.now(); while (Date.now() - t < 3); }
+  gas.handle({ action: 'bid', slug: 'akapage', snym: 'bob',
+    usid: 'usid-akapage-bob', xbid: 'bound', dvid: 'dev-aka-hard',
+    anym: 'hard aka' });
+  gas.handle({ action: 'claim', slug: 'akapage', usid: 'usid-akapage-cid',
+    dvid: 'dev-aka-none', anym: 'plain aka' });
+  const dAka = await makePage('/akapage?api=' + API_URL);
+  const akaDoc = dAka.window.document;
+  await until(() => row(akaDoc, 'bob').querySelector('.tu')
+    .classList.contains('taken') && row(akaDoc, 'cid')
+    .querySelector('.tu').classList.contains('taken'));
+  ok(row(akaDoc, 'ann').querySelector('.tu').getAttribute('data-tip')
+       === STR.tentativeTip(STR.withAkas('soft aka', ['alice'])),
+     "a tentative claimant's tip carries the name they bid under"
+     + ' elsewhere');
+  ok(row(akaDoc, 'bob').querySelector('.tu').getAttribute('data-tip')
+       === STR.claimedByTip(STR.withAkas('hard aka', ['robert'])),
+     "a bound holder's tip carries theirs");
+  ok(row(akaDoc, 'cid').querySelector('.tu').getAttribute('data-tip')
+       === STR.tentativeTip('plain aka'),
+     'a device with no bids elsewhere reads exactly as before');
+  // the picture follows the record: when the soft claimant bids
+  // elsewhere under a NEW name, this page's tip grows it at the next
+  // poll (akas are in the render fingerprint, like anyms)
+  gas.handle({ action: 'add', slug: 'akaelse3', snym: 'alicia',
+    usid: 'usid-akaelse3-alicia' });
+  { const t = Date.now(); while (Date.now() - t < 3); }
+  gas.handle({ action: 'bid', slug: 'akaelse3', snym: 'alicia',
+    usid: 'usid-akaelse3-alicia', xbid: 'newer name',
+    dvid: 'dev-aka-soft', anym: 'soft aka' });
+  dAka.window.__intervals.find((i) => i.ms === 5000).fn();
+  await until(() => row(akaDoc, 'ann').querySelector('.tu')
+    .getAttribute('data-tip')
+      === STR.tentativeTip(STR.withAkas('soft aka', ['alicia', 'alice'])));
+  ok(true, "a new name elsewhere reaches this page's tip, newest first");
+  // the pencil: a walk-in editor's someone-(anym) carries its akas
+  gas.handle({ action: 'editing', slug: 'akapage', usid: '',
+    dvid: 'dev-aka-hard', anym: 'hard aka' });
+  dAka.window.__intervals.find((i) => i.ms === 5000).fn();
+  await until(() => akaDoc.getElementById('desc').classList
+    .contains('scribbling'));
+  ok(akaDoc.getElementById('desctoggle').dataset.tip
+       === STR.descVerTip(0) + ' ' + STR.editingBy(
+            STR.someoneOn(STR.withAkas('hard aka', ['robert']))),
+     "the pencil names a walk-in editor by anym AND akas");
+  gas.handle({ action: 'editing', slug: 'akapage', usid: '',
+    dvid: 'dev-aka-hard', anym: 'hard aka', stop: true });
+  // the refusals that name who beat you carry the akas beside the
+  // anym — the copy is derived, never quoted
+  ok(STR.gameRefusals.bidSeatHeld({ anym: 'hard aka', snym: 'bob',
+        akas: ['robert'] })
+       .includes(STR.withAkas('hard aka', ['robert']))
+     && STR.gameRefusals.seatTaken({ anym: 'soft aka', snym: 'ann',
+        akas: ['alicia', 'alice'] })
+       .includes(STR.withAkas('soft aka', ['alicia', 'alice'])),
+     'bidSeatHeld and seatTaken render the winner with their akas');
+  // ...and end to end: a stale screen's stake on the bound seat
+  // banners the holder's akas
+  gas.handle({ action: 'add', slug: 'akaref', snym: 'dee',
+    usid: 'usid-akaref-dee' });
+  gas.handle({ action: 'claim', slug: 'akaref', usid: 'usid-akaref-dee',
+    dvid: 'dev-aka-hard', anym: 'hard aka' });
+  const dAkaRef = await makePage('/akaref?api=' + API_URL);
+  await until(() => row(dAkaRef.window.document, 'dee').querySelector('.tu')
+    .classList.contains('taken') && drained());
+  let holdAkaPulse;
+  pulseWait = new Promise((resolve) => { holdAkaPulse = resolve; });
+  gas.handle({ action: 'bid', slug: 'akaref', snym: 'dee',
+    usid: 'usid-akaref-dee', xbid: 'bound now', dvid: 'dev-aka-hard',
+    anym: 'hard aka' });
+  claimRow(dAkaRef, 'dee');
+  pulseWait = Promise.resolve();
+  holdAkaPulse();
+  await until(() =>
+    !dAkaRef.window.document.getElementById('banner').hidden);
+  ok(dAkaRef.window.document.getElementById('banner-msg').textContent
+       === STR.gameRefusals.bidSeatHeld({ anym: 'hard aka', snym: 'dee',
+            akas: ['bob', 'robert'] }),
+     "the refusal banner names the holder's akas, newest first (bob"
+     + ' from akapage, robert from akaelse2)');
+  // your OWN tips keep the bare ANYM even when the record knows your
+  // akas. PROVISIONAL, not a ruling (dreev's item 9 wants "you" to
+  // read like "someone", which this breaks): the client learns its
+  // own akas only through state.akas of a seat whose claim has
+  // SETTLED as this device — unknown before the settle and while
+  // unseated, and the flying stake's slot may hold a rival's list —
+  // so parity needs a data-availability branch dreev hasn't been
+  // asked for. This pin holds the current choice until he rules.
+  gas.handle({ action: 'add', slug: 'akaown', snym: 'moi',
+    usid: 'usid-akaown-moi' });
+  gas.handle({ action: 'bid', slug: 'akaown', snym: 'moi',
+    usid: 'usid-akaown-moi', xbid: 'mine elsewhere', dvid: 'dev-aka-me',
+    anym: 'me anym' });
+  gas.handle({ action: 'add', slug: 'akaown2', snym: 'ego',
+    usid: 'usid-akaown2-ego' });
+  const dOwn = await makePage('/akaown2?api=' + API_URL, (w) => {
+    w.localStorage.setItem('tauction-dvid', 'dev-aka-me');
+  });
+  await until(() => row(dOwn.window.document, 'ego') && drained());
+  claimRow(dOwn, 'ego');
+  await until(() => gas.handle({ action: 'state', slug: 'akaown2' })
+    .claims['usid-akaown2-ego'] === 'dev-aka-me' && drained());
+  dOwn.window.__intervals.find((i) => i.ms === 5000).fn();
+  await until(() => JSON.stringify(gas.handle({ action: 'state',
+    slug: 'akaown2' }).akas['usid-akaown2-ego']) === '["moi"]');
+  await sleep(50);
+  // (the anym derived the way the rival-anym pins derive theirs —
+  // never a literal; the geo fixture is the harness's Portland)
+  ok(row(dOwn.window.document, 'ego').querySelector('.tu')
+       .getAttribute('data-tip') === STR.disclaimTip(STR.mysteryDevice
+         + ' ' + dOwn.window.navigator.language + ' in Portland, OR'
+         + STR.orByTimezone + TZCITY),
+     'your own tip stays the bare ANYM: no akas after "you"'
+     + ' (provisional — see the comment)');
+
   /* --- 2l. the takeover xbid: claim + bid while the ops fly ---------------
      Replicata: same stale-screen setup, but machine 2 clicks alice's
      star and IMMEDIATELY types a bid while its claim op is still in
@@ -5390,7 +5551,7 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     + STR.orByTimezone + TZCITY;
   ok(rB.window.document.getElementById('banner').textContent
        .includes(STR.refusalCopy.bidSeatHeld(
-            { anym: winnerAnym, snym: 'alice' })),
+            { anym: winnerAnym, snym: 'alice', akas: [] })),
      'the loser banners in the stringles words, naming the winning'
      + " device: dreev's race, decided inside the write lock");
   await until(() => {
@@ -8165,6 +8326,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
       // column the record's star rides), not the action surface
       2: 'add,archive,bid,claim,describe,editing,release,remove,'
         + 'rename,reveal,state',
+      // 3 grew the payload again (akas beside every anym — the
+      // state's map and editors[], and the two refusals that name
+      // who beat you), same action surface
+      3: 'add,archive,bid,claim,describe,editing,release,remove,'
+        + 'rename,reveal,state',
     };
     const surface = [...CODE_GS.matchAll(/case '(\w+)':/g)]
       .map((m) => m[1]).sort().join(',');
@@ -8213,6 +8379,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
          .indexOf('bad state shape') !== -1,
        'an editors-less snapshot refuses loudly at the seam');
     stripEditors = false;
+    stripAkas = true;
+    const domA = await makePage('/skewa?api=' + API_URL);
+    await until(() =>
+      !domA.window.document.getElementById('banner').hidden);
+    ok(domA.window.document.getElementById('banner-msg').textContent
+         .indexOf('bad state shape') !== -1,
+       'an akas-less snapshot refuses loudly at the seam');
+    stripAkas = false;
   }
 
   console.log('frontend-quals: all ' + passed + ' assertions passed');

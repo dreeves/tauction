@@ -19,7 +19,8 @@ const SHEET_ID = '1hclphAZ3zQIq14Nip1ZxTDSoE9ygXqAv27RwP1hiMA8';
 // starts DEPENDING on new server behavior; adding an action
 // without a bump fails the ledger qual by name. Forgetting a bump
 // merely falls back to today's loudness — the gate only ever adds.
-const SVER = 2;  // 2: bidders[].dvid, the forensic column
+const SVER = 3;  // 2: bidders[].dvid, the forensic column;
+                 // 3: akas beside every anym (see akasOf)
 
 // Column vocabulary (dreev's): tini = time-initial (created), tmod =
 // time-modified, tfin = time-final (the reveal moment), tbid = a
@@ -680,7 +681,7 @@ function getState(slug) {
     if (r.blug === slug && r.blip
         && Date.now() - new Date(r.blip).getTime() < EDITOR_TTL_MS) {
       editors.push({ usid: r.blid, dvid: r.dvid,
-                     anym: r.anym });
+                     anym: r.anym, akas: akasOf(slug, r.dvid) });
     }
   });
 
@@ -724,6 +725,12 @@ function getState(slug) {
   const seats = [];
   const claims = Object.create(null);
   const anyms = Object.create(null);  // usid -> the holder's anym
+  const akas = Object.create(null);   // usid -> the holder's akas
+                                      // (key-for-key with claims:
+                                      // [] when they bid nowhere
+                                      // else, so the client asserts
+                                      // presence instead of
+                                      // defaulting)
   load('seats').forEach(r => {
     if (r.slug !== slug) return;
     seats.push({ usid: r.usid, snym: r.snym });
@@ -732,7 +739,10 @@ function getState(slug) {
     // (which the write side keeps in step; a legacy or hand-edited
     // cell heals right here). Bidless seats read the column as ever.
     const holder = (agg[r.usid] ? agg[r.usid].dvid : '') || r.dvid;
-    if (holder) claims[r.usid] = holder;
+    if (holder) {
+      claims[r.usid] = holder;
+      akas[r.usid] = akasOf(slug, holder);
+    }
     if (holder && anymOf[holder]) anyms[r.usid] = anymOf[holder];
   });
   const roster = seats;
@@ -760,7 +770,7 @@ function getState(slug) {
     slug: slug, exists: found !== undefined,
     seats: seats, bidders: bidders, revealed: revealed,
     tfin: tfin, blub: blub, bver: bver, editors: editors,
-    claims: claims, anyms: anyms,
+    claims: claims, anyms: anyms, akas: akas,
     // the family's archive numbers, ascending (see arcsOf): the
     // incarnation-links chrome derives all its navigation from
     // this one family-wide field
@@ -1108,6 +1118,7 @@ function saveClaim(req) {
   const bond = bondsOf(slug);
   if (bond[usid] && bond[usid] !== dvid) {
     throw { code: 'bidSeatHeld', anym: deviceAnym(bond[usid]),
+            akas: akasOf(slug, bond[usid]),
             snym: load('seats')[seatIndex(slug, usid)].snym };
   }
   // ...and the bond holds its OWN device: your bid locks your radio
@@ -1220,6 +1231,52 @@ function deviceAnym(dvid) {
   return dev === undefined ? '' : dev.anym;
 }
 
+// THE AKAS (dreev's ruling 2026-08-15, server-side derivation chosen
+// over a localStorage list): the names a device has bid under
+// ELSEWHERE — every bids row of this dvid in any slug but the one
+// being viewed, joined to its seat's CURRENT label (renames are
+// label edits; the aka follows the seat), newest bid first, one
+// entry per label. They ride beside every anym the payload carries
+// — getState's akas map and editors[], the bidSeatHeld/seatTaken
+// refusals — so a returning device is recognizable across auctions
+// and incarnations (an archive is another slug, so last round's
+// name shows on the reborn page). Derived at read time from the
+// bids log: no client store, no column, and identical from every
+// tab by construction — a per-tab list would flip the ONE devices
+// row between tabs, each flip a wver bump, and the anym is live-
+// joined into every auction, so an auction-relative string stored
+// there would be incoherent. The own-slug exclusion is the one
+// predicate: this slug's seat already wears the name. Order is by
+// tbid, which is strictly increasing PER AUCTION only — two bids in
+// different slugs can share a millisecond, and that tie falls to
+// row order (submission order unless the sheet is hand-sorted, the
+// known chosen gap). The order and the one-entry-per-label dedupe
+// are Fable's choices, provisional. A bid row whose seat is gone is
+// a hand-edited sheet (removal refuses bidders; the archive re-keys
+// seats and bids together) and refuses EVERY read that consults its
+// device — the auctions that device holds a seat in or edits, and
+// the refusals naming it — until the row is fixed; auctions the
+// device never touched keep speaking. Every caller holds a real
+// dvid ('' binds nothing and edits nothing); the guard says so.
+function akasOf(slug, dvid) {
+  if (!dvid) throw 'akasOf: no dvid to look up';
+  const label = Object.create(null);  // slug\0usid -> current snym
+  load('seats').forEach(r => { label[r.slug + '\0' + r.usid] = r.snym; });
+  const akas = [];
+  load('bids').filter(r => r.dvid === dvid && r.slug !== slug)
+    .sort((a, b) => (a.tbid < b.tbid ? 1 : a.tbid > b.tbid ? -1 : 0))
+    .forEach(r => {
+      const snym = label[r.slug + '\0' + r.usid];
+      if (snym === undefined) {
+        throw 'orphan bid row in "' + r.slug + '": usid ' + r.usid
+          + ' (device ' + dvid + ') has no seat — the seats tab was'
+          + ' hand-edited; restore the seat or delete the row';
+      }
+      if (akas.indexOf(snym) === -1) akas.push(snym);
+    });
+  return akas;
+}
+
 function placeBid(req) {
   const slug = cleanSlug(req.slug);
   const usid = cleanUsid(req.usid);
@@ -1250,7 +1307,7 @@ function placeBid(req) {
   const bond = bondsOf(slug);
   if (bond[usid] && bond[usid] !== dvid) {
     throw { code: 'bidSeatHeld', anym: deviceAnym(bond[usid]),
-            snym: snym };
+            akas: akasOf(slug, bond[usid]), snym: snym };
   }
   // ...and a bonded device bids nowhere else: one device, one deed
   // (the client's locked radio makes an honest ask a stale tab's)
@@ -1271,7 +1328,7 @@ function placeBid(req) {
   // words would lie on this leg (the pear postmortem, 2026-08-14).
   if (held && held !== dvid) {
     throw { code: 'seatTaken', anym: deviceAnym(held),
-            snym: snym };
+            akas: akasOf(slug, held), snym: snym };
   }
   const twin = seatByName(slug, snym);
   if (seatIndex(slug, usid) === -1 && twin && twin.usid !== usid) {

@@ -165,6 +165,27 @@ const mysteryDevice = `mystery device`;
 // trimming is a later call.
 const orByTimezone = ` or, by timezone, `;
 
+// The anym's also-known-as tail (dreev's phrase, 2026-08-15): the
+// names a device has bid under in OTHER auctions — the server derives
+// them from the bids log (Code.gs akasOf) and hands them beside every
+// anym it sends — so a returning device is recognizable across
+// auctions and incarnations. Composed here, once, for everywhere a
+// RIVAL's anym renders: the star tips, the pencil's someone-(anym),
+// the bidSeatHeld/seatTaken banners. Your own tips carry the bare
+// ANYM — provisional, not a ruling: the client learns its own akas
+// only through a settled claim of its own (see updateRow), so parity
+// with "someone" needs a branch dreev hasn't been asked for. No akas,
+// no tail — an akas-less device reads exactly as before.
+// TODO (dreev): the one-name phrase is yours verbatim; the TWO-PLUS
+// shape is Fable's inference — a comma-joined list, newest bid first,
+// one entry per name ("; previously bidding as bob, alicia") — and
+// the ordering is pinned in gas 18e as a provisional spec. Say the
+// word for a different join (the pencil's {a, b} braces, the
+// padlock's "a and b") or oldest-first.
+const previouslyAs = `; previously bidding as `;
+const withAkas = (anym, akas) =>
+  anym + (akas.length === 0 ? '' : previouslyAs + akas.join(', '));
+
 // The typed-name gate: names you type CREATE auctions; occupied ones
 // point you at the URL — which is a real link, because an installed
 // PWA has no URL bar to fall back on (dreev). Renders via innerHTML:
@@ -248,9 +269,9 @@ const gameRefusals = {
   simulEdits: () => simulEditsBanner,
   gavelFell: () => `Womp Womp! The auction closed before your bid got through`,
   bidSeatHeld: (e) =>
- `Someone else (${e.anym || mysteryDevice}) already placed a bid as ${e.snym}!`,
+ `Someone else (${withAkas(e.anym || mysteryDevice, e.akas)}) already placed a bid as ${e.snym}!`,
   seatTaken: (e) =>
- `Doh, someone else (${e.anym || mysteryDevice}) claimed to be ${e.snym} before your bid was received!`,
+ `Doh, someone else (${withAkas(e.anym || mysteryDevice, e.akas)}) claimed to be ${e.snym} before your bid was received!`,
   quotaChoke: () => 
     `Apparently we're too popular for Google Sheets to be a reasonable choice `
     + `as a database; but hang tight and this should resolve on its own`,

@@ -21,7 +21,8 @@ const POLL_MS = 5000;
 // of leaving dead buttons. Equal to Code.gs's SVER in-repo (a
 // qual welds them); the deployed pair diverges only inside that
 // window, which is the point.
-const SVERMIN = 2;  // 2: bidders[].dvid, the forensic column
+const SVERMIN = 3;  // 2: bidders[].dvid, the forensic column;
+                    // 3: akas beside every anym (Code.gs akasOf)
 
 // A hidden tab's entire traffic: one title-only peek a minute — an
 // explicit coarse cadence (dreev's ruling), never
@@ -423,9 +424,20 @@ function assertState(res) {
     && res.anyms !== null && typeof res.anyms === 'object'
     && !Array.isArray(res.anyms)
     && Object.values(res.anyms).every((v) => typeof v === 'string')
+    // akas ride beside every anym: a list per claimed seat, key-for-
+    // key with claims (so a rival tip never defaults), and anyms
+    // names only claimed seats (so every anym HAS its akas)
+    && res.akas !== null && typeof res.akas === 'object'
+    && !Array.isArray(res.akas)
+    && Object.keys(res.akas).length === Object.keys(res.claims).length
+    && Object.keys(res.claims).every((u) => Array.isArray(res.akas[u])
+         && res.akas[u].every((n) => typeof n === 'string'))
+    && Object.keys(res.anyms).every((u) =>
+         Object.keys(res.claims).includes(u))
     && Array.isArray(res.editors) && res.editors.every(
       (e) => typeof e.usid === 'string' && typeof e.dvid === 'string'
-          && typeof e.anym === 'string')
+          && typeof e.anym === 'string' && Array.isArray(e.akas)
+          && e.akas.every((n) => typeof n === 'string'))
     && Array.isArray(res.arcs)
     && res.arcs.every((n, i) => Number.isInteger(n) && n >= 1
          && (i === 0 || res.arcs[i - 1] < n))
@@ -519,6 +531,7 @@ function ingest(res) {
     + '" reached the "' + slug + '" page — the slug is write-once');
   res.claims = umap(res.claims);
   res.anyms = umap(res.anyms);
+  res.akas = umap(res.akas);
   // the chronicle's arrival edge is ADOPTED, not state-null: a page
   // born on the virgin seed still narrates its first real snapshot
   // as the arrival table
@@ -890,7 +903,7 @@ function syncPencil() {
   const names = rivals.map((e) => {
     const seat = seats.find((s) => s.usid === e.usid);
     return seat !== undefined ? seat.snym
-      : someoneOn(e.anym || mysteryDevice);
+      : someoneOn(withAkas(e.anym || mysteryDevice, e.akas));
   });
   setTip($('desctoggle'), descVerTip(v)
     + (names.length === 0 ? ''
@@ -1350,7 +1363,8 @@ function renderStatus() {
   // shimmer must still run: it retires those one-shot effects.
   const print = JSON.stringify([slug, wasRevealed, seen, seats,
     bidView(), state.seats, state.revealed, state.tfin,
-    state.claims, state.anyms, state.arcs, myUsid(), knownBids()]);
+    state.claims, state.anyms, state.akas, state.arcs, myUsid(),
+    knownBids()]);
   if (print === lastPrint) return;
   lastPrint = print;
 
@@ -1837,12 +1851,21 @@ function updateRow(t, seat, b, mine, known, locked) {
   // (dreev's item 6, 2026-08-14): TENTATIVE while bidless — one tap
   // still takes the seat — and plain claimed-by once their bid
   // bound it, which is the same condition that killed the star.
+  // A rival's anym wears its akas (dreev 2026-08-15: the names that
+  // device bid under elsewhere, server-derived — see withAkas). Your
+  // own tips carry the bare ANYM — provisional: state.akas is keyed
+  // by claimed seat, so this page knows its own record only once its
+  // claim has SETTLED as this device (state.claims[usid] === DVID);
+  // before that, and while unseated, it is unknown, and the flying
+  // stake's slot may hold a rival's list. Parity with "someone"
+  // (dreev's item 9) would need that availability branch — his call.
   star.setAttribute('data-tip',
     usid === mine
       ? (star.disabled ? lockedTip(ANYM) : disclaimTip(ANYM))
       : rival && state.anyms[usid]
-      ? (stamp === undefined ? tentativeTip(state.anyms[usid])
-                             : claimedByTip(state.anyms[usid]))
+      ? (stamp === undefined
+           ? tentativeTip(withAkas(state.anyms[usid], state.akas[usid]))
+           : claimedByTip(withAkas(state.anyms[usid], state.akas[usid])))
       : (star.disabled ? tooLateTip : claimTip(ANYM)));
 
   t.classList.toggle('has-bid', stamp !== undefined);
@@ -2734,7 +2757,7 @@ function virginState(a) {
            // know — and the '' is exactly what keeps the pulse gate
            // shut until a real snapshot lands
            sheet: '', wver: '0',
-           claims: umap(), anyms: umap(), bids: null };
+           claims: umap(), anyms: umap(), akas: umap(), bids: null };
 }
 
 // THE ONE OWNER of the unnamed-page freeze: five controls derive

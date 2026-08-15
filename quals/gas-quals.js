@@ -1352,6 +1352,181 @@ ok(!st.error && st.anyms[usid('rig2', 'ada')]
    'the anym is known ACROSS auctions: one device, one row, every'
    + ' claimed seat wears it');
 
+// 18e. THE AKAS (dreev's ruling 2026-08-15, server-side derivation
+//      chosen over a localStorage list): the names a device has bid
+//      under ELSEWHERE — every bids row of that dvid in any OTHER
+//      slug, joined to the seat's CURRENT label, newest bid first,
+//      deduped (order and dedupe are Fable's choices, provisional
+//      until dreev rules) — ride beside every anym the payload
+//      carries, so a
+//      returning device is recognizable across auctions and
+//      incarnations. Derived at read time from the bids log: no
+//      client store, no anym-contract change, and identical from
+//      every tab by construction (a per-tab list would flip the
+//      one devices row between tabs, each flip a wver bump).
+call({ action: 'add', slug: 'akaone', snym: 'alice',
+       usid: usid('akaone', 'alice') });
+st = call({ action: 'bid', slug: 'akaone', snym: 'alice',
+            usid: usid('akaone', 'alice'), xbid: 'first words',
+            dvid: 'dev-aka-1', anym: 'aka anym' });
+ok(!st.error && Array.isArray(st.akas[usid('akaone', 'alice')])
+   && st.akas[usid('akaone', 'alice')].length === 0,
+   "a device's bid in THIS slug is not an aka here: the seat already"
+   + ' wears the name, so the own-slug rows are excluded');
+call({ action: 'add', slug: 'akatwo', snym: 'al',
+       usid: usid('akatwo', 'al') });
+st = call({ action: 'claim', slug: 'akatwo', usid: usid('akatwo', 'al'),
+            dvid: 'dev-aka-1', anym: 'aka anym' });
+ok(!st.error
+   && JSON.stringify(st.akas[usid('akatwo', 'al')]) === '["alice"]'
+   && st.anyms[usid('akatwo', 'al')] === 'aka anym',
+   'claiming a seat elsewhere carries the name the device bid under'
+   + ' before, beside its anym');
+// the label is LIVE, not frozen at bid time: renames are one-cell
+// label edits and the aka follows the seat
+call({ action: 'rename', slug: 'akaone', usid: usid('akaone', 'alice'),
+       to: 'alicia' });
+st = call({ action: 'state', slug: 'akatwo' });
+ok(JSON.stringify(st.akas[usid('akatwo', 'al')]) === '["alicia"]',
+   'a rename in the other auction renames the aka: current label,'
+   + ' never a snapshot');
+// newest bid first, deduped by label
+{ const t = Date.now(); while (Date.now() - t < 3); }
+call({ action: 'add', slug: 'akathree', snym: 'bob',
+       usid: usid('akathree', 'bob') });
+call({ action: 'bid', slug: 'akathree', snym: 'bob',
+       usid: usid('akathree', 'bob'), xbid: 'bob words',
+       dvid: 'dev-aka-1', anym: 'aka anym' });
+st = call({ action: 'state', slug: 'akatwo' });
+ok(JSON.stringify(st.akas[usid('akatwo', 'al')]) === '["bob","alicia"]',
+   'akas list newest bid first');
+{ const t = Date.now(); while (Date.now() - t < 3); }
+call({ action: 'bid', slug: 'akaone', snym: 'alicia',
+       usid: usid('akaone', 'alice'), xbid: 'second words',
+       dvid: 'dev-aka-1', anym: 'aka anym' });
+st = call({ action: 'state', slug: 'akatwo' });
+ok(JSON.stringify(st.akas[usid('akatwo', 'al')]) === '["alicia","bob"]',
+   'a re-bid under an old name moves it to the front: one entry per'
+   + ' label, ordered by its newest bid');
+// every claimed seat has an akas entry — [] when the holder has bid
+// nowhere else — and unclaimed seats have none: the map is welded to
+// claims key-for-key so the client can assert instead of defaulting
+call({ action: 'add', slug: 'akatwo', snym: 'cat',
+       usid: usid('akatwo', 'cat') });
+call({ action: 'add', slug: 'akatwo', snym: 'dot',
+       usid: usid('akatwo', 'dot') });
+st = call({ action: 'claim', slug: 'akatwo', usid: usid('akatwo', 'cat'),
+            dvid: 'dev-aka-9', anym: 'nine anym' });
+ok(!st.error
+   && JSON.stringify(st.akas[usid('akatwo', 'cat')]) === '[]'
+   && st.akas[usid('akatwo', 'dot')] === undefined
+   && JSON.stringify(Object.keys(st.akas).sort())
+        === JSON.stringify(Object.keys(st.claims).sort()),
+   'akas keys are exactly the claims keys: [] for a holder with no'
+   + ' bids elsewhere, absent for an unclaimed seat');
+// the desk crowd carries them too: a walk-in editor is named by
+// someone-(anym), and the akas ride beside
+st = call({ action: 'editing', slug: 'akatwo', usid: '',
+            dvid: 'dev-aka-1', anym: 'aka anym' });
+ok(!st.error && st.editors.length === 1
+   && st.editors[0].dvid === 'dev-aka-1'
+   && JSON.stringify(st.editors[0].akas) === '["alicia","bob"]',
+   "an editor's akas ride beside its anym in editors[]");
+call({ action: 'editing', slug: 'akatwo', usid: '',
+       dvid: 'dev-aka-1', anym: 'aka anym', stop: true });
+// ...and the refusals that name who beat you: bidSeatHeld (the bond)
+// and seatTaken (the bidless holder) carry the winner's akas beside
+// their anym, so the banner can say who that device has been
+st = call({ action: 'bid', slug: 'akaone', snym: 'alicia',
+            usid: usid('akaone', 'alice'), xbid: 'hijack',
+            dvid: 'dev-aka-2', anym: 'two anym' });
+ok(code(st) === 'bidSeatHeld' && st.error.anym === 'aka anym'
+   && JSON.stringify(st.error.akas) === '["bob"]',
+   "bidSeatHeld names the bond holder's akas (excluding this slug's"
+   + ' own bids: bob only, not alicia)');
+st = call({ action: 'claim', slug: 'akaone', usid: usid('akaone', 'alice'),
+            dvid: 'dev-aka-2', anym: 'two anym' });
+ok(code(st) === 'bidSeatHeld'
+   && JSON.stringify(st.error.akas) === '["bob"]',
+   "the claim leg of bidSeatHeld carries the holder's akas too");
+st = call({ action: 'bid', slug: 'akatwo', snym: 'al',
+            usid: usid('akatwo', 'al'), xbid: 'bare hijack',
+            dvid: 'dev-aka-3', anym: 'three anym' });
+ok(code(st) === 'seatTaken' && st.error.anym === 'aka anym'
+   && JSON.stringify(st.error.akas) === '["alicia","bob"]',
+   "seatTaken names the bidless holder's akas beside their anym");
+// the archive is another slug: a reborn auction's returning device
+// is recognizable by the round it just played, and on the archive
+// page its own rows are excluded like any own-slug rows
+{ const t = Date.now(); while (Date.now() - t < 3); }
+call({ action: 'add', slug: 'akafive', snym: 'dan',
+       usid: usid('akafive', 'dan') });
+call({ action: 'add', slug: 'akafive', snym: 'eve',
+       usid: usid('akafive', 'eve') });
+call({ action: 'bid', slug: 'akafive', snym: 'dan',
+       usid: usid('akafive', 'dan'), xbid: 'dan words',
+       dvid: 'dev-aka-5', anym: 'five anym' });
+{ const t = Date.now(); while (Date.now() - t < 3); }
+call({ action: 'bid', slug: 'akafive', snym: 'eve',
+       usid: usid('akafive', 'eve'), xbid: 'eve words',
+       dvid: 'dev-aka-6', anym: 'six anym' });
+call({ action: 'reveal', slug: 'akafive' });
+st = call({ action: 'archive', slug: 'akafive' });
+ok(!st.error && st.slug === 'akafive' && st.seats.length === 0,
+   'akafive archived and reborn empty');
+call({ action: 'add', slug: 'akafive', snym: 'danny',
+       usid: usid('akafive', 'danny') });
+st = call({ action: 'claim', slug: 'akafive', usid: usid('akafive', 'danny'),
+            dvid: 'dev-aka-5', anym: 'five anym' });
+ok(!st.error
+   && JSON.stringify(st.akas[usid('akafive', 'danny')]) === '["dan"]',
+   'the reborn round recognizes a returning device by its archived'
+   + ' name: the archive is another slug now');
+st = call({ action: 'state', slug: 'akafive-archive1' });
+ok(!st.error
+   && JSON.stringify(st.akas[usid('akafive', 'dan')]) === '[]'
+   && JSON.stringify(st.akas[usid('akafive', 'eve')]) === '[]',
+   "the archive page excludes its own rows: dan's and eve's bids"
+   + ' there are not akas there');
+// a bid row whose seat is gone can only be a hand-edited sheet
+// (removal refuses bidders, the archive re-keys seats and bids
+// together): every read that consults its DEVICE refuses loudly —
+// the auctions that device holds a seat in or edits, and the
+// refusals naming it — while auctions the device never touched keep
+// speaking (the scan is per device, not per family)
+call({ action: 'add', slug: 'akaorph', snym: 'fay',
+       usid: usid('akaorph', 'fay') });
+call({ action: 'claim', slug: 'akaorph', usid: usid('akaorph', 'fay'),
+       dvid: 'dev-aka-orph', anym: 'orph anym' });
+ss.sheets['bids'].appendRow(['akaghost', 'usid-akaghost-ghost',
+  'ghost words', '2026-08-15T00:00:00.000Z', 'dev-aka-orph']);
+st = call({ action: 'state', slug: 'akaorph' });
+ok(String(st.error).includes('orphan bid row')
+   && String(st.error).includes('akaghost')
+   && String(st.error).includes('usid-akaghost-ghost'),
+   'an orphan bid row (seat hand-deleted elsewhere) refuses the read'
+   + ' that would name it, naming the row: ' + st.error);
+ok(!call({ action: 'state', slug: 'akatwo' }).error,
+   'the orphan silences only reads that consult its device: akatwo,'
+   + ' which dev-aka-orph never touched, still speaks');
+ss.sheets['bids'].data.splice(
+  ss.sheets['bids'].data.findIndex((r) => r[0] === 'akaghost'), 1);
+ok(!call({ action: 'state', slug: 'akaorph' }).error,
+   'row fixed: the auction speaks again');
+// ...and the contract guard: every caller holds a real dvid ('' binds
+// nothing, edits nothing, beats you nowhere), so an empty lookup is a
+// programming error, refused by name (vm probe: no honest request
+// reaches it)
+{
+  let threw = '';
+  try {
+    require('vm').runInContext("akasOf('akatwo', '')", ctx);
+  } catch (e) { threw = String(e); }
+  seenAssertWords.add(threw);  // vm probe bypasses call()'s ledger
+  ok(threw.includes('akasOf: no dvid'),
+     'akasOf refuses an empty dvid: ' + threw);
+}
+
 // 18q. THE POLL COLLAPSER (dreev-ratified 2026-08-06, after the
 //      Sheets 60-reads/min-per-user quota fell to five open tabs:
 //      execute-as-me means every visitor spends the owner's meter).
@@ -2167,7 +2342,8 @@ budget({ action: 'archive', slug: 'thrifty' }, 1, 2,
   const ASSERT_WORDS = ['covenant broken', 'schema drift',
     'row to write', 'plain-text armor', 'patch: field not in',
     'bver corrupt', 'duplicate tbid', 'wver corrupt',
-    'batchWrite: field not in', 'beyond safe integers'];
+    'batchWrite: field not in', 'beyond safe integers',
+    'orphan bid row', 'akasOf: no dvid'];
   const sites = [...CODE_GS.matchAll(/\bthrow (?!\{ code:)/g)].length;
   const unprovoked = ASSERT_WORDS.filter((w) =>
     ![...seenAssertWords].some((s) => s.includes(w)));
