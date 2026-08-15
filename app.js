@@ -1393,6 +1393,45 @@ function renderStatus() {
   }
   wasSeated = mine;
 
+  // THE GAVEL HANDS BACK UNSENT WORDS (dreev's ruling and his copy,
+  // 2026-08-15 — the schelling postmortem: dantheman typed "signal"
+  // over his committed "reel 'm inn" and never submitted; at the
+  // reveal his editor kept the draft while wearing the revealed-
+  // card costume, so the one screen that most needed the record
+  // showed the imposter, and the real bid appeared nowhere). On a
+  // revealed page the record shows the RECORD: an unsent bid draft
+  // standing beside a standing bid is handed back in the banner
+  // (the unseatedBanner's safekeeping precedent) and the editor
+  // reverts to the committed words. The predicate is STATE, not a
+  // witnessed flip — and the handling erases the state it fires on
+  // (prune + revert), so it speaks exactly once and covers the
+  // live gavel, the arrival at an already-closed page, and the
+  // reload identically. Quiet legs, chosen: a bidless seat's draft
+  // (this copy names an official bid; a straggler's draft keeps
+  // the old visible-draft-in-slot look), and an occupied banner
+  // slot (the more specific news — a gavelFell refusal, say —
+  // wins; the untouched state retries at the next CHANGE-ful
+  // render, the fingerprint gate willing).
+  const bidRecord = knownBids()[mine];
+  const deadDraft = jmap('tauction-drafts:' + slug)['bid'];
+  if (state.revealed && bidRecord !== undefined
+      && deadDraft !== undefined && deadDraft !== bidRecord
+      && $('banner').hidden) {
+    banner(missedGavelBanner(deadDraft, bidRecord));
+    const key = 'tauction-drafts:' + slug;
+    const all = jmap(key);
+    delete all.bid;
+    localStorage.setItem(key, JSON.stringify(all));
+    // the DOM editor is dirty with these same words (syncHot keeps
+    // slot and field in step); revert it so the clean-sync renders
+    // the record. On an arrival render the row isn't built yet —
+    // nothing to revert, and the born editor syncs clean.
+    const t = rowNodes[mine];
+    const ed = t === undefined
+      ? null : t.querySelector('.rebid textarea');
+    if (ed) ed.value = ed.defaultValue;
+  }
+
   // The padlock is the reveal button: pressable (and pulsing) only
   // once everyone on the roster — at least two people — has bid.
   // "missing" lists actual roster members without bids, and the tip

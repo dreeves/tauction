@@ -55,7 +55,7 @@ const gas = makeGas();
 // pre-wire objection anyway)
 const STR = new Function(
   fs.readFileSync(path.join(REPO, 'stringles.js'), 'utf8')
-  + '; return { bidTooLongBanner, submitCopy };')();
+  + '; return { bidTooLongBanner, submitCopy, missedGavelBanner };')();
 
 // Answer any request to the deployed API URL with the local Code.gs
 // logic; write ops can be artificially delayed for in-flight-race
@@ -2232,11 +2232,15 @@ async function bid(page, bidText) {
        [FLIPPED 2026-07-27: the emergent auto-submit (blessed
        2026-07-17, when disabling a focused editor blurred it in real
        Chrome and blur-commit raced the draft against the gavel) died
-       with blur-commits.] Replicata: ann edits her bid, never
-       submits; the reveal lands elsewhere. Expectata: the dying
-       draft just STAYS — visible, disabled, unsent, its grayed
-       SUBMIT wearing the too-late tip — and no banner, because no
-       write was ever made or lost. */
+       with blur-commits. FLIPPED AGAIN 2026-08-15, dreev's ruling
+       and copy after the schelling postmortem: the staying draft
+       wore the revealed-card costume and read as the accepted bid —
+       dantheman saw his unsent "signal" while the record said
+       "reel 'm inn".] Replicata: ann edits her bid, never submits;
+       the reveal lands elsewhere. Expectata: the editor shows the
+       RECORD (her committed bid), the unsent words come back in the
+       missedGavelBanner, the draft slot is pruned, and — clean
+       editor, no draft — no SUBMIT stands, grayed or otherwise. */
     const wire = await makePage(browser, DESKTOP);
     gas.handle({ action: 'add', slug: 'wirestory',
       snym: 'ann', usid: 'usid-wirestory-ann' });
@@ -2258,21 +2262,24 @@ async function bid(page, bidText) {
       document.querySelector('.tile.mine .rebid textarea').disabled);
     await new Promise((r) => setTimeout(r, 300));  // an auto-submit
                                     // would be on the wire by now
-    ok(await wire.evaluate(() => {
+    ok(await wire.evaluate((want) => {
       const ed = document.querySelector('.tile.mine .rebid textarea');
       const go = document.querySelector('.tile.mine .rebid .go');
-      return ed.value === 'first word!!!'
-        && go.disabled
-        && go.checkVisibility({ visibilityProperty: true })
-        && go.getAttribute('data-tip') === tooLateGoTip
-        && document.getElementById('banner').hidden;
-    }), 'the dying draft just stays: visible, unsent, its grayed'
-       + ' SUBMIT saying why — and no banner, since nothing was lost');
+      return ed.value === 'first word'
+        && !go.checkVisibility({ visibilityProperty: true })
+        && !document.getElementById('banner').hidden
+        && document.getElementById('banner').textContent.includes(want)
+        && !('bid' in JSON.parse(localStorage
+              .getItem('tauction-drafts:wirestory') || '{}'));
+    }, STR.missedGavelBanner('first word!!!', 'first word')),
+       'the gavel hands the unsent words back: the editor shows the'
+       + ' RECORD, the banner speaks both truths, the slot is pruned,'
+       + ' and no SUBMIT stands on the clean committed editor');
     ok(gas.handle({ action: 'state', slug: 'wirestory' }).bids
          .find((b) => b.usid === 'usid-wirestory-ann').xbid === 'first word',
        'the sheet keeps the pre-gavel bid');
-    await auditLayout(wire, 'revealed page, dead draft standing');
-    await auditNames(wire, 'revealed page, dead draft standing');
+    await auditLayout(wire, 'revealed page, draft handed back');
+    await auditNames(wire, 'revealed page, draft handed back');
     // ...and the page's weather changed at the close (dreev
     // 2026-07-27: the paper warms as another subtle indicator), with
     // the Closed line sitting a full breath under the ledger

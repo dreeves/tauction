@@ -186,7 +186,7 @@ const STR = new Function(STRINGLES
   + ' bidTooLongBanner,'
   + ' moneyGlyphs, needNameTip, removeTip,'
   + ' tooLateRemoveTip, resubmittedTip, nameStoneTip,'
-  + ' submittedTip, yourBidWord,'
+  + ' submittedTip, yourBidWord, missedGavelBanner,'
   + ' waitingGlyph, yourMoveGlyph, readyGlyph, revealedGlyph,'
   + ' tabTitle, saveCopy, addCopy, submitCopy, tooLateGoTip, startCopy,'
   + ' discardCopy, warTitle, keepTheirsCopy, overwriteCopy,'
@@ -4508,6 +4508,13 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await until(() => row(nb.window.document, 'carol') !== null);
   ok(row(nb.window.document, 'carol') !== null,
      'Enter (or SAVE) still adds');
+  // ...and the add SETTLES server-side before the scene moves on:
+  // the row above is the optimistic paint, and an add still flying
+  // when the gavel falls below would refuse rosterClosed and park
+  // its banner over the one this scene asserts (a real race, but
+  // not this qual's subject)
+  await until(() => gas.handle({ action: 'state', slug: 'noblur' })
+    .seats.some((s) => s.snym === 'carol'));
 
   // Escape stays the universal never-mind: revert, leave, cool
   nbPlus.focus();
@@ -4518,10 +4525,15 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        !nbPlus.closest('.fieldcol').classList.contains('hot'),
      'Escape reverts and cools the field: no button left standing');
 
-  // At the gavel, a half-typed revision just STAYS — no phantom
-  // auto-submit riding the disable's blur (that magic died with
-  // blur-commits): the draft sits in the frozen editor, its SUBMIT
-  // grayed and saying why, and the sheet keeps the pre-gavel bid
+  // At the gavel, unsent words are HANDED BACK (dreev's ruling and
+  // copy, 2026-08-15, superseding the half-typed-revision-just-
+  // STAYS law after the schelling postmortem: the staying draft
+  // wore the revealed-card costume and read as the accepted bid —
+  // dantheman saw his unsent "signal" while the record said
+  // "reel 'm inn", which appeared nowhere on his screen). No
+  // phantom auto-submit, still: the sheet keeps the pre-gavel bid;
+  // the editor now shows it (the RECORD), the draft slot is
+  // pruned, and the banner speaks both truths in dreev's words.
   nbEd.focus();
   nbEd.value = '43';
   nbEd.dispatchEvent(new nb.window.Event('input', { bubbles: true }));
@@ -4529,14 +4541,32 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     usid: 'usid-nb-zed' });
   gas.handle({ action: 'bid', slug: 'noblur', usid: 'usid-nb-zed',
     xbid: '7', snym: 'zed' });
-  gas.handle({ action: 'reveal', slug: 'noblur' });
+  // carol (added above, bidless) must bid too or the reveal refuses
+  // notReady — and a refused fixture gas.handle returns its error
+  // SILENTLY, which cost an hour of qual archaeology here, hence
+  // every fixture write below asserts it landed
+  const nbCarolUsid = gas.handle({ action: 'state', slug: 'noblur' })
+    .seats.find((s) => s.snym === 'carol').usid;
+  ok(!gas.handle({ action: 'bid', slug: 'noblur', usid: nbCarolUsid,
+       xbid: '9', snym: 'carol' }).error, "carol's fixture bid lands");
+  ok(!gas.handle({ action: 'reveal', slug: 'noblur' }).error,
+     'the fixture reveal lands');
   await until(() =>
     nb.window.document.body.classList.contains('revealed'));
   ok(nb.window.document.body.classList.contains('revealed'),
      'the page itself changes weather at the close (body.revealed'
      + ' drives the closed tint)');
-  ok(nbEd.disabled && nbEd.value === '43',
-     'a half-typed revision at the gavel stays put, unsent');
+  ok(!nb.window.document.getElementById('banner').hidden
+     && nb.window.document.getElementById('banner').textContent
+          .includes(STR.missedGavelBanner('43', '42')),
+     "the gavel hands back the unsent words in dreev's copy, naming"
+     + ' the draft and the official bid');
+  ok(nbEd.disabled && nbEd.value === '42',
+     'the frozen editor shows the RECORD — the revealed bid, not'
+     + ' the unsent draft in the card costume');
+  ok(!('bid' in JSON.parse(nb.window.localStorage
+         .getItem('tauction-drafts:noblur') || '{}')),
+     'the handed-back draft is pruned: a reload cannot resurrect it');
   const nbGo = nb.window.document.querySelector('#tiles .rebid .go');
   ok(nbGo.disabled
        && nbGo.getAttribute('data-tip') === STR.tooLateGoTip,
@@ -4548,6 +4578,39 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      "the sheet keeps the pre-gavel bid — the dead draft never went");
   ok(nbFinal.bids.some((b) => b.usid === 'usid-nb-zed'),
      'sanity: the reveal actually landed');
+
+  /* --- the arrival face of the same law: the tab that MISSED the
+     gavel (closed with its draft unsent) arrives at the already-
+     revealed page — same words, same handing back; the predicate
+     is state, not a witnessed flip, exactly dantheman's reload. */
+  gas.handle({ action: 'add', slug: 'gavelkept', snym: 'ann',
+    usid: 'usid-gk-ann' });
+  gas.handle({ action: 'add', slug: 'gavelkept', snym: 'zed',
+    usid: 'usid-gk-zed' });
+  gas.handle({ action: 'bid', slug: 'gavelkept', usid: 'usid-gk-ann',
+    xbid: 'aa', snym: 'ann', dvid: 'dev-gk-ann' });
+  gas.handle({ action: 'bid', slug: 'gavelkept', usid: 'usid-gk-zed',
+    xbid: 'zz', snym: 'zed' });
+  gas.handle({ action: 'reveal', slug: 'gavelkept' });
+  const gk = await makePage('/gavelkept?api=' + API_URL, (w) => {
+    w.localStorage.setItem('tauction-dvid', 'dev-gk-ann');
+    w.localStorage.setItem('tauction-usids',
+      '{"gavelkept":"usid-gk-ann"}');
+    w.localStorage.setItem('tauction-mybids:gavelkept',
+      '{"usid-gk-ann":"aa"}');
+    w.localStorage.setItem('tauction-drafts:gavelkept',
+      '{"bid":"bb"}');
+  });
+  await until(() =>
+    !gk.window.document.getElementById('banner').hidden);
+  ok(gk.window.document.getElementById('banner').textContent
+       .includes(STR.missedGavelBanner('bb', 'aa')),
+     'arriving at the closed page with a leftover draft speaks the'
+     + ' same words: no witnessed flip required');
+  ok(myEditor(gk.window.document).value === 'aa'
+     && !('bid' in JSON.parse(gk.window.localStorage
+            .getItem('tauction-drafts:gavelkept') || '{}')),
+     'the arrived editor shows the record and the slot is pruned');
 
   /* --- 2q2. drafts survive the tab (dreev 2026-07-27) -----------------
      Replicata: start typing a bid, close the tab, come back to the

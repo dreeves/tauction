@@ -446,6 +446,42 @@ plain.)
   star already tells that story), and the banner slot must be
   empty, so a raced stake's own refusal — which names the winner —
   is never clobbered by these vaguer words.
+- THE GAVEL HANDS BACK UNSENT WORDS (dreev's ruling and his copy,
+  2026-08-15 — the schelling postmortem: dantheman typed "signal"
+  over his committed "reel 'm inn", never submitted, and post-
+  reveal his own cell showed the unsent draft wearing the revealed-
+  card costume while his real bid appeared nowhere on his screen;
+  every failure path banners stickily, so the no-warning report
+  means no submit was ever attempted — the blur-commits-nothing
+  law made the silence, working as designed, and the DISPLAY was
+  the bug). On a revealed page the record shows the RECORD: an
+  unsent bid draft standing beside a standing bid is handed back
+  via stringles' missedGavelBanner (dreev's copy names both the
+  draft and the official bid) and the editor reverts to the
+  committed words. The predicate is STATE, not a witnessed flip,
+  and the handling erases what it detects (slot pruned + editor
+  reverted), so it fires once and covers the live gavel, the
+  arrival at an already-closed page, and the reload identically —
+  closing the unseatedBanner's witnessed-flip blind spot for this
+  case. Quiet legs, chosen: a bidless straggler's draft (the copy
+  needs an official bid to name; the old visible-draft-in-slot
+  rendering serves), and an occupied banner slot (the more
+  specific news — a gavelFell refusal — wins; the untouched state
+  retries at the next change-ful render). Consequence: with the
+  draft handed back the editor is clean, so no grayed SUBMIT
+  stands on it (no-draft-no-button); tooLateGoTip's visible-grayed
+  arm now serves only the straggler leg. ARCHAEOLOGY (the
+  regression question, dug 2026-08-15): technically a regression —
+  through 2026-07-14 your own cell rendered the committed bid from
+  server truth post-reveal (typing lived in a separate global
+  field), and 683e2c4 (07-15) birthed editor-forever with no
+  revealed leg — but the hazard only became REACHABLE 2026-07-27
+  when blur-commit died and drafts started lingering: the p150
+  card-refactor rejection was justified solely by the blessed
+  auto-submit, the auto-submit died with blur-commits, and the
+  rejection was never re-derived (the bond postmortem's lesson,
+  same shape). The your-own-cell-is-your-editor-forever design
+  itself was machine drift dreev never ruled on.
 - TENTATIVE VS BOUND, IN THE TIP (dreev's item 6 and his copy,
   2026-08-14): a rival's claim comes in two strengths and the
   words say which. Bidless, it reads "Tentatively claimed by

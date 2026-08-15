@@ -195,6 +195,16 @@ const blubTooLongBanner = `Description too long (max 2000 characters)`;
 const unseatedBanner = (snym, xbid) =>
   `Oops, someone else claimed to be ${snym} before you submitted your bid: ${xbid}`;
 
+// The gavel caught words you never sent (dreev's ruling and his
+// copy, 2026-08-15, the schelling postmortem: an unsent draft typed
+// over a committed bid kept displaying post-reveal as if it were
+// the revealed bid, and the real standing bid appeared nowhere on
+// that person's own screen). The banner hands the draft back and
+// names the official bid — spoken once, whether the tab witnessed
+// the gavel or arrived/reloaded after it.
+const missedGavelBanner = (draft, xbid) =>
+  `You didn't submit "${draft}" in time so your official bid got revealed as "${xbid}"`;
+
 // Someone saved the description while you were editing yours (also
 // how the server's compare-and-swap refusal renders — the refusalCopy
 // table reuses this constant — so the back-to-back banners read as one)
