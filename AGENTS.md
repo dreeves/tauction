@@ -437,12 +437,15 @@ plain.)
   seat's, so the words come home at the next seat (the
   draft-follows-you law) — and the app now says so: stringles'
   unseatedBanner, fired from the one render that sees the flip
-  (wasSeated, wasRevealed's precedent). Two conditions keep it
-  from being noise: there must be words at stake (a bare unseating
-  stays quiet — the filled star already tells that story), and the
-  banner slot must be empty, so a raced stake's own refusal —
-  which names the winner — is never clobbered by these vaguer
-  words.
+  (wasSeated, wasRevealed's precedent). Dreev's copy takes the seat
+  label and the draft itself — the words handed back in full, so
+  the banner IS the safekeeping — which is why the render looks the
+  snym up in `seats` (only the seat's HOLDER changed, so the label
+  is still there). Two conditions keep it from being noise: there
+  must be words at stake (a bare unseating stays quiet — the filled
+  star already tells that story), and the banner slot must be
+  empty, so a raced stake's own refusal — which names the winner —
+  is never clobbered by these vaguer words.
 - TENTATIVE VS BOUND, IN THE TIP (dreev's item 6 and his copy,
   2026-08-14): a rival's claim comes in two strengths and the
   words say which. Bidless, it reads "Tentatively claimed by

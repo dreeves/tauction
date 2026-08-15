@@ -1381,10 +1381,15 @@ function renderStatus() {
   // a raced stake banners its own refusal (which names the winner),
   // and these vaguer words must not clobber it — the banner is one
   // slot, and the more specific news was already put in it.
+  // The words themselves ride along (dreev's copy): the draft the
+  // vanishing editor was holding, handed back in full, beside the
+  // label of the seat that was taken — which the seats list still
+  // carries, since only its HOLDER changed.
+  const lostDraft = jmap('tauction-drafts:' + slug)['bid'];
+  const lostSeat = seats.find((s) => s.usid === wasSeated);
   if (wasSeated !== '' && mine === '' && myUsidStored() === wasSeated
-      && jmap('tauction-drafts:' + slug)['bid']
-      && $('banner').hidden) {
-    banner(unseatedBanner);
+      && lostDraft && lostSeat !== undefined && $('banner').hidden) {
+    banner(unseatedBanner(lostSeat.snym, lostDraft));
   }
   wasSeated = mine;
 

@@ -178,14 +178,16 @@ const slugTooLongBanner = `Auction name too long (max 20 characters)`;
 const snymTooLongBanner = `Name too long (max 20 characters)`;
 const blubTooLongBanner = `Description too long (max 2000 characters)`;
 
-// TODO: someone took the seat you were holding while you had an
-// unsent bid in the field (dreev's item 5, 2026-08-14). The words
-// are the BROWSER's draft, not the seat's, so nothing was lost —
-// they come home at your next seat — but the editor vanishing under
-// them must not read as "my typing was thrown away". Only spoken
-// when there are words at stake; a bare unseating stays quiet.
-const unseatedBanner =
-  `Sedem tuam alius cepit; verba tua nondum missa servata sunt`;
+// Someone took the seat you were holding while your bid sat unsent
+// in the field (dreev's item 5 and his copy, 2026-08-14). The words
+// are the BROWSER's draft, not the seat's, so they follow you to
+// your next seat — but the editor vanishing under them must not read
+// as "my typing was thrown away", so the banner hands them back in
+// full. Only spoken when there ARE words at stake, and only into an
+// empty banner slot: a raced stake's own refusal names the winner,
+// and these words must not clobber it.
+const unseatedBanner = (snym, xbid) =>
+  `Oops, someone else claimed to be ${snym} before you submitted your bid: ${xbid}`;
 
 // Someone saved the description while you were editing yours (also
 // how the server's compare-and-swap refusal renders — the refusalCopy

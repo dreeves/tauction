@@ -5126,10 +5126,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await until(() =>
     !dUnseat.window.document.getElementById('banner').hidden);
   ok(dUnseat.window.document.getElementById('banner').textContent
-       .includes(STR.unseatedBanner)
+       .includes(STR.unseatedBanner('ann', 'my unsent words'))
      && !row(dUnseat.window.document, 'ann').classList.contains('mine'),
-     'losing your seat with unsent words BANNERS: the disappearance'
-     + ' is spoken, not silent');
+     'losing your seat with unsent words BANNERS, naming the seat'
+     + ' taken and handing the words back: the disappearance is'
+     + ' spoken, not silent');
   ok(JSON.parse(dUnseat.window.localStorage
        .getItem('tauction-drafts:unseat')).bid === 'my unsent words',
      '...and the words are still in the draft store, untouched');
