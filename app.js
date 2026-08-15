@@ -1727,12 +1727,14 @@ function buildBidContent(kind, usid) {
       form.requestSubmit();
     });
     form.append(editor);
-    // SUBMIT (dreev's copy), on duty while the field is hot: the
-    // deliberate gesture for fingers, as Enter is for keyboards —
-    // clicking/tapping away commits NOTHING. It rides the .gorow
-    // BELOW the words (dreev: "i don't think i like these
-    // save/submit buttons beeing inside the field")
-    const go = el('button', 'go', submitCopy);
+    // SUBMIT AS <snym> (dreev's copy), on duty while the field is
+    // hot: the deliberate gesture for fingers, as Enter is for
+    // keyboards — clicking/tapping away commits NOTHING. It rides
+    // the .gorow BELOW the words (dreev: "i don't think i like
+    // these save/submit buttons beeing inside the field"). The
+    // label is DATA (it names the seat), so updateRow syncs it like
+    // the row's every other mutable — nothing to set here.
+    const go = el('button', 'go');
     go.type = 'submit';
     const row = el('div', 'gorow');
     row.append(go);
@@ -1874,6 +1876,8 @@ function updateRow(t, seat, b, mine, known, locked) {
     editor.disabled = state.revealed;
     editor.setAttribute('aria-label', yourBidWord);
     const bidGo = content.querySelector('.go');
+    // the pill names the seat it commits as, tracking renames
+    bidGo.textContent = submitCopy(seat.snym);
     bidGo.disabled = state.revealed;
     if (state.revealed) bidGo.setAttribute('data-tip', tooLateGoTip);
     else bidGo.removeAttribute('data-tip');

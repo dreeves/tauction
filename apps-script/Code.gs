@@ -1260,12 +1260,17 @@ function placeBid(req) {
   }
   // Bidding as someone is claiming to be them, so a bare bid may not
   // touch a BIDLESS seat someone else holds either (the UI claims
-  // first — its takeover tap moves the column — so only hand-rolled
-  // and old-client requests land here). Old clients carry no dvid
-  // and count as nobody — fine on an open seat, refused on a held
-  // one.
+  // first — its takeover tap moves the column). Honestly reachable
+  // from a STALE screen, not just hand-rolled requests: a rival's
+  // takeover tap moves the column and the victim's still-open
+  // editor, inside its poll window, submits anyway. Old clients
+  // carry no dvid and count as nobody — fine on an open seat,
+  // refused on a held one. The holder here has only CLAIMED — a
+  // bid would have bound the seat and refused above — so this is
+  // seatTaken, its own code: bidSeatHeld's "already placed a bid"
+  // words would lie on this leg (the pear postmortem, 2026-08-14).
   if (held && held !== dvid) {
-    throw { code: 'bidSeatHeld', anym: deviceAnym(held),
+    throw { code: 'seatTaken', anym: deviceAnym(held),
             snym: snym };
   }
   const twin = seatByName(slug, snym);

@@ -561,11 +561,14 @@ ok(ss.sheets['seats'].data.filter(r => r[0] === 'higgs' && r[1] === annP)
      .length === 1, 'claims live on the seat row: upsert, not append');
 st = call({ action: 'bid', slug: 'higgs', snym: 'ann', usid: annP,
             xbid: 'a boson', dvid: 'dev-3' });
-ok(code(st) === 'bidSeatHeld' && st.error.anym === 'a Mac (Chrome)'
+ok(code(st) === 'seatTaken' && st.error.anym === 'a Mac (Chrome)'
    && st.error.snym === 'ann'
    && call({ action: 'state', slug: 'higgs' }).bidders.length === 0,
    "a bid can't hijack a held seat: refused, naming the holder's anym"
-   + " and the seat's label, and no bid row written");
+   + " and the seat's label, and no bid row written — as seatTaken,"
+   + ' not bidSeatHeld: the holder has only CLAIMED, no bid exists,'
+   + ' so the already-placed-a-bid words would lie (the pear'
+   + ' postmortem, 2026-08-14)');
 st = call({ action: 'bid', slug: 'higgs', snym: 'ben', usid: benP,
             xbid: 'legal', dvid: 'dev-3' });
 ok(!st.error && st.claims[benP] === 'dev-3',

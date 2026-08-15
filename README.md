@@ -117,13 +117,15 @@ Previously:
 
 7. The tooltip that starts "Claimed by..." should read "Tentatively claimed by..." for the case that the claimant hasn't submitted a bid and thus is still usurpable.
 
+8. Looks like the submit button for bids is awkwardly squished against the bid field.
+
 Next:
 
 1. For better device blurbs, what if the website just asks the user for permission to see their exact location?
 
 2. Or if that's too heavy-handed, what about this idea: Any time you name your own seat in an auction, that name is remembered in localstorage and we append to the blub, "; previously bidding as alice" or whatever participant name. If there's a technical reason that doesn't work, please explain.
 
-3. Looks like the submit button for bids is awkwardly squished against the bid field.
+3. In tooltips like "Locked in as you" the "you"
 
 4. Rename to sealreveal or looseseal or sealedeel or reeveel or something.
 

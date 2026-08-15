@@ -109,7 +109,13 @@ const consensusStamp = `JINX`;
 // draft). Renames have no button: snyms commit on blur.
 const saveCopy = `SAVE`;
 const addCopy = `ADD PARTICIPANT`;
-const submitCopy = `SUBMIT`;
+// SUBMIT names the seat it commits as (dreev's "SUBMIT AS $USER",
+// 2026-08-14 — the pear postmortem's identity fix: people bid from
+// seats that weren't theirs without reading whose name the row
+// wore, so the moment of commitment says who you're bidding as).
+// The pill's caps come from CSS; the snym's characters ride
+// untouched.
+const submitCopy = (snym) => `SUBMIT AS ${snym}`;
 
 // The blub editor's never-mind button (dreev's copy, README blub
 // spec item 6): the blub is the one field with an editing MODE, and
@@ -227,8 +233,10 @@ const gameRefusals = {
   nameTaken: () => nameTakenBanner,
   simulEdits: () => simulEditsBanner,
   gavelFell: () => `Womp Womp! The auction closed before your bid got through`,
-  bidSeatHeld: (e) => 
+  bidSeatHeld: (e) =>
  `Someone else (${e.anym || mysteryDevice}) already placed a bid as ${e.snym}!`,
+  seatTaken: (e) =>
+ `Doh, someone else (${e.anym || mysteryDevice}) claimed to be ${e.snym} before your bid was received!`,
   quotaChoke: () => 
     `Apparently we're too popular for Google Sheets to be a reasonable choice `
     + `as a database; but hang tight and this should resolve on its own`,

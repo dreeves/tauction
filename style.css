@@ -271,7 +271,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    rendered; this grid exists only while the pencil's mode is open. */
 .desc:not(.viewing) {
   display: grid;
-  gap: 0.6rem;
+  gap: 0.5rem;  /* the commit step (see .gorow's margin-top): here
+                   the GAP is the SAVE row's daylight, so it carries
+                   the same 0.5rem */
 }
 
 /* no pencil while editing, so the preview sheds its rest-mode
@@ -380,7 +382,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   vertical-align: -0.125em;
 }
 
-.desctoggle:hover { color: var(--accent); }
+/* :not(:disabled), like every control's hover — today the later
+   :disabled rule happens to win the cascade, but that's order
+   luck, not intent (the 2026-08-14 sweep) */
+.desctoggle:hover:not(:disabled) { color: var(--accent); }
 
 /* the pencil LEAVES while editing (dreev, overriding the
    gray-never-suppress law for this one case: SAVE/DISCARD are the
@@ -459,11 +464,16 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   white-space: nowrap;
   justify-content: flex-end;
   gap: 0.5rem;  /* the standalone-button step (.war-btns' 8px) */
-  margin-top: 0.3rem;  /* daylight above EVERY visible button row —
-                          this rode .hot only, and the always-visible
-                          landing Go sat flush on its field's border
-                          (dreev; the layout auditor now
-                          patrols the whole class) */
+  margin-top: 0.5rem;  /* THE COMMIT STEP: one 0.5rem of daylight
+                          above EVERY visible button row — the
+                          standalone-button step in both axes now
+                          (0.5rem beside, 0.5rem above), and the 8px
+                          within-group floor the form conventions
+                          name (dreev's squish report + the design
+                          sweep, 2026-08-14; was 0.3rem, which read
+                          as squished against the field's border).
+                          A story qual pins all hot pills to ONE
+                          distance. */
   /* intrinsic width zero: flex max-content sizing ignores wrapping,
      so without this the person cell widens by a button's width to
      make one-line room for a row that never shares its line */
@@ -487,6 +497,22 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   border-radius: 999px;
   color: var(--accent);
   background: var(--card);
+  /* pills speak caps; SUBMIT AS <snym> interpolates a user's name,
+     so the caps live HERE — display only, the DOM keeps the snym's
+     actual characters */
+  text-transform: uppercase;
+}
+
+/* Only the BID pill truncates: its label carries a user-typed snym
+   of up to 20 chars, and its .gorow spans the wide bid cell, so the
+   cap is honest room. The + row's pill deliberately OVERFLOWS its
+   narrow column instead (contain: inline-size hands its .gorow the
+   @-box's width; an ellipsis there chopped dreev's own ADD
+   PARTICIPANT — caught by screenshot, pinned by a qual now). */
+.rebid .go {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .go:hover:not(:disabled) { background: var(--accent-soft); }
@@ -510,7 +536,14 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    SAVE simply sits grayed until there is something to send */
 .desc.viewing .gorow { display: none; }
 
-.desc:not(.viewing) .gorow { display: flex; }
+.desc:not(.viewing) .gorow {
+  display: flex;
+  /* the grid gap above IS this row's daylight; the class margin
+     would STACK on it (margins never collapse into grid gaps) —
+     exactly how the blub's SAVE drifted to triple the other pills'
+     distance (the 2026-08-14 sweep's finding) */
+  margin-top: 0;
+}
 
 /* The auction name is the page's PREREQUISITE (nothing else works
    unnamed), so it breaks two hot-law rules on researched convention
@@ -1428,6 +1461,21 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
   -webkit-text-stroke-color: color-mix(in srgb, var(--muted) 75%, transparent);
 }
 
+/* ...and once their bid BOUND the seat, the dead star DIMS (dreev's
+   go, 2026-08-14 — the pear postmortem found tentative and bound
+   rendering pixel-identical, this rule losing the cascade to
+   .tu.taken above): same neutral fill, dead-control alpha — the ×'s
+   convention — so tentative (live, one tap takes it) reads fuller
+   than bound (settled). Keyed on :disabled, not a new class: the
+   star's disabled state IS the bond's client face. Consequence,
+   honest by the same key: while YOUR radio locks (your bid is in,
+   or the record froze), rival stars go equally dead and equally
+   dim. */
+.tu.taken:disabled {
+  color: color-mix(in srgb, var(--muted) 45%, transparent);
+  -webkit-text-stroke-color: color-mix(in srgb, var(--muted) 45%, transparent);
+}
+
 /* every name is a live text field, like the + row's: click in, type,
    enter or SAVE commits the rename; escape restores it. The FORM is
    the row's name column and owns the cell's sizing: bordered cell
@@ -1786,7 +1834,13 @@ footer .version { letter-spacing: 0.04em; }  /* full muted ink: the
   transition: color 0.2s, border-color 0.2s;
 }
 
-.corner .icon:hover { color: var(--accent); border-color: var(--accent); }
+/* :not(:disabled), like every control's hover: this rule sits LATER
+   in the cascade than the chip's :disabled dimming, so unguarded it
+   re-inked a dead chip accent on hover (the 2026-08-14 sweep) */
+.corner .icon:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
 
 /* the share glyph: dots filled, links stroked, all in currentColor */
 .corner .icon svg { width: 0.95rem; height: 0.95rem; fill: currentColor; }
@@ -2139,6 +2193,13 @@ footer .version { letter-spacing: 0.04em; }  /* full muted ink: the
 
   /* the commit buttons: full 44px thumb targets while on duty */
   .go { font-size: 0.85rem; padding: 0.9rem 0.6rem; }
+
+  /* ...including THE primary one: .field .go's two-class recipe
+     outranks the plain .go above at any media query, so without
+     this the landing START stayed 35.2px tall on phones — under
+     the 44px law this whole block exists to enforce (found by the
+     2026-08-14 design sweep; a story qual pins the height now) */
+  .field .go { padding: 0.9rem 1.1rem; }
 
   .warbtn { font-size: 0.9rem; padding: 0.85rem 1rem; }
 

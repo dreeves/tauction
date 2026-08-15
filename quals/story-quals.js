@@ -55,7 +55,7 @@ const gas = makeGas();
 // pre-wire objection anyway)
 const STR = new Function(
   fs.readFileSync(path.join(REPO, 'stringles.js'), 'utf8')
-  + '; return { bidTooLongBanner };')();
+  + '; return { bidTooLongBanner, submitCopy };')();
 
 // Answer any request to the deployed API URL with the local Code.gs
 // logic; write ops can be artificially delayed for in-flight-race
@@ -1099,9 +1099,11 @@ async function bid(page, bidText) {
       return sh === 'none' || sh === 'rgba(0, 0, 0, 0) 0px 0px 0px 0px';
     }), "someone else's green cell sits flat: no glow, no pop");
     ok(await bob.evaluate(() => {
-      // the three-state taxonomy: hollow = open, FILLED (neutral ink)
-      // = claimed by someone else, gold glow = you — and dimming rides
-      // color alpha, never element opacity (the tooltip-host rule)
+      // the star taxonomy: hollow = open, FILLED (neutral ink) =
+      // claimed by someone else — full ink tentative, dead-dim once
+      // their bid bound it (dreev's go, 2026-08-14) — gold glow =
+      // you. Dimming rides color alpha, never element opacity (the
+      // tooltip-host rule).
       const alpha = (c) => {
         const m = c.match(/(?:rgba\([^)]+,\s*|\/\s*)([\d.]+)\)\s*$/);
         return m ? parseFloat(m[1]) : 1;
@@ -1126,7 +1128,11 @@ async function bid(page, bidText) {
         : /Linux/.test(ua) ? 'Linux box' : mysteryDevice;
       return taken.disabled && !plain.disabled
         && getComputedStyle(taken).opacity === '1'
-        && alpha(getComputedStyle(taken).color) > 0.5
+        // alice is BOUND, so her fill wears the dead-dim alpha —
+        // still plainly filled, just dimmer than a tentative
+        // claim's (the ordering is pinned in the tent-vs-bound
+        // scene)
+        && alpha(getComputedStyle(taken).color) > 0.3
         && alpha(getComputedStyle(plain).color) === 0
         && taken.getAttribute('data-tip')
              === claimedByTip(os + ' Chrome ' + navigator.language
@@ -1909,6 +1915,46 @@ async function bid(page, bidText) {
     await fine2.type('.tile.mine .rebid textarea', 'x');
     await auditLayout(fine2, 'named page, every field hot');
     await auditNames(fine2, 'named page, every field hot');
+    /* ===== THE COMMIT STEP IS ONE DISTANCE (dreev's squish report,
+       2026-08-14: "the submit button for bids is awkwardly squished
+       against the bid field... why is it not consistent with the
+       ADD PARTICIPANT button"). The 2026-08-14 design sweep
+       measured the same-role daylight at 4.8px for bid/roster/name
+       pills but 14.4px for the blub's SAVE (the desc container's
+       gap stacking on the class-universal .gorow margin — gaps
+       never collapse into margins). Expectata: every commit pill
+       sits the SAME daylight below its field, at the researched
+       8px within-group step (NN/g proximity + the 8pt scale). */
+    {
+      const gaps = await fine2.evaluate(() => {
+        const gap = (field, go) =>
+          document.querySelector(go).getBoundingClientRect().top
+          - document.querySelector(field).getBoundingClientRect()
+              .bottom;
+        return {
+          roster: gap('.addrow .at-wrap', '#roster-go'),
+          blub: gap('#descedit', '#descgo'),
+          bid: gap('.tile.mine .rebid textarea',
+                   '.tile.mine .rebid .go'),
+        };
+      });
+      const vals = Object.values(gaps);
+      ok(vals.every((v) => Math.abs(v - vals[0]) < 0.5)
+           && vals.every((v) => v >= 7.9),
+         'the commit step is ONE distance, at least 8px, for every'
+         + ' hot field’s pill — ' + JSON.stringify(gaps));
+    }
+    // ...and fixed-copy pills render WHOLE: the bid pill's ellipsis
+    // cap must never leak onto the .go family (it chopped dreev's
+    // ADD PARTICIPANT to "ADD PARTICIPA…" on its first draft —
+    // caught by screenshot, 2026-08-14)
+    ok(await fine2.evaluate(() => {
+      const whole = (e) => e.scrollWidth <= e.clientWidth;
+      return whole(document.getElementById('roster-go'))
+        && whole(document.getElementById('descgo'))
+        && whole(document.getElementById('descdiscard'));
+    }), "fixed-copy pills (ADD PARTICIPANT, SAVE, DISCARD) render"
+       + ' their whole labels — no ellipsis outside the bid pill');
     // ...and the keyboard reaches everything (the every-control-is-a-
     // tab-stop law): no positive tabindex anywhere (DOM order is tab
     // order), and tabbing from the top visits the stars and the ×s —
@@ -3227,6 +3273,103 @@ async function bid(page, bidText) {
        + " ben, by the log's forensic column — through the rival's"
        + ' seat theft and with no ledger entry for the archive slug');
     await shoot(two, 'story-record-star');
+
+    /* ===== TENTATIVE VS BOUND, IN THE PIXELS (dreev's go,
+       2026-08-14: the pear postmortem found a rival's two claim
+       strengths render pixel-identical — .tu.taken outranked
+       .tu:disabled in the cascade — so the tip words distinguished
+       what the ink did not). Replicata: a bystander page faces one
+       seat a rival merely CLAIMED and another a rival's bid BOUND.
+       Expectata: the bound star wears visibly dimmer ink (fill and
+       stroke) than the tentative star — dead-control alpha, the ×'s
+       convention. Resultata pre-fix: identical ink either way. */
+    const wt = await makePage(browser, DESKTOP);
+    await wt.goto(BASE + '/starweights', { waitUntil: 'networkidle0' });
+    gas.handle({ action: 'add', slug: 'starweights', snym: 'tent',
+                 usid: 'usid-wt-tent' });
+    gas.handle({ action: 'add', slug: 'starweights', snym: 'bond',
+                 usid: 'usid-wt-bond' });
+    gas.handle({ action: 'claim', slug: 'starweights',
+                 usid: 'usid-wt-tent', dvid: 'dev-wt-tent',
+                 anym: 'tentative rival' });
+    gas.handle({ action: 'bid', slug: 'starweights', snym: 'bond',
+                 usid: 'usid-wt-bond', xbid: '5', dvid: 'dev-wt-bond',
+                 anym: 'bound rival' });
+    await wt.waitForFunction(() => {
+      const tu = (n) => document.querySelector(
+        '.tile[data-snym="' + n + '"] .tu');
+      return tu('tent') !== null && tu('bond') !== null
+        && tu('tent').classList.contains('taken') && !tu('tent').disabled
+        && tu('bond').classList.contains('taken') && tu('bond').disabled;
+    });
+    ok(await wt.evaluate(() => {
+      const cs = (n) => getComputedStyle(document.querySelector(
+        '.tile[data-snym="' + n + '"] .tu'));
+      // computed color-mix serializes as color(srgb r g b / a) in
+      // Chrome; rgba(r, g, b, a) is the fallback shape
+      const alpha = (c) => {
+        const m = c.match(/\/ ([\d.]+)\)/)
+          || c.match(/rgba\([^()]*, ([\d.]+)\)/);
+        return m ? parseFloat(m[1]) : 1;
+      };
+      const t = cs('tent');
+      const b = cs('bond');
+      return t.color !== b.color
+        && t.webkitTextStrokeColor !== b.webkitTextStrokeColor
+        && alpha(b.color) < alpha(t.color);
+    }), 'a bound rival star reads DIMMER than a tentative one: the'
+       + ' two claim strengths differ in the ink, not just the tip');
+    await shoot(wt, 'story-tent-vs-bound');
+
+    /* ===== SUBMIT NAMES THE SEAT (dreev's "SUBMIT AS $USER" go,
+       2026-08-14, the pear postmortem's identity fix: people bid
+       from seats that weren't theirs without ever reading whose
+       name the row wore, so the moment of commitment says who you
+       are bidding as). The pin here is the PHONE fit: a 20-char
+       snym makes the longest possible label, which must truncate
+       in its pill rather than widen it past the field. */
+    const pf = await makePage(browser, PHONE);
+    await pf.goto(BASE + '/pillfit', { waitUntil: 'networkidle0' });
+    await addName(pf, 'abcdefghijklmnopqrst');  // the 20-char max
+    await pf.waitForSelector('.tile.mine .rebid textarea');
+    await pf.type('.tile.mine .rebid textarea', '1');  // hot: pill up
+    await pf.waitForFunction(() => {
+      const go = document.querySelector('.tile.mine .rebid .go');
+      return go !== null && go.getBoundingClientRect().width > 0;
+    });
+    ok(await pf.evaluate((want) => document.querySelector(
+        '.tile.mine .rebid .go').textContent === want,
+      STR.submitCopy('abcdefghijklmnopqrst')),
+      "the bid pill wears dreev's SUBMIT AS words, the snym riding"
+      + ' verbatim (caps are CSS, never edited characters)');
+    ok(await pf.evaluate(() => {
+      const go = document.querySelector('.tile.mine .rebid .go');
+      const tile = go.closest('.tile');
+      return go.getBoundingClientRect().right
+               <= tile.getBoundingClientRect().right + 1
+        && document.documentElement.scrollWidth <= window.innerWidth;
+    }), 'the longest label truncates IN the pill: no growth past'
+       + ' the field, no horizontal overflow on the phone');
+    // No auditLayout here: hasTouch viewports inflate hit boxes via
+    // negative-margin hand-backs, so bounding rects overlap BY
+    // DESIGN and the 2px-daylight audit reads them as collisions.
+    // The two asserts above are this scene's pin.
+    await shoot(pf, 'story-pillfit-phone');
+    // ...and the landing's START is a real thumb target (the
+    // 2026-08-14 design sweep measured it 35.2px on a phone — the
+    // coarse-pointer .go padding lost the cascade to .field .go's
+    // higher specificity, so the one PRIMARY pill missed the 44px
+    // law the coarse block exists to enforce)
+    await pf.goto(BASE + '/', { waitUntil: 'networkidle0' });
+    await pf.waitForFunction(() => {
+      const go = document.getElementById('namego');
+      return go !== null && go.getBoundingClientRect().height > 0;
+    });
+    ok(await pf.evaluate(() =>
+      document.getElementById('namego').getBoundingClientRect()
+        .height >= 44),
+      'the landing START pill meets the 44px thumb-target law on'
+      + ' a phone');
 
     ok(pageErrors.length === 0,
        'ZERO page errors across every story flow (the net catches'

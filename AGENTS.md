@@ -453,6 +453,55 @@ plain.)
   bound it, the plain "Claimed by someone (anym)" serves, on the
   dead star. Same predicate as the bond's star-disabling, so the
   words and the pressability can never disagree.
+- ...AND IN THE INK (dreev's go, later 2026-08-14, after the pear
+  postmortem found the two strengths rendering pixel-identical —
+  .tu.taken outranked .tu:disabled in the cascade): a bound star's
+  neutral fill DIMS to the dead-control alpha (45%, .arc:disabled's
+  family) while tentative keeps the full 75%. Keyed on
+  .tu.taken:disabled, not a new class — the star's disabled state
+  IS the bond's client face — with the honest consequence that
+  rival stars dim the same way while YOUR radio is locked or the
+  record froze (equally dead, equally dim). A story qual pins the
+  ordering (tent-vs-bound scene); the bob-sealed alpha pin was
+  amended from >0.5 to >0.3 under this dreev-ratified spec change.
+- SUBMIT NAMES THE SEAT (dreev's "SUBMIT AS $USER" go, 2026-08-14,
+  the pear postmortem's identity fix: people bid from seats that
+  weren't theirs without reading whose name the row wore, so the
+  moment of commitment says who you're bidding as): stringles'
+  submitCopy is a FUNCTION of the snym now, synced in updateRow
+  like the row's every other mutable (renames ride along, pinned).
+  The pill's caps are CSS (text-transform on .go — the snym's
+  characters ride untouched), and the longest label truncates in
+  its pill (ellipsis; phone fit pinned by the pillfit scene).
+- THE COMMIT STEP (dreev's squish report + the design sweep,
+  2026-08-14): ONE 0.5rem of daylight between every field and its
+  commit pill — .gorow's margin-top rose from 0.3rem (which read
+  squished against the field's border and sat under the 8px
+  within-group floor the form conventions name), and the blub's
+  SAVE, which had drifted to TRIPLE the others (the desc grid's
+  0.6rem gap stacking on the class margin — gaps never collapse),
+  now carries the step in the gap alone (gap 0.5rem, margin-top 0
+  on desc's gorow). The war dialog's 0.9rem stays: dialog footers
+  take bigger clearance by convention. A story qual measures all
+  hot pills and pins them to ONE distance >= 8px. Also from the
+  sweep: the coarse-pointer .go padding lost the cascade to
+  .field .go, so the landing START pill measured 35.2px on phones
+  — under the 44px thumb law its block exists to enforce; a
+  .field .go rule in the coarse block fixes it, height pinned.
+- SEATTAKEN (minted 2026-08-15, resolving the pear postmortem's
+  copy lie): placeBid's bidless-takeover leg — a bid hitting a
+  bidless seat HELD by another device, honestly reachable from a
+  stale screen inside the poll window — throws its own code now
+  instead of bidSeatHeld, whose "already placed a bid as X!" was
+  false there (the holder had only claimed). Same args (anym,
+  snym), gameRefusals class (unnumbered, honest-play). The copy is
+  Latin with the rule-7 TODO above it in stringles — the ONE
+  remaining human action is dreev replacing that Latin with his
+  words. bidSeatHeld survives unchanged on its two bond legs,
+  where its words are true. Coverage is closed by the existing
+  machinery: gas qual 19 sees seatTaken provoked (the flipped
+  higgs-scene expectation), the frontend weld renders the new
+  table entry from its stub.
 - Every control is a tab stop (2026-07-27, reversing the 07-16
   tab law: keyboard users must be able to claim/remove/reveal).
   Pointer clicks blur buttons (tooltip hygiene); keyboard clicks
@@ -904,3 +953,36 @@ once; offline/network-flap recovery stories; accessibility
 (aria/focus-order is ad hoc); and the closed-state covenant's
 assumption that sheet rows stay in submission order (a human sorting
 the sheet breaks it silently). None block daily use.
+
+## Design-sweep findings flagged, not fixed (2026-08-14, awaiting dreev's eyes)
+
+The consistency sweep after dreev's squish report fixed the commit
+step, the START touch height, and two unguarded hovers (.corner
+.icon — a disabled chip re-inked on hover; .desctoggle — cascade
+luck). The rest is TASTE territory, each hand-tuned once, so
+changing them without dreev risks regressions for tidiness (PDP):
+
+- Dead-control ink alpha spans five strengths for one role: 25%
+  (.x), 30% (.tu stroke, .desctoggle), 45% (.tu.taken:disabled,
+  .arc color), 55% (.archivego, .arc border), full-muted
+  (.go:disabled). Optical alpha isn't numeric alpha (glyph size),
+  so unification needs eyes, not a token.
+- Three controls dim by element OPACITY against the file's own
+  alpha-rides-color law (.corner .icon:disabled, 
+  .addrow:has(input:disabled) — a whole row, tooltip included —
+  and #banner-x's 0.7 resting state).
+- .go.discard wears exactly .go:disabled's costume — a LIVE
+  DISCARD and a dead SAVE in the same row differ only by cursor.
+- Vocabulary spreads, one line each: pill paddings (5 recipes),
+  caps-label letter-spacing (6 trackings), whisper font tier (0.7
+  vs 0.78 vs 0.8rem), border-radius (16/10/9/8/6px + pills; the
+  .arc's 9px departs undocumented from its own named model's
+  10px), dismiss-x (two full recipes: #banner-x vs .dlg-x), card
+  padding (1rem/0.75-1rem/1.5rem), control-row gap (0.5rem
+  standalone-button step vs .tombstone's 0.75rem).
+- The coarse-pointer .go padding shrinks INLINE (0.6rem < the
+  fine-pointer 0.7rem) while every other coarse rule grows both
+  axes — possibly deliberate 320px thrift, possibly a typo.
+- Stale comments contradicting shipped DOM: .at-wrap's
+  position:relative claims to anchor a SAVE nothing anchors;
+  buildNameField's comment describes a .gorow it no longer builds.

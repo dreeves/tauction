@@ -4443,8 +4443,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
        .querySelector('#tiles .rebid').classList.contains('hot'),
      'the unsent bid stays put, its field hot');
   ok(nb.window.document.querySelector('#tiles .rebid .go').textContent
-       === STR.submitCopy,
-     "the bid's commit button wears dreev's copy: SUBMIT");
+       === STR.submitCopy('bea'),
+     "the bid's commit button names the seat it commits as: dreev's"
+     + ' SUBMIT AS words (2026-08-14, the pear postmortem)');
   nb.window.document.querySelector('#tiles .rebid').dispatchEvent(
     new nb.window.Event('submit', { bubbles: true, cancelable: true }));
   await until(() => gas.handle({ action: 'state', slug: 'noblur' })
@@ -4480,6 +4481,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(gas.handle({ action: 'state', slug: 'noblur' })
        .seats.some((s) => s.snym === 'beatrix'),
      'Enter/SAVE still renames');
+  // ...and the SUBMIT pill follows the rename: the label is data,
+  // synced like the row's every other mutable
+  await until(() => nbRow.querySelector('.rebid .go').textContent
+    === STR.submitCopy('beatrix'));
+  ok(nbRow.querySelector('.rebid .go').textContent
+       === STR.submitCopy('beatrix'),
+     "SUBMIT AS follows a rename: the pill names the seat's current"
+     + ' snym');
 
   // ...and the + row: a tapped-away name is NOT added — it waits in
   // the field with its SAVE (the hallway fumble is answered by the
