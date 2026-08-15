@@ -524,6 +524,52 @@ plain.)
   .field .go, so the landing START pill measured 35.2px on phones
   — under the 44px thumb law its block exists to enforce; a
   .field .go rule in the coarse block fixes it, height pinned.
+  THE SECOND LOOK (dreev 2026-08-15, "it's the spacing that still
+  looks inconsistent"): the first sweep unified only the daylight
+  ABOVE each pill. Measuring the whole neighborhood found the hot
+  bid row dropping 15.2px to its neighbor against the ledger's
+  10.4px between any two rows — a `.tiles .gorow` margin-bottom
+  read as a vestige of the 4.8px-step era and DELETED. THAT WAS
+  WRONG, and dreev's challenge caught it the same day before ship
+  ("maybe some amount of squishing is good? it needs to be obvious
+  what field the button is attached to"): a floating pill says
+  which field it belongs to by proximity ALONE, and proximity is a
+  RATIO — Gestalt/NN/g put the floor at 2:1 far-gap to near-gap.
+  Deleting the clearance left SUBMIT AS 8px from its field but
+  10.4px from the next person's row (1.3:1, near-equidistant, the
+  exact proximity inversion the margin existed to prevent); ADD
+  PARTICIPANT sat at 2.2 (against REVEAL's standoff) and SAVE at
+  2.5 (against the preview's). The clearance is back as 0.5rem
+  (18.4px to the neighbor, 2.3:1) with its TRUE reason written on
+  it, and a story qual pins the ratio for all three pills — so the
+  reason can never be misfiled again. Lesson for the file: a
+  spacing rule that looks like a vestige may encode a RELATIONSHIP
+  the measurement didn't capture; measure the ratio, not the gap.
+  THE THIRD LOOK — THE VISIBLE EDGE (dreev 2026-08-15, "look at the
+  difference between Submit-as and Add-participant"): the previous
+  passes measured border boxes, and border boxes lie under a hard
+  shadow. Your row's bid field wears the --pop lift (4px of zero-
+  blur ink hanging off its bottom) and, after a resubmission, the
+  stack sheets; ADD PARTICIPANT's field is flat. Both measured 8px
+  to the border; the eye read 4 under the pill and 8 under the +
+  row. Research verdict (Atlassian's spacing foundation, the
+  optical-alignment literature, the neo-brutalist shadow specs):
+  optical spacing beats mathematical, visual weight may deviate
+  from the scale, and a zero-blur offset shadow is a geometric copy
+  of the box — an EDGE, not decoration. So the commit step is now
+  measured from the visible edge, and every hard shadow's reach
+  composes in ONE place: updateRow reports the sheets' spread as
+  the card's --stack variable (0px for none; was a margin), and
+  style.css — which owns the pop — hands back max(sheets, pop) on
+  a mine row (`.tile.mine .rebid textarea.bid-card` margin-bottom
+  = max(0, --stack − 4px); `.tile.mine .gorow` margin-top = step +
+  4px) and the sheets alone on rival cards. Handing sheets AND pop
+  back as margins had ADDED overlapping ink (a two-bid stack put
+  the pill 10px from the edge). Story quals parse the reach from
+  the computed box-shadow (never hardcoded), pin every hot pill to
+  one visible-edge step, and pin it again under a resubmission
+  stack; the jsdom pins read --stack. Only the pop's token and the
+  4px constant here need to move together if the pop ever changes.
 - SEATTAKEN (minted 2026-08-15, resolving the pear postmortem's
   copy lie): placeBid's bidless-takeover leg — a bid hitting a
   bidless seat HELD by another device, honestly reachable from a

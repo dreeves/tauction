@@ -1087,10 +1087,25 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
 
 .tiles { display: flex; flex-direction: column; gap: 0.4rem; }
 
-/* a hot row's SUBMIT sat nearer the NEXT person's row than its own
-   field (proximity inversion); scoped to .tiles so the + row's and
-   the blub's button rows keep their geometry */
-.tiles .gorow { margin-bottom: 0.3rem; }
+/* THE ATTACHMENT CLEARANCE (dreev's challenge, 2026-08-15: "it
+   needs to be obvious what field the button is attached to"). A
+   floating pill says which field it belongs to by PROXIMITY alone —
+   Gestalt: attached reads when the gap to its own field is clearly
+   smaller than the gap to anything else, floor 2:1 (NN/g). The
+   ledger's row rhythm puts the next person's row 10.4px under a hot
+   pill; against the 8px commit step that's 1.3:1 — near-equidistant,
+   the pill floats between two rows. So a hot bid row carries one
+   more 0.5rem under its pill: 18.4px to the neighbor, ratio 2.3,
+   matching where ADD PARTICIPANT (2.2, against REVEAL's standoff)
+   and the blub's SAVE (2.5, against the preview's) already sit.
+   Scoped to .tiles: the + row and the blub have their own far
+   neighbors at their own standoffs. HISTORY: this rule existed as
+   0.3rem, was deleted earlier the same day as a vestige of the
+   4.8px-step era, and dreev's challenge caught the deletion before
+   ship — its reason had been misfiled as a below-the-pill problem
+   when it was always the ratio. A story qual pins the RATIO now,
+   so the reason can't be lost again. */
+.tiles .gorow { margin-bottom: 0.5rem; }
 
 /* an empty flex container never self-collapses: on a virgin ledger
    thead's and the + row's margins stacked ~13px, then snapped to
@@ -1668,6 +1683,33 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
      discount, style.css ~117) */
   margin-bottom: 4px;
 }
+
+/* THE VISIBLE EDGE (dreev's third squish look, 2026-08-15: SUBMIT
+   AS sat visibly tighter to its field than ADD PARTICIPANT did —
+   measured to the border box both were 8px, but the pop is 4px of
+   hard ink hanging off your field's bottom, so the eye read 4). The
+   research verdict is the house's own law restated: optical spacing
+   beats mathematical (Atlassian's spacing foundation: visual weight
+   may deviate from the scale), a zero-blur shadow is a geometric
+   copy of the box and therefore an EDGE, and ink the layout can't
+   see gets handed back as margin. Every hard shadow's reach lives
+   in ONE variable per card — --stack, the re-submission sheets'
+   spread, set by updateRow (0px for none) — and the pop's 4px is a
+   constant here, so the two compose by MAX, not sum: on your row
+   the pop already covers the first two sheets' ink, and only a
+   taller pile reaches past it. (Handing both back as margins ADDED
+   overlapping ink, which is what put the pill 10px from the edge
+   under a stack.) Sealed cards on rival rows wear no pop, so their
+   hand-back is the sheets alone. A story qual parses the reach
+   from the computed shadow, so this and the pop's token move
+   together. */
+.bid-card { margin-bottom: var(--stack, 0px); }
+
+.tile.mine .rebid textarea.bid-card {
+  margin-bottom: max(0px, calc(var(--stack, 0px) - 4px));
+}
+
+.tile.mine .gorow { margin-top: calc(0.5rem + 4px); }
 
 @keyframes breathe {
   0%, 100% { border-color: var(--border); background-color: var(--bg); }

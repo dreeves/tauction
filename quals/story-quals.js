@@ -1924,25 +1924,57 @@ async function bid(page, bidText) {
        gap stacking on the class-universal .gorow margin — gaps
        never collapse into margins). Expectata: every commit pill
        sits the SAME daylight below its field, at the researched
-       8px within-group step (NN/g proximity + the 8pt scale). */
+       8px within-group step (NN/g proximity + the 8pt scale).
+       MEASURED TO THE VISIBLE EDGE (dreev's third look, 2026-08-15,
+       "look at the difference between Submit-as and Add-participant"
+       — the research verdict: optical spacing beats mathematical,
+       Atlassian's own spacing foundation says visual weight may
+       deviate from the scale, and a zero-blur offset shadow is a
+       geometric copy of the box, i.e. ink, i.e. edge). Your bid
+       field wears the --pop lift (a hard 4px drop) and, after a
+       resubmission, the stack sheets; a pill measured 8px from the
+       BORDER sat ~4px from the INK while ADD PARTICIPANT's flat
+       field gave a clean 8. So the visible bottom = border box +
+       the box-shadow's largest downward reach, parsed from the
+       computed style (never hardcoded: the pop's size lives in one
+       token). */
+    const VISIBLE_GAP_JS = `window.__vgap = (field, go) => {
+      const F = document.querySelector(field);
+      const G = document.querySelector(go);
+      // the furthest any hard (zero-blur) shadow layer inks below
+      // the border box: y-offset + spread, per comma-separated layer
+      const reach = (el) => {
+        const sh = getComputedStyle(el).boxShadow;
+        if (!sh || sh === 'none') return 0;
+        // split layers on commas OUTSIDE parens (colors have commas)
+        const layers = sh.split(/,(?![^(]*\\))/);
+        return layers.reduce((m, L) => {
+          const nums = L.replace(/rgba?\\([^)]*\\)|color\\([^)]*\\)/g, '')
+            .trim().split(/\\s+/).filter((t) => /px$/.test(t))
+            .map(parseFloat);
+          // [x, y, blur, spread]; a hard shadow has blur 0
+          const y = nums[1] || 0, blur = nums[2] || 0,
+                spread = nums[3] || 0;
+          return blur === 0 ? Math.max(m, y + spread) : m;
+        }, 0);
+      };
+      return G.getBoundingClientRect().top
+        - (F.getBoundingClientRect().bottom + reach(F));
+    };`;
+    await fine2.evaluate(VISIBLE_GAP_JS);
     {
-      const gaps = await fine2.evaluate(() => {
-        const gap = (field, go) =>
-          document.querySelector(go).getBoundingClientRect().top
-          - document.querySelector(field).getBoundingClientRect()
-              .bottom;
-        return {
-          roster: gap('.addrow .at-wrap', '#roster-go'),
-          blub: gap('#descedit', '#descgo'),
-          bid: gap('.tile.mine .rebid textarea',
-                   '.tile.mine .rebid .go'),
-        };
-      });
+      const gaps = await fine2.evaluate(() => ({
+        roster: __vgap('.addrow .at-wrap', '#roster-go'),
+        blub: __vgap('#descedit', '#descgo'),
+        bid: __vgap('.tile.mine .rebid textarea',
+                    '.tile.mine .rebid .go'),
+      }));
       const vals = Object.values(gaps);
       ok(vals.every((v) => Math.abs(v - vals[0]) < 0.5)
            && vals.every((v) => v >= 7.9),
          'the commit step is ONE distance, at least 8px, for every'
-         + ' hot field’s pill — ' + JSON.stringify(gaps));
+         + ' hot field’s pill — measured to the VISIBLE edge (border'
+         + ' box + hard-shadow reach) — ' + JSON.stringify(gaps));
     }
     // ...and fixed-copy pills render WHOLE: the bid pill's ellipsis
     // cap must never leak onto the .go family (it chopped dreev's
@@ -1955,6 +1987,47 @@ async function bid(page, bidText) {
         && whole(document.getElementById('descdiscard'));
     }), "fixed-copy pills (ADD PARTICIPANT, SAVE, DISCARD) render"
        + ' their whole labels — no ellipsis outside the bid pill');
+    /* ===== ATTACHMENT IS A RATIO (dreev's challenge, 2026-08-15:
+       "maybe some amount of squishing is good? it needs to be
+       obvious what field the button is attached to"). He was right
+       and the previous pass was wrong: it deleted the hot bid row's
+       extra clearance below the pill as a vestige, and the pill then
+       floated 8px from its own field but only 10.4px from the NEXT
+       person's row — ratio 1.3, near-equidistant, the very proximity
+       inversion that margin existed to prevent. Its reason had been
+       misfiled as a below-the-pill problem; the truth is Gestalt
+       proximity (NN/g): a pill reads as attached to its field when
+       the gap to its field is CLEARLY smaller than the gap to
+       anything else, floor 2:1. ADD PARTICIPANT already sat at 2.2
+       (its far neighbor is REVEAL's own 1.1rem standoff), the blub's
+       SAVE at 2.5 (the preview's standoff). So the near step stays
+       the researched 8px and the pill's row carries clearance below
+       until the far gap clears 2x — pinned as the RATIO, so nobody
+       can delete the clearance again without failing the reason. */
+    ok(await fine2.evaluate(() => {
+      const near = __vgap('.tile.mine .rebid textarea',
+                          '.tile.mine .rebid .go');
+      const tiles = [...document.querySelectorAll('#tiles .tile')];
+      const mine = document.querySelector('#tiles .tile.mine');
+      const next = tiles[tiles.indexOf(mine) + 1];
+      const far = next.getBoundingClientRect().top
+        - mine.querySelector('.rebid .go').getBoundingClientRect()
+            .bottom;
+      window.__bidRatio = far / near;
+      return far / near >= 2;
+    }), 'the hot bid pill sits at least TWICE as far from the next'
+       + ' row as from its own field (Gestalt proximity, 2:1 floor;'
+       + ' got ' + await fine2.evaluate(() => window.__bidRatio) + ')');
+    // ...and the same law for the other two pills, so the three
+    // never drift apart on the axis that matters
+    ok(await fine2.evaluate(() => {
+      const R = (s) => document.querySelector(s).getBoundingClientRect();
+      const ros = (R('#reveal').top - R('#roster-go').bottom)
+        / __vgap('.addrow .at-wrap', '#roster-go');
+      const blub = (R('#descview').top - R('#descgo').bottom)
+        / __vgap('#descedit', '#descgo');
+      return ros >= 2 && blub >= 2;
+    }), 'ADD PARTICIPANT and SAVE clear the same 2:1 attachment floor');
     // ...and the keyboard reaches everything (the every-control-is-a-
     // tab-stop law): no positive tabindex anywhere (DOM order is tab
     // order), and tabbing from the top visits the stars and the ×s —
@@ -1977,6 +2050,37 @@ async function bid(page, bidText) {
          .every((s) => tabbed.has(s)),
        'tab reaches the whole hot page — stars and ×s included: '
        + [...tabbed].join(','));
+    /* ===== ...AND UNDER A RESUBMISSION STACK (the very state in
+       dreev's screenshot: a second bid stacks a sheet behind the
+       card, more ink hanging below the border). The visible edge
+       moves down by the sheet; the pill must follow it, keeping the
+       one commit step from the INK, and the row rhythm must hold
+       (the code hands the sheets' spread back as margin already —
+       this pins the pill's side of that deal). */
+    await fine2.focus('.tile.mine .rebid textarea');
+    await fine2.keyboard.press('Enter');  // bid 1 lands: 'x'
+    await fine2.waitForFunction(() =>
+      document.querySelector('.tile.mine.has-bid') !== null);
+    await fine2.type('.tile.mine .rebid textarea', 'y');
+    await fine2.keyboard.press('Enter');  // bid 2: the sheet appears
+    await fine2.waitForFunction(() => {
+      const ta = document.querySelector('.tile.mine .rebid textarea');
+      return ta && parseFloat(ta.style.getPropertyValue('--stack')) > 0;
+    });
+    await fine2.type('.tile.mine .rebid textarea', 'z');  // hot again
+    await fine2.waitForFunction(() => {
+      const go = document.querySelector('.tile.mine .rebid .go');
+      return go && go.getBoundingClientRect().height > 0;
+    });
+    ok(await fine2.evaluate(() => {
+      const bid = __vgap('.tile.mine .rebid textarea',
+                         '.tile.mine .rebid .go');
+      const roster = __vgap('.addrow .at-wrap', '#roster-go');
+      return Math.abs(bid - roster) < 0.5 && bid >= 7.9;
+    }), 'under a resubmission stack the pill keeps the one commit'
+       + ' step from the visible edge — the sheet moves the edge,'
+       + ' the pill follows');
+    await shoot(fine2, 'story-stacked-pill');
     // the editing mode STACKS at every width (dreev 2026-07-30,
     // killing side-by-side: twin texts at equal weight read as a
     // duplicated render, not source-and-preview), and top to bottom

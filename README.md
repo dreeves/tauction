@@ -119,13 +119,13 @@ Previously:
 
 8. Looks like the submit button for bids is awkwardly squished against the bid field.
 
+9. In tooltips like "Locked in as you" the "you" should be followed by your own device blurb, same as we do when we say "someone".
+
 Next:
 
 1. For better device blurbs, what if the website just asks the user for permission to see their exact location?
 
-2. Or if that's too heavy-handed, what about this idea: Any time you name your own seat in an auction, that name is remembered in localstorage and we append to the blub, "; previously bidding as alice" or whatever participant name. If there's a technical reason that doesn't work, please explain.
-
-3. In tooltips like "Locked in as you" the "you"
+2. Or if that's too heavy-handed, what about this idea: Any time you name your own seat in an auction, that name is remembered in localstorage and we append to the blub: "; previously bidding as alice" or whatever participant name. If there's a technical reason that doesn't work, please explain.
 
 4. Rename to sealreveal or looseseal or sealedeel or reeveel or something.
 

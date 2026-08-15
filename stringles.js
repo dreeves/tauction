@@ -14,11 +14,15 @@
 const nameStoneTip = `Name of this auction; also its URL`;
 
 // The star radio's tooltips: yours, locked yours, someone else's
-// (with their self-reported anym), too-late, and claimable
-const disclaimTip = `Disclaim as you`;
-const lockedTip = `Locked in as you`;
+// (with their self-reported anym), too-late, and claimable.
+// "You" carries YOUR anym the same way "someone" carries theirs
+// (dreev 2026-08-15) — so a two-device person can tell which of
+// their devices a star belongs to, and the anym vocabulary reads
+// the same whoever it names.
+const disclaimTip = (blub) => `Disclaim as you (${blub})`;
+const lockedTip = (blub) => `Locked in as you (${blub})`;
 const tooLateTip = `Too late to claim as you`;
-const claimTip = `Claim as you`;
+const claimTip = (blub) => `Claim as you (${blub})`;
 const claimedByTip = (blub) => `Claimed by someone (${blub})`;
 // ...and its BIDLESS sibling (dreev's copy, 2026-08-14): a claim
 // with no bid behind it is still usurpable — one tap takes the seat

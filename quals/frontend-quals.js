@@ -182,7 +182,7 @@ const STR = new Function(STRINGLES
   + ' auctionExistsBanner, stampCopy,'
   + ' consensusStamp,'
   + ' claimedByTip, tentativeTip, unseatedBanner,'
-  + ' claimTip, mysteryDevice, nameTakenBanner,'
+  + ' claimTip, disclaimTip, lockedTip, mysteryDevice, nameTakenBanner,'
   + ' bidTooLongBanner,'
   + ' moneyGlyphs, needNameTip, removeTip,'
   + ' tooLateRemoveTip, resubmittedTip, nameStoneTip,'
@@ -3408,6 +3408,14 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(row(doc, 'bob').querySelector('.tu')
      && !row(doc, 'bob').querySelector('.tu').disabled,
      'other bidless rows keep live stars (radio: one click to switch)');
+  // (myAnym is defined below, at the locked pin — hoisted arrow fn
+  // in const form is not hoisted, so derive inline here)
+  ok(row(doc, 'alice').querySelector('.tu').getAttribute('data-tip')
+       === STR.disclaimTip(STR.mysteryDevice + ' '
+             + dom.window.navigator.language + ' in Portland, OR'
+             + STR.orByTimezone + TZCITY),
+     'your live star\u2019s disclaim tip names your own device blurb'
+     + ' after "you"');
 
   submitBid(dom);  // empty: the field itself objects, inline
   ok(myEditor(doc).classList.contains('error')
@@ -3447,12 +3455,19 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   ok(!doc.querySelector('#tiles .check'),
      'no checkmark either: the green card itself is the signal, and the'
      + ' ✅ sat confusingly next to the ×');
+  // YOUR tips carry your own anym now (dreev 2026-08-15: "the 'you'
+  // should be followed by your own device blurb, same as we do when
+  // we say 'someone'"), derived here the way the rival-anym pins
+  // derive theirs — never a literal
+  const myAnym = (w) => STR.mysteryDevice + ' ' + w.navigator.language
+    + ' in Portland, OR' + STR.orByTimezone + TZCITY;
   ok(row(doc, 'alice').querySelector('.tu').disabled
      && row(doc, 'alice').querySelector('.tu').classList
           .contains('selected')
      && row(doc, 'alice').querySelector('.tu').getAttribute('data-tip')
-          === 'Locked in as you',
-     'your bid locks even your own star: still lit, no release');
+          === STR.lockedTip(myAnym(dom.window)),
+     'your bid locks even your own star: still lit, no release — and'
+     + ' the tip names YOUR device blurb after "you"');
   ok(row(doc, 'bob').querySelector('.tu').disabled
      && row(doc, 'bob').querySelector('.tu').getAttribute('data-tip')
           === 'Too late to claim as you',
@@ -5981,8 +5996,9 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   await sleep(10);
   ok(!dTip2.window.document.getElementById('tip').hidden
      && dTip2.window.document.getElementById('tip').textContent
-          === STR.claimTip,
-     'a focused star summons its tip (the tap-tip path)');
+          === STR.claimTip(myAnym(dTip2.window)),
+     'a focused star summons its tip (the tap-tip path) — the claim'
+     + ' tip naming your own device blurb');
   // a rival claims ann elsewhere; OUR next render must retitle the
   // OPEN tip without the pointer moving (the live-refresh)
   gas.handle({ action: 'claim', slug: 'tipflow',
@@ -6771,10 +6787,12 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      + hoverBid(domA, 'ann'));
   ok(own[0].querySelector('.rebid textarea').style.boxShadow
        .includes('2px 2px')
-     && own[0].querySelector('.rebid textarea').style.marginBottom
-          === '2px',
-     're-bid stacks a sheet behind your card — and the card hands'
-     + ' the row gap back the 2px of ink the sheet eats');
+     && own[0].querySelector('.rebid textarea').style
+          .getPropertyValue('--stack') === '2px',
+     're-bid stacks a sheet behind your card — and reports the 2px'
+     + ' of ink it eats as --stack, for the stylesheet to hand back'
+     + ' (max-ed against the pop there; jsdom does no layout, so the'
+     + ' geometry is the story suite\u2019s to pin)');
   await until(() =>  // domB polls
     tiles(domB.window.document, '.updated').length > 0);
   const shim = tiles(domB.window.document, '.updated');
@@ -6799,11 +6817,11 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
   const annRow = tiles(domA.window.document, '.has-bid')[0];
   ok(annRow.querySelector('.bid-card').style.boxShadow
        .includes('10px 10px')
-     && annRow.querySelector('.bid-card').style.marginBottom
-          === '10px',
+     && annRow.querySelector('.bid-card').style
+          .getPropertyValue('--stack') === '10px',
      'six submissions = five sheets, uncapped: the pile IS the'
-     + " disinducement — and the gutter below it stays the row's"
-     + ' own 0.4rem (the margin mirrors the spread)');
+     + " disinducement — and --stack mirrors the spread so the"
+     + " gutter below it stays the row's own 0.4rem");
   // (subs superscript shelved 2026-07-15)
   // ok(annRow.querySelector('.tile-subs').textContent === '6',
   //    'counter keeps the exact count past the cap');

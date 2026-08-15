@@ -1839,11 +1839,11 @@ function updateRow(t, seat, b, mine, known, locked) {
   // bound it, which is the same condition that killed the star.
   star.setAttribute('data-tip',
     usid === mine
-      ? (star.disabled ? lockedTip : disclaimTip)
+      ? (star.disabled ? lockedTip(ANYM) : disclaimTip(ANYM))
       : rival && state.anyms[usid]
       ? (stamp === undefined ? tentativeTip(state.anyms[usid])
                              : claimedByTip(state.anyms[usid]))
-      : (star.disabled ? tooLateTip : claimTip));
+      : (star.disabled ? tooLateTip : claimTip(ANYM)));
 
   t.classList.toggle('has-bid', stamp !== undefined);
   t.classList.toggle('mine', usid === mine);
@@ -1904,8 +1904,14 @@ function updateRow(t, seat, b, mine, known, locked) {
   // the sheets are INK the flex gap cannot see: hand the row back
   // exactly the spread they eat, so the gutter below a stacked card
   // stays the same 0.4rem however tall the pile grows (ZOI: the
-  // count is uncapped, so the compensation must scale with it)
-  const stackDrop = bcount > 1 ? 2 * (bcount - 1) + 'px' : '';
+  // count is uncapped, so the compensation must scale with it).
+  // Reported as a CSS variable, not a margin: on YOUR row the pop
+  // already inks 4px below the box, and the sheets only reach past
+  // it from the third bid on — so the stylesheet, which owns the
+  // pop, takes the max of the two reaches in one place (--stack).
+  // Handing both back as margins ADDED ink that visually overlaps
+  // (dreev's third squish look, 2026-08-15).
+  const stackReach = bcount > 1 ? 2 * (bcount - 1) + 'px' : '0px';
   if (kind === 'editor') {
     const editor = content.querySelector('textarea');
     // the gavel drop is a bright line: your bid stays readable in
@@ -1925,7 +1931,8 @@ function updateRow(t, seat, b, mine, known, locked) {
     // recomputed: a LIVE ring must survive a change-ful render
     editor.className = stamp === undefined ? 'bid-slot' : 'bid-card';
     editor.style.boxShadow = stamp === undefined ? '' : stackShadow;
-    editor.style.marginBottom = stamp === undefined ? '' : stackDrop;
+    editor.style.setProperty('--stack',
+      stamp === undefined ? '0px' : stackReach);
     // never clobber what the user is typing: leave a focused or dirty
     // editor alone (a draft = live value differs from defaultValue)
     if (editor !== document.activeElement
@@ -1949,7 +1956,7 @@ function updateRow(t, seat, b, mine, known, locked) {
     const sealed = known[usid] === undefined;
     content.className = 'bid-card';
     content.style.boxShadow = stackShadow;
-    content.style.marginBottom = stackDrop;
+    content.style.setProperty('--stack', stackReach);
     const text = content.firstElementChild;
     text.className = sealed ? 'bid-text masked' : 'bid-text';
     text.textContent = sealed ? MASK : known[usid];
