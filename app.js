@@ -1289,6 +1289,23 @@ function myUsid() {
   return whoHere(seats, state);
 }
 
+// THE RECORD'S NAMES FOR THIS DEVICE (dreev's "extreme anti-magic"
+// ruling, 2026-08-15, honoring his item 9: "you" reads exactly like
+// "someone" — ONE composition, withAkas, for every blub). A rival's
+// akas are the record's list for the seat's holder; yours are the
+// record's list for THIS device — the seat the record says is this
+// device's — read off the same map. Keyed on DVID, never on the seat
+// under the pointer, so a flying stake over a rival's tentative claim
+// never borrows the rival's names (the seat's slot still says rival
+// until the settle). Nothing on record here (unseated, or a claim
+// still in flight): the empty list — the payload carries akas only
+// for claimed seats — so your tail lands one settle after your first
+// claim, exactly when a rival's page would first show it.
+function myAkas() {
+  const u = Object.keys(state.claims).find((k) => state.claims[k] === DVID);
+  return u === undefined ? [] : state.akas[u];
+}
+
 // Every bid this browser has placed on this auction, keyed by usid —
 // usids never change, so this memory never needs migrating
 function myBids() {
@@ -1851,22 +1868,21 @@ function updateRow(t, seat, b, mine, known, locked) {
   // (dreev's item 6, 2026-08-14): TENTATIVE while bidless — one tap
   // still takes the seat — and plain claimed-by once their bid
   // bound it, which is the same condition that killed the star.
-  // A rival's anym wears its akas (dreev 2026-08-15: the names that
-  // device bid under elsewhere, server-derived — see withAkas). Your
-  // own tips carry the bare ANYM — provisional: state.akas is keyed
-  // by claimed seat, so this page knows its own record only once its
-  // claim has SETTLED as this device (state.claims[usid] === DVID);
-  // before that, and while unseated, it is unknown, and the flying
-  // stake's slot may hold a rival's list. Parity with "someone"
-  // (dreev's item 9) would need that availability branch — his call.
+  // Every blub wears its akas the same way (dreev 2026-08-15: the
+  // names that device bid under elsewhere, server-derived — see
+  // withAkas): a rival's are the record's list for the seat's holder,
+  // yours are the record's list for this device (myAkas) — "you"
+  // reads exactly like "someone", his item 9.
   star.setAttribute('data-tip',
     usid === mine
-      ? (star.disabled ? lockedTip(ANYM) : disclaimTip(ANYM))
+      ? (star.disabled ? lockedTip(withAkas(ANYM, myAkas()))
+                       : disclaimTip(withAkas(ANYM, myAkas())))
       : rival && state.anyms[usid]
       ? (stamp === undefined
            ? tentativeTip(withAkas(state.anyms[usid], state.akas[usid]))
            : claimedByTip(withAkas(state.anyms[usid], state.akas[usid])))
-      : (star.disabled ? tooLateTip : claimTip(ANYM)));
+      : (star.disabled ? tooLateTip
+                       : claimTip(withAkas(ANYM, myAkas()))));
 
   t.classList.toggle('has-bid', stamp !== undefined);
   t.classList.toggle('mine', usid === mine);

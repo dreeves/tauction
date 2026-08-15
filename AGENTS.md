@@ -516,15 +516,18 @@ plain.)
   client asserts presence instead of defaulting), `editors[].akas`,
   and the bidSeatHeld/seatTaken refusal args. SVER/SVERMIN 3.
   Client: stringles' `withAkas(anym, akas)` composes the tail ONCE
-  for every rival-anym surface (star tips, the pencil's someone-
-  (anym), the two banners); an empty list adds nothing, so akas-less
-  devices read exactly as before. Your OWN tips carry the bare ANYM
-  — PROVISIONAL, dreev's call outstanding: his item 9 wants "you" to
-  read like "someone", but the client learns its own akas only via
-  state.akas of a seat whose claim has SETTLED as this device
-  (unknown before the settle and while unseated; the flying stake's
-  slot may hold a rival's list), so parity needs one availability
-  branch. Frontend 2k6 pins the current choice as provisional.
+  for EVERY blub (star tips, the pencil's someone-(anym), the two
+  banners); an empty list adds nothing, so akas-less devices read
+  exactly as before. "You" reads exactly like "someone" (dreev's
+  item 9; his "extreme anti-magic" ruling 2026-08-15 when Fable
+  first shipped own tips bare): app.js `myAkas()` is the record's
+  list for THIS device — the seat the record says is this device's,
+  off the same map — keyed on DVID, never on the seat under the
+  pointer, so a flying stake over a rival's tentative claim never
+  borrows the rival's names; nothing on record here (unseated, or a
+  claim in flight) reads as the empty list, so your tail lands one
+  settle after your first claim, exactly when a rival's page first
+  shows it. Frontend 2k6 pins all three legs.
   Why not the localStorage list: the anym is ONE devices row, live-
   joined into every auction's state, so an auction-relative string
   stored there is incoherent, and two tabs disagreeing would flip

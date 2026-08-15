@@ -5391,14 +5391,16 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
             akas: ['bob', 'robert'] }),
      "the refusal banner names the holder's akas, newest first (bob"
      + ' from akapage, robert from akaelse2)');
-  // your OWN tips keep the bare ANYM even when the record knows your
-  // akas. PROVISIONAL, not a ruling (dreev's item 9 wants "you" to
-  // read like "someone", which this breaks): the client learns its
-  // own akas only through state.akas of a seat whose claim has
-  // SETTLED as this device — unknown before the settle and while
-  // unseated, and the flying stake's slot may hold a rival's list —
-  // so parity needs a data-availability branch dreev hasn't been
-  // asked for. This pin holds the current choice until he rules.
+  // your OWN tips read exactly like "someone" (dreev's "extreme
+  // anti-magic" ruling, 2026-08-15, honoring his item 9): one
+  // composition, withAkas, for every blub. The you-blub's akas are
+  // the RECORD's list for this device — the seat the record says is
+  // this device's, read off the same map the rival tips read — so
+  // the tail lands one settle after your first claim, and before that
+  // (unseated, or a claim still in flight) the record has nothing on
+  // you here and the tail is empty. Keyed on DVID, never on the seat
+  // under the pointer: a flying stake over a rival's tentative claim
+  // never borrows the rival's names.
   gas.handle({ action: 'add', slug: 'akaown', snym: 'moi',
     usid: 'usid-akaown-moi' });
   gas.handle({ action: 'bid', slug: 'akaown', snym: 'moi',
@@ -5406,25 +5408,48 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
     anym: 'me anym' });
   gas.handle({ action: 'add', slug: 'akaown2', snym: 'ego',
     usid: 'usid-akaown2-ego' });
+  gas.handle({ action: 'add', slug: 'akaown2', snym: 'ann',
+    usid: 'usid-akaown2-ann' });
+  gas.handle({ action: 'claim', slug: 'akaown2', usid: 'usid-akaown2-ann',
+    dvid: 'dev-aka-soft', anym: 'soft aka' });
   const dOwn = await makePage('/akaown2?api=' + API_URL, (w) => {
     w.localStorage.setItem('tauction-dvid', 'dev-aka-me');
   });
-  await until(() => row(dOwn.window.document, 'ego') && drained());
-  claimRow(dOwn, 'ego');
-  await until(() => gas.handle({ action: 'state', slug: 'akaown2' })
-    .claims['usid-akaown2-ego'] === 'dev-aka-me' && drained());
-  dOwn.window.__intervals.find((i) => i.ms === 5000).fn();
-  await until(() => JSON.stringify(gas.handle({ action: 'state',
-    slug: 'akaown2' }).akas['usid-akaown2-ego']) === '["moi"]');
-  await sleep(50);
+  await until(() => row(dOwn.window.document, 'ann').querySelector('.tu')
+    .classList.contains('taken') && drained());
   // (the anym derived the way the rival-anym pins derive theirs —
   // never a literal; the geo fixture is the harness's Portland)
+  const ownAnym = STR.mysteryDevice + ' ' + dOwn.window.navigator.language
+    + ' in Portland, OR' + STR.orByTimezone + TZCITY;
   ok(row(dOwn.window.document, 'ego').querySelector('.tu')
-       .getAttribute('data-tip') === STR.disclaimTip(STR.mysteryDevice
-         + ' ' + dOwn.window.navigator.language + ' in Portland, OR'
-         + STR.orByTimezone + TZCITY),
-     'your own tip stays the bare ANYM: no akas after "you"'
-     + ' (provisional — see the comment)');
+       .getAttribute('data-tip') === STR.claimTip(ownAnym),
+     'unseated, the record has nothing on you here: the you-blub is'
+     + ' the bare ANYM');
+  // stake the RIVAL's tentative seat while holding none: the tip is
+  // yours at the tap, and it must not wear the rival's names while
+  // the claim flies
+  mockDelay = 400;
+  claimRow(dOwn, 'ann');
+  ok(row(dOwn.window.document, 'ann').classList.contains('mine')
+     && row(dOwn.window.document, 'ann').querySelector('.tu')
+          .getAttribute('data-tip') === STR.disclaimTip(ownAnym),
+     "the flying stake's tip is you with the bare ANYM — never the"
+     + " rival's akas borrowed off the seat");
+  await until(() => gas.handle({ action: 'state', slug: 'akaown2' })
+    .claims['usid-akaown2-ann'] === 'dev-aka-me' && drained());
+  mockDelay = 0;
+  await until(() => row(dOwn.window.document, 'ann').querySelector('.tu')
+    .getAttribute('data-tip')
+      === STR.disclaimTip(STR.withAkas(ownAnym, ['moi'])));
+  ok(true, 'the settle brings the record\'s names for you: "you" now'
+     + ' reads exactly like "someone" would');
+  // ...and every own-blub site composes the same way: the free seat's
+  // claim-as-you tip wears them too, off the same record
+  ok(row(dOwn.window.document, 'ego').querySelector('.tu')
+       .getAttribute('data-tip')
+         === STR.claimTip(STR.withAkas(ownAnym, ['moi'])),
+     'the claim-as-you tip on a free seat wears your akas as well:'
+     + ' one composition for every blub');
 
   /* --- 2l. the takeover xbid: claim + bid while the ops fly ---------------
      Replicata: same stale-screen setup, but machine 2 clicks alice's

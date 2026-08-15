@@ -176,12 +176,6 @@ const orByTimezone = ` or, by timezone, `;
 // only through a settled claim of its own (see updateRow), so parity
 // with "someone" needs a branch dreev hasn't been asked for. No akas,
 // no tail — an akas-less device reads exactly as before.
-// TODO (dreev): the one-name phrase is yours verbatim; the TWO-PLUS
-// shape is Fable's inference — a comma-joined list, newest bid first,
-// one entry per name ("; previously bidding as bob, alicia") — and
-// the ordering is pinned in gas 18e as a provisional spec. Say the
-// word for a different join (the pencil's {a, b} braces, the
-// padlock's "a and b") or oldest-first.
 const previouslyAs = `; previously bidding as `;
 const withAkas = (anym, akas) =>
   anym + (akas.length === 0 ? '' : previouslyAs + akas.join(', '));
