@@ -127,7 +127,9 @@ Previously:
 
 Next:
 
-1. Rename to sealreveal or looseseal or sealedeel or reeveel or something.
+1. Complaint from someone on an iPhone: when entering a long bid, the textarea is too narrow and it overlaps awkwardly with the URL that the browswer shows above the navigation controls that pop up while editing a textarea. Can you tell what I mean by that? Reread AGENTS.md and think carefully about anti-magic and PDP, as well as doing web research on this, before implementing anything.
+
+2. Rename to sealreveal or looseseal or sealedeel or reeveel or something.
 
 
 
