@@ -976,6 +976,59 @@ const NEUTRAL_TOKENS = ['bg', 'card', 'fg', 'muted', 'border', 'grid', 'pop'];
      'a reborn editor revalidates its restored draft: an overlong'
      + ' draft returns with its live red objection');
 
+  /* THE SPRAWL (dreev's go, 2026-09-04): a bid past 20 characters
+     wears .sprawl on its editor's home (.rebid), and the class follows
+     the words through every path that moves them — a keystroke, the
+     settle render (which rebuilds the editor's own className
+     wholesale), and Escape's revert (which fires no input event) —
+     because it rides the hotness chokepoint, syncHot. jsdom does no
+     layout: the stacking itself is pinned in real Chrome by story 7c.
+     Replicata: commit a short bid, type a long draft, press Escape.
+     Expectata: the class is gone with the draft. Resultata for a
+     toggle living only in the input listener: the class outlives the
+     words it described. */
+  const dSp = await makePage('/sprawljs?api=' + API_URL);
+  const spDoc = dSp.window.document;
+  addName(dSp, 'leo');
+  await until(() => myEditor(spDoc) !== null);
+  const spHome = () => myEditor(spDoc).closest('.rebid');
+  const spType = (text) => {
+    myEditor(spDoc).value = text;
+    myEditor(spDoc).dispatchEvent(
+      new dSp.window.Event('input', { bubbles: true }));
+  };
+  spType('three tacos and beer');
+  ok(!spHome().classList.contains('sprawl'),
+     'twenty characters: the editor does not sprawl');
+  spType('three tacos and beers');
+  ok(spHome().classList.contains('sprawl'),
+     "twenty-one: the editor's home wears .sprawl");
+  spType('42');
+  ok(!spHome().classList.contains('sprawl'),
+     'a short draft sheds it at the keystroke');
+  submitBid(dSp);
+  await until(() => spDoc.querySelector('.tile.mine.has-bid') !== null
+                    && drained());
+  await sleep(80);
+  spType('x'.repeat(30));
+  ok(spHome().classList.contains('sprawl'), 'a long draft over a'
+     + ' committed short bid sprawls');
+  myEditor(spDoc).focus();
+  myEditor(spDoc).dispatchEvent(new dSp.window.KeyboardEvent('keydown',
+    { key: 'Escape', bubbles: true }));
+  ok(myEditor(spDoc).value === '42' && !spHome().classList.contains('sprawl'),
+     'Escape hands back the committed 42 and the sprawl goes with the'
+     + ' draft (no input event fired: the focusout leg of the'
+     + ' chokepoint did this)');
+  spType('three tacos and beers');
+  submitBid(dSp);
+  await until(() => myEditor(spDoc).defaultValue === 'three tacos and beers'
+                    && drained());
+  await sleep(80);
+  ok(spHome().classList.contains('sprawl'),
+     "the settle render keeps a long committed bid's sprawl: the"
+     + ' sweep after every render re-derives it');
+
   /* Replicata (Sol's audit #3): the wifi dies exactly as SAVE (or a
      rename, or an add) flies. Expectata: the banner tells the
      weather AND the words come back — a failed write must never

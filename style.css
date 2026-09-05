@@ -1777,6 +1777,25 @@ body.unnamed #status { opacity: 0.6; }  /* dimmed, never illegible
   .rename input { width: auto; flex: 1; min-width: 0; }
 
   .addrow .at-wrap { width: 8.1rem; }
+
+  /* THE SPRAWL (dreev's go, 2026-09-04, from an iPhone's complaint:
+     a 159-char bid ran to 14 lines in this column, under the
+     keyboard stack). ONE branch: the row whose bid editor wears
+     .sprawl (app.js sprawls — the words run past 20 characters)
+     wraps, and the editor's cell takes its own full-width line
+     under the name, ordered last so the × keeps the name line,
+     where the name's auto margin holds it at its column. Only the
+     editor, only past the threshold: off the branch no declaration
+     applies, so a short bid and every rival row render exactly as
+     before — story 7c diffs them against a rival's cell. A content-
+     sized basis (no JS, no threshold) was measured and rejected:
+     flexbox collects lines before it shrinks anything, so the yield
+     above cannot act on a content-sized row (352–369px, Android's
+     360 among them), and at 320px the row's 3px overflow would wrap
+     the × instead of hanging invisibly. */
+  .tile:has(.rebid.sprawl) { flex-wrap: wrap; }
+  .tile:has(.rebid.sprawl) .rename { margin-right: auto; }
+  .tile-bid:has(.rebid.sprawl) { flex-basis: 100%; order: 1; }
 }
 
 /* the committed name keeps the input's geometry (border-color

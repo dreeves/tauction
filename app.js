@@ -71,6 +71,16 @@ const overlong = (s) => s.trim().length > 160;
 const overlongName = (s) => s.length > 20;
 const overlongBlub = (s) => s.length > 2000;
 
+// THE SPRAWL (dreev's go, 2026-09-04): a bid this long takes its own
+// full-width line under your name on phones instead of wrapping in
+// the narrow bid column (an iPhone's 159-char bid ran to 14 lines,
+// under the keyboard stack). "Sprawl" names that layout state — a
+// bid past this threshold — and the stylesheet's phone branch stacks
+// the row whose editor wears it. Twenty is the dial (dreev's); a
+// character count, not a fit test, and pure like the objections
+// above. Only the editor sprawls, and only past the threshold.
+const sprawls = (s) => s.length > 20;
+
 // A umap is a prototype-less dictionary keyed by snym
 const umap = (src = {}) => Object.assign(Object.create(null), src);
 
@@ -754,6 +764,15 @@ function syncHot(f) {
     ? f.dataset.sent : f.defaultValue;
   const dirty = f.value !== base;
   home.classList.toggle('hot', dirty);
+  // ...and the sprawl (sprawls, above): written for every field
+  // home by this one rule, read only by the bid editor's stylesheet
+  // branch (.rebid.sprawl). Riding this chokepoint is what keeps the
+  // class true through every path that moves the words — keystrokes
+  // (input), Escape's revert (its blur lands here via focusout), and
+  // every render's sweep after updateRow rebuilds the editor's own
+  // className wholesale. A toggle beside the input listener's
+  // overlong ring would outlive an Escaped draft.
+  home.classList.toggle('sprawl', sprawls(f.value));
   // a frozen field's dead draft keeps its grayed button as the
   // visible reason it will never send (updateRow's too-late tip
   // rides that same disabled)

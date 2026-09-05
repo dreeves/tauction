@@ -2852,6 +2852,130 @@ async function bid(page, bidText) {
        + ' as tall as its bid');
     await shoot(leo, 'story7-long-bid-revealed');
 
+    /* ====== story 7c: THE SPRAWL (dreev's go, 2026-09-04) ==============
+       Replicata (an iPhone user, via dreev): type a long bid on a
+       phone. Expectata: the words stay readable and the field stays
+       in reach. Resultata pre-fix: the bid column is a third of the
+       row on a phone, so 159 characters ran to 14 lines (383px) in a
+       664px viewport, under the keyboard stack. The ruling: only the
+       editor, and only past a threshold — a bid over 20 characters
+       (app.js's sprawls) takes its own full-width line under your
+       name on phones; up to the threshold, and on every other row,
+       nothing moves, pinned by diffing the unchanged case against a
+       rival's cell. Desktop never stacks. */
+    const rowGeom = (page) => page.evaluate(() => {
+      const r = (s) =>
+        document.querySelector(s).getBoundingClientRect().toJSON();
+      return { cell: r('.tile.mine .tile-bid'), name: r('.tile.mine .rename'),
+               x: r('.tile.mine .x'), row: r('.tile.mine'),
+               rival: r('.tile:not(.mine) .tile-bid'),
+               rivalX: r('.tile:not(.mine) .x') };
+    });
+    // beside: the editor's cell is a rival cell's twin — same column,
+    // same width, on the name's line, the × in every row's × column
+    const beside = (g) => Math.abs(g.cell.top - g.name.top) < 1
+      && Math.abs(g.cell.left - g.rival.left) < 1
+      && Math.abs(g.cell.width - g.rival.width) < 1
+      && Math.abs(g.x.left - g.rivalX.left) < 1;
+    // stacked: the cell sits under the name at (nearly) the row's
+    // full width; the × stays on the name line, in its column —
+    // within xTol: exact at 390px, but the truly-skinny tier (<=
+    // 22rem) is 3px over budget (star + gaps + 5.2rem name + 7rem
+    // floor + × = 256px in a 253px row), so every non-sprawl row's
+    // × already hangs 3px past the row edge while the sprawl row's
+    // line 1 fits and parks its × AT the edge: a 3px wobble at the
+    // threshold, pinned as measured pending dreev's call on the
+    // tier's overflow (a floor with a fixed name beside it has
+    // nothing to push against)
+    const stacked = (g, xTol = 1) => g.cell.top >= g.name.bottom - 1
+      && g.cell.width >= 0.9 * g.row.width
+      && Math.abs(g.x.top - g.name.top) < 10
+      && Math.abs(g.x.left - g.rivalX.left) < xTol;
+    const lines = (page) => page.$eval(ED, (e) => {
+      const cs = getComputedStyle(e);
+      const padY = ['paddingTop', 'paddingBottom', 'borderTopWidth',
+                    'borderBottomWidth']
+        .reduce((a, k) => a + parseFloat(cs[k]), 0);
+      return { lines: (e.getBoundingClientRect().height - padY)
+                        / parseFloat(cs.lineHeight),
+               whole: e.scrollHeight <= e.clientHeight + 1 };
+    });
+    const retype = async (page, text) => {
+      await page.$eval(ED, (e) => {
+        e.value = '';
+        e.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await page.type(ED, text);
+    };
+    const TWENTY = 'three tacos and beer';  // exactly the threshold
+    ok(TWENTY.length === 20, 'the sprawl fixture sits on the threshold');
+    const SPRAWLBID = 'one hundred dollars, my cast-iron skillet, a month'
+      + ' of doing all the dishes, and I will also walk the dog every'
+      + ' morning until the end of the year, rain or shine';
+    ok(SPRAWLBID.length === 159, "the iPhone complaint's fixture: 159"
+       + ' characters, one short of the limit');
+    const sp = await makePage(browser, PHONE);
+    await sp.goto(BASE + '/sprawl', { waitUntil: 'networkidle0' });
+    await addName(sp, 'leo');   // self-claims (2j)
+    await addName(sp, 'mo');
+    await sp.waitForSelector(ED);
+    await sp.waitForSelector('.tile:not(.mine) .bid-card.slot');
+    await sp.click(ED);
+    await sp.type(ED, TWENTY);
+    ok(beside(await rowGeom(sp)),
+       "at the threshold the editor sits beside the name like a rival's"
+       + ' cell: same column, same width, same × — the single-number'
+       + ' bid never moves');
+    await sp.type(ED, 's');   // the 21st character
+    const g21 = await rowGeom(sp);
+    ok(stacked(g21),
+       'one character past the threshold the editor drops under the'
+       + ' name at the full row width, the × staying on the name line'
+       + ' — ' + JSON.stringify(g21));
+    await sp.keyboard.press('Backspace');
+    ok(beside(await rowGeom(sp)),
+       'deleting back to the threshold puts it back beside the name');
+    await retype(sp, SPRAWLBID);
+    const l390 = await lines(sp);
+    ok(stacked(await rowGeom(sp)) && l390.lines <= 6 && l390.whole,
+       '159 characters at 390px: at most six lines, every word in'
+       + ' sight (14 lines in the narrow column before) — '
+       + JSON.stringify(l390));
+    await sp.keyboard.press('Enter');
+    await sp.waitForSelector('.tile.mine.has-bid');
+    ok(stacked(await rowGeom(sp)),
+       'the settle render, which rebuilds the editor’s className'
+       + ' wholesale, keeps the row stacked: the class rides the'
+       + ' hotness chokepoint, re-derived by every render’s sweep');
+    await shoot(sp, 'story7c-sprawl-phone');
+    // the narrow-desktop arm of the same query (320px, fine pointer)
+    const spn = await makePage(browser, NARROW);
+    await spn.goto(BASE + '/sprawl', { waitUntil: 'networkidle0' });
+    await claimRow(spn, 'mo');   // leo's seat is bound by his bid
+    await spn.click(ED);
+    await spn.type(ED, TWENTY);
+    ok(beside(await rowGeom(spn)),
+       'at 320px the threshold case is unchanged too: twenty'
+       + ' characters wrap beside the name exactly as before');
+    await retype(spn, SPRAWLBID);
+    const l320 = await lines(spn);
+    const g320 = await rowGeom(spn);
+    ok(stacked(g320, 4) && l320.lines <= 8 && l320.whole,
+       '159 characters at 320px: stacked, at most eight lines, the ×'
+       + ' within the tier’s 3px overflow of its column — '
+       + JSON.stringify(l320) + ' ' + JSON.stringify(g320));
+    await shoot(spn, 'story7c-sprawl-narrow');
+    // desktop: the query never matches, so no length stacks
+    const spd = await makePage(browser, DESKTOP);
+    await spd.goto(BASE + '/sprawl', { waitUntil: 'networkidle0' });
+    await addName(spd, 'ann');   // self-claims: the two seats are spoken for
+    await spd.waitForSelector(ED);
+    await spd.click(ED);
+    await spd.type(ED, SPRAWLBID);
+    ok(beside(await rowGeom(spd)),
+       'desktop never stacks: 159 characters wrap beside the name,'
+       + " story 7's law untouched");
+
     /* ====== story 7b: the poem bid (newlines, dreev 2026-07-27) ======
        Shift+Enter breaks the line; Enter still submits; the sealed
        decoy still betrays nothing; the revealed card keeps the

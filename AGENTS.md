@@ -20,35 +20,24 @@ Recap: Anti-sycophancy, anti-personality, anti-info-dumping, QDD, quals are sacr
 
 ## Experimental
 
-* It's ok to say "I don't know"
-* Provide primary sources for research
-
-Found this one on the internet (edited):
-
-* No praise, straight to intellectual content.
-* Write in Simplified Technical English ASD-STE100.
-* Maximum 20 words per sentence.
-* One fact per sentence.
-* Active voice.
-* Start instructions with a verb.
-* Stanford PhD (Experimental Psych/Behavioral Economics), but with deep methodological skepticism toward all social science.
-* DataColada/Gelman rigor, not textbook consensus.
-* Math/natural science: 3Blue1Brown and David Deutsch hold the standard for lucid, penetrating explanation.
-* Scott Alexander's compendious dispassionate epistemics, just needs to be condensed into succinct prose.
+0. No LLM-isms, no sentence whose only job is rhythm or closure.
+1. It's ok to say "I don't know".
+2. Provide primary sources for research.
+3. DataColada/Gelman rigor, not textbook consensus.
+4. Math/natural science: 3Blue1Brown and David Deutsch hold the standard for lucid, penetrating explanation.
+5. Scott Alexander's compendious dispassionate epistemics, just needs to be condensed into succinct prose.
+6. Epistemic humility. Before finalizing your response, ask yourself if it's impeccably, exquisitely, technically correct and true.
 
 ## Cutting Room Floor
 
 I'm tentatively retiring the following rules that seem unncessary for Fable and Sol. But they're still correct:
 
-1. Epistemic humility. Before finalizing your response, ask yourself if it's impeccably, exquisitely, technically correct and true.
 1. Empiricism. Never claim a bug is fixed or that the code exhibits some behavior without trying it.
 1. Quality assurance. The human is not your QA person. Iterate on your own until your code works.
 1. You can do it, agent! You are wise and thoughtful and pragmatic and only the best kind of lazy and you abhor code smells. I believe in you! Still zero personality though, please.
 1. We like the anti-magic extreme of [worse-is-better](https://en.wikipedia.org/wiki/Worse_is_better "Roughly this means prioritizing code elegance and simplicity over correctness") aka New Jersey style, but knowing when to deviate from the MIT approach is something of an art and requires discussion.
 1. Anti-magic covers this but it's not getting through so let's try it again. AI coding agents (pre-Fable?) seem to have an overwhelming instinct to be like "oh, thing X happens that shouldn't? or thing Y should happen? let me slap on some code to handle those cases". Instead, I beg you, think: "let me get my head around this and try to solve it by rethinking and simplifying so we don't have to reason about separate cases".
 
-
-[MASTER COPY CONFUSION WARNING: master copy of above lives in the Beebrain repo]
 
 # Agent Scratchpad (human edits only above this line)
 
@@ -651,6 +640,63 @@ plain.)
   machinery: gas qual 19 sees seatTaken provoked (the flipped
   higgs-scene expectation), the frontend weld renders the new
   table entry from its stub.
+- THE SPRAWL (dreev's go, 2026-09-04, from an iPhone user's
+  complaint: entering a long bid, the field was "too narrow" and
+  "overlapped the URL the browser shows above the navigation
+  controls"). On a phone the bid column is a third of the row (390px:
+  132px of card, 108px of text, ~10 characters a line), so a 159-char
+  bid ran to 14 lines, 383px tall in a 664px viewport — under the
+  keyboard stack. Both halves of the complaint were one defect,
+  width: iOS never shrinks the layout viewport for the keyboard, it
+  scrolls the field toward the band above the keyboard once at focus
+  and re-reveals the caret only when the keyboard's frame changes
+  (WebKit bug 191185, open since 2018), and the bar the complainer
+  named is WebKit's form accessory bar (previous, next, Done) with
+  Safari's collapsed domain strip stacked above it. Safari grows the
+  box (field-sizing: content) only since iOS 26.2 (Dec 2025); older
+  iOS shows a one-line box scrolling internally — chosen, no JS
+  fallback. Every form-design source (Baymard, NN/g, Material 3,
+  GOV.UK, Apple HIG) stacks fields full width on phones; the only
+  numeric floors for a mobile textarea are Spectrum's 140px and
+  Semrush's 160–200px, against 108px here. No two-column layout fixes
+  it at 390px: a zero-width name column reaches only what stacking
+  reaches. Dreev rejected stacking every row (B2, "we still have the
+  common use case of bidding a single number"): ONLY the editor, ONLY
+  past a threshold. `sprawls` in app.js (s.length > 20 — the dial,
+  his; a character count, not a fit test) is toggled as `.sprawl` on
+  every field home at the hotness chokepoint (syncHot: keystroke,
+  Escape's blur via focusout, every render's sweep — a toggle beside
+  the input listener's overlong ring would outlive an Escaped draft),
+  read by ONE stylesheet branch inside the existing coarse-or-narrow
+  yield query: `.tile:has(.rebid.sprawl)` wraps, its `.rename` takes
+  margin-right auto (the × keeps the name line at its column), its
+  `.tile-bid` takes flex-basis 100% and order 1. Off the branch
+  nothing applies: story 7c diffs the 20-char case against a rival's
+  cell at 390 and 320 (byte-identical), pins the stack at 21 with the
+  × on the name line, ≤ 6 lines at 390 and ≤ 8 at 320 for the 159-
+  char fixture, the un-stack on deletion, survival of the settle
+  render (updateRow rebuilds the editor's className wholesale), and
+  desktop never stacking; a jsdom qual pins the class through
+  keystroke, settle, and Escape. A content-sized flex basis (no JS,
+  no constant, the geometric threshold) was built, measured in
+  WebKit and Chromium, and rejected: flexbox collects lines BEFORE
+  it shrinks anything, so the column yield cannot act on a content-
+  sized editor row in the 352–369px band (Android's 360 among them —
+  your name up to 10px wider than rivals'), and at 320px the row's
+  existing 3px overflow (the 7rem floor + 5.2rem name + star + × +
+  gaps exceed the row; the × hangs, invisibly) would wrap the ×
+  instead. Costs, chosen: the reflow at the 21st character, and back
+  on deletion; 12–20 chars at 320 still wrap beside the name as
+  before; rivals' long revealed bids stay 14 narrow lines; whether
+  iOS keeps the caret in view when the field jumps down a row is
+  untested on a device; and at <= 22rem the sprawled row's × parks
+  3px left of every other row's, because the truly-skinny tier is
+  3px over budget (star + gaps + 5.2rem name + 7rem floor + × =
+  256px in a 253px row: rival ×s hang past the edge, the sprawl
+  row's line 1 fits) — pinned as measured, awaiting dreev's call on
+  the tier's overflow (a floor beside a FIXED name has nothing to
+  push against; min-width 0 there would put every × back in the
+  row and cost rival cells 3px).
 - Every control is a tab stop (2026-07-27, reversing the 07-16
   tab law: keyboard users must be able to claim/remove/reveal).
   Pointer clicks blur buttons (tooltip hygiene); keyboard clicks
